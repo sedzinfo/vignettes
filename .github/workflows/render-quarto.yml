@@ -1,0 +1,158 @@
+# Renders Quarto projects in quarto/<name>/ into docs/<name>/ and commits the
+# result, so GitHub Pages (main branch, /docs folder) serves:
+#   https://sedzinfo.github.io/vignettes/<name>/
+# On push, only the sites with changed files are rendered.
+# From the Actions tab, "Run workflow" renders one site by name, or "all".
+name: Render Quarto sites
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "quarto/**"
+      - ".github/workflows/render-quarto.yml"
+  workflow_dispatch:
+    inputs:
+      site:
+        description: "Site folder under quarto/ to render, or 'all'"
+        required: true
+        default: all
+
+permissions:
+  contents: write
+
+concurrency:
+  group: render-quarto
+  cancel-in-progress: false
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find sites to render
+        id: sites
+        env:
+          INPUT_SITE: ${{ github.event.inputs.site }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          all="$(for f in quarto/*/_quarto.yml; do [ -f "$f" ] && basename "$(dirname "$f")"; done)"
+          if [ -n "${INPUT_SITE:-}" ]; then
+            if [ "$INPUT_SITE" = "all" ]; then
+              sites="$all"
+            elif [[ "$INPUT_SITE" =~ ^[A-Za-z0-9_-]+$ ]] && [ -f "quarto/$INPUT_SITE/_quarto.yml" ]; then
+              sites="$INPUT_SITE"
+            else
+              echo "::error::No Quarto project at quarto/$INPUT_SITE"; exit 1
+            fi
+          elif [ -z "${BEFORE:-}" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            sites="$all"
+          else
+            changed="$(git diff --name-only "$BEFORE" "$AFTER")"
+            if echo "$changed" | grep -q '^\.github/workflows/render-quarto\.yml$'; then
+              sites="$all"
+            else
+              sites="$(echo "$changed" | grep '^quarto/' | cut -d/ -f2 | sort -u)"
+            fi
+          fi
+          echo "Sites: $(echo $sites)"
+          echo "list=$(echo $sites)" >> "$GITHUB_OUTPUT"
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        if: steps.sites.outputs.list != ''
+
+      - uses: r-lib/actions/setup-r@v2
+        if: steps.sites.outputs.list != ''
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        if: steps.sites.outputs.list != ''
+        with:
+          packages: |
+            any::pak
+            any::renv
+            any::rmarkdown
+            any::knitr
+
+      # Install packages referenced by library(), require() or pkg:: in the sites being rendered
+      - name: Install R packages used by the sites
+        if: steps.sites.outputs.list != ''
+        shell: Rscript {0}
+        env:
+          SITES: ${{ steps.sites.outputs.list }}
+        run: |
+          dirs <- file.path("quarto", strsplit(Sys.getenv("SITES"), " ")[[1]])
+          dirs <- dirs[dir.exists(dirs)]
+          deps <- unique(unlist(lapply(dirs, function(d) renv::dependencies(d, progress = FALSE)$Package)))
+          deps <- setdiff(deps, c("R", "base", "stats", "utils", "graphics", "grDevices", "methods", "tools"))
+          if (length(deps)) pak::pak(deps)
+
+      - name: Render sites
+        if: steps.sites.outputs.list != ''
+        env:
+          SITES: ${{ steps.sites.outputs.list }}
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          for name in $SITES; do
+            proj="quarto/$name"
+            rm -rf "docs/$name"
+            if [ ! -f "$proj/_quarto.yml" ]; then
+              echo "$name was removed or is not a Quarto project; removed docs/$name"
+              continue
+            fi
+            echo "::group::Rendering $name"
+            (cd "$proj" && quarto render --output-dir _site)
+            cp -r "$proj/_site" "docs/$name"
+            echo "::endgroup::"
+          done
+
+      # Landing page linking every site, rebuilt each run (no rendering needed)
+      - name: Build index page
+        run: |
+          set -euo pipefail
+          mkdir -p docs
+          touch docs/.nojekyll
+          links=""
+          for f in quarto/*/_quarto.yml; do
+            [ -f "$f" ] || continue
+            name="$(basename "$(dirname "$f")")"
+            [ -d "docs/$name" ] || continue
+            title="$(grep -m1 -E '^\s+title:' "$f" | sed -E 's/^\s+title:\s*//; s/^"//; s/"\s*$//')"
+            links="$links<li><a href=\"$name/\">${title:-$name}</a></li>"
+          done
+          cat > docs/index.html <<EOF
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Vignettes</title>
+          <style>body{font-family:system-ui,sans-serif;max-width:40rem;margin:3rem auto;padding:0 1rem;line-height:1.6}</style>
+          </head>
+          <body>
+          <h1>Vignettes</h1>
+          <ul>$links</ul>
+          </body>
+          </html>
+          EOF
+
+      # Commit the rendered sites and any updated _freeze results
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A docs quarto
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Render Quarto sites [skip ci]"
+          git pull --rebase
+          git push
