@@ -1,0 +1,1396 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="">
+
+<title>Measurement invariance – Worked Examples in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-12757e4b7af482b2d9c5bd8860d2b707.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-b2ec79424e20c0f1fec78fa60be5e1fa.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Worked Examples in R</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./index.html"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_DECISION_TREE.html">
+ <span class="dropdown-text">Regression and Classification Trees</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_LDA.html">
+ <span class="dropdown-text">Linear Discriminant Analysis</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_REGULARIZED_REGRESSION.html">
+ <span class="dropdown-text">Regularized Regression: Ridge, Heteroscedastic Ridge, Lasso, and Elastic Net</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MNIST.html">
+ <span class="dropdown-text">MNIST in Keras</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-psychometrics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Psychometrics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-psychometrics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MEASUREMENT_INVARIANCE.html">
+ <span class="dropdown-text">Measurement invariance</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MULTITRAIT_MULTIMETHOD.html">
+ <span class="dropdown-text">Multitrait Multimethod</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT.html">
+ <span class="dropdown-text">Thurstonian IRT Example</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT_SCORING_GR.html">
+ <span class="dropdown-text">Βαθμολόγηση Thurstonian IRT — Θεωρία και Εφαρμογή</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-adaptive-testing" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Adaptive testing</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-adaptive-testing">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_SIMULATION_catR.html">
+ <span class="dropdown-text">CAT Simulation</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MSTR.html">
+ <span class="dropdown-text">MST</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-statistics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Statistics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-statistics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_PARADOX.html">
+ <span class="dropdown-text">A Gallery of Statistical Paradoxes</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/sedzinfo/vignettes"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#cfa-measurement-invariance" id="toc-cfa-measurement-invariance" class="nav-link active" data-scroll-target="#cfa-measurement-invariance">CFA measurement invariance</a>
+  <ul class="collapse">
+  <li><a href="#data-simulation" id="toc-data-simulation" class="nav-link" data-scroll-target="#data-simulation">Data simulation</a></li>
+  <li><a href="#data-summary" id="toc-data-summary" class="nav-link" data-scroll-target="#data-summary">Data summary</a></li>
+  <li><a href="#model-spesification" id="toc-model-spesification" class="nav-link" data-scroll-target="#model-spesification">Model spesification</a></li>
+  <li><a href="#model-estimates-and-model-fit" id="toc-model-estimates-and-model-fit" class="nav-link" data-scroll-target="#model-estimates-and-model-fit">Model estimates and model fit</a></li>
+  </ul></li>
+  <li><a href="#testing-for-invariance" id="toc-testing-for-invariance" class="nav-link" data-scroll-target="#testing-for-invariance">Testing for invariance</a>
+  <ul class="collapse">
+  <li><a href="#test-for-structural-invariance" id="toc-test-for-structural-invariance" class="nav-link" data-scroll-target="#test-for-structural-invariance">Test for STRUCTURAL INVARIANCE</a></li>
+  <li><a href="#test-for-configural-invariance" id="toc-test-for-configural-invariance" class="nav-link" data-scroll-target="#test-for-configural-invariance">Test for CONFIGURAL INVARIANCE</a></li>
+  <li><a href="#test-for-weak-metric-invariance" id="toc-test-for-weak-metric-invariance" class="nav-link" data-scroll-target="#test-for-weak-metric-invariance">Test for WEAK METRIC INVARIANCE</a></li>
+  <li><a href="#test-for-strong-scalar-invariance" id="toc-test-for-strong-scalar-invariance" class="nav-link" data-scroll-target="#test-for-strong-scalar-invariance">Test for STRONG SCALAR INVARIANCE</a></li>
+  <li><a href="#test-for-strict-error-variance-invariance" id="toc-test-for-strict-error-variance-invariance" class="nav-link" data-scroll-target="#test-for-strict-error-variance-invariance">Test for STRICT ERROR VARIANCE INVARIANCE</a></li>
+  <li><a href="#test-for-factor-variance-covariance" id="toc-test-for-factor-variance-covariance" class="nav-link" data-scroll-target="#test-for-factor-variance-covariance">Test for FACTOR VARIANCE COVARIANCE</a></li>
+  <li><a href="#test-for-factor-mean-invariance" id="toc-test-for-factor-mean-invariance" class="nav-link" data-scroll-target="#test-for-factor-mean-invariance">Test for FACTOR MEAN INVARIANCE</a></li>
+  <li><a href="#comparing-models" id="toc-comparing-models" class="nav-link" data-scroll-target="#comparing-models">Comparing models</a></li>
+  </ul></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<div class="quarto-title-block"><div><h1 class="title">Measurement invariance</h1><button type="button" class="btn code-tools-button dropdown-toggle" id="quarto-code-tools-menu" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi"></i> Code</button><ul class="dropdown-menu dropdown-menu-end" aria-labelelledby="quarto-code-tools-menu"><li><a id="quarto-show-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Show All Code</a></li><li><a id="quarto-hide-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Hide All Code</a></li><li><hr class="dropdown-divider"></li><li><a id="quarto-view-source" class="dropdown-item" href="javascript:void(0)" role="button">View Source</a></li></ul></div></div>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_rwf.R"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="cfa-measurement-invariance" class="level1">
+<h1>CFA measurement invariance</h1>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">graphics.off</span>()</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">width=</span><span class="dv">500</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">digits=</span><span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="data-simulation" class="level2">
+<h2 class="anchored" data-anchor-id="data-simulation">Data simulation</h2>
+<p>The data are simulated in lavaan. From this simulation it is possible to extract 3 factors and 2 arbitrary groups.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># specify population model</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>population_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+.6*x2+.7*x3</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="st">                   f2=~x4+.6*x5+.7*x6</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="st">                   f3=~x7+.6*x8+.7*x9'</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"># generate data</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1234</span>)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>model_data<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">simulateData</span>(population_model,<span class="at">sample.nobs=</span><span class="dv">20000</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>model_data<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="cn">NA</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group1"</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">10001</span><span class="sc">:</span><span class="dv">20000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group2"</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+</section>
+<section id="data-summary" class="level2">
+<h2 class="anchored" data-anchor-id="data-summary">Data summary</h2>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(model_data,<span class="at">name_length=</span><span class="dv">5</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$summary
+  COLLUMNS  ROWS  TOTAL EMPTY null NAN na INF    FIN FACTOR
+1       10 20000 200000     0    0   0  0   0 180000      0
+
+$check
+   NAMES EMPTY null na NOT_NA NAN INF   FIN RANGE  MEAN MEDIAN   SD MIN MAX      MODE      TYPE     CLASS FACTOR
+1     x1     0    0  0  20000   0   0 20000 20000     0   0.01 1.42           numeric    double   numeric  FALSE
+2     x2     0    0  0  20000   0   0 20000 20000     0  -0.01 1.17           numeric    double   numeric  FALSE
+3     x3     0    0  0  20000   0   0 20000 20000  0.01   0.01 1.22           numeric    double   numeric  FALSE
+4     x4     0    0  0  20000   0   0 20000 20000 -0.01  -0.01 1.42           numeric    double   numeric  FALSE
+5     x5     0    0  0  20000   0   0 20000 20000 -0.02  -0.02 1.16           numeric    double   numeric  FALSE
+6     x6     0    0  0  20000   0   0 20000 20000     0   0.01 1.22           numeric    double   numeric  FALSE
+7     x7     0    0  0  20000   0   0 20000 20000     0  -0.01  1.4           numeric    double   numeric  FALSE
+8     x8     0    0  0  20000   0   0 20000 20000     0  -0.01 1.17           numeric    double   numeric  FALSE
+9     x9     0    0  0  20000   0   0 20000 20000     0  -0.01 1.22           numeric    double   numeric  FALSE
+10 group     0    0  0  20000   0   0     0     2    NA     NA   NA         character character character  FALSE</code></pre>
+</div>
+</div>
+</section>
+<section id="model-spesification" class="level2">
+<h2 class="anchored" data-anchor-id="model-spesification">Model spesification</h2>
+<p>The spesified model is shown in the figure bellow.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>bf_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+x2+x3</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="st">           f2=~x4+x5+x6</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="st">           f3=~x7+x8+x9'</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(bf_model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>f1=~x1+x2+x3
+           f2=~x4+x5+x6
+           f3=~x7+x8+x9</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>bfa<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bfa,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_MEASUREMENT_INVARIANCE_files/figure-html/spesification-1.png" class="quarto-figure quarto-figure-center figure-img" width="1000" height="500"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="model-estimates-and-model-fit" class="level2">
+<h2 class="anchored" data-anchor-id="model-estimates-and-model-fit">Model estimates and model fit</h2>
+<p>Model estimates are provided by three main matrices: <br> 1. The lambda matrix representing factor loadings <br> 2. The theta matrix representing standard errors for items in the diagonal, and error covariances between items in the off diagonal <br> 3. The psi matrix representing covariances between factors <br></p>
+<p>Model estimates are derived from a converged CFA model which in turn can produce a covariance matrix by performing these computations: covariance=lambda*psi+theta, which are the estimated data. In addition, a covariance matrix can be computed directly from item responses, which are the observed data. Because of that, we can compare the covariance matrix estimated from the model and the covariance matrix computed from item responses. In a good model, these two matrices should have similar values. Fit indices, shown bellow quantify model fit. There is conflicting information and several opinions on critical values of fit indices. In our case we consider good model fit to be indicated by: <br> 1. RMSEA &lt; .07 <br> 2. CFI &gt; .9 <br> 3. TLI &gt; .9 <br> 4. SRMR &lt; .8 <br> 5. GFI &gt; .95 <br></p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bfa,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>rmsea   cfi   tli   rni   rfi   ifi  srmr   gfi 
+0.000 1.000 1.000 1.000 0.999 1.000 0.004 1.000 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bfa,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$lambda
+      f1    f2    f3
+x1 1.000 0.000 0.000
+x2 0.598 0.000 0.000
+x3 0.715 0.000 0.000
+x4 0.000 1.000 0.000
+x5 0.000 0.609 0.000
+x6 0.000 0.693 0.000
+x7 0.000 0.000 1.000
+x8 0.000 0.000 0.621
+x9 0.000 0.000 0.687
+
+$theta
+      x1    x2    x3    x4    x5    x6    x7    x8    x9
+x1 1.032                                                
+x2 0.000 1.009                                          
+x3 0.000 0.000 0.979                                    
+x4 0.000 0.000 0.000 1.001                              
+x5 0.000 0.000 0.000 0.000 0.983                        
+x6 0.000 0.000 0.000 0.000 0.000 0.997                  
+x7 0.000 0.000 0.000 0.000 0.000 0.000 0.971            
+x8 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.978      
+x9 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 1.012
+
+$psi
+       f1     f2     f3
+f1  0.982              
+f2 -0.009  1.007       
+f3 -0.008 -0.004  0.996</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="testing-for-invariance" class="level1">
+<h1>Testing for invariance</h1>
+<p>We perform 2 seperate CFA parameter estimations for each group. If these models display significantly different lambda, theta, and psi estimates, that suggests non invariant models.</p>
+<section id="test-for-structural-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-structural-invariance">Test for STRUCTURAL INVARIANCE</h2>
+<p>For structural invariance, we create 2 models one using Group1 data, the other using the Group2 data, and their respective fit indices are inspected.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the first group responses</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>ft<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group1"</span>,])</span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the second group responses</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>st<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group2"</span>,])</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">Group1=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(ft,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)),</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>           <span class="at">Group2=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(st,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>      Group1  Group2
+rmsea 0.0000 0.00512
+cfi   1.0000 0.99941
+tli   1.0012 0.99912
+rni   1.0008 0.99941
+rfi   0.9978 0.99575
+ifi   1.0008 0.99941
+srmr  0.0049 0.00749
+gfi   1.0000 0.99986</code></pre>
+</div>
+</div>
+</section>
+<section id="test-for-configural-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-configural-invariance">Test for CONFIGURAL INVARIANCE</h2>
+<p>For configural invariance we spesify a model with 2 groups. This procedure estimates 2 lambda theta psi and mu (intercepts) matrices, for each group. By comparing the two lambda and theta matrices we notice that their values are not identical. The question is if the differences between these values are significantly different. In any case, the configural invariance model bellow displays similar fit indices compared with the structural invariance models above. But more importantly, according to fit indices the model fits the data and this suggests configural invariance.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co"># CONFIGURAL INVARIANCE</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>bf<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>rmsea   cfi   tli   rni   rfi   ifi  srmr   gfi 
+0.000 1.000 1.000 1.000 0.997 1.000 0.006 1.000 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bf,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$Group1
+$Group1$lambda
+      f1    f2    f3
+x1 1.000 0.000 0.000
+x2 0.607 0.000 0.000
+x3 0.740 0.000 0.000
+x4 0.000 1.000 0.000
+x5 0.000 0.609 0.000
+x6 0.000 0.704 0.000
+x7 0.000 0.000 1.000
+x8 0.000 0.000 0.618
+x9 0.000 0.000 0.680
+
+$Group1$theta
+      x1    x2    x3    x4    x5    x6    x7    x8    x9
+x1 1.027                                                
+x2 0.000 1.002                                          
+x3 0.000 0.000 0.965                                    
+x4 0.000 0.000 0.000 0.989                              
+x5 0.000 0.000 0.000 0.000 0.983                        
+x6 0.000 0.000 0.000 0.000 0.000 0.987                  
+x7 0.000 0.000 0.000 0.000 0.000 0.000 0.985            
+x8 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.976      
+x9 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 1.024
+
+$Group1$psi
+       f1     f2     f3
+f1  0.977              
+f2 -0.019  0.995       
+f3 -0.007 -0.022  0.968
+
+$Group1$nu
+   intrcp
+x1  0.004
+x2 -0.012
+x3  0.013
+x4 -0.005
+x5 -0.011
+x6  0.003
+x7 -0.011
+x8 -0.002
+x9 -0.003
+
+$Group1$alpha
+   intrcp
+f1      0
+f2      0
+f3      0
+
+
+$Group2
+$Group2$lambda
+      f1    f2    f3
+x1 1.000 0.000 0.000
+x2 0.588 0.000 0.000
+x3 0.690 0.000 0.000
+x4 0.000 1.000 0.000
+x5 0.000 0.609 0.000
+x6 0.000 0.683 0.000
+x7 0.000 0.000 1.000
+x8 0.000 0.000 0.624
+x9 0.000 0.000 0.692
+
+$Group2$theta
+      x1    x2    x3    x4    x5    x6    x7    x8    x9
+x1 1.035                                                
+x2 0.000 1.016                                          
+x3 0.000 0.000 0.992                                    
+x4 0.000 0.000 0.000 1.014                              
+x5 0.000 0.000 0.000 0.000 0.983                        
+x6 0.000 0.000 0.000 0.000 0.000 1.007                  
+x7 0.000 0.000 0.000 0.000 0.000 0.000 0.957            
+x8 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.980      
+x9 0.000 0.000 0.000 0.000 0.000 0.000 0.000 0.000 1.001
+
+$Group2$psi
+       f1     f2     f3
+f1  0.988              
+f2  0.002  1.018       
+f3 -0.009  0.015  1.024
+
+$Group2$nu
+   intrcp
+x1  0.004
+x2  0.019
+x3  0.004
+x4 -0.014
+x5 -0.022
+x6  0.003
+x7  0.012
+x8  0.003
+x9  0.006
+
+$Group2$alpha
+   intrcp
+f1      0
+f2      0
+f3      0</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>))</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bf,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_MEASUREMENT_INVARIANCE_files/figure-html/configural_invariance-1.png" class="quarto-figure quarto-figure-center figure-img" width="1000" height="500"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>In order to test if differences between estimated matrices among models are significant, we have to create a series of models for which impose equality constraints for parameters between groups. By imposing constraints we impose the estimator procedure to keep a matrix between groups equal. For instance by imposing an equality constraint on loadings, we force the parameter estimator to produce models that have equal lambda matrices between groups. Finally we compare the unconstrained and constrained models to see if they have any differences. If no significant differences exist, this suggest that the models are equivalent between groups and thus the models display measurement invariance.</p>
+</section>
+<section id="test-for-weak-metric-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-weak-metric-invariance">Test for WEAK METRIC INVARIANCE</h2>
+<p>For weak metric invariance we impose a restriction that groups have equal loadings.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a><span class="co"># WEAK METRIC INVARIANCE</span></span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a>bf_metric<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>))</span>
+<span id="cb20-3"><a href="#cb20-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+          Df    AIC    BIC Chisq Chisq diff RMSEA Df diff Pr(&gt;Chisq)
+bf        48 573054 573528  46.0                                    
+bf_metric 54 573045 573472  48.8       2.89     0       6       0.82</code></pre>
+</div>
+</div>
+</section>
+<section id="test-for-strong-scalar-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-strong-scalar-invariance">Test for STRONG SCALAR INVARIANCE</h2>
+<p>For strong scalar invariance we impose the restriction that groups have equal loadings and intercepts and then compare the strong scalar invariance model with the weak metric invariance model.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="co"># STRONG SCALAR INVARIANCE</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a>bf_scalar<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>))</span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_metric,bf_scalar)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+          Df    AIC    BIC Chisq Chisq diff RMSEA Df diff Pr(&gt;Chisq)
+bf_metric 54 573045 573472  48.8                                    
+bf_scalar 60 573038 573418  54.4       5.53     0       6       0.48</code></pre>
+</div>
+</div>
+</section>
+<section id="test-for-strict-error-variance-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-strict-error-variance-invariance">Test for STRICT ERROR VARIANCE INVARIANCE</h2>
+<p>For strict error variance invariance, we impose the restriction that groups have equal loadings intercepts and residuals.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co"># STRICT ERROR VARIANCE INVARIANCE</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>bf_full_strict<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>))</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_scalar,bf_full_strict)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+               Df    AIC    BIC Chisq Chisq diff RMSEA Df diff Pr(&gt;Chisq)
+bf_scalar      60 573038 573418  54.4                                    
+bf_full_strict 69 573028 573336  61.7       7.36     0       9        0.6</code></pre>
+</div>
+</div>
+</section>
+<section id="test-for-factor-variance-covariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-factor-variance-covariance">Test for FACTOR VARIANCE COVARIANCE</h2>
+<p>For factor variance covariance invariance we impose the restriction that groups have equal loadings intercepts residuals latent variable variances and latent variable covariances.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR VARIANCE COVARIANCE</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>bf_factor_vc<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>))</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_full_strict,bf_factor_vc)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+               Df    AIC    BIC Chisq Chisq diff   RMSEA Df diff Pr(&gt;Chisq)
+bf_full_strict 69 573028 573336  61.7                                      
+bf_factor_vc   75 573025 573285  70.7       8.97 0.00703       6       0.18</code></pre>
+</div>
+</div>
+</section>
+<section id="test-for-factor-mean-invariance" class="level2">
+<h2 class="anchored" data-anchor-id="test-for-factor-mean-invariance">Test for FACTOR MEAN INVARIANCE</h2>
+<p>For factor mean invariance we impose the restriction that groups have equal loadings intercepts and residuals and we impose the restriction that factors have equal variances covariances and means between groups.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR MEAN INVARIANCE</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a>bf_factor_mean<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>,<span class="st">"means"</span>))</span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_factor_vc,bf_factor_mean)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+               Df    AIC    BIC Chisq Chisq diff RMSEA Df diff Pr(&gt;Chisq)
+bf_factor_vc   75 573025 573285  70.7                                    
+bf_factor_mean 78 573020 573257  72.0       1.33     0       3       0.72</code></pre>
+</div>
+</div>
+</section>
+<section id="comparing-models" class="level2">
+<h2 class="anchored" data-anchor-id="comparing-models">Comparing models</h2>
+<p>Finally we compare models using an ANOVA procedure where values above 0.05 indicate no significant differences and thus measurement invariance.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric,bf_scalar,bf_factor_vc,bf_factor_mean,<span class="at">SB.classic=</span><span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Chi-Squared Difference Test
+
+               Df    AIC    BIC Chisq Chisq diff   RMSEA Df diff Pr(&gt;Chisq)
+bf             48 573054 573528  46.0                                      
+bf_metric      54 573045 573472  48.8       2.89 0.00000       6       0.82
+bf_scalar      60 573038 573418  54.4       5.53 0.00000       6       0.48
+bf_factor_vc   75 573025 573285  70.7      16.33 0.00297      15       0.36
+bf_factor_mean 78 573020 573257  72.0       1.33 0.00000       3       0.72</code></pre>
+</div>
+</div>
+<p>In addition, the fit indices for each model above are summarized bellow.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>findex<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a>fit_indices<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="fu">rbind</span>(lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,findex),</span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_metric,findex),</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_scalar,findex),</span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_vc,findex),</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_mean,findex)))</span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="fu">row.names</span>(fit_indices)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"CONFIGURAL INVARIANCE"</span>,</span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"WEAK METRIC INVARIANCE"</span>,</span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRONG SCALAR INVARIANCE"</span>,</span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR VARIANCE COVARIANCE"</span>,</span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR MEAN INVARIANCE"</span>)</span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a>fit_indices</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                           rmsea cfi tli rni   rfi ifi    srmr gfi
+CONFIGURAL INVARIANCE          0   1   1   1 0.997   1 0.00566   1
+WEAK METRIC INVARIANCE         0   1   1   1 0.997   1 0.00588   1
+STRONG SCALAR INVARIANCE       0   1   1   1 0.997   1 0.00619   1
+FACTOR VARIANCE COVARIANCE     0   1   1   1    NA   1 0.00853   1
+FACTOR MEAN INVARIANCE         0   1   1   1    NA   1 0.00865   1</code></pre>
+</div>
+</div>
+
+
+<!-- -->
+
+</section>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/sedzinfo\.github\.io\/vignettes\/example\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="light">
+<input type="hidden" id="giscus-alt-theme" value="light">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sedzinfo/vignettes";
+    script.dataset.repoId = "R_kgDOU6AfOA";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOU6AfOM4DG8ZY";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb34" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Measurement invariance"</span></span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
+<span id="cb34-9"><a href="#cb34-9" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb34-10"><a href="#cb34-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
+<span id="cb34-11"><a href="#cb34-11" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
+<span id="cb34-12"><a href="#cb34-12" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
+<span id="cb34-13"><a href="#cb34-13" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
+<span id="cb34-14"><a href="#cb34-14" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{Measurement invariance}</span></span>
+<span id="cb34-15"><a href="#cb34-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
+<span id="cb34-16"><a href="#cb34-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
+<span id="cb34-17"><a href="#cb34-17" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb34-18"><a href="#cb34-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-19"><a href="#cb34-19" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb34-20"><a href="#cb34-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-21"><a href="#cb34-21" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb34-22"><a href="#cb34-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_options.R"</span>))</span>
+<span id="cb34-23"><a href="#cb34-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-24"><a href="#cb34-24" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-25"><a href="#cb34-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-26"><a href="#cb34-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-27"><a href="#cb34-27" aria-hidden="true" tabindex="-1"></a><span class="in">```{r load,include=TRUE,echo=TRUE,results=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb34-28"><a href="#cb34-28" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_rwf.R"</span>))</span>
+<span id="cb34-29"><a href="#cb34-29" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-30"><a href="#cb34-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-31"><a href="#cb34-31" aria-hidden="true" tabindex="-1"></a><span class="fu"># CFA measurement invariance</span></span>
+<span id="cb34-32"><a href="#cb34-32" aria-hidden="true" tabindex="-1"></a><span class="in">```{r set-options,echo=TRUE,cache=FALSE}</span></span>
+<span id="cb34-33"><a href="#cb34-33" aria-hidden="true" tabindex="-1"></a><span class="fu">graphics.off</span>()</span>
+<span id="cb34-34"><a href="#cb34-34" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">width=</span><span class="dv">500</span>)</span>
+<span id="cb34-35"><a href="#cb34-35" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">digits=</span><span class="dv">3</span>)</span>
+<span id="cb34-36"><a href="#cb34-36" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-37"><a href="#cb34-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-38"><a href="#cb34-38" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data simulation</span></span>
+<span id="cb34-39"><a href="#cb34-39" aria-hidden="true" tabindex="-1"></a>The data are simulated in lavaan. From this simulation it is possible to extract 3 factors and 2 arbitrary groups.</span>
+<span id="cb34-40"><a href="#cb34-40" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,simulation}</span></span>
+<span id="cb34-41"><a href="#cb34-41" aria-hidden="true" tabindex="-1"></a><span class="co"># specify population model</span></span>
+<span id="cb34-42"><a href="#cb34-42" aria-hidden="true" tabindex="-1"></a>population_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+.6*x2+.7*x3</span></span>
+<span id="cb34-43"><a href="#cb34-43" aria-hidden="true" tabindex="-1"></a><span class="st">                   f2=~x4+.6*x5+.7*x6</span></span>
+<span id="cb34-44"><a href="#cb34-44" aria-hidden="true" tabindex="-1"></a><span class="st">                   f3=~x7+.6*x8+.7*x9'</span></span>
+<span id="cb34-45"><a href="#cb34-45" aria-hidden="true" tabindex="-1"></a><span class="co"># generate data</span></span>
+<span id="cb34-46"><a href="#cb34-46" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1234</span>)</span>
+<span id="cb34-47"><a href="#cb34-47" aria-hidden="true" tabindex="-1"></a>model_data<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">simulateData</span>(population_model,<span class="at">sample.nobs=</span><span class="dv">20000</span>)</span>
+<span id="cb34-48"><a href="#cb34-48" aria-hidden="true" tabindex="-1"></a>model_data<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="cn">NA</span></span>
+<span id="cb34-49"><a href="#cb34-49" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group1"</span></span>
+<span id="cb34-50"><a href="#cb34-50" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">10001</span><span class="sc">:</span><span class="dv">20000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group2"</span></span>
+<span id="cb34-51"><a href="#cb34-51" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-52"><a href="#cb34-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-53"><a href="#cb34-53" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data summary</span></span>
+<span id="cb34-54"><a href="#cb34-54" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,summary}</span></span>
+<span id="cb34-55"><a href="#cb34-55" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(model_data,<span class="at">name_length=</span><span class="dv">5</span>)</span>
+<span id="cb34-56"><a href="#cb34-56" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-57"><a href="#cb34-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-58"><a href="#cb34-58" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model spesification</span></span>
+<span id="cb34-59"><a href="#cb34-59" aria-hidden="true" tabindex="-1"></a>The spesified model is shown in the figure bellow.</span>
+<span id="cb34-60"><a href="#cb34-60" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,spesification,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
+<span id="cb34-61"><a href="#cb34-61" aria-hidden="true" tabindex="-1"></a>bf_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+x2+x3</span></span>
+<span id="cb34-62"><a href="#cb34-62" aria-hidden="true" tabindex="-1"></a><span class="st">           f2=~x4+x5+x6</span></span>
+<span id="cb34-63"><a href="#cb34-63" aria-hidden="true" tabindex="-1"></a><span class="st">           f3=~x7+x8+x9'</span></span>
+<span id="cb34-64"><a href="#cb34-64" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(bf_model)</span>
+<span id="cb34-65"><a href="#cb34-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-66"><a href="#cb34-66" aria-hidden="true" tabindex="-1"></a>bfa<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data)</span>
+<span id="cb34-67"><a href="#cb34-67" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bfa,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
+<span id="cb34-68"><a href="#cb34-68" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-69"><a href="#cb34-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-70"><a href="#cb34-70" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model estimates and model fit</span></span>
+<span id="cb34-71"><a href="#cb34-71" aria-hidden="true" tabindex="-1"></a>Model estimates are provided by three main matrices:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-72"><a href="#cb34-72" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>The lambda matrix representing factor loadings  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-73"><a href="#cb34-73" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>The theta matrix representing standard errors for items in the diagonal, and error covariances between items in the off diagonal  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-74"><a href="#cb34-74" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>The psi matrix representing covariances between factors  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-75"><a href="#cb34-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-76"><a href="#cb34-76" aria-hidden="true" tabindex="-1"></a>Model estimates are derived from a converged CFA model which in turn can produce a covariance matrix by performing these computations: covariance=lambda*psi+theta, which are the estimated data. In addition, a covariance matrix can be computed directly from item responses, which are the observed data. Because of that, we can compare the covariance matrix estimated from the model and the covariance matrix computed from item responses. In a good model, these two matrices should have similar values. Fit indices, shown bellow quantify model fit. There is conflicting information and several opinions on critical values of fit indices. In our case we consider good model fit to be indicated by:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-77"><a href="#cb34-77" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>RMSEA &lt; .07  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-78"><a href="#cb34-78" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>CFI &gt; .9  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-79"><a href="#cb34-79" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>TLI &gt; .9  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-80"><a href="#cb34-80" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>SRMR &lt; .8  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-81"><a href="#cb34-81" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>GFI &gt; .95  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb34-82"><a href="#cb34-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-83"><a href="#cb34-83" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit}</span></span>
+<span id="cb34-84"><a href="#cb34-84" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bfa,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
+<span id="cb34-85"><a href="#cb34-85" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bfa,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
+<span id="cb34-86"><a href="#cb34-86" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-87"><a href="#cb34-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-88"><a href="#cb34-88" aria-hidden="true" tabindex="-1"></a><span class="fu"># Testing for invariance</span></span>
+<span id="cb34-89"><a href="#cb34-89" aria-hidden="true" tabindex="-1"></a>We perform 2 seperate CFA parameter estimations for each group. If these models display significantly different lambda, theta, and psi estimates, that suggests non invariant models.</span>
+<span id="cb34-90"><a href="#cb34-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-91"><a href="#cb34-91" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRUCTURAL INVARIANCE</span></span>
+<span id="cb34-92"><a href="#cb34-92" aria-hidden="true" tabindex="-1"></a>For structural invariance, we create 2 models one using Group1 data, the other using the Group2 data, and their respective fit indices are inspected.</span>
+<span id="cb34-93"><a href="#cb34-93" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,structural_invariance}</span></span>
+<span id="cb34-94"><a href="#cb34-94" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the first group responses</span></span>
+<span id="cb34-95"><a href="#cb34-95" aria-hidden="true" tabindex="-1"></a>ft<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group1"</span>,])</span>
+<span id="cb34-96"><a href="#cb34-96" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the second group responses</span></span>
+<span id="cb34-97"><a href="#cb34-97" aria-hidden="true" tabindex="-1"></a>st<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group2"</span>,])</span>
+<span id="cb34-98"><a href="#cb34-98" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">Group1=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(ft,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)),</span>
+<span id="cb34-99"><a href="#cb34-99" aria-hidden="true" tabindex="-1"></a>           <span class="at">Group2=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(st,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)))</span>
+<span id="cb34-100"><a href="#cb34-100" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-101"><a href="#cb34-101" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-102"><a href="#cb34-102" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for CONFIGURAL INVARIANCE</span></span>
+<span id="cb34-103"><a href="#cb34-103" aria-hidden="true" tabindex="-1"></a>For configural invariance we spesify a model with 2 groups. This procedure estimates 2 lambda theta psi and mu (intercepts) matrices, for each group. By comparing the two lambda and theta matrices we notice that their values are not identical. The question is if the differences between these values are significantly different. In any case, the configural invariance model bellow displays similar fit indices compared with the structural invariance models above. But more importantly, according to fit indices the model fits the data and this suggests configural invariance.</span>
+<span id="cb34-104"><a href="#cb34-104" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,configural_invariance,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
+<span id="cb34-105"><a href="#cb34-105" aria-hidden="true" tabindex="-1"></a><span class="co"># CONFIGURAL INVARIANCE</span></span>
+<span id="cb34-106"><a href="#cb34-106" aria-hidden="true" tabindex="-1"></a>bf<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>)</span>
+<span id="cb34-107"><a href="#cb34-107" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
+<span id="cb34-108"><a href="#cb34-108" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bf,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
+<span id="cb34-109"><a href="#cb34-109" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>))</span>
+<span id="cb34-110"><a href="#cb34-110" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bf,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
+<span id="cb34-111"><a href="#cb34-111" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-112"><a href="#cb34-112" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-113"><a href="#cb34-113" aria-hidden="true" tabindex="-1"></a>In order to test if differences between estimated matrices among models are significant, we have to create a series of models for which impose equality constraints for parameters between groups. By imposing constraints we impose the estimator procedure to keep a matrix between groups equal. For instance by imposing an equality constraint on loadings, we force the parameter estimator to produce models that have equal lambda matrices between groups. Finally we compare the unconstrained and constrained models to see if they have any differences. If no significant differences exist, this suggest that the models are equivalent between groups and thus the models display measurement invariance.</span>
+<span id="cb34-114"><a href="#cb34-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-115"><a href="#cb34-115" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for WEAK METRIC INVARIANCE</span></span>
+<span id="cb34-116"><a href="#cb34-116" aria-hidden="true" tabindex="-1"></a>For weak metric invariance we impose a restriction that groups have equal loadings.</span>
+<span id="cb34-117"><a href="#cb34-117" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,weak_metric_invariance}</span></span>
+<span id="cb34-118"><a href="#cb34-118" aria-hidden="true" tabindex="-1"></a><span class="co"># WEAK METRIC INVARIANCE</span></span>
+<span id="cb34-119"><a href="#cb34-119" aria-hidden="true" tabindex="-1"></a>bf_metric<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>))</span>
+<span id="cb34-120"><a href="#cb34-120" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric)</span>
+<span id="cb34-121"><a href="#cb34-121" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-122"><a href="#cb34-122" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-123"><a href="#cb34-123" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRONG SCALAR INVARIANCE</span></span>
+<span id="cb34-124"><a href="#cb34-124" aria-hidden="true" tabindex="-1"></a>For strong scalar invariance we impose the restriction that groups have equal loadings and intercepts and then compare the strong scalar invariance model with the weak metric invariance model.</span>
+<span id="cb34-125"><a href="#cb34-125" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strong_scalar_invarience}</span></span>
+<span id="cb34-126"><a href="#cb34-126" aria-hidden="true" tabindex="-1"></a><span class="co"># STRONG SCALAR INVARIANCE</span></span>
+<span id="cb34-127"><a href="#cb34-127" aria-hidden="true" tabindex="-1"></a>bf_scalar<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>))</span>
+<span id="cb34-128"><a href="#cb34-128" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_metric,bf_scalar)</span>
+<span id="cb34-129"><a href="#cb34-129" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-130"><a href="#cb34-130" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-131"><a href="#cb34-131" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRICT ERROR VARIANCE INVARIANCE</span></span>
+<span id="cb34-132"><a href="#cb34-132" aria-hidden="true" tabindex="-1"></a>For strict error variance invariance, we impose the restriction that groups have equal loadings intercepts and residuals.</span>
+<span id="cb34-133"><a href="#cb34-133" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strict_error_invariance}</span></span>
+<span id="cb34-134"><a href="#cb34-134" aria-hidden="true" tabindex="-1"></a><span class="co"># STRICT ERROR VARIANCE INVARIANCE</span></span>
+<span id="cb34-135"><a href="#cb34-135" aria-hidden="true" tabindex="-1"></a>bf_full_strict<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>))</span>
+<span id="cb34-136"><a href="#cb34-136" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_scalar,bf_full_strict)</span>
+<span id="cb34-137"><a href="#cb34-137" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-138"><a href="#cb34-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-139"><a href="#cb34-139" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR VARIANCE COVARIANCE</span></span>
+<span id="cb34-140"><a href="#cb34-140" aria-hidden="true" tabindex="-1"></a>For factor variance covariance invariance we impose the restriction that groups have equal loadings intercepts residuals latent variable variances and latent variable covariances.</span>
+<span id="cb34-141"><a href="#cb34-141" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_variance_covariance}</span></span>
+<span id="cb34-142"><a href="#cb34-142" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR VARIANCE COVARIANCE</span></span>
+<span id="cb34-143"><a href="#cb34-143" aria-hidden="true" tabindex="-1"></a>bf_factor_vc<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>))</span>
+<span id="cb34-144"><a href="#cb34-144" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_full_strict,bf_factor_vc)</span>
+<span id="cb34-145"><a href="#cb34-145" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-146"><a href="#cb34-146" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-147"><a href="#cb34-147" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR MEAN INVARIANCE</span></span>
+<span id="cb34-148"><a href="#cb34-148" aria-hidden="true" tabindex="-1"></a>For factor mean invariance we impose the restriction that groups have equal loadings intercepts and residuals and we impose the restriction that factors have equal variances covariances and means between groups.</span>
+<span id="cb34-149"><a href="#cb34-149" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_mean_invariance}</span></span>
+<span id="cb34-150"><a href="#cb34-150" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR MEAN INVARIANCE</span></span>
+<span id="cb34-151"><a href="#cb34-151" aria-hidden="true" tabindex="-1"></a>bf_factor_mean<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>,<span class="st">"means"</span>))</span>
+<span id="cb34-152"><a href="#cb34-152" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_factor_vc,bf_factor_mean)</span>
+<span id="cb34-153"><a href="#cb34-153" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-154"><a href="#cb34-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-155"><a href="#cb34-155" aria-hidden="true" tabindex="-1"></a><span class="fu">## Comparing models</span></span>
+<span id="cb34-156"><a href="#cb34-156" aria-hidden="true" tabindex="-1"></a>Finally we compare models using an ANOVA procedure where values above 0.05 indicate no significant differences and thus measurement invariance.</span>
+<span id="cb34-157"><a href="#cb34-157" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,compare_models}</span></span>
+<span id="cb34-158"><a href="#cb34-158" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric,bf_scalar,bf_factor_vc,bf_factor_mean,<span class="at">SB.classic=</span><span class="cn">TRUE</span>)</span>
+<span id="cb34-159"><a href="#cb34-159" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb34-160"><a href="#cb34-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-161"><a href="#cb34-161" aria-hidden="true" tabindex="-1"></a>In addition, the fit indices for each model above are summarized bellow.</span>
+<span id="cb34-162"><a href="#cb34-162" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit_indices}</span></span>
+<span id="cb34-163"><a href="#cb34-163" aria-hidden="true" tabindex="-1"></a>findex<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)</span>
+<span id="cb34-164"><a href="#cb34-164" aria-hidden="true" tabindex="-1"></a>fit_indices<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="fu">rbind</span>(lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,findex),</span>
+<span id="cb34-165"><a href="#cb34-165" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_metric,findex),</span>
+<span id="cb34-166"><a href="#cb34-166" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_scalar,findex),</span>
+<span id="cb34-167"><a href="#cb34-167" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_vc,findex),</span>
+<span id="cb34-168"><a href="#cb34-168" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_mean,findex)))</span>
+<span id="cb34-169"><a href="#cb34-169" aria-hidden="true" tabindex="-1"></a><span class="fu">row.names</span>(fit_indices)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"CONFIGURAL INVARIANCE"</span>,</span>
+<span id="cb34-170"><a href="#cb34-170" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"WEAK METRIC INVARIANCE"</span>,</span>
+<span id="cb34-171"><a href="#cb34-171" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRONG SCALAR INVARIANCE"</span>,</span>
+<span id="cb34-172"><a href="#cb34-172" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR VARIANCE COVARIANCE"</span>,</span>
+<span id="cb34-173"><a href="#cb34-173" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR MEAN INVARIANCE"</span>)</span>
+<span id="cb34-174"><a href="#cb34-174" aria-hidden="true" tabindex="-1"></a>fit_indices</span>
+<span id="cb34-175"><a href="#cb34-175" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+</div></div></div></div></div>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

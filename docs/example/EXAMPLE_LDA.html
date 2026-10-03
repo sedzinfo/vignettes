@@ -1,0 +1,1527 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="">
+
+<title>Linear Discriminant Analysis – Worked Examples in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-12757e4b7af482b2d9c5bd8860d2b707.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-b2ec79424e20c0f1fec78fa60be5e1fa.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Worked Examples in R</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./index.html"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_DECISION_TREE.html">
+ <span class="dropdown-text">Regression and Classification Trees</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_LDA.html">
+ <span class="dropdown-text">Linear Discriminant Analysis</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_REGULARIZED_REGRESSION.html">
+ <span class="dropdown-text">Regularized Regression: Ridge, Heteroscedastic Ridge, Lasso, and Elastic Net</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MNIST.html">
+ <span class="dropdown-text">MNIST in Keras</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-psychometrics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Psychometrics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-psychometrics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MEASUREMENT_INVARIANCE.html">
+ <span class="dropdown-text">Measurement invariance</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MULTITRAIT_MULTIMETHOD.html">
+ <span class="dropdown-text">Multitrait Multimethod</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT.html">
+ <span class="dropdown-text">Thurstonian IRT Example</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT_SCORING_GR.html">
+ <span class="dropdown-text">Βαθμολόγηση Thurstonian IRT — Θεωρία και Εφαρμογή</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-adaptive-testing" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Adaptive testing</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-adaptive-testing">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_SIMULATION_catR.html">
+ <span class="dropdown-text">CAT Simulation</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MSTR.html">
+ <span class="dropdown-text">MST</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-statistics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Statistics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-statistics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_PARADOX.html">
+ <span class="dropdown-text">A Gallery of Statistical Paradoxes</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/sedzinfo/vignettes"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#theoretical-background" id="toc-theoretical-background" class="nav-link active" data-scroll-target="#theoretical-background">Theoretical Background</a></li>
+  <li><a href="#dataset-infert" id="toc-dataset-infert" class="nav-link" data-scroll-target="#dataset-infert">Dataset — <code>infert</code></a></li>
+  <li><a href="#model-specification" id="toc-model-specification" class="nav-link" data-scroll-target="#model-specification">Model Specification</a></li>
+  <li><a href="#results" id="toc-results" class="nav-link" data-scroll-target="#results">Results</a>
+  <ul class="collapse">
+  <li><a href="#prior-probabilities-and-class-counts" id="toc-prior-probabilities-and-class-counts" class="nav-link" data-scroll-target="#prior-probabilities-and-class-counts">Prior Probabilities and Class Counts</a></li>
+  <li><a href="#class-means-group-centroids" id="toc-class-means-group-centroids" class="nav-link" data-scroll-target="#class-means-group-centroids">Class Means (Group Centroids)</a></li>
+  <li><a href="#discriminant-function-coefficients" id="toc-discriminant-function-coefficients" class="nav-link" data-scroll-target="#discriminant-function-coefficients">Discriminant Function Coefficients</a></li>
+  <li><a href="#model-description-singular-values" id="toc-model-description-singular-values" class="nav-link" data-scroll-target="#model-description-singular-values">Model Description — Singular Values</a></li>
+  <li><a href="#discriminant-scores" id="toc-discriminant-scores" class="nav-link" data-scroll-target="#discriminant-scores">Discriminant Scores</a></li>
+  </ul></li>
+  <li><a href="#classification-performance" id="toc-classification-performance" class="nav-link" data-scroll-target="#classification-performance">Classification Performance</a>
+  <ul class="collapse">
+  <li><a href="#confusion-matrix-resubstitution" id="toc-confusion-matrix-resubstitution" class="nav-link" data-scroll-target="#confusion-matrix-resubstitution">Confusion Matrix (Resubstitution)</a></li>
+  <li><a href="#posterior-probabilities" id="toc-posterior-probabilities" class="nav-link" data-scroll-target="#posterior-probabilities">Posterior Probabilities</a></li>
+  </ul></li>
+  <li><a href="#second-example-iris-dataset" id="toc-second-example-iris-dataset" class="nav-link" data-scroll-target="#second-example-iris-dataset">Second Example — Iris Dataset</a>
+  <ul class="collapse">
+  <li><a href="#proportion-of-trace" id="toc-proportion-of-trace" class="nav-link" data-scroll-target="#proportion-of-trace">Proportion of Trace</a></li>
+  <li><a href="#discriminant-space-plot" id="toc-discriminant-space-plot" class="nav-link" data-scroll-target="#discriminant-space-plot">Discriminant Space Plot</a></li>
+  <li><a href="#classification-performance-1" id="toc-classification-performance-1" class="nav-link" data-scroll-target="#classification-performance-1">Classification Performance</a></li>
+  </ul></li>
+  <li><a href="#references" id="toc-references" class="nav-link" data-scroll-target="#references">References</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<div class="quarto-title-block"><div><h1 class="title">Linear Discriminant Analysis</h1><button type="button" class="btn code-tools-button dropdown-toggle" id="quarto-code-tools-menu" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi"></i> Code</button><ul class="dropdown-menu dropdown-menu-end" aria-labelelledby="quarto-code-tools-menu"><li><a id="quarto-show-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Show All Code</a></li><li><a id="quarto-hide-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Hide All Code</a></li><li><hr class="dropdown-divider"></li><li><a id="quarto-view-source" class="dropdown-item" href="javascript:void(0)" role="button">View Source</a></li></ul></div></div>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<hr>
+<section id="theoretical-background" class="level2">
+<h2 class="anchored" data-anchor-id="theoretical-background">Theoretical Background</h2>
+<p><strong>Linear Discriminant Analysis (LDA)</strong> is a supervised classification and dimensionality reduction technique introduced by Fisher (1936). Given <span class="math inline">\(K\)</span> classes and <span class="math inline">\(p\)</span> predictors, LDA finds a set of linear combinations of the predictors — called <strong>discriminant functions</strong> — that maximise the ratio of <em>between-class variance</em> to <em>within-class variance</em>.</p>
+<p>Formally, the <span class="math inline">\(k\)</span>-th discriminant function is:</p>
+<p><span class="math display">\[z_k = \mathbf{a}_k^\top \mathbf{x}\]</span></p>
+<p>where <span class="math inline">\(\mathbf{a}_k\)</span> is the vector of discriminant coefficients (the <em>scaling</em> matrix returned by <code>MASS::lda</code>) and <span class="math inline">\(\mathbf{x}\)</span> is the vector of predictor values for an observation. For <span class="math inline">\(K\)</span> classes there are at most <span class="math inline">\(\min(K-1, p)\)</span> discriminant functions.</p>
+<p><strong>Classification</strong> is performed by assigning each observation to the class whose centroid (in the discriminant space) is closest, weighted by the prior class probabilities:</p>
+<p><span class="math display">\[\hat{y} = \arg\max_k \left[ \log \pi_k - \tfrac{1}{2} \delta_k^2(\mathbf{x}) \right]\]</span></p>
+<p>where <span class="math inline">\(\pi_k\)</span> is the prior probability of class <span class="math inline">\(k\)</span> and <span class="math inline">\(\delta_k^2(\mathbf{x})\)</span> is the Mahalanobis distance from <span class="math inline">\(\mathbf{x}\)</span> to the <span class="math inline">\(k\)</span>-th class centroid.</p>
+<p><strong>Key assumptions:</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Assumption</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Multivariate normality</td>
+<td>Predictors follow a multivariate normal distribution within each class</td>
+</tr>
+<tr class="even">
+<td>Homogeneity of covariance</td>
+<td>All classes share the same covariance matrix <span class="math inline">\(\boldsymbol{\Sigma}\)</span> (relaxed in QDA)</td>
+</tr>
+<tr class="odd">
+<td>No perfect multicollinearity</td>
+<td>Predictors must not be linearly dependent</td>
+</tr>
+<tr class="even">
+<td>Adequate sample size</td>
+<td>At least <span class="math inline">\(p + 1\)</span> observations per class recommended</td>
+</tr>
+</tbody>
+</table>
+<p>The <strong>singular values</strong> (SVD) returned by <code>MASS::lda</code> quantify the importance of each discriminant function: larger values indicate greater between-class separation relative to within-class scatter.</p>
+<hr>
+</section>
+<section id="dataset-infert" class="level2">
+<h2 class="anchored" data-anchor-id="dataset-infert">Dataset — <code>infert</code></h2>
+<p>The <code>infert</code> dataset (available in base R) is drawn from a matched case-control study on secondary infertility. It contains data from 248 women and examines whether a history of induced or spontaneous abortions is associated with infertility.</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Variable</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>case</code></td>
+<td><strong>Outcome</strong> — 1 = infertile case, 0 = fertile control</td>
+</tr>
+<tr class="even">
+<td><code>education</code></td>
+<td>Educational attainment (0–5 yrs, 6–11 yrs, 12+ yrs)</td>
+</tr>
+<tr class="odd">
+<td><code>age</code></td>
+<td>Age at time of interview</td>
+</tr>
+<tr class="even">
+<td><code>parity</code></td>
+<td>Number of prior pregnancies carried to term</td>
+</tr>
+<tr class="odd">
+<td><code>induced</code></td>
+<td>Number of prior induced abortions (0, 1, 2+)</td>
+</tr>
+<tr class="even">
+<td><code>spontaneous</code></td>
+<td>Number of prior spontaneous abortions (0, 1, 2+)</td>
+</tr>
+<tr class="odd">
+<td><code>stratum</code></td>
+<td>Matching stratum identifier</td>
+</tr>
+<tr class="even">
+<td><code>pooled.stratum</code></td>
+<td>Pooled stratum for stratified analysis</td>
+</tr>
+</tbody>
+</table>
+<p>The classification goal is to correctly assign each woman to the infertile or fertile group based on her reproductive history and demographics.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(infert)</span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Class balance</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"Class distribution (case):</span><span class="sc">\n</span><span class="st">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Class distribution (case):</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">table</span>(infert<span class="sc">$</span>case))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+  0   1 
+165  83 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">Prevalence: %.1f%% cases</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(infert<span class="sc">$</span>case)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Prevalence: 33.5% cases</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Visual overview: induced and spontaneous abortions by case status</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(infert, <span class="fu">aes</span>(<span class="at">x=</span><span class="fu">factor</span>(induced), <span class="at">fill=</span><span class="fu">factor</span>(case))) <span class="sc">+</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position=</span><span class="st">"dodge"</span>) <span class="sc">+</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>), <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)) <span class="sc">+</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Induced abortions by case status"</span>,</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Number of induced abortions"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(infert, <span class="fu">aes</span>(<span class="at">x=</span><span class="fu">factor</span>(spontaneous), <span class="at">fill=</span><span class="fu">factor</span>(case))) <span class="sc">+</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position=</span><span class="st">"dodge"</span>) <span class="sc">+</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>), <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)) <span class="sc">+</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Spontaneous abortions by case status"</span>,</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Number of spontaneous abortions"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_multiplot</span>(p1, p2, <span class="at">cols=</span><span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_LDA_files/figure-html/data_overview-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="3000"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>[[1]]</code></pre>
+</div>
+</div>
+<hr>
+</section>
+<section id="model-specification" class="level2">
+<h2 class="anchored" data-anchor-id="model-specification">Model Specification</h2>
+<p>We fit LDA using all available predictors to discriminate infertile cases from controls. Because there are only two classes (<span class="math inline">\(K = 2\)</span>), LDA produces a single discriminant function (<span class="math inline">\(K - 1 = 1\)</span>).</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>model <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">lda</span>(case <span class="sc">~</span> ., <span class="at">data=</span>infert)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<hr>
+</section>
+<section id="results" class="level2">
+<h2 class="anchored" data-anchor-id="results">Results</h2>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">report_lda</span>(<span class="at">model=</span>model)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="prior-probabilities-and-class-counts" class="level3">
+<h3 class="anchored" data-anchor-id="prior-probabilities-and-class-counts">Prior Probabilities and Class Counts</h3>
+<p>Prior probabilities reflect the proportion of each class in the training data. LDA uses these priors to penalise or favour predictions toward a class based on its base rate. Because the two classes are balanced by design (matched case-control study), priors are approximately equal.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>prior_counts</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>      prior counts mean.education6.11yrs mean.education12..yrs mean.age mean.parity mean.induced mean.spontaneous mean.stratum mean.pooled.stratum
+0 0.6653226    165             0.4848485             0.4666667 31.49091    2.084848    0.5636364        0.3878788     41.80606            33.52121
+1 0.3346774     83             0.4819277             0.4698795 31.53012    2.108434    0.5903614        0.9518072     42.00000            33.69880</code></pre>
+</div>
+</div>
+</section>
+<section id="class-means-group-centroids" class="level3">
+<h3 class="anchored" data-anchor-id="class-means-group-centroids">Class Means (Group Centroids)</h3>
+<p>The group means show the average value of each predictor in each class. Large differences between class means on a predictor indicate that it is likely to be a strong discriminator. Here, <code>spontaneous</code> and <code>induced</code> both show notably higher means in the case group.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(result<span class="sc">$</span>means, <span class="dv">3</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  education6-11yrs education12+ yrs    age parity induced spontaneous stratum pooled.stratum
+0            0.485            0.467 31.491  2.085   0.564       0.388  41.806         33.521
+1            0.482            0.470 31.530  2.108   0.590       0.952  42.000         33.699</code></pre>
+</div>
+</div>
+</section>
+<section id="discriminant-function-coefficients" class="level3">
+<h3 class="anchored" data-anchor-id="discriminant-function-coefficients">Discriminant Function Coefficients</h3>
+<p>The coefficients (the <em>scaling</em> matrix) define the linear combination of predictors that maximises class separation. Larger absolute values indicate a stronger contribution to discrimination. Coefficients are analogous to standardised regression coefficients but optimised for class separation rather than prediction error.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(result<span class="sc">$</span>coeficients, <span class="dv">4</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                     LD1
+education6-11yrs  0.7502
+education12+ yrs  2.0488
+age               0.0630
+parity           -0.4574
+induced           1.1616
+spontaneous       1.9802
+stratum          -0.0019
+pooled.stratum   -0.0521</code></pre>
+</div>
+</div>
+<p>Positive coefficients push scores toward the infertile case class; negative coefficients push toward the control class. <code>spontaneous</code> and <code>induced</code> carry the largest positive weights, consistent with the clinical hypothesis that prior abortion history is associated with secondary infertility.</p>
+</section>
+<section id="model-description-singular-values" class="level3">
+<h3 class="anchored" data-anchor-id="model-description-singular-values">Model Description — Singular Values</h3>
+<p>The singular value (SVD) of the single discriminant function quantifies the ratio of between-class to within-class standard deviation on that function. A value greater than 1 indicates that the classes are separated by more than one within-class standard deviation — a practically meaningful separation.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>model_description</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  Observations      SDV
+1          248 8.428289</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">Variance explained by LD1: 100%% (only one function for K=2)</span><span class="sc">\n</span><span class="st">"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Variance explained by LD1: 100% (only one function for K=2)</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Between/within-class SD ratio: %.4f</span><span class="sc">\n</span><span class="st">"</span>, result<span class="sc">$</span>model_description<span class="sc">$</span>SDV))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Between/within-class SD ratio: 8.4283</code></pre>
+</div>
+</div>
+</section>
+<section id="discriminant-scores" class="level3">
+<h3 class="anchored" data-anchor-id="discriminant-scores">Discriminant Scores</h3>
+<p>We can project all observations onto the single discriminant axis and visualise the overlap between classes. Good discrimination appears as clearly separated distributions.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>scores <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>x</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>df_scores <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">LD1=</span>scores[,<span class="dv">1</span>], <span class="at">case=</span><span class="fu">factor</span>(infert<span class="sc">$</span>case, <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)))</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_scores, <span class="fu">aes</span>(<span class="at">x=</span>LD1, <span class="at">fill=</span>case)) <span class="sc">+</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">alpha=</span><span class="fl">0.55</span>) <span class="sc">+</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept=</span><span class="dv">0</span>, <span class="at">linetype=</span><span class="st">"dashed"</span>, <span class="at">colour=</span><span class="st">"grey40"</span>) <span class="sc">+</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Distribution of discriminant scores (LD1)"</span>,</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"Vertical dashed line = decision boundary at 0"</span>,</span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Linear Discriminant 1"</span>, <span class="at">y=</span><span class="st">"Density"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_LDA_files/figure-html/scores_plot-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The degree of overlap between the two distributions reflects classification uncertainty. A clear bimodal separation would indicate near-perfect discrimination; substantial overlap signals limited discriminating power.</p>
+<hr>
+</section>
+</section>
+<section id="classification-performance" class="level2">
+<h2 class="anchored" data-anchor-id="classification-performance">Classification Performance</h2>
+<section id="confusion-matrix-resubstitution" class="level3">
+<h3 class="anchored" data-anchor-id="confusion-matrix-resubstitution">Confusion Matrix (Resubstitution)</h3>
+<p>The confusion matrix below shows how well the model classifies the <em>training</em> observations. Because this is a resubstitution estimate (fitted and evaluated on the same data), it is optimistically biased — it overestimates true generalisability.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>cmatrix</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>         0     1    2    sum    p
+0   146.00 42.00 0.00 188.00 0.78
+1    19.00 41.00 0.00  60.00 0.68
+2     0.00  0.00 0.00   0.00 0.00
+sum 165.00 83.00 0.00 248.00 1.00
+p     0.88  0.49 0.00   1.00 0.75</code></pre>
+</div>
+</div>
+<p>Each cell shows the percentage of observations in the observed class (rows) that were assigned to the predicted class (columns). The diagonal gives the per-class accuracy; off-diagonal cells are misclassification rates.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Overall accuracy from the confusion matrix</span></span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>pred_class <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>class</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>obs_class  <span class="ot">&lt;-</span> <span class="fu">factor</span>(infert<span class="sc">$</span>case)</span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>acc <span class="ot">&lt;-</span> <span class="fu">mean</span>(pred_class <span class="sc">==</span> obs_class)</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Overall resubstitution accuracy: %.1f%%</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> acc))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Overall resubstitution accuracy: 75.4%</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Baseline (majority class):        %.1f%%</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">max</span>(<span class="fu">prop.table</span>(<span class="fu">table</span>(infert<span class="sc">$</span>case)))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Baseline (majority class):        66.5%</code></pre>
+</div>
+</div>
+</section>
+<section id="posterior-probabilities" class="level3">
+<h3 class="anchored" data-anchor-id="posterior-probabilities">Posterior Probabilities</h3>
+<p>LDA also returns posterior class probabilities for each observation — the probability of belonging to each class given the discriminant score. Values close to 0 or 1 indicate high-confidence assignments; values near 0.5 indicate ambiguity.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>post <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>posterior</span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a>df_post <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">prob_case =</span> post[, <span class="st">"1"</span>],</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">case      =</span> <span class="fu">factor</span>(infert<span class="sc">$</span>case, <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>))</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_post, <span class="fu">aes</span>(<span class="at">x=</span>prob_case, <span class="at">fill=</span>case)) <span class="sc">+</span></span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_histogram</span>(<span class="at">bins=</span><span class="dv">30</span>, <span class="at">position=</span><span class="st">"identity"</span>, <span class="at">alpha=</span><span class="fl">0.6</span>) <span class="sc">+</span></span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept=</span><span class="fl">0.5</span>, <span class="at">linetype=</span><span class="st">"dashed"</span>, <span class="at">colour=</span><span class="st">"grey40"</span>) <span class="sc">+</span></span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Posterior probability of being a case"</span>,</span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"Dashed line = 0.5 decision threshold"</span>,</span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"P(case = 1 | x)"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_LDA_files/figure-html/posteriors-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+</figure>
+</div>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="second-example-iris-dataset" class="level2">
+<h2 class="anchored" data-anchor-id="second-example-iris-dataset">Second Example — Iris Dataset</h2>
+<p>The <code>iris</code> dataset provides a three-class problem (<span class="math inline">\(K = 3\)</span>, <span class="math inline">\(\min(K-1, p) = 2\)</span> discriminant functions) that illustrates multi-class LDA and the interpretation of a two-dimensional discriminant space.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a>model_iris <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">lda</span>(Species <span class="sc">~</span> ., <span class="at">data=</span>iris)</span>
+<span id="cb31-2"><a href="#cb31-2" aria-hidden="true" tabindex="-1"></a>result_iris <span class="ot">&lt;-</span> <span class="fu">report_lda</span>(<span class="at">model=</span>model_iris)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="proportion-of-trace" class="level3">
+<h3 class="anchored" data-anchor-id="proportion-of-trace">Proportion of Trace</h3>
+<p>With two discriminant functions, the <strong>proportion of trace</strong> tells us how much of the total between-class variance each function captures.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>prop_trace <span class="ot">&lt;-</span> model_iris<span class="sc">$</span>svd<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> <span class="fu">sum</span>(model_iris<span class="sc">$</span>svd<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"LD1 proportion of trace:"</span>, <span class="fu">round</span>(prop_trace[<span class="dv">1</span>], <span class="dv">4</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>LD1 proportion of trace: 0.9912 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"LD2 proportion of trace:"</span>, <span class="fu">round</span>(prop_trace[<span class="dv">2</span>], <span class="dv">4</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>LD2 proportion of trace: 0.0088 </code></pre>
+</div>
+</div>
+<p>LD1 typically captures the dominant separation (setosa vs.&nbsp;the other two species); LD2 captures the residual separation between versicolor and virginica.</p>
+</section>
+<section id="discriminant-space-plot" class="level3">
+<h3 class="anchored" data-anchor-id="discriminant-space-plot">Discriminant Space Plot</h3>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>scores_iris <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">predict</span>(model_iris)<span class="sc">$</span>x)</span>
+<span id="cb36-2"><a href="#cb36-2" aria-hidden="true" tabindex="-1"></a>scores_iris<span class="sc">$</span>Species <span class="ot">&lt;-</span> iris<span class="sc">$</span>Species</span>
+<span id="cb36-3"><a href="#cb36-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb36-4"><a href="#cb36-4" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(scores_iris, <span class="fu">aes</span>(<span class="at">x=</span>LD1, <span class="at">y=</span>LD2, <span class="at">colour=</span>Species)) <span class="sc">+</span></span>
+<span id="cb36-5"><a href="#cb36-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha=</span><span class="fl">0.7</span>, <span class="at">size=</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb36-6"><a href="#cb36-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_ellipse</span>(<span class="at">level=</span><span class="fl">0.95</span>, <span class="at">linewidth=</span><span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb36-7"><a href="#cb36-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#4dac26"</span>,<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb36-8"><a href="#cb36-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb36-9"><a href="#cb36-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Iris species in the LDA discriminant space"</span>,</span>
+<span id="cb36-10"><a href="#cb36-10" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"95% concentration ellipses per class"</span>,</span>
+<span id="cb36-11"><a href="#cb36-11" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Linear Discriminant 1"</span>, <span class="at">y=</span><span class="st">"Linear Discriminant 2"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_LDA_files/figure-html/iris_plot-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+</figure>
+</div>
+</div>
+</div>
+</section>
+<section id="classification-performance-1" class="level3">
+<h3 class="anchored" data-anchor-id="classification-performance-1">Classification Performance</h3>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb37-1"><a href="#cb37-1" aria-hidden="true" tabindex="-1"></a>result_iris<span class="sc">$</span>cmatrix</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>           setosa versicolor virginica    sum    p
+setosa      50.00       0.00      0.00  50.00 1.00
+versicolor   0.00      48.00      1.00  49.00 0.98
+virginica    0.00       2.00     49.00  51.00 0.96
+sum         50.00      50.00     50.00 150.00 1.00
+p            1.00       0.96      0.98   1.00 0.98</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>pred_iris <span class="ot">&lt;-</span> <span class="fu">predict</span>(model_iris)<span class="sc">$</span>class</span>
+<span id="cb39-2"><a href="#cb39-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Overall resubstitution accuracy: %.1f%%</span><span class="sc">\n</span><span class="st">"</span>,</span>
+<span id="cb39-3"><a href="#cb39-3" aria-hidden="true" tabindex="-1"></a>            <span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(pred_iris <span class="sc">==</span> iris<span class="sc">$</span>Species)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Overall resubstitution accuracy: 98.0%</code></pre>
+</div>
+</div>
+<hr>
+</section>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>Fisher, R. A. (1936). The use of multiple measurements in taxonomic problems. <em>Annals of Eugenics</em>, <em>7</em>(2), 179–188.</p>
+<p>McLachlan, G. J. (2004). <em>Discriminant Analysis and Statistical Pattern Recognition</em>. Wiley.</p>
+<p>Venables, W. N., &amp; Ripley, B. D. (2002). <em>Modern Applied Statistics with S</em> (4th ed.). Springer.</p>
+
+
+<!-- -->
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/sedzinfo\.github\.io\/vignettes\/example\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="light">
+<input type="hidden" id="giscus-alt-theme" value="light">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sedzinfo/vignettes";
+    script.dataset.repoId = "R_kgDOU6AfOA";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOU6AfOM4DG8ZY";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb41" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb41-2"><a href="#cb41-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Linear Discriminant Analysis"</span></span>
+<span id="cb41-3"><a href="#cb41-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
+<span id="cb41-4"><a href="#cb41-4" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
+<span id="cb41-5"><a href="#cb41-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
+<span id="cb41-6"><a href="#cb41-6" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
+<span id="cb41-7"><a href="#cb41-7" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
+<span id="cb41-8"><a href="#cb41-8" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
+<span id="cb41-9"><a href="#cb41-9" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb41-10"><a href="#cb41-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
+<span id="cb41-11"><a href="#cb41-11" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
+<span id="cb41-12"><a href="#cb41-12" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
+<span id="cb41-13"><a href="#cb41-13" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
+<span id="cb41-14"><a href="#cb41-14" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{LDA}</span></span>
+<span id="cb41-15"><a href="#cb41-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
+<span id="cb41-16"><a href="#cb41-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
+<span id="cb41-17"><a href="#cb41-17" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb41-18"><a href="#cb41-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-19"><a href="#cb41-19" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options, echo=FALSE, warning=FALSE, message=FALSE}</span></span>
+<span id="cb41-20"><a href="#cb41-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-21"><a href="#cb41-21" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb41-22"><a href="#cb41-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_options.R"</span>))</span>
+<span id="cb41-23"><a href="#cb41-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-24"><a href="#cb41-24" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-25"><a href="#cb41-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-26"><a href="#cb41-26" aria-hidden="true" tabindex="-1"></a><span class="in">```{r load, include=FALSE}</span></span>
+<span id="cb41-27"><a href="#cb41-27" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_rwf.R"</span>))</span>
+<span id="cb41-28"><a href="#cb41-28" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb41-29"><a href="#cb41-29" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(reshape2)</span>
+<span id="cb41-30"><a href="#cb41-30" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-31"><a href="#cb41-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-32"><a href="#cb41-32" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-33"><a href="#cb41-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-34"><a href="#cb41-34" aria-hidden="true" tabindex="-1"></a><span class="fu">## Theoretical Background</span></span>
+<span id="cb41-35"><a href="#cb41-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-36"><a href="#cb41-36" aria-hidden="true" tabindex="-1"></a>**Linear Discriminant Analysis (LDA)** is a supervised classification and dimensionality reduction technique introduced by Fisher (1936). Given $K$ classes and $p$ predictors, LDA finds a set of linear combinations of the predictors — called **discriminant functions** — that maximise the ratio of *between-class variance* to *within-class variance*.</span>
+<span id="cb41-37"><a href="#cb41-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-38"><a href="#cb41-38" aria-hidden="true" tabindex="-1"></a>Formally, the $k$-th discriminant function is:</span>
+<span id="cb41-39"><a href="#cb41-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-40"><a href="#cb41-40" aria-hidden="true" tabindex="-1"></a>$$z_k = \mathbf{a}_k^\top \mathbf{x}$$</span>
+<span id="cb41-41"><a href="#cb41-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-42"><a href="#cb41-42" aria-hidden="true" tabindex="-1"></a>where $\mathbf{a}_k$ is the vector of discriminant coefficients (the *scaling* matrix returned by <span class="in">`MASS::lda`</span>) and $\mathbf{x}$ is the vector of predictor values for an observation. For $K$ classes there are at most $\min(K-1, p)$ discriminant functions.</span>
+<span id="cb41-43"><a href="#cb41-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-44"><a href="#cb41-44" aria-hidden="true" tabindex="-1"></a>**Classification** is performed by assigning each observation to the class whose centroid (in the discriminant space) is closest, weighted by the prior class probabilities:</span>
+<span id="cb41-45"><a href="#cb41-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-46"><a href="#cb41-46" aria-hidden="true" tabindex="-1"></a>$$\hat{y} = \arg\max_k \left<span class="co">[</span><span class="ot"> \log \pi_k - \tfrac{1}{2} \delta_k^2(\mathbf{x}) \right</span><span class="co">]</span>$$</span>
+<span id="cb41-47"><a href="#cb41-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-48"><a href="#cb41-48" aria-hidden="true" tabindex="-1"></a>where $\pi_k$ is the prior probability of class $k$ and $\delta_k^2(\mathbf{x})$ is the Mahalanobis distance from $\mathbf{x}$ to the $k$-th class centroid.</span>
+<span id="cb41-49"><a href="#cb41-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-50"><a href="#cb41-50" aria-hidden="true" tabindex="-1"></a>**Key assumptions:**</span>
+<span id="cb41-51"><a href="#cb41-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-52"><a href="#cb41-52" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Assumption <span class="pp">|</span> Description <span class="pp">|</span></span>
+<span id="cb41-53"><a href="#cb41-53" aria-hidden="true" tabindex="-1"></a><span class="pp">|---|---|</span></span>
+<span id="cb41-54"><a href="#cb41-54" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Multivariate normality <span class="pp">|</span> Predictors follow a multivariate normal distribution within each class <span class="pp">|</span></span>
+<span id="cb41-55"><a href="#cb41-55" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Homogeneity of covariance <span class="pp">|</span> All classes share the same covariance matrix $\boldsymbol{\Sigma}$ (relaxed in QDA) <span class="pp">|</span></span>
+<span id="cb41-56"><a href="#cb41-56" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> No perfect multicollinearity <span class="pp">|</span> Predictors must not be linearly dependent <span class="pp">|</span></span>
+<span id="cb41-57"><a href="#cb41-57" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Adequate sample size <span class="pp">|</span> At least $p + 1$ observations per class recommended <span class="pp">|</span></span>
+<span id="cb41-58"><a href="#cb41-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-59"><a href="#cb41-59" aria-hidden="true" tabindex="-1"></a>The **singular values** (SVD) returned by <span class="in">`MASS::lda`</span> quantify the importance of each discriminant function: larger values indicate greater between-class separation relative to within-class scatter.</span>
+<span id="cb41-60"><a href="#cb41-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-61"><a href="#cb41-61" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-62"><a href="#cb41-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-63"><a href="#cb41-63" aria-hidden="true" tabindex="-1"></a><span class="fu">## Dataset — `infert`</span></span>
+<span id="cb41-64"><a href="#cb41-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-65"><a href="#cb41-65" aria-hidden="true" tabindex="-1"></a>The <span class="in">`infert`</span> dataset (available in base R) is drawn from a matched case-control study on secondary infertility. It contains data from 248 women and examines whether a history of induced or spontaneous abortions is associated with infertility.</span>
+<span id="cb41-66"><a href="#cb41-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-67"><a href="#cb41-67" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Variable <span class="pp">|</span> Description <span class="pp">|</span></span>
+<span id="cb41-68"><a href="#cb41-68" aria-hidden="true" tabindex="-1"></a><span class="pp">|---|---|</span></span>
+<span id="cb41-69"><a href="#cb41-69" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`case`</span> <span class="pp">|</span> **Outcome** — 1 = infertile case, 0 = fertile control <span class="pp">|</span></span>
+<span id="cb41-70"><a href="#cb41-70" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`education`</span> <span class="pp">|</span> Educational attainment (0–5 yrs, 6–11 yrs, 12+ yrs) <span class="pp">|</span></span>
+<span id="cb41-71"><a href="#cb41-71" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`age`</span> <span class="pp">|</span> Age at time of interview <span class="pp">|</span></span>
+<span id="cb41-72"><a href="#cb41-72" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`parity`</span> <span class="pp">|</span> Number of prior pregnancies carried to term <span class="pp">|</span></span>
+<span id="cb41-73"><a href="#cb41-73" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`induced`</span> <span class="pp">|</span> Number of prior induced abortions (0, 1, 2+) <span class="pp">|</span></span>
+<span id="cb41-74"><a href="#cb41-74" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`spontaneous`</span> <span class="pp">|</span> Number of prior spontaneous abortions (0, 1, 2+) <span class="pp">|</span></span>
+<span id="cb41-75"><a href="#cb41-75" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`stratum`</span> <span class="pp">|</span> Matching stratum identifier <span class="pp">|</span></span>
+<span id="cb41-76"><a href="#cb41-76" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`pooled.stratum`</span> <span class="pp">|</span> Pooled stratum for stratified analysis <span class="pp">|</span></span>
+<span id="cb41-77"><a href="#cb41-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-78"><a href="#cb41-78" aria-hidden="true" tabindex="-1"></a>The classification goal is to correctly assign each woman to the infertile or fertile group based on her reproductive history and demographics.</span>
+<span id="cb41-79"><a href="#cb41-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-80"><a href="#cb41-80" aria-hidden="true" tabindex="-1"></a><span class="in">```{r data_overview, fig.width=10, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb41-81"><a href="#cb41-81" aria-hidden="true" tabindex="-1"></a><span class="fu">data</span>(infert)</span>
+<span id="cb41-82"><a href="#cb41-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-83"><a href="#cb41-83" aria-hidden="true" tabindex="-1"></a><span class="co"># Class balance</span></span>
+<span id="cb41-84"><a href="#cb41-84" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"Class distribution (case):</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb41-85"><a href="#cb41-85" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(<span class="fu">table</span>(infert<span class="sc">$</span>case))</span>
+<span id="cb41-86"><a href="#cb41-86" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">Prevalence: %.1f%% cases</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(infert<span class="sc">$</span>case)))</span>
+<span id="cb41-87"><a href="#cb41-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-88"><a href="#cb41-88" aria-hidden="true" tabindex="-1"></a><span class="co"># Visual overview: induced and spontaneous abortions by case status</span></span>
+<span id="cb41-89"><a href="#cb41-89" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(infert, <span class="fu">aes</span>(<span class="at">x=</span><span class="fu">factor</span>(induced), <span class="at">fill=</span><span class="fu">factor</span>(case))) <span class="sc">+</span></span>
+<span id="cb41-90"><a href="#cb41-90" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position=</span><span class="st">"dodge"</span>) <span class="sc">+</span></span>
+<span id="cb41-91"><a href="#cb41-91" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>), <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)) <span class="sc">+</span></span>
+<span id="cb41-92"><a href="#cb41-92" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb41-93"><a href="#cb41-93" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Induced abortions by case status"</span>,</span>
+<span id="cb41-94"><a href="#cb41-94" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Number of induced abortions"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb41-95"><a href="#cb41-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-96"><a href="#cb41-96" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(infert, <span class="fu">aes</span>(<span class="at">x=</span><span class="fu">factor</span>(spontaneous), <span class="at">fill=</span><span class="fu">factor</span>(case))) <span class="sc">+</span></span>
+<span id="cb41-97"><a href="#cb41-97" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">position=</span><span class="st">"dodge"</span>) <span class="sc">+</span></span>
+<span id="cb41-98"><a href="#cb41-98" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>), <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)) <span class="sc">+</span></span>
+<span id="cb41-99"><a href="#cb41-99" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb41-100"><a href="#cb41-100" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Spontaneous abortions by case status"</span>,</span>
+<span id="cb41-101"><a href="#cb41-101" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Number of spontaneous abortions"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb41-102"><a href="#cb41-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-103"><a href="#cb41-103" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_multiplot</span>(p1, p2, <span class="at">cols=</span><span class="dv">2</span>)</span>
+<span id="cb41-104"><a href="#cb41-104" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-105"><a href="#cb41-105" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-106"><a href="#cb41-106" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-107"><a href="#cb41-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-108"><a href="#cb41-108" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model Specification</span></span>
+<span id="cb41-109"><a href="#cb41-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-110"><a href="#cb41-110" aria-hidden="true" tabindex="-1"></a>We fit LDA using all available predictors to discriminate infertile cases from controls. Because there are only two classes ($K = 2$), LDA produces a single discriminant function ($K - 1 = 1$).</span>
+<span id="cb41-111"><a href="#cb41-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-112"><a href="#cb41-112" aria-hidden="true" tabindex="-1"></a><span class="in">```{r model}</span></span>
+<span id="cb41-113"><a href="#cb41-113" aria-hidden="true" tabindex="-1"></a>model <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">lda</span>(case <span class="sc">~</span> ., <span class="at">data=</span>infert)</span>
+<span id="cb41-114"><a href="#cb41-114" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-115"><a href="#cb41-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-116"><a href="#cb41-116" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-117"><a href="#cb41-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-118"><a href="#cb41-118" aria-hidden="true" tabindex="-1"></a><span class="fu">## Results</span></span>
+<span id="cb41-119"><a href="#cb41-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-120"><a href="#cb41-120" aria-hidden="true" tabindex="-1"></a><span class="in">```{r lda_report}</span></span>
+<span id="cb41-121"><a href="#cb41-121" aria-hidden="true" tabindex="-1"></a>result <span class="ot">&lt;-</span> <span class="fu">report_lda</span>(<span class="at">model=</span>model)</span>
+<span id="cb41-122"><a href="#cb41-122" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-123"><a href="#cb41-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-124"><a href="#cb41-124" aria-hidden="true" tabindex="-1"></a><span class="fu">### Prior Probabilities and Class Counts</span></span>
+<span id="cb41-125"><a href="#cb41-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-126"><a href="#cb41-126" aria-hidden="true" tabindex="-1"></a>Prior probabilities reflect the proportion of each class in the training data. LDA uses these priors to penalise or favour predictions toward a class based on its base rate. Because the two classes are balanced by design (matched case-control study), priors are approximately equal.</span>
+<span id="cb41-127"><a href="#cb41-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-128"><a href="#cb41-128" aria-hidden="true" tabindex="-1"></a><span class="in">```{r priors}</span></span>
+<span id="cb41-129"><a href="#cb41-129" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>prior_counts</span>
+<span id="cb41-130"><a href="#cb41-130" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-131"><a href="#cb41-131" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-132"><a href="#cb41-132" aria-hidden="true" tabindex="-1"></a><span class="fu">### Class Means (Group Centroids)</span></span>
+<span id="cb41-133"><a href="#cb41-133" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-134"><a href="#cb41-134" aria-hidden="true" tabindex="-1"></a>The group means show the average value of each predictor in each class. Large differences between class means on a predictor indicate that it is likely to be a strong discriminator. Here, <span class="in">`spontaneous`</span> and <span class="in">`induced`</span> both show notably higher means in the case group.</span>
+<span id="cb41-135"><a href="#cb41-135" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-136"><a href="#cb41-136" aria-hidden="true" tabindex="-1"></a><span class="in">```{r means}</span></span>
+<span id="cb41-137"><a href="#cb41-137" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(result<span class="sc">$</span>means, <span class="dv">3</span>)</span>
+<span id="cb41-138"><a href="#cb41-138" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-139"><a href="#cb41-139" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-140"><a href="#cb41-140" aria-hidden="true" tabindex="-1"></a><span class="fu">### Discriminant Function Coefficients</span></span>
+<span id="cb41-141"><a href="#cb41-141" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-142"><a href="#cb41-142" aria-hidden="true" tabindex="-1"></a>The coefficients (the *scaling* matrix) define the linear combination of predictors that maximises class separation. Larger absolute values indicate a stronger contribution to discrimination. Coefficients are analogous to standardised regression coefficients but optimised for class separation rather than prediction error.</span>
+<span id="cb41-143"><a href="#cb41-143" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-144"><a href="#cb41-144" aria-hidden="true" tabindex="-1"></a><span class="in">```{r coefficients}</span></span>
+<span id="cb41-145"><a href="#cb41-145" aria-hidden="true" tabindex="-1"></a><span class="fu">round</span>(result<span class="sc">$</span>coeficients, <span class="dv">4</span>)</span>
+<span id="cb41-146"><a href="#cb41-146" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-147"><a href="#cb41-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-148"><a href="#cb41-148" aria-hidden="true" tabindex="-1"></a>Positive coefficients push scores toward the infertile case class; negative coefficients push toward the control class. <span class="in">`spontaneous`</span> and <span class="in">`induced`</span> carry the largest positive weights, consistent with the clinical hypothesis that prior abortion history is associated with secondary infertility.</span>
+<span id="cb41-149"><a href="#cb41-149" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-150"><a href="#cb41-150" aria-hidden="true" tabindex="-1"></a><span class="fu">### Model Description — Singular Values</span></span>
+<span id="cb41-151"><a href="#cb41-151" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-152"><a href="#cb41-152" aria-hidden="true" tabindex="-1"></a>The singular value (SVD) of the single discriminant function quantifies the ratio of between-class to within-class standard deviation on that function. A value greater than 1 indicates that the classes are separated by more than one within-class standard deviation — a practically meaningful separation.</span>
+<span id="cb41-153"><a href="#cb41-153" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-154"><a href="#cb41-154" aria-hidden="true" tabindex="-1"></a><span class="in">```{r model_desc}</span></span>
+<span id="cb41-155"><a href="#cb41-155" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>model_description</span>
+<span id="cb41-156"><a href="#cb41-156" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"</span><span class="sc">\n</span><span class="st">Variance explained by LD1: 100%% (only one function for K=2)</span><span class="sc">\n</span><span class="st">"</span>))</span>
+<span id="cb41-157"><a href="#cb41-157" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Between/within-class SD ratio: %.4f</span><span class="sc">\n</span><span class="st">"</span>, result<span class="sc">$</span>model_description<span class="sc">$</span>SDV))</span>
+<span id="cb41-158"><a href="#cb41-158" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-159"><a href="#cb41-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-160"><a href="#cb41-160" aria-hidden="true" tabindex="-1"></a><span class="fu">### Discriminant Scores</span></span>
+<span id="cb41-161"><a href="#cb41-161" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-162"><a href="#cb41-162" aria-hidden="true" tabindex="-1"></a>We can project all observations onto the single discriminant axis and visualise the overlap between classes. Good discrimination appears as clearly separated distributions.</span>
+<span id="cb41-163"><a href="#cb41-163" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-164"><a href="#cb41-164" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scores_plot, fig.width=8, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb41-165"><a href="#cb41-165" aria-hidden="true" tabindex="-1"></a>scores <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>x</span>
+<span id="cb41-166"><a href="#cb41-166" aria-hidden="true" tabindex="-1"></a>df_scores <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">LD1=</span>scores[,<span class="dv">1</span>], <span class="at">case=</span><span class="fu">factor</span>(infert<span class="sc">$</span>case, <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>)))</span>
+<span id="cb41-167"><a href="#cb41-167" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-168"><a href="#cb41-168" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_scores, <span class="fu">aes</span>(<span class="at">x=</span>LD1, <span class="at">fill=</span>case)) <span class="sc">+</span></span>
+<span id="cb41-169"><a href="#cb41-169" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_density</span>(<span class="at">alpha=</span><span class="fl">0.55</span>) <span class="sc">+</span></span>
+<span id="cb41-170"><a href="#cb41-170" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb41-171"><a href="#cb41-171" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept=</span><span class="dv">0</span>, <span class="at">linetype=</span><span class="st">"dashed"</span>, <span class="at">colour=</span><span class="st">"grey40"</span>) <span class="sc">+</span></span>
+<span id="cb41-172"><a href="#cb41-172" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb41-173"><a href="#cb41-173" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Distribution of discriminant scores (LD1)"</span>,</span>
+<span id="cb41-174"><a href="#cb41-174" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"Vertical dashed line = decision boundary at 0"</span>,</span>
+<span id="cb41-175"><a href="#cb41-175" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Linear Discriminant 1"</span>, <span class="at">y=</span><span class="st">"Density"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb41-176"><a href="#cb41-176" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-177"><a href="#cb41-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-178"><a href="#cb41-178" aria-hidden="true" tabindex="-1"></a>The degree of overlap between the two distributions reflects classification uncertainty. A clear bimodal separation would indicate near-perfect discrimination; substantial overlap signals limited discriminating power.</span>
+<span id="cb41-179"><a href="#cb41-179" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-180"><a href="#cb41-180" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-181"><a href="#cb41-181" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-182"><a href="#cb41-182" aria-hidden="true" tabindex="-1"></a><span class="fu">## Classification Performance</span></span>
+<span id="cb41-183"><a href="#cb41-183" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-184"><a href="#cb41-184" aria-hidden="true" tabindex="-1"></a><span class="fu">### Confusion Matrix (Resubstitution)</span></span>
+<span id="cb41-185"><a href="#cb41-185" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-186"><a href="#cb41-186" aria-hidden="true" tabindex="-1"></a>The confusion matrix below shows how well the model classifies the *training* observations. Because this is a resubstitution estimate (fitted and evaluated on the same data), it is optimistically biased — it overestimates true generalisability.</span>
+<span id="cb41-187"><a href="#cb41-187" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-188"><a href="#cb41-188" aria-hidden="true" tabindex="-1"></a><span class="in">```{r confusion}</span></span>
+<span id="cb41-189"><a href="#cb41-189" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>cmatrix</span>
+<span id="cb41-190"><a href="#cb41-190" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-191"><a href="#cb41-191" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-192"><a href="#cb41-192" aria-hidden="true" tabindex="-1"></a>Each cell shows the percentage of observations in the observed class (rows) that were assigned to the predicted class (columns). The diagonal gives the per-class accuracy; off-diagonal cells are misclassification rates.</span>
+<span id="cb41-193"><a href="#cb41-193" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-194"><a href="#cb41-194" aria-hidden="true" tabindex="-1"></a><span class="in">```{r accuracy}</span></span>
+<span id="cb41-195"><a href="#cb41-195" aria-hidden="true" tabindex="-1"></a><span class="co"># Overall accuracy from the confusion matrix</span></span>
+<span id="cb41-196"><a href="#cb41-196" aria-hidden="true" tabindex="-1"></a>pred_class <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>class</span>
+<span id="cb41-197"><a href="#cb41-197" aria-hidden="true" tabindex="-1"></a>obs_class  <span class="ot">&lt;-</span> <span class="fu">factor</span>(infert<span class="sc">$</span>case)</span>
+<span id="cb41-198"><a href="#cb41-198" aria-hidden="true" tabindex="-1"></a>acc <span class="ot">&lt;-</span> <span class="fu">mean</span>(pred_class <span class="sc">==</span> obs_class)</span>
+<span id="cb41-199"><a href="#cb41-199" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Overall resubstitution accuracy: %.1f%%</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> acc))</span>
+<span id="cb41-200"><a href="#cb41-200" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Baseline (majority class):        %.1f%%</span><span class="sc">\n</span><span class="st">"</span>, <span class="dv">100</span> <span class="sc">*</span> <span class="fu">max</span>(<span class="fu">prop.table</span>(<span class="fu">table</span>(infert<span class="sc">$</span>case)))))</span>
+<span id="cb41-201"><a href="#cb41-201" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-202"><a href="#cb41-202" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-203"><a href="#cb41-203" aria-hidden="true" tabindex="-1"></a><span class="fu">### Posterior Probabilities</span></span>
+<span id="cb41-204"><a href="#cb41-204" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-205"><a href="#cb41-205" aria-hidden="true" tabindex="-1"></a>LDA also returns posterior class probabilities for each observation — the probability of belonging to each class given the discriminant score. Values close to 0 or 1 indicate high-confidence assignments; values near 0.5 indicate ambiguity.</span>
+<span id="cb41-206"><a href="#cb41-206" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-207"><a href="#cb41-207" aria-hidden="true" tabindex="-1"></a><span class="in">```{r posteriors, fig.width=7, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb41-208"><a href="#cb41-208" aria-hidden="true" tabindex="-1"></a>post <span class="ot">&lt;-</span> <span class="fu">predict</span>(model)<span class="sc">$</span>posterior</span>
+<span id="cb41-209"><a href="#cb41-209" aria-hidden="true" tabindex="-1"></a>df_post <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb41-210"><a href="#cb41-210" aria-hidden="true" tabindex="-1"></a>  <span class="at">prob_case =</span> post[, <span class="st">"1"</span>],</span>
+<span id="cb41-211"><a href="#cb41-211" aria-hidden="true" tabindex="-1"></a>  <span class="at">case      =</span> <span class="fu">factor</span>(infert<span class="sc">$</span>case, <span class="at">labels=</span><span class="fu">c</span>(<span class="st">"Control"</span>,<span class="st">"Case"</span>))</span>
+<span id="cb41-212"><a href="#cb41-212" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb41-213"><a href="#cb41-213" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-214"><a href="#cb41-214" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_post, <span class="fu">aes</span>(<span class="at">x=</span>prob_case, <span class="at">fill=</span>case)) <span class="sc">+</span></span>
+<span id="cb41-215"><a href="#cb41-215" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_histogram</span>(<span class="at">bins=</span><span class="dv">30</span>, <span class="at">position=</span><span class="st">"identity"</span>, <span class="at">alpha=</span><span class="fl">0.6</span>) <span class="sc">+</span></span>
+<span id="cb41-216"><a href="#cb41-216" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb41-217"><a href="#cb41-217" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept=</span><span class="fl">0.5</span>, <span class="at">linetype=</span><span class="st">"dashed"</span>, <span class="at">colour=</span><span class="st">"grey40"</span>) <span class="sc">+</span></span>
+<span id="cb41-218"><a href="#cb41-218" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb41-219"><a href="#cb41-219" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Posterior probability of being a case"</span>,</span>
+<span id="cb41-220"><a href="#cb41-220" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"Dashed line = 0.5 decision threshold"</span>,</span>
+<span id="cb41-221"><a href="#cb41-221" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"P(case = 1 | x)"</span>, <span class="at">y=</span><span class="st">"Count"</span>, <span class="at">fill=</span><span class="cn">NULL</span>)</span>
+<span id="cb41-222"><a href="#cb41-222" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-223"><a href="#cb41-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-224"><a href="#cb41-224" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-225"><a href="#cb41-225" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-226"><a href="#cb41-226" aria-hidden="true" tabindex="-1"></a><span class="fu">## Second Example — Iris Dataset</span></span>
+<span id="cb41-227"><a href="#cb41-227" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-228"><a href="#cb41-228" aria-hidden="true" tabindex="-1"></a>The <span class="in">`iris`</span> dataset provides a three-class problem ($K = 3$, $\min(K-1, p) = 2$ discriminant functions) that illustrates multi-class LDA and the interpretation of a two-dimensional discriminant space.</span>
+<span id="cb41-229"><a href="#cb41-229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-230"><a href="#cb41-230" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iris_model}</span></span>
+<span id="cb41-231"><a href="#cb41-231" aria-hidden="true" tabindex="-1"></a>model_iris <span class="ot">&lt;-</span> MASS<span class="sc">::</span><span class="fu">lda</span>(Species <span class="sc">~</span> ., <span class="at">data=</span>iris)</span>
+<span id="cb41-232"><a href="#cb41-232" aria-hidden="true" tabindex="-1"></a>result_iris <span class="ot">&lt;-</span> <span class="fu">report_lda</span>(<span class="at">model=</span>model_iris)</span>
+<span id="cb41-233"><a href="#cb41-233" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-234"><a href="#cb41-234" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-235"><a href="#cb41-235" aria-hidden="true" tabindex="-1"></a><span class="fu">### Proportion of Trace</span></span>
+<span id="cb41-236"><a href="#cb41-236" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-237"><a href="#cb41-237" aria-hidden="true" tabindex="-1"></a>With two discriminant functions, the **proportion of trace** tells us how much of the total between-class variance each function captures.</span>
+<span id="cb41-238"><a href="#cb41-238" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-239"><a href="#cb41-239" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iris_trace}</span></span>
+<span id="cb41-240"><a href="#cb41-240" aria-hidden="true" tabindex="-1"></a>prop_trace <span class="ot">&lt;-</span> model_iris<span class="sc">$</span>svd<span class="sc">^</span><span class="dv">2</span> <span class="sc">/</span> <span class="fu">sum</span>(model_iris<span class="sc">$</span>svd<span class="sc">^</span><span class="dv">2</span>)</span>
+<span id="cb41-241"><a href="#cb41-241" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"LD1 proportion of trace:"</span>, <span class="fu">round</span>(prop_trace[<span class="dv">1</span>], <span class="dv">4</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb41-242"><a href="#cb41-242" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">"LD2 proportion of trace:"</span>, <span class="fu">round</span>(prop_trace[<span class="dv">2</span>], <span class="dv">4</span>), <span class="st">"</span><span class="sc">\n</span><span class="st">"</span>)</span>
+<span id="cb41-243"><a href="#cb41-243" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-244"><a href="#cb41-244" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-245"><a href="#cb41-245" aria-hidden="true" tabindex="-1"></a>LD1 typically captures the dominant separation (setosa vs. the other two species); LD2 captures the residual separation between versicolor and virginica.</span>
+<span id="cb41-246"><a href="#cb41-246" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-247"><a href="#cb41-247" aria-hidden="true" tabindex="-1"></a><span class="fu">### Discriminant Space Plot</span></span>
+<span id="cb41-248"><a href="#cb41-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-249"><a href="#cb41-249" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iris_plot, fig.width=7, fig.height=5, dev='png', fig.retina=2}</span></span>
+<span id="cb41-250"><a href="#cb41-250" aria-hidden="true" tabindex="-1"></a>scores_iris <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">predict</span>(model_iris)<span class="sc">$</span>x)</span>
+<span id="cb41-251"><a href="#cb41-251" aria-hidden="true" tabindex="-1"></a>scores_iris<span class="sc">$</span>Species <span class="ot">&lt;-</span> iris<span class="sc">$</span>Species</span>
+<span id="cb41-252"><a href="#cb41-252" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-253"><a href="#cb41-253" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(scores_iris, <span class="fu">aes</span>(<span class="at">x=</span>LD1, <span class="at">y=</span>LD2, <span class="at">colour=</span>Species)) <span class="sc">+</span></span>
+<span id="cb41-254"><a href="#cb41-254" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha=</span><span class="fl">0.7</span>, <span class="at">size=</span><span class="dv">2</span>) <span class="sc">+</span></span>
+<span id="cb41-255"><a href="#cb41-255" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_ellipse</span>(<span class="at">level=</span><span class="fl">0.95</span>, <span class="at">linewidth=</span><span class="fl">0.8</span>) <span class="sc">+</span></span>
+<span id="cb41-256"><a href="#cb41-256" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#4dac26"</span>,<span class="st">"#2166ac"</span>,<span class="st">"#d6604d"</span>)) <span class="sc">+</span></span>
+<span id="cb41-257"><a href="#cb41-257" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb41-258"><a href="#cb41-258" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Iris species in the LDA discriminant space"</span>,</span>
+<span id="cb41-259"><a href="#cb41-259" aria-hidden="true" tabindex="-1"></a>       <span class="at">subtitle=</span><span class="st">"95% concentration ellipses per class"</span>,</span>
+<span id="cb41-260"><a href="#cb41-260" aria-hidden="true" tabindex="-1"></a>       <span class="at">x=</span><span class="st">"Linear Discriminant 1"</span>, <span class="at">y=</span><span class="st">"Linear Discriminant 2"</span>)</span>
+<span id="cb41-261"><a href="#cb41-261" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-262"><a href="#cb41-262" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-263"><a href="#cb41-263" aria-hidden="true" tabindex="-1"></a><span class="fu">### Classification Performance</span></span>
+<span id="cb41-264"><a href="#cb41-264" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-265"><a href="#cb41-265" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iris_confusion}</span></span>
+<span id="cb41-266"><a href="#cb41-266" aria-hidden="true" tabindex="-1"></a>result_iris<span class="sc">$</span>cmatrix</span>
+<span id="cb41-267"><a href="#cb41-267" aria-hidden="true" tabindex="-1"></a>pred_iris <span class="ot">&lt;-</span> <span class="fu">predict</span>(model_iris)<span class="sc">$</span>class</span>
+<span id="cb41-268"><a href="#cb41-268" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Overall resubstitution accuracy: %.1f%%</span><span class="sc">\n</span><span class="st">"</span>,</span>
+<span id="cb41-269"><a href="#cb41-269" aria-hidden="true" tabindex="-1"></a>            <span class="dv">100</span> <span class="sc">*</span> <span class="fu">mean</span>(pred_iris <span class="sc">==</span> iris<span class="sc">$</span>Species)))</span>
+<span id="cb41-270"><a href="#cb41-270" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb41-271"><a href="#cb41-271" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-272"><a href="#cb41-272" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb41-273"><a href="#cb41-273" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-274"><a href="#cb41-274" aria-hidden="true" tabindex="-1"></a><span class="fu">## References</span></span>
+<span id="cb41-275"><a href="#cb41-275" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-276"><a href="#cb41-276" aria-hidden="true" tabindex="-1"></a>Fisher, R. A. (1936). The use of multiple measurements in taxonomic problems. *Annals of Eugenics*, *7*(2), 179–188.</span>
+<span id="cb41-277"><a href="#cb41-277" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-278"><a href="#cb41-278" aria-hidden="true" tabindex="-1"></a>McLachlan, G. J. (2004). *Discriminant Analysis and Statistical Pattern Recognition*. Wiley.</span>
+<span id="cb41-279"><a href="#cb41-279" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb41-280"><a href="#cb41-280" aria-hidden="true" tabindex="-1"></a>Venables, W. N., &amp; Ripley, B. D. (2002). *Modern Applied Statistics with S* (4th ed.). Springer.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+</div></div></div></div></div>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
