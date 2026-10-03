@@ -29,6 +29,7 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 60          # stop a page that hangs instead of running for hours
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,25 +101,37 @@ jobs:
               message("::warning::Could not install R package '", p, "': ", conditionMessage(e)))
           }
 
+      # Each site renders on its own: a failing site keeps its previous docs/<name>,
+      # the others are still published, and the last step fails the run
       - name: Render sites
+        id: render
         if: steps.sites.outputs.list != ''
         env:
           SITES: ${{ steps.sites.outputs.list }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           mkdir -p docs
+          failed=""
           for name in $SITES; do
             proj="quarto/$name"
-            rm -rf "docs/$name"
             if [ ! -f "$proj/_quarto.yml" ]; then
+              rm -rf "docs/$name"
               echo "$name was removed or is not a Quarto project; removed docs/$name"
               continue
             fi
             echo "::group::Rendering $name"
-            (cd "$proj" && quarto render --output-dir _site)
-            cp -r "$proj/_site" "docs/$name"
+            if (cd "$proj" && quarto render --output-dir _site); then
+              rm -rf "docs/$name"
+              cp -r "$proj/_site" "docs/$name"
+            else
+              failed="$failed $name"
+            fi
             echo "::endgroup::"
+            case " $failed " in *" $name "*)
+              echo "::error::Rendering $name failed; docs/$name keeps its previous version. Render it locally and commit its _freeze/." ;;
+            esac
           done
+          echo "failed=$(echo $failed)" >> "$GITHUB_OUTPUT"
 
       # Landing page linking every site, rebuilt each run (no rendering needed)
       - name: Build index page
@@ -137,3 +150,11 @@ jobs:
           git commit -m "Render Quarto sites [skip ci]"
           git pull --rebase
           git push
+
+      - name: Fail if a site did not render
+        if: steps.render.outputs.failed != ''
+        env:
+          FAILED: ${{ steps.render.outputs.failed }}
+        run: |
+          echo "::error::These sites failed to render: $FAILED"
+          exit 1
