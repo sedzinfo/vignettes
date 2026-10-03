@@ -90,7 +90,7 @@ jobs:
           dirs <- file.path("quarto", strsplit(Sys.getenv("SITES"), " ")[[1]])
           dirs <- dirs[dir.exists(dirs)]
           deps <- unique(unlist(lapply(dirs, function(d) renv::dependencies(d, progress = FALSE)$Package)))
-          deps <- setdiff(deps, c("R", "base", "stats", "utils", "graphics", "grDevices", "methods", "tools"))
+          deps <- setdiff(deps, c("R", rownames(installed.packages(priority = "base"))))
           if (length(deps)) {
             # try all at once; on failure install one by one so a single missing package
             # (e.g. archived from CRAN) only breaks the pages that execute it, not frozen ones
