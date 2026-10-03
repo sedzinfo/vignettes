@@ -91,7 +91,13 @@ jobs:
           dirs <- dirs[dir.exists(dirs)]
           deps <- unique(unlist(lapply(dirs, function(d) renv::dependencies(d, progress = FALSE)$Package)))
           deps <- setdiff(deps, c("R", "base", "stats", "utils", "graphics", "grDevices", "methods", "tools"))
-          if (length(deps)) pak::pak(deps)
+          if (length(deps)) {
+            # try all at once; on failure install one by one so a single missing package
+            # (e.g. archived from CRAN) only breaks the pages that execute it, not frozen ones
+            ok <- tryCatch({ pak::pak(deps); TRUE }, error = function(e) FALSE)
+            if (!ok) for (p in deps) tryCatch(pak::pak(p), error = function(e)
+              message("::warning::Could not install R package '", p, "': ", conditionMessage(e)))
+          }
 
       - name: Render sites
         if: steps.sites.outputs.list != ''
