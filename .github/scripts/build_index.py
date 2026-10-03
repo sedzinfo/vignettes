@@ -2,14 +2,16 @@
 
 Title and description come from the `website:` block of quarto/<name>/_quarto.yml.
 Styled with the same Bootswatch theme (flatly) the Quarto sites use.
+Set DOCS_DIR to write somewhere else (render.R uses _preview/ for local builds).
 """
 import html
+import os
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 QUARTO = ROOT / "quarto"
-DOCS = ROOT / "docs"
+DOCS = Path(os.environ.get("DOCS_DIR", ROOT / "docs"))
 REPO_URL = "https://github.com/sedzinfo/vignettes"
 
 
@@ -114,4 +116,4 @@ page = f"""<!doctype html>
 DOCS.mkdir(exist_ok=True)
 (DOCS / ".nojekyll").touch()
 (DOCS / "index.html").write_text(page, encoding="utf-8")
-print(f"docs/index.html: {len(sites)} sites")
+print(f"{DOCS / 'index.html'}: {len(sites)} sites")
