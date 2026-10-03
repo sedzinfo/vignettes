@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="">
+
+<title>MST – Worked Examples in R</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-12757e4b7af482b2d9c5bd8860d2b707.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-b2ec79424e20c0f1fec78fa60be5e1fa.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "navbar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "end",
+  "type": "overlay",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<body class="nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a class="navbar-brand" href="./index.html">
+    <span class="navbar-title">Worked Examples in R</span>
+    </a>
+  </div>
+            <div id="quarto-search" class="" title="Search"></div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll me-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="./index.html"> 
+<span class="menu-text">Home</span></a>
+  </li>  
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-machine-learning" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Machine learning</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-machine-learning">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_DECISION_TREE.html">
+ <span class="dropdown-text">Regression and Classification Trees</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_LDA.html">
+ <span class="dropdown-text">Linear Discriminant Analysis</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_REGULARIZED_REGRESSION.html">
+ <span class="dropdown-text">Regularized Regression: Ridge, Heteroscedastic Ridge, Lasso, and Elastic Net</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MNIST.html">
+ <span class="dropdown-text">MNIST in Keras</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-psychometrics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Psychometrics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-psychometrics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MEASUREMENT_INVARIANCE.html">
+ <span class="dropdown-text">Measurement invariance</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MULTITRAIT_MULTIMETHOD.html">
+ <span class="dropdown-text">Multitrait Multimethod</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT.html">
+ <span class="dropdown-text">Thurstonian IRT Example</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_TIRT_SCORING_GR.html">
+ <span class="dropdown-text">Βαθμολόγηση Thurstonian IRT — Θεωρία και Εφαρμογή</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-adaptive-testing" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Adaptive testing</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-adaptive-testing">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_SIMULATION_catR.html">
+ <span class="dropdown-text">CAT Simulation</span></a>
+  </li>  
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_MSTR.html">
+ <span class="dropdown-text">MST</span></a>
+  </li>  
+    </ul>
+  </li>
+  <li class="nav-item dropdown ">
+    <a class="nav-link dropdown-toggle" href="#" id="nav-menu-statistics" role="link" data-bs-toggle="dropdown" aria-expanded="false">
+ <span class="menu-text">Statistics</span>
+    </a>
+    <ul class="dropdown-menu" aria-labelledby="nav-menu-statistics">    
+        <li>
+    <a class="dropdown-item" href="./EXAMPLE_PARADOX.html">
+ <span class="dropdown-text">A Gallery of Statistical Paradoxes</span></a>
+  </li>  
+    </ul>
+  </li>
+</ul>
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/sedzinfo/vignettes"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">On this page</h2>
+   
+  <ul>
+  <li><a href="#description" id="toc-description" class="nav-link active" data-scroll-target="#description">Description</a></li>
+  <li><a href="#basic-examples" id="toc-basic-examples" class="nav-link" data-scroll-target="#basic-examples">Basic Examples</a></li>
+  <li><a href="#simulation-examples" id="toc-simulation-examples" class="nav-link" data-scroll-target="#simulation-examples">Simulation Examples</a>
+  <ul class="collapse">
+  <li><a href="#accuracy-across-the-ability-range" id="toc-accuracy-across-the-ability-range" class="nav-link" data-scroll-target="#accuracy-across-the-ability-range">Accuracy across the ability range</a></li>
+  <li><a href="#mst-vs.-cat-comparison" id="toc-mst-vs.-cat-comparison" class="nav-link" data-scroll-target="#mst-vs.-cat-comparison">MST vs.&nbsp;CAT comparison</a></li>
+  </ul></li>
+  <li><a href="#conclusion" id="toc-conclusion" class="nav-link" data-scroll-target="#conclusion">Conclusion</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<div class="quarto-title-block"><div><h1 class="title">MST</h1><button type="button" class="btn code-tools-button dropdown-toggle" id="quarto-code-tools-menu" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi"></i> Code</button><ul class="dropdown-menu dropdown-menu-end" aria-labelelledby="quarto-code-tools-menu"><li><a id="quarto-show-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Show All Code</a></li><li><a id="quarto-hide-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Hide All Code</a></li><li><hr class="dropdown-divider"></li><li><a id="quarto-view-source" class="dropdown-item" href="javascript:void(0)" role="button">View Source</a></li></ul></div></div>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("https://cran.r-project.org/src/contrib/Archive/mstR/mstR_1.2.tar.gz")</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_rwf.R"</span>))</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(mstR)</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(catR)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="description" class="level2">
+<h2 class="anchored" data-anchor-id="description">Description</h2>
+<p>This vignette demonstrates Multi-Stage Testing (MST) using the <code>mstR</code> package alongside helper functions from <code>rwf</code>. MST is an adaptive testing methodology that sits between traditional linear tests and fully adaptive Computerised Adaptive Testing (CAT). Instead of selecting items one at a time, MST groups items into <strong>modules</strong> and selects the next module based on the examinee’s performance on the previous one.</p>
+<p>A typical MST design has multiple <strong>stages</strong> (e.g., stage 1 → stage 2 → stage 3) and multiple <strong>panels</strong> (parallel test forms). Within each stage, an examinee is routed to an easy, medium, or hard module depending on their estimated ability (θ). This balances measurement precision with practical constraints such as content balancing and test security.</p>
+<p>Key concepts used throughout this vignette:</p>
+<ul>
+<li><strong>Item bank</strong>: a pool of items described by IRT parameters (here, the 2-Parameter Logistic model — discrimination <code>a</code> and difficulty <code>b</code>).</li>
+<li><strong>Modules</strong>: subsets of items from the bank assigned to specific positions in the MST design.</li>
+<li><strong>Transition matrix</strong>: defines which modules can follow which — routing rules between stages.</li>
+<li><strong>Cutoff matrix</strong>: θ or raw-score thresholds that determine which module an examinee is routed to next.</li>
+<li><strong>θ (theta)</strong>: the latent ability estimate on the standard normal scale.</li>
+</ul>
+<p>Installation instructions for rwf can be found on the <a href="https://github.com/sedzinfo/rwf">rwf GitHub repository</a></p>
+</section>
+<section id="basic-examples" class="level2">
+<h2 class="anchored" data-anchor-id="basic-examples">Basic Examples</h2>
+<p>This section constructs a small 1-3-2 MST design by hand and demonstrates the two core routing functions: <code>startModule</code> and <code>nextModule</code>.</p>
+<p><strong>Item bank construction</strong>: Six groups of items are generated using <code>genDichoMatrix</code> under the 2PL model. The difficulty priors (<code>bPrior</code>) are shifted so that items in different modules cover different regions of the ability scale — negative difficulties for easy modules and positive difficulties for hard modules.</p>
+<p><strong>Module matrix</strong> (<code>modules</code>): A 47×6 binary matrix assigning each of the 47 items to one of six modules. Each column is a module; a <code>1</code> indicates that item belongs to that module. <code>colSums(modules)</code> confirms the expected module sizes (8, 6, 6, 9, 9, 9).</p>
+<p><strong>Transition matrix</strong> (<code>trans</code>): A 6×6 binary matrix defining allowed routing paths. Here, module 1 (stage 1) can route to modules 2 or 3 (stage 2); module 2 routes to modules 4 or 5; module 3 routes to modules 5 or 6. Module 5 is reachable from both stage-2 modules, acting as the medium-difficulty path.</p>
+<p><strong><code>startModule</code></strong>: Returns which module to administer first given the item bank, module structure, and transition matrix. The optional <code>fixModule</code> argument (commented out) would force a specific starting module regardless of the design.</p>
+<p><strong><code>thetaEst</code></strong>: Estimates θ from the response pattern <code>x</code> on the first 8 items using Maximum Likelihood (ML). This estimate is then used to determine the next module.</p>
+<p><strong><code>nextModule</code> with θ cutoffs</strong> (<code>cut</code>): Routes to the next module based on whether the ML θ estimate falls below or above the defined thresholds (e.g., θ &lt; 0 → module 2; θ ≥ 0 → module 3). Two calls show routing for the estimated θ and for a fixed θ of −0.2.</p>
+<p><strong><code>nextModule</code> with score cutoffs</strong> (<code>cut.score</code>): Routes based on raw number-correct scores rather than θ estimates. This is useful when IRT scoring is not available or when content-balancing rules are score-based.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>it.MST <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">genDichoMatrix</span>(<span class="dv">8</span>, <span class="at">model =</span> <span class="st">"2PL"</span>), </span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">6</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>)),</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">6</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">1</span>, <span class="dv">1</span>)),</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">1</span>)),</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">0</span>, <span class="dv">1</span>)),</span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">2</span>, <span class="dv">1</span>)))</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>it.MST <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(it.MST)</span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>modules <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">47</span>, <span class="dv">6</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">9</span><span class="sc">:</span><span class="dv">14</span>, <span class="dv">2</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">15</span><span class="sc">:</span><span class="dv">20</span>, <span class="dv">3</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">21</span><span class="sc">:</span><span class="dv">29</span>, <span class="dv">4</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">30</span><span class="sc">:</span><span class="dv">38</span>, <span class="dv">5</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">39</span><span class="sc">:</span><span class="dv">47</span>, <span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a><span class="fu">colSums</span>(modules)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 8 6 6 9 9 9</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>trans <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">6</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">1</span>, <span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">2</span>, <span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">3</span>, <span class="dv">5</span><span class="sc">:</span><span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="fu">startModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$module
+[1] 1
+
+$items
+[1] 1 2 3 4 5 6 7 8
+
+$par
+             a          b c d
+[1,] 1.1151563 -0.6264538 0 1
+[2,] 0.9389223  0.1836433 0 1
+[3,] 1.3023562 -0.8356286 0 1
+[4,] 1.0779686  1.5952808 0 1
+[5,] 0.8757519  0.3295078 0 1
+[6,] 0.5570600 -0.8204684 0 1
+[7,] 1.2249862  0.4874291 0 1
+[8,] 0.9910133  0.7383247 0 1
+
+$thStart
+[1] 0</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># startModule(itemBank = it.MST, modules = modules, transMatrix = trans, fixModule = 3)</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>)</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>th<span class="ot">&lt;-</span>mstR<span class="sc">::</span><span class="fu">thetaEst</span>(it.MST[<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, ], x, <span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>cut <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="dv">0</span>),</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>, <span class="sc">-</span><span class="dv">1</span>),</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>,  <span class="dv">1</span>))</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules,<span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">1</span>, <span class="at">out =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="at">cutoff =</span> cut, <span class="at">theta =</span> th)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$module
+[1] 3
+
+$items
+[1] 15 16 17 18 19 20
+
+$par
+             a         b c d
+[1,] 1.0974858 0.3735462 0 1
+[2,] 1.1476649 1.1836433 0 1
+[3,] 1.1151563 0.1643714 0 1
+[4,] 0.9389223 2.5952808 0 1
+[5,] 1.3023562 1.3295078 0 1
+[6,] 1.0779686 0.1795316 0 1
+
+$info
+[1] 0.3654008
+
+$criterion
+[1] "cutoff"
+
+$best.module
+[1] TRUE</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">1</span>, <span class="at">out =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="at">cutoff =</span> cut, <span class="at">theta =</span> <span class="sc">-</span><span class="fl">0.2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$module
+[1] 2
+
+$items
+[1]  9 10 11 12 13 14
+
+$par
+             a          b c d
+[1,] 1.0974858 -1.6264538 0 1
+[2,] 1.1476649 -0.8163567 0 1
+[3,] 1.1151563 -1.8356286 0 1
+[4,] 0.9389223  0.5952808 0 1
+[5,] 1.3023562 -0.6704922 0 1
+[6,] 1.0779686 -1.8204684 0 1
+
+$info
+[1] -0.2
+
+$criterion
+[1] "cutoff"
+
+$best.module
+[1] TRUE</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>cut.score <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="dv">5</span>),</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>,  <span class="dv">5</span>),</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>, <span class="dv">10</span>))</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">3</span>, <span class="at">out =</span> <span class="fu">c</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="dv">15</span><span class="sc">:</span><span class="dv">20</span>), <span class="at">cutoff =</span> cut.score,<span class="at">theta =</span> th)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>$module
+[1] 5
+
+$items
+[1] 30 31 32 33 34 35 36 37 38
+
+$par
+              a          b c d
+ [1,] 0.9389223 -0.6264538 0 1
+ [2,] 1.3023562  0.1836433 0 1
+ [3,] 1.0779686 -0.8356286 0 1
+ [4,] 0.8757519  1.5952808 0 1
+ [5,] 0.5570600  0.3295078 0 1
+ [6,] 1.2249862 -0.8204684 0 1
+ [7,] 0.9910133  0.4874291 0 1
+ [8,] 0.9967619  0.7383247 0 1
+ [9,] 1.1887672  0.5757814 0 1
+
+$info
+[1] 0.3654008
+
+$criterion
+[1] "cutoff"
+
+$best.module
+[1] TRUE</code></pre>
+</div>
+</div>
+</section>
+<section id="simulation-examples" class="level2">
+<h2 class="anchored" data-anchor-id="simulation-examples">Simulation Examples</h2>
+<p>This section runs full MST simulations using <code>randomMST</code> and compares MST performance against CAT using <code>randomCAT</code>. A 100-item bank with five 2PL items is used, assembled into six modules of 15 items each across a 1-2-2-1 branching design.</p>
+<p><strong>Item bank</strong> (<code>it.2PL</code>): Five 2PL items with discrimination values from 0.8 to 1.2 and difficulties spanning −0.8 to 1.1, recycled to fill a 100-item bank. Parameters <code>c = 0</code> and <code>d = 1</code> indicate no guessing and no slipping.</p>
+<p><strong>Module membership</strong> (A1–F1): Six pre-defined sets of 15 item indices each, assembled into <code>module1</code>. A1 is the stage-1 routing module; B1/C1 are stage-2 easy/hard modules; D1/E1/F1 are the three stage-3 modules.</p>
+<p><strong>Simulation 1 — MFI module selection</strong> (<code>mst.ex1</code>): A single MST run at true θ = 0 using ML scoring and Maximum Fisher Information (MFI) for module selection. The two <code>Ii()</code> calls confirm the routing decision by comparing total Fisher information in module 2 vs.&nbsp;module 3 at the stage-1 θ estimate — the module with higher information should be selected. <code>plot(mst.ex1)</code> draws the routing path taken through the MST design.</p>
+<p><strong>Simulation 2 — θ cutoff routing</strong> (<code>mst.ex2</code>): Routes modules using θ thresholds (θ &lt; 0 → easy; 0 ≤ θ ≤ 0.3 → medium; θ &gt; 0.3 → hard). Run at true θ = 1 to verify that the design routes to the harder modules.</p>
+<p><strong>Simulation 3 — score cutoff routing</strong> (<code>mst.ex3</code>): Routes using raw number-correct score thresholds rather than θ estimates. The scoring method is set to <code>"score"</code> for both routing and final estimation — useful when IRT calibration is not available at administration time.</p>
+<p><strong>ASB and RMSE across the ability range</strong>: A large-scale simulation (1000 replications × 9 ability levels from −2 to +2, all routed through the <code>module1</code> design) estimates two accuracy metrics across the full latent trait range:</p>
+<ul>
+<li><strong>ASB (Average Signed Bias)</strong>: mean difference between estimated and true θ — positive values indicate systematic overestimation, negative indicate underestimation.</li>
+<li><strong>RMSE (Root Mean Square Error)</strong>: overall estimation accuracy combining both bias and variance. Lower values indicate a more precise test design.</li>
+</ul>
+<p><strong>MST vs.&nbsp;CAT comparison</strong>: The final block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, randomesque = 5 for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2. Both <code>thFinal</code> (final ability estimate) and <code>seFinal</code> (standard error of measurement) are stored in <code>RES</code> for comparison of precision between the two adaptive testing formats.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>A1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">13</span>, <span class="dv">14</span>, <span class="dv">15</span>, <span class="dv">22</span>, <span class="dv">28</span>, <span class="dv">34</span>, <span class="dv">38</span>, <span class="dv">51</span>, <span class="dv">59</span>, <span class="dv">70</span>, <span class="dv">84</span>, <span class="dv">85</span>, <span class="dv">87</span>, <span class="dv">89</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>B1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">12</span>, <span class="dv">19</span>, <span class="dv">27</span>, <span class="dv">29</span>, <span class="dv">39</span>, <span class="dv">43</span>, <span class="dv">60</span>, <span class="dv">69</span>, <span class="dv">71</span>, <span class="dv">72</span>, <span class="dv">73</span>, <span class="dv">75</span>, <span class="dv">90</span>, <span class="dv">97</span>)</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>C1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">32</span>, <span class="dv">35</span>, <span class="dv">36</span>, <span class="dv">45</span>, <span class="dv">52</span>, <span class="dv">57</span>, <span class="dv">61</span>, <span class="dv">63</span>, <span class="dv">66</span>, <span class="dv">78</span>, <span class="dv">81</span>,<span class="dv">82</span>, <span class="dv">88</span>, <span class="dv">92</span>, <span class="dv">100</span>)</span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>D1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">6</span>, <span class="dv">18</span>, <span class="dv">21</span>, <span class="dv">41</span>, <span class="dv">48</span>, <span class="dv">49</span>, <span class="dv">50</span>, <span class="dv">54</span>, <span class="dv">56</span>, <span class="dv">58</span>, <span class="dv">65</span>, <span class="dv">77</span>)</span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>E1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">16</span>, <span class="dv">24</span>, <span class="dv">25</span>, <span class="dv">26</span>, <span class="dv">37</span>, <span class="dv">40</span>, <span class="dv">44</span>, <span class="dv">53</span>, <span class="dv">68</span>, <span class="dv">74</span>, <span class="dv">80</span>, <span class="dv">86</span>, <span class="dv">91</span>, <span class="dv">93</span>)</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>F1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="dv">11</span>, <span class="dv">31</span>, <span class="dv">46</span>, <span class="dv">47</span>, <span class="dv">55</span>, <span class="dv">64</span>, <span class="dv">67</span>, <span class="dv">76</span>, <span class="dv">79</span>, <span class="dv">83</span>, <span class="dv">94</span>, <span class="dv">95</span>, <span class="dv">98</span>, <span class="dv">99</span>)</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>a <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">c</span>(<span class="fl">0.8</span>, <span class="fl">0.9</span>, <span class="fl">1.0</span>, <span class="fl">1.1</span>, <span class="fl">1.2</span>), <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">c</span>(<span class="fl">0.0</span>, <span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">1.1</span>, <span class="sc">-</span><span class="fl">0.8</span>, <span class="fl">0.7</span>), <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>it<span class="fl">.2</span>PL <span class="ot">&lt;-</span> <span class="fu">cbind</span>(a, b, <span class="at">c =</span> <span class="dv">0</span>, <span class="at">d =</span> <span class="dv">1</span>)</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>module1 <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">6</span>)</span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>module1[A1, <span class="dv">1</span>] <span class="ot">&lt;-</span> module1[B1, <span class="dv">2</span>] <span class="ot">&lt;-</span> module1[C1, <span class="dv">3</span>] <span class="ot">&lt;-</span> module1[D1, <span class="dv">4</span>] <span class="ot">&lt;-</span> module1[E1, <span class="dv">5</span>] <span class="ot">&lt;-</span> module1[F1, <span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>trans <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">6</span>)</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">1</span>, <span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>] <span class="ot">&lt;-</span> trans[<span class="dv">2</span>, <span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>] <span class="ot">&lt;-</span> trans[<span class="dv">3</span>, <span class="dv">5</span><span class="sc">:</span><span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>start <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>mst.ex1 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">0</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test, <span class="at">final =</span> final)</span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">Ii</span>(<span class="fl">0.204</span>, it<span class="fl">.2</span>PL[module1[, <span class="dv">2</span>] <span class="sc">==</span> <span class="dv">1</span>, ])<span class="sc">$</span>Ii)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 3.4253</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">Ii</span>(<span class="fl">0.204</span>, it<span class="fl">.2</span>PL[module1[, <span class="dv">3</span>] <span class="sc">==</span> <span class="dv">1</span>, ])<span class="sc">$</span>Ii)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 3.160338</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(mst.ex1, <span class="at">border.col =</span> <span class="st">"grey"</span>, <span class="at">arrow.col =</span> <span class="st">"grey"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_MSTR_files/figure-html/mst_examples-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>The plot was not captured!</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>cut <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="fl">0.0</span>),</span>
+<span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>, <span class="sc">-</span><span class="fl">0.3</span>),</span>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>,  <span class="fl">0.3</span>))</span>
+<span id="cb18-4"><a href="#cb18-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-5"><a href="#cb18-5" aria-hidden="true" tabindex="-1"></a>test2 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>, <span class="at">cutoff =</span> cut)</span>
+<span id="cb18-6"><a href="#cb18-6" aria-hidden="true" tabindex="-1"></a>mst.ex2 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">1</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test2, <span class="at">final =</span> final)</span>
+<span id="cb18-7"><a href="#cb18-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-8"><a href="#cb18-8" aria-hidden="true" tabindex="-1"></a>cut2 <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="fl">7.5</span>),</span>
+<span id="cb18-9"><a href="#cb18-9" aria-hidden="true" tabindex="-1"></a>              <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>,  <span class="fl">9.5</span>),</span>
+<span id="cb18-10"><a href="#cb18-10" aria-hidden="true" tabindex="-1"></a>              <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>, <span class="fl">20.5</span>))</span>
+<span id="cb18-11"><a href="#cb18-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb18-12"><a href="#cb18-12" aria-hidden="true" tabindex="-1"></a>test3 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"score"</span>, <span class="at">cutoff =</span> cut2)</span>
+<span id="cb18-13"><a href="#cb18-13" aria-hidden="true" tabindex="-1"></a>final3 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"score"</span>)</span>
+<span id="cb18-14"><a href="#cb18-14" aria-hidden="true" tabindex="-1"></a>mst.ex3 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">1</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test3, <span class="at">final =</span> final)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<section id="accuracy-across-the-ability-range" class="level3">
+<h3 class="anchored" data-anchor-id="accuracy-across-the-ability-range">Accuracy across the ability range</h3>
+<p>The block below runs 1000 replications at each of 9 true θ levels (from −2 to +2) through the <code>module1</code> design, then computes <strong>ASB</strong> and <strong>RMSE</strong> at every level from the resulting θ estimates.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>s <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>, <span class="fl">0.5</span>)</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>TH <span class="ot">&lt;-</span> <span class="fu">rep</span>(s, <span class="at">each =</span> <span class="dv">1000</span>)</span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>RES <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(TH), <span class="dv">1</span>)</span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>start <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(TH)){</span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  prov <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>                    <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1,</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a>                    <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> i, <span class="at">start =</span> start,</span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>                    <span class="at">test =</span> test, <span class="at">final =</span> final)</span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>  RES[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> prov<span class="sc">$</span>thFinal</span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>res.ASB <span class="ot">&lt;-</span> res.RMSE <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(s), <span class="dv">1</span>)</span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>ASB <span class="ot">&lt;-</span> <span class="cf">function</span>(t, th) <span class="fu">mean</span>(t<span class="sc">-</span>th)</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a>RMSE <span class="ot">&lt;-</span> <span class="cf">function</span>(t, th) <span class="fu">sqrt</span>(<span class="fu">mean</span>((t<span class="sc">-</span>th)<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(s)){</span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a>  ind <span class="ot">&lt;-</span> <span class="fu">which</span>(TH <span class="sc">==</span> s[i])</span>
+<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a>  res.ASB[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">ASB</span>(RES[ind, <span class="dv">1</span>], s[i])</span>
+<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a>  res.RMSE[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">RMSE</span>(RES[ind, <span class="dv">1</span>], s[i])</span>
+<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb20-1"><a href="#cb20-1" aria-hidden="true" tabindex="-1"></a>df_asb_rmse <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">theta =</span> s, <span class="at">ASB =</span> res.ASB[, <span class="dv">1</span>], <span class="at">RMSE =</span> res.RMSE[, <span class="dv">1</span>])</span>
+<span id="cb20-2"><a href="#cb20-2" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(df_asb_rmse)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  theta         ASB      RMSE
+1  -2.0 -0.18951132 0.8059731
+2  -1.5 -0.11551032 0.6960095
+3  -1.0 -0.06562702 0.5582100
+4  -0.5 -0.01647081 0.3415552
+5   0.0  0.01478485 0.2872255
+6   0.5  0.04202105 0.3136335
+7   1.0  0.04062775 0.4187173
+8   1.5  0.10224991 0.6296469
+9   2.0  0.13895618 0.7554723</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>df_asb_rmse_long <span class="ot">&lt;-</span> reshape2<span class="sc">::</span><span class="fu">melt</span>(df_asb_rmse, <span class="at">id.vars =</span> <span class="st">"theta"</span>, <span class="at">variable.name =</span> <span class="st">"Metric"</span>, <span class="at">value.name =</span> <span class="st">"value"</span>)</span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_asb_rmse_long, <span class="fu">aes</span>(<span class="at">x =</span> theta, <span class="at">y =</span> value, <span class="at">color =</span> Metric)) <span class="sc">+</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>, <span class="at">color =</span> <span class="st">"grey60"</span>) <span class="sc">+</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"MST accuracy across the ability range"</span>,</span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"True theta"</span>, <span class="at">y =</span> <span class="st">"Metric value"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">12</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_MSTR_files/figure-html/asb_rmse_plot-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>ASB near zero at every θ indicates the design is unbiased across the ability range; a systematic upward or downward drift at the extremes would indicate the module design under- or over-estimates examinees at those levels. RMSE typically rises toward both ends of the θ range, since fewer items in the bank concentrate information near the middle of the scale (θ = 0).</p>
+</section>
+<section id="mst-vs.-cat-comparison" class="level3">
+<h3 class="anchored" data-anchor-id="mst-vs.-cat-comparison">MST vs.&nbsp;CAT comparison</h3>
+<p>This block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, <code>randomesque = 5</code> for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2.</p>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>s <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>, <span class="fl">0.5</span>)</span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a>TH <span class="ot">&lt;-</span> <span class="fu">rep</span>(s, <span class="at">each =</span> <span class="dv">1000</span>)</span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>DATA <span class="ot">&lt;-</span> <span class="fu">genPattern</span>(TH, it<span class="fl">.2</span>PL, <span class="at">seed =</span> <span class="dv">1</span>)</span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>RES <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(TH), <span class="dv">4</span>)</span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>start.mst <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>start.cat <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>, <span class="at">randomesque =</span> <span class="dv">5</span>)</span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>test.cat <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">itemSelect =</span> <span class="st">"MFI"</span>, <span class="at">randomesque =</span> <span class="dv">5</span>)</span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>test.mst <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>stop <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">rule =</span> <span class="st">"length"</span>, <span class="at">thr =</span> <span class="dv">45</span>)</span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>)</span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(TH)){</span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>  pr <span class="ot">&lt;-</span> <span class="fu">randomCAT</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>                  <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">genSeed =</span> i, <span class="at">start =</span> start.cat,</span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a>                  <span class="at">test =</span> test.cat, <span class="at">stop =</span> stop, <span class="at">final =</span> final)</span>
+<span id="cb23-17"><a href="#cb23-17" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">1</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>thFinal</span>
+<span id="cb23-18"><a href="#cb23-18" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">2</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>seFinal</span>
+<span id="cb23-19"><a href="#cb23-19" aria-hidden="true" tabindex="-1"></a>  pr <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb23-20"><a href="#cb23-20" aria-hidden="true" tabindex="-1"></a>                  <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">genSeed =</span> i, <span class="at">modules =</span> module1,</span>
+<span id="cb23-21"><a href="#cb23-21" aria-hidden="true" tabindex="-1"></a>                  <span class="at">transMatrix =</span> trans, <span class="at">start =</span> start.mst,</span>
+<span id="cb23-22"><a href="#cb23-22" aria-hidden="true" tabindex="-1"></a>                  <span class="at">test =</span> test.mst, <span class="at">final =</span> final)</span>
+<span id="cb23-23"><a href="#cb23-23" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">3</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>thFinal</span>
+<span id="cb23-24"><a href="#cb23-24" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">4</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>seFinal</span>
+<span id="cb23-25"><a href="#cb23-25" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+</div>
+<div class="cell" data-layout-align="center">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>df_compare <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a>  <span class="at">theta     =</span> TH,</span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">cat_theta =</span> RES[, <span class="dv">1</span>],</span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a>  <span class="at">cat_se    =</span> RES[, <span class="dv">2</span>],</span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="at">mst_theta =</span> RES[, <span class="dv">3</span>],</span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>  <span class="at">mst_se    =</span> RES[, <span class="dv">4</span>]</span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>summary_compare <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(s, <span class="cf">function</span>(th) {</span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>  ind <span class="ot">&lt;-</span> <span class="fu">which</span>(TH <span class="sc">==</span> th)</span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">theta    =</span> th,</span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_ASB  =</span> <span class="fu">ASB</span>(df_compare<span class="sc">$</span>cat_theta[ind], th),</span>
+<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_RMSE =</span> <span class="fu">RMSE</span>(df_compare<span class="sc">$</span>cat_theta[ind], th),</span>
+<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_SE   =</span> <span class="fu">mean</span>(df_compare<span class="sc">$</span>cat_se[ind]),</span>
+<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_ASB  =</span> <span class="fu">ASB</span>(df_compare<span class="sc">$</span>mst_theta[ind], th),</span>
+<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_RMSE =</span> <span class="fu">RMSE</span>(df_compare<span class="sc">$</span>mst_theta[ind], th),</span>
+<span id="cb24-18"><a href="#cb24-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_SE   =</span> <span class="fu">mean</span>(df_compare<span class="sc">$</span>mst_se[ind])</span>
+<span id="cb24-19"><a href="#cb24-19" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb24-20"><a href="#cb24-20" aria-hidden="true" tabindex="-1"></a>}))</span>
+<span id="cb24-21"><a href="#cb24-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-22"><a href="#cb24-22" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(summary_compare)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  theta    cat_ASB cat_RMSE    cat_SE      mst_ASB  mst_RMSE    mst_SE
+1  -2.0 -0.3713948 1.730043 0.4689194  0.236622598 0.5459113 0.3886638
+2  -1.5 -0.5845086 1.964934 0.4546018  0.134566414 0.5134443 0.3545644
+3  -1.0 -0.4168709 2.237025 0.4297112  0.064338966 0.4623010 0.3270479
+4  -0.5  0.6486147 1.585077 0.3205444  0.034295821 0.3067953 0.3066606
+5   0.0  0.8809386 1.675462 0.3328329  0.013596991 0.2610074 0.2990259
+6   0.5  0.3740914 1.103175 0.3036320 -0.008690267 0.2796728 0.3020724
+7   1.0 -0.4896458 1.587562 0.3173897 -0.069005844 0.3675686 0.3148370
+8   1.5  0.2369912 1.999429 0.4146752 -0.116853099 0.4842905 0.3401617
+9   2.0  0.2821616 1.741698 0.4380211 -0.230175590 0.5432898 0.3703948</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>summary_long <span class="ot">&lt;-</span> reshape2<span class="sc">::</span><span class="fu">melt</span>(</span>
+<span id="cb26-2"><a href="#cb26-2" aria-hidden="true" tabindex="-1"></a>  summary_compare[, <span class="fu">c</span>(<span class="st">"theta"</span>, <span class="st">"cat_RMSE"</span>, <span class="st">"mst_RMSE"</span>, <span class="st">"cat_SE"</span>, <span class="st">"mst_SE"</span>)],</span>
+<span id="cb26-3"><a href="#cb26-3" aria-hidden="true" tabindex="-1"></a>  <span class="at">id.vars =</span> <span class="st">"theta"</span>, <span class="at">variable.name =</span> <span class="st">"Metric"</span>, <span class="at">value.name =</span> <span class="st">"value"</span></span>
+<span id="cb26-4"><a href="#cb26-4" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb26-5"><a href="#cb26-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb26-6"><a href="#cb26-6" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(summary_long, <span class="fu">aes</span>(<span class="at">x =</span> theta, <span class="at">y =</span> value, <span class="at">color =</span> Metric)) <span class="sc">+</span></span>
+<span id="cb26-7"><a href="#cb26-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"CAT vs. MST: RMSE and average SE across the ability range"</span>,</span>
+<span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"True theta"</span>, <span class="at">y =</span> <span class="st">"Value"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">12</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div class="cell-output-display">
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="EXAMPLE_MSTR_files/figure-html/cat_mst_summary-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>CAT selects the single best item at every step, so it is expected to match or beat MST’s RMSE and average SE at every θ level — MST instead trades some of that per-item precision for the practical advantages of pre-assembled, reviewable modules (content balancing, easier quality control, and no need for real-time item-level adaptation).</p>
+<hr>
+</section>
+</section>
+<section id="conclusion" class="level2">
+<h2 class="anchored" data-anchor-id="conclusion">Conclusion</h2>
+<p>This vignette worked through MST from the ground up: routing a single examinee by hand with <code>startModule</code>/<code>nextModule</code> (via both θ and raw-score cutoffs), running full simulated administrations with <code>randomMST</code> under three different routing rules, and evaluating a complete design’s accuracy (ASB, RMSE) across the ability range. The final comparison against <code>catR</code>’s <code>randomCAT</code> quantifies the precision MST gives up relative to fully adaptive CAT in exchange for its practical advantages — fixed, reviewable modules assembled ahead of time rather than item-by-item adaptive selection.</p>
+
+
+<!-- -->
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+    const viewSource = window.document.getElementById('quarto-view-source') ||
+                       window.document.getElementById('quarto-code-tools-source');
+    if (viewSource) {
+      const sourceUrl = viewSource.getAttribute("data-quarto-source-url");
+      viewSource.addEventListener("click", function(e) {
+        if (sourceUrl) {
+          // rstudio viewer pane
+          if (/\bcapabilities=\b/.test(window.location)) {
+            window.open(sourceUrl);
+          } else {
+            window.location.href = sourceUrl;
+          }
+        } else {
+          const modal = new bootstrap.Modal(document.getElementById('quarto-embedded-source-code-modal'));
+          modal.show();
+        }
+        return false;
+      });
+    }
+    function toggleCodeHandler(show) {
+      return function(e) {
+        const cellDetails = window.document.querySelectorAll(".cell details.code-fold");
+        for (let i=0; i<cellDetails.length; i++) {
+          const details = cellDetails[i];
+          if (show) {
+            details.open = true;
+          } else {
+            details.removeAttribute("open");
+          }
+        }
+        const cellCodeDivs = window.document.querySelectorAll(".cell div.sourceCode.cell-code");
+        const fromCls = show ? "hidden" : "unhidden";
+        const toCls = show ? "unhidden" : "hidden";
+        for (let i=0; i<cellCodeDivs.length; i++) {
+          const codeDiv = cellCodeDivs[i];
+          if (codeDiv.classList.contains(fromCls)) {
+            codeDiv.classList.remove(fromCls);
+            codeDiv.classList.add(toCls);
+          } 
+        }
+        return false;
+      }
+    }
+    const hideAllCode = window.document.getElementById("quarto-hide-all-code");
+    if (hideAllCode) {
+      hideAllCode.addEventListener("click", toggleCodeHandler(false));
+    }
+    const showAllCode = window.document.getElementById("quarto-show-all-code");
+    if (showAllCode) {
+      showAllCode.addEventListener("click", toggleCodeHandler(true));
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp("https:\/\/sedzinfo\.github\.io\/vignettes\/example\/");
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<input type="hidden" id="giscus-base-theme" value="light">
+<input type="hidden" id="giscus-alt-theme" value="light">
+<script>
+  function loadGiscus() {
+    // Function to get the theme based on body class
+    const getTheme = () => {
+      let baseTheme = document.getElementById('giscus-base-theme').value;
+      let altTheme = document.getElementById('giscus-alt-theme').value;
+      return document.body.classList.contains('quarto-dark') ? altTheme : baseTheme;
+    };
+    const script = document.createElement("script");
+    script.src = "https://giscus.app/client.js";
+    script.async = true;
+    script.dataset.repo = "sedzinfo/vignettes";
+    script.dataset.repoId = "R_kgDOU6AfOA";
+    script.dataset.category = "Announcements";
+    script.dataset.categoryId = "DIC_kwDOU6AfOM4DG8ZY";
+    script.dataset.mapping = "pathname";
+    script.dataset.reactionsEnabled = "1";
+    script.dataset.emitMetadata = "0";
+    script.dataset.inputPosition = "top";
+    script.dataset.theme = getTheme();
+    script.dataset.lang = "en";
+    script.crossOrigin = "anonymous";
+    // Append the script to the desired div instead of at the end of the body
+    document.getElementById("quarto-content").appendChild(script);
+  }
+  loadGiscus();
+</script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb27" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb27-2"><a href="#cb27-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "MST"</span></span>
+<span id="cb27-3"><a href="#cb27-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
+<span id="cb27-4"><a href="#cb27-4" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
+<span id="cb27-5"><a href="#cb27-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
+<span id="cb27-6"><a href="#cb27-6" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
+<span id="cb27-7"><a href="#cb27-7" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
+<span id="cb27-8"><a href="#cb27-8" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
+<span id="cb27-9"><a href="#cb27-9" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb27-10"><a href="#cb27-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
+<span id="cb27-11"><a href="#cb27-11" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
+<span id="cb27-12"><a href="#cb27-12" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
+<span id="cb27-13"><a href="#cb27-13" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
+<span id="cb27-14"><a href="#cb27-14" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{GLM MST}</span></span>
+<span id="cb27-15"><a href="#cb27-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
+<span id="cb27-16"><a href="#cb27-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
+<span id="cb27-17"><a href="#cb27-17" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb27-18"><a href="#cb27-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-19"><a href="#cb27-19" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb27-20"><a href="#cb27-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-21"><a href="#cb27-21" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb27-22"><a href="#cb27-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_options.R"</span>))</span>
+<span id="cb27-23"><a href="#cb27-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-24"><a href="#cb27-24" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-25"><a href="#cb27-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-26"><a href="#cb27-26" aria-hidden="true" tabindex="-1"></a><span class="in">```{r library,message=FALSE,warning=FALSE}</span></span>
+<span id="cb27-27"><a href="#cb27-27" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("https://cran.r-project.org/src/contrib/Archive/mstR/mstR_1.2.tar.gz")</span></span>
+<span id="cb27-28"><a href="#cb27-28" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"code_rwf.R"</span>))</span>
+<span id="cb27-29"><a href="#cb27-29" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(mstR)</span>
+<span id="cb27-30"><a href="#cb27-30" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(catR)</span>
+<span id="cb27-31"><a href="#cb27-31" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-32"><a href="#cb27-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-33"><a href="#cb27-33" aria-hidden="true" tabindex="-1"></a><span class="fu">## Description</span></span>
+<span id="cb27-34"><a href="#cb27-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-35"><a href="#cb27-35" aria-hidden="true" tabindex="-1"></a>This vignette demonstrates Multi-Stage Testing (MST) using the <span class="in">`mstR`</span> package alongside helper functions from <span class="in">`rwf`</span>. MST is an adaptive testing methodology that sits between traditional linear tests and fully adaptive Computerised Adaptive Testing (CAT). Instead of selecting items one at a time, MST groups items into **modules** and selects the next module based on the examinee's performance on the previous one.</span>
+<span id="cb27-36"><a href="#cb27-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-37"><a href="#cb27-37" aria-hidden="true" tabindex="-1"></a>A typical MST design has multiple **stages** (e.g., stage 1 → stage 2 → stage 3) and multiple **panels** (parallel test forms). Within each stage, an examinee is routed to an easy, medium, or hard module depending on their estimated ability (θ). This balances measurement precision with practical constraints such as content balancing and test security.</span>
+<span id="cb27-38"><a href="#cb27-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-39"><a href="#cb27-39" aria-hidden="true" tabindex="-1"></a>Key concepts used throughout this vignette:</span>
+<span id="cb27-40"><a href="#cb27-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-41"><a href="#cb27-41" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Item bank**: a pool of items described by IRT parameters (here, the 2-Parameter Logistic model — discrimination <span class="in">`a`</span> and difficulty <span class="in">`b`</span>).</span>
+<span id="cb27-42"><a href="#cb27-42" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Modules**: subsets of items from the bank assigned to specific positions in the MST design.</span>
+<span id="cb27-43"><a href="#cb27-43" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Transition matrix**: defines which modules can follow which — routing rules between stages.</span>
+<span id="cb27-44"><a href="#cb27-44" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Cutoff matrix**: θ or raw-score thresholds that determine which module an examinee is routed to next.</span>
+<span id="cb27-45"><a href="#cb27-45" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**θ (theta)**: the latent ability estimate on the standard normal scale.</span>
+<span id="cb27-46"><a href="#cb27-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-47"><a href="#cb27-47" aria-hidden="true" tabindex="-1"></a>Installation instructions for rwf can be found on the <span class="co">[</span><span class="ot">rwf GitHub repository</span><span class="co">](https://github.com/sedzinfo/rwf)</span></span>
+<span id="cb27-48"><a href="#cb27-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-49"><a href="#cb27-49" aria-hidden="true" tabindex="-1"></a><span class="fu">## Basic Examples</span></span>
+<span id="cb27-50"><a href="#cb27-50" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-51"><a href="#cb27-51" aria-hidden="true" tabindex="-1"></a>This section constructs a small 1-3-2 MST design by hand and demonstrates the two core routing functions: <span class="in">`startModule`</span> and <span class="in">`nextModule`</span>.</span>
+<span id="cb27-52"><a href="#cb27-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-53"><a href="#cb27-53" aria-hidden="true" tabindex="-1"></a>**Item bank construction**: Six groups of items are generated using <span class="in">`genDichoMatrix`</span> under the 2PL model. The difficulty priors (<span class="in">`bPrior`</span>) are shifted so that items in different modules cover different regions of the ability scale — negative difficulties for easy modules and positive difficulties for hard modules.</span>
+<span id="cb27-54"><a href="#cb27-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-55"><a href="#cb27-55" aria-hidden="true" tabindex="-1"></a>**Module matrix** (<span class="in">`modules`</span>): A 47×6 binary matrix assigning each of the 47 items to one of six modules. Each column is a module; a <span class="in">`1`</span> indicates that item belongs to that module. <span class="in">`colSums(modules)`</span> confirms the expected module sizes (8, 6, 6, 9, 9, 9).</span>
+<span id="cb27-56"><a href="#cb27-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-57"><a href="#cb27-57" aria-hidden="true" tabindex="-1"></a>**Transition matrix** (<span class="in">`trans`</span>): A 6×6 binary matrix defining allowed routing paths. Here, module 1 (stage 1) can route to modules 2 or 3 (stage 2); module 2 routes to modules 4 or 5; module 3 routes to modules 5 or 6. Module 5 is reachable from both stage-2 modules, acting as the medium-difficulty path.</span>
+<span id="cb27-58"><a href="#cb27-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-59"><a href="#cb27-59" aria-hidden="true" tabindex="-1"></a>**`startModule`**: Returns which module to administer first given the item bank, module structure, and transition matrix. The optional <span class="in">`fixModule`</span> argument (commented out) would force a specific starting module regardless of the design.</span>
+<span id="cb27-60"><a href="#cb27-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-61"><a href="#cb27-61" aria-hidden="true" tabindex="-1"></a>**`thetaEst`**: Estimates θ from the response pattern <span class="in">`x`</span> on the first 8 items using Maximum Likelihood (ML). This estimate is then used to determine the next module.</span>
+<span id="cb27-62"><a href="#cb27-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-63"><a href="#cb27-63" aria-hidden="true" tabindex="-1"></a>**`nextModule` with θ cutoffs** (<span class="in">`cut`</span>): Routes to the next module based on whether the ML θ estimate falls below or above the defined thresholds (e.g., θ &lt; 0 → module 2; θ ≥ 0 → module 3). Two calls show routing for the estimated θ and for a fixed θ of −0.2.</span>
+<span id="cb27-64"><a href="#cb27-64" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-65"><a href="#cb27-65" aria-hidden="true" tabindex="-1"></a>**`nextModule` with score cutoffs** (<span class="in">`cut.score`</span>): Routes based on raw number-correct scores rather than θ estimates. This is useful when IRT scoring is not available or when content-balancing rules are score-based.</span>
+<span id="cb27-66"><a href="#cb27-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-67"><a href="#cb27-67" aria-hidden="true" tabindex="-1"></a><span class="in">```{r excamples0,message=FALSE,warning=FALSE,results='hide',dev='png'}</span></span>
+<span id="cb27-68"><a href="#cb27-68" aria-hidden="true" tabindex="-1"></a>it.MST <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">genDichoMatrix</span>(<span class="dv">8</span>, <span class="at">model =</span> <span class="st">"2PL"</span>), </span>
+<span id="cb27-69"><a href="#cb27-69" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">6</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="sc">-</span><span class="dv">1</span>, <span class="dv">1</span>)),</span>
+<span id="cb27-70"><a href="#cb27-70" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">6</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">1</span>, <span class="dv">1</span>)),</span>
+<span id="cb27-71"><a href="#cb27-71" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="sc">-</span><span class="dv">2</span>, <span class="dv">1</span>)),</span>
+<span id="cb27-72"><a href="#cb27-72" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">0</span>, <span class="dv">1</span>)),</span>
+<span id="cb27-73"><a href="#cb27-73" aria-hidden="true" tabindex="-1"></a>                <span class="fu">genDichoMatrix</span>(<span class="dv">9</span>, <span class="at">model =</span> <span class="st">"2PL"</span>,<span class="at">bPrior =</span> <span class="fu">c</span>(<span class="st">"norm"</span>, <span class="dv">2</span>, <span class="dv">1</span>)))</span>
+<span id="cb27-74"><a href="#cb27-74" aria-hidden="true" tabindex="-1"></a>it.MST <span class="ot">&lt;-</span> <span class="fu">as.matrix</span>(it.MST)</span>
+<span id="cb27-75"><a href="#cb27-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-76"><a href="#cb27-76" aria-hidden="true" tabindex="-1"></a>modules <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">47</span>, <span class="dv">6</span>)</span>
+<span id="cb27-77"><a href="#cb27-77" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-78"><a href="#cb27-78" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">9</span><span class="sc">:</span><span class="dv">14</span>, <span class="dv">2</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-79"><a href="#cb27-79" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">15</span><span class="sc">:</span><span class="dv">20</span>, <span class="dv">3</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-80"><a href="#cb27-80" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">21</span><span class="sc">:</span><span class="dv">29</span>, <span class="dv">4</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-81"><a href="#cb27-81" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">30</span><span class="sc">:</span><span class="dv">38</span>, <span class="dv">5</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-82"><a href="#cb27-82" aria-hidden="true" tabindex="-1"></a>modules[<span class="dv">39</span><span class="sc">:</span><span class="dv">47</span>, <span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-83"><a href="#cb27-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-84"><a href="#cb27-84" aria-hidden="true" tabindex="-1"></a><span class="fu">colSums</span>(modules)</span>
+<span id="cb27-85"><a href="#cb27-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-86"><a href="#cb27-86" aria-hidden="true" tabindex="-1"></a>trans <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">6</span>)</span>
+<span id="cb27-87"><a href="#cb27-87" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">1</span>, <span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-88"><a href="#cb27-88" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">2</span>, <span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-89"><a href="#cb27-89" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">3</span>, <span class="dv">5</span><span class="sc">:</span><span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-90"><a href="#cb27-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-91"><a href="#cb27-91" aria-hidden="true" tabindex="-1"></a><span class="fu">startModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans)</span>
+<span id="cb27-92"><a href="#cb27-92" aria-hidden="true" tabindex="-1"></a><span class="co"># startModule(itemBank = it.MST, modules = modules, transMatrix = trans, fixModule = 3)</span></span>
+<span id="cb27-93"><a href="#cb27-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-94"><a href="#cb27-94" aria-hidden="true" tabindex="-1"></a>x <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">1</span>, <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>, <span class="dv">0</span>)</span>
+<span id="cb27-95"><a href="#cb27-95" aria-hidden="true" tabindex="-1"></a>th<span class="ot">&lt;-</span>mstR<span class="sc">::</span><span class="fu">thetaEst</span>(it.MST[<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, ], x, <span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb27-96"><a href="#cb27-96" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-97"><a href="#cb27-97" aria-hidden="true" tabindex="-1"></a>cut <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="dv">0</span>),</span>
+<span id="cb27-98"><a href="#cb27-98" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>, <span class="sc">-</span><span class="dv">1</span>),</span>
+<span id="cb27-99"><a href="#cb27-99" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>,  <span class="dv">1</span>))</span>
+<span id="cb27-100"><a href="#cb27-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-101"><a href="#cb27-101" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules,<span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">1</span>, <span class="at">out =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="at">cutoff =</span> cut, <span class="at">theta =</span> th)</span>
+<span id="cb27-102"><a href="#cb27-102" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">1</span>, <span class="at">out =</span> <span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="at">cutoff =</span> cut, <span class="at">theta =</span> <span class="sc">-</span><span class="fl">0.2</span>)</span>
+<span id="cb27-103"><a href="#cb27-103" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-104"><a href="#cb27-104" aria-hidden="true" tabindex="-1"></a>cut.score <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="dv">5</span>),</span>
+<span id="cb27-105"><a href="#cb27-105" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>,  <span class="dv">5</span>),</span>
+<span id="cb27-106"><a href="#cb27-106" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>, <span class="dv">10</span>))</span>
+<span id="cb27-107"><a href="#cb27-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-108"><a href="#cb27-108" aria-hidden="true" tabindex="-1"></a><span class="fu">nextModule</span>(<span class="at">itemBank =</span> it.MST, <span class="at">modules =</span> modules, <span class="at">transMatrix =</span> trans, <span class="at">current.module =</span> <span class="dv">3</span>, <span class="at">out =</span> <span class="fu">c</span>(<span class="dv">1</span><span class="sc">:</span><span class="dv">8</span>, <span class="dv">15</span><span class="sc">:</span><span class="dv">20</span>), <span class="at">cutoff =</span> cut.score,<span class="at">theta =</span> th)</span>
+<span id="cb27-109"><a href="#cb27-109" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-110"><a href="#cb27-110" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-111"><a href="#cb27-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-112"><a href="#cb27-112" aria-hidden="true" tabindex="-1"></a><span class="fu">## Simulation Examples</span></span>
+<span id="cb27-113"><a href="#cb27-113" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-114"><a href="#cb27-114" aria-hidden="true" tabindex="-1"></a>This section runs full MST simulations using <span class="in">`randomMST`</span> and compares MST performance against CAT using <span class="in">`randomCAT`</span>. A 100-item bank with five 2PL items is used, assembled into six modules of 15 items each across a 1-2-2-1 branching design.</span>
+<span id="cb27-115"><a href="#cb27-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-116"><a href="#cb27-116" aria-hidden="true" tabindex="-1"></a>**Item bank** (<span class="in">`it.2PL`</span>): Five 2PL items with discrimination values from 0.8 to 1.2 and difficulties spanning −0.8 to 1.1, recycled to fill a 100-item bank. Parameters <span class="in">`c = 0`</span> and <span class="in">`d = 1`</span> indicate no guessing and no slipping.</span>
+<span id="cb27-117"><a href="#cb27-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-118"><a href="#cb27-118" aria-hidden="true" tabindex="-1"></a>**Module membership** (A1–F1): Six pre-defined sets of 15 item indices each, assembled into <span class="in">`module1`</span>. A1 is the stage-1 routing module; B1/C1 are stage-2 easy/hard modules; D1/E1/F1 are the three stage-3 modules.</span>
+<span id="cb27-119"><a href="#cb27-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-120"><a href="#cb27-120" aria-hidden="true" tabindex="-1"></a>**Simulation 1 — MFI module selection** (<span class="in">`mst.ex1`</span>): A single MST run at true θ = 0 using ML scoring and Maximum Fisher Information (MFI) for module selection. The two <span class="in">`Ii()`</span> calls confirm the routing decision by comparing total Fisher information in module 2 vs. module 3 at the stage-1 θ estimate — the module with higher information should be selected. <span class="in">`plot(mst.ex1)`</span> draws the routing path taken through the MST design.</span>
+<span id="cb27-121"><a href="#cb27-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-122"><a href="#cb27-122" aria-hidden="true" tabindex="-1"></a>**Simulation 2 — θ cutoff routing** (<span class="in">`mst.ex2`</span>): Routes modules using θ thresholds (θ &lt; 0 → easy; 0 ≤ θ ≤ 0.3 → medium; θ &gt; 0.3 → hard). Run at true θ = 1 to verify that the design routes to the harder modules.</span>
+<span id="cb27-123"><a href="#cb27-123" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-124"><a href="#cb27-124" aria-hidden="true" tabindex="-1"></a>**Simulation 3 — score cutoff routing** (<span class="in">`mst.ex3`</span>): Routes using raw number-correct score thresholds rather than θ estimates. The scoring method is set to <span class="in">`"score"`</span> for both routing and final estimation — useful when IRT calibration is not available at administration time.</span>
+<span id="cb27-125"><a href="#cb27-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-126"><a href="#cb27-126" aria-hidden="true" tabindex="-1"></a>**ASB and RMSE across the ability range**: A large-scale simulation (1000 replications × 9 ability levels from −2 to +2, all routed through the <span class="in">`module1`</span> design) estimates two accuracy metrics across the full latent trait range:</span>
+<span id="cb27-127"><a href="#cb27-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-128"><a href="#cb27-128" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**ASB (Average Signed Bias)**: mean difference between estimated and true θ — positive values indicate systematic overestimation, negative indicate underestimation.</span>
+<span id="cb27-129"><a href="#cb27-129" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**RMSE (Root Mean Square Error)**: overall estimation accuracy combining both bias and variance. Lower values indicate a more precise test design.</span>
+<span id="cb27-130"><a href="#cb27-130" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-131"><a href="#cb27-131" aria-hidden="true" tabindex="-1"></a>**MST vs. CAT comparison**: The final block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, randomesque = 5 for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2. Both <span class="in">`thFinal`</span> (final ability estimate) and <span class="in">`seFinal`</span> (standard error of measurement) are stored in <span class="in">`RES`</span> for comparison of precision between the two adaptive testing formats.</span>
+<span id="cb27-132"><a href="#cb27-132" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-133"><a href="#cb27-133" aria-hidden="true" tabindex="-1"></a><span class="in">```{r mst_examples,message=FALSE,warning=FALSE,results='hide',dev='png'}</span></span>
+<span id="cb27-134"><a href="#cb27-134" aria-hidden="true" tabindex="-1"></a>A1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">7</span>, <span class="dv">13</span>, <span class="dv">14</span>, <span class="dv">15</span>, <span class="dv">22</span>, <span class="dv">28</span>, <span class="dv">34</span>, <span class="dv">38</span>, <span class="dv">51</span>, <span class="dv">59</span>, <span class="dv">70</span>, <span class="dv">84</span>, <span class="dv">85</span>, <span class="dv">87</span>, <span class="dv">89</span>)</span>
+<span id="cb27-135"><a href="#cb27-135" aria-hidden="true" tabindex="-1"></a>B1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">12</span>, <span class="dv">19</span>, <span class="dv">27</span>, <span class="dv">29</span>, <span class="dv">39</span>, <span class="dv">43</span>, <span class="dv">60</span>, <span class="dv">69</span>, <span class="dv">71</span>, <span class="dv">72</span>, <span class="dv">73</span>, <span class="dv">75</span>, <span class="dv">90</span>, <span class="dv">97</span>)</span>
+<span id="cb27-136"><a href="#cb27-136" aria-hidden="true" tabindex="-1"></a>C1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">32</span>, <span class="dv">35</span>, <span class="dv">36</span>, <span class="dv">45</span>, <span class="dv">52</span>, <span class="dv">57</span>, <span class="dv">61</span>, <span class="dv">63</span>, <span class="dv">66</span>, <span class="dv">78</span>, <span class="dv">81</span>,<span class="dv">82</span>, <span class="dv">88</span>, <span class="dv">92</span>, <span class="dv">100</span>)</span>
+<span id="cb27-137"><a href="#cb27-137" aria-hidden="true" tabindex="-1"></a>D1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">2</span>, <span class="dv">3</span>, <span class="dv">6</span>, <span class="dv">18</span>, <span class="dv">21</span>, <span class="dv">41</span>, <span class="dv">48</span>, <span class="dv">49</span>, <span class="dv">50</span>, <span class="dv">54</span>, <span class="dv">56</span>, <span class="dv">58</span>, <span class="dv">65</span>, <span class="dv">77</span>)</span>
+<span id="cb27-138"><a href="#cb27-138" aria-hidden="true" tabindex="-1"></a>E1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">16</span>, <span class="dv">24</span>, <span class="dv">25</span>, <span class="dv">26</span>, <span class="dv">37</span>, <span class="dv">40</span>, <span class="dv">44</span>, <span class="dv">53</span>, <span class="dv">68</span>, <span class="dv">74</span>, <span class="dv">80</span>, <span class="dv">86</span>, <span class="dv">91</span>, <span class="dv">93</span>)</span>
+<span id="cb27-139"><a href="#cb27-139" aria-hidden="true" tabindex="-1"></a>F1 <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">9</span>, <span class="dv">11</span>, <span class="dv">31</span>, <span class="dv">46</span>, <span class="dv">47</span>, <span class="dv">55</span>, <span class="dv">64</span>, <span class="dv">67</span>, <span class="dv">76</span>, <span class="dv">79</span>, <span class="dv">83</span>, <span class="dv">94</span>, <span class="dv">95</span>, <span class="dv">98</span>, <span class="dv">99</span>)</span>
+<span id="cb27-140"><a href="#cb27-140" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-141"><a href="#cb27-141" aria-hidden="true" tabindex="-1"></a>a <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">c</span>(<span class="fl">0.8</span>, <span class="fl">0.9</span>, <span class="fl">1.0</span>, <span class="fl">1.1</span>, <span class="fl">1.2</span>), <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb27-142"><a href="#cb27-142" aria-hidden="true" tabindex="-1"></a>b <span class="ot">&lt;-</span> <span class="fu">rep</span>(<span class="fu">c</span>(<span class="fl">0.0</span>, <span class="sc">-</span><span class="fl">0.5</span>, <span class="fl">1.1</span>, <span class="sc">-</span><span class="fl">0.8</span>, <span class="fl">0.7</span>), <span class="at">length.out =</span> <span class="dv">100</span>)</span>
+<span id="cb27-143"><a href="#cb27-143" aria-hidden="true" tabindex="-1"></a>it<span class="fl">.2</span>PL <span class="ot">&lt;-</span> <span class="fu">cbind</span>(a, b, <span class="at">c =</span> <span class="dv">0</span>, <span class="at">d =</span> <span class="dv">1</span>)</span>
+<span id="cb27-144"><a href="#cb27-144" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-145"><a href="#cb27-145" aria-hidden="true" tabindex="-1"></a>module1 <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">100</span>, <span class="dv">6</span>)</span>
+<span id="cb27-146"><a href="#cb27-146" aria-hidden="true" tabindex="-1"></a>module1[A1, <span class="dv">1</span>] <span class="ot">&lt;-</span> module1[B1, <span class="dv">2</span>] <span class="ot">&lt;-</span> module1[C1, <span class="dv">3</span>] <span class="ot">&lt;-</span> module1[D1, <span class="dv">4</span>] <span class="ot">&lt;-</span> module1[E1, <span class="dv">5</span>] <span class="ot">&lt;-</span> module1[F1, <span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-147"><a href="#cb27-147" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-148"><a href="#cb27-148" aria-hidden="true" tabindex="-1"></a>trans <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="dv">0</span>, <span class="dv">6</span>, <span class="dv">6</span>)</span>
+<span id="cb27-149"><a href="#cb27-149" aria-hidden="true" tabindex="-1"></a>trans[<span class="dv">1</span>, <span class="dv">2</span><span class="sc">:</span><span class="dv">3</span>] <span class="ot">&lt;-</span> trans[<span class="dv">2</span>, <span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>] <span class="ot">&lt;-</span> trans[<span class="dv">3</span>, <span class="dv">5</span><span class="sc">:</span><span class="dv">6</span>] <span class="ot">&lt;-</span> <span class="dv">1</span></span>
+<span id="cb27-150"><a href="#cb27-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-151"><a href="#cb27-151" aria-hidden="true" tabindex="-1"></a>start <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb27-152"><a href="#cb27-152" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-153"><a href="#cb27-153" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb27-154"><a href="#cb27-154" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb27-155"><a href="#cb27-155" aria-hidden="true" tabindex="-1"></a>mst.ex1 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">0</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test, <span class="at">final =</span> final)</span>
+<span id="cb27-156"><a href="#cb27-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-157"><a href="#cb27-157" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">Ii</span>(<span class="fl">0.204</span>, it<span class="fl">.2</span>PL[module1[, <span class="dv">2</span>] <span class="sc">==</span> <span class="dv">1</span>, ])<span class="sc">$</span>Ii)</span>
+<span id="cb27-158"><a href="#cb27-158" aria-hidden="true" tabindex="-1"></a><span class="fu">sum</span>(<span class="fu">Ii</span>(<span class="fl">0.204</span>, it<span class="fl">.2</span>PL[module1[, <span class="dv">3</span>] <span class="sc">==</span> <span class="dv">1</span>, ])<span class="sc">$</span>Ii)</span>
+<span id="cb27-159"><a href="#cb27-159" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-160"><a href="#cb27-160" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(mst.ex1, <span class="at">border.col =</span> <span class="st">"grey"</span>, <span class="at">arrow.col =</span> <span class="st">"grey"</span>)</span>
+<span id="cb27-161"><a href="#cb27-161" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-162"><a href="#cb27-162" aria-hidden="true" tabindex="-1"></a>cut <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="fl">0.0</span>),</span>
+<span id="cb27-163"><a href="#cb27-163" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>, <span class="sc">-</span><span class="fl">0.3</span>),</span>
+<span id="cb27-164"><a href="#cb27-164" aria-hidden="true" tabindex="-1"></a>             <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>,  <span class="fl">0.3</span>))</span>
+<span id="cb27-165"><a href="#cb27-165" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-166"><a href="#cb27-166" aria-hidden="true" tabindex="-1"></a>test2 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>, <span class="at">cutoff =</span> cut)</span>
+<span id="cb27-167"><a href="#cb27-167" aria-hidden="true" tabindex="-1"></a>mst.ex2 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">1</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test2, <span class="at">final =</span> final)</span>
+<span id="cb27-168"><a href="#cb27-168" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-169"><a href="#cb27-169" aria-hidden="true" tabindex="-1"></a>cut2 <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">c</span>(<span class="dv">2</span>, <span class="dv">3</span>,  <span class="fl">7.5</span>),</span>
+<span id="cb27-170"><a href="#cb27-170" aria-hidden="true" tabindex="-1"></a>              <span class="fu">c</span>(<span class="dv">4</span>, <span class="dv">5</span>,  <span class="fl">9.5</span>),</span>
+<span id="cb27-171"><a href="#cb27-171" aria-hidden="true" tabindex="-1"></a>              <span class="fu">c</span>(<span class="dv">5</span>, <span class="dv">6</span>, <span class="fl">20.5</span>))</span>
+<span id="cb27-172"><a href="#cb27-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-173"><a href="#cb27-173" aria-hidden="true" tabindex="-1"></a>test3 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"score"</span>, <span class="at">cutoff =</span> cut2)</span>
+<span id="cb27-174"><a href="#cb27-174" aria-hidden="true" tabindex="-1"></a>final3 <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"score"</span>)</span>
+<span id="cb27-175"><a href="#cb27-175" aria-hidden="true" tabindex="-1"></a>mst.ex3 <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> <span class="dv">1</span>, <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1, <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> <span class="dv">1</span>, <span class="at">start =</span> start, <span class="at">test =</span> test3, <span class="at">final =</span> final)</span>
+<span id="cb27-176"><a href="#cb27-176" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-177"><a href="#cb27-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-178"><a href="#cb27-178" aria-hidden="true" tabindex="-1"></a><span class="fu">### Accuracy across the ability range</span></span>
+<span id="cb27-179"><a href="#cb27-179" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-180"><a href="#cb27-180" aria-hidden="true" tabindex="-1"></a>The block below runs 1000 replications at each of 9 true θ levels (from −2 to +2) through the <span class="in">`module1`</span> design, then computes **ASB** and **RMSE** at every level from the resulting θ estimates.</span>
+<span id="cb27-181"><a href="#cb27-181" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-182"><a href="#cb27-182" aria-hidden="true" tabindex="-1"></a><span class="in">```{r asb_rmse_sim,message=FALSE,warning=FALSE,results='hide'}</span></span>
+<span id="cb27-183"><a href="#cb27-183" aria-hidden="true" tabindex="-1"></a>s <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>, <span class="fl">0.5</span>)</span>
+<span id="cb27-184"><a href="#cb27-184" aria-hidden="true" tabindex="-1"></a>TH <span class="ot">&lt;-</span> <span class="fu">rep</span>(s, <span class="at">each =</span> <span class="dv">1000</span>)</span>
+<span id="cb27-185"><a href="#cb27-185" aria-hidden="true" tabindex="-1"></a>RES <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(TH), <span class="dv">1</span>)</span>
+<span id="cb27-186"><a href="#cb27-186" aria-hidden="true" tabindex="-1"></a>start <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb27-187"><a href="#cb27-187" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb27-188"><a href="#cb27-188" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"ML"</span>)</span>
+<span id="cb27-189"><a href="#cb27-189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-190"><a href="#cb27-190" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(TH)){</span>
+<span id="cb27-191"><a href="#cb27-191" aria-hidden="true" tabindex="-1"></a>  prov <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb27-192"><a href="#cb27-192" aria-hidden="true" tabindex="-1"></a>                    <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">modules =</span> module1,</span>
+<span id="cb27-193"><a href="#cb27-193" aria-hidden="true" tabindex="-1"></a>                    <span class="at">transMatrix =</span> trans, <span class="at">genSeed =</span> i, <span class="at">start =</span> start,</span>
+<span id="cb27-194"><a href="#cb27-194" aria-hidden="true" tabindex="-1"></a>                    <span class="at">test =</span> test, <span class="at">final =</span> final)</span>
+<span id="cb27-195"><a href="#cb27-195" aria-hidden="true" tabindex="-1"></a>  RES[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> prov<span class="sc">$</span>thFinal</span>
+<span id="cb27-196"><a href="#cb27-196" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb27-197"><a href="#cb27-197" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-198"><a href="#cb27-198" aria-hidden="true" tabindex="-1"></a>res.ASB <span class="ot">&lt;-</span> res.RMSE <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(s), <span class="dv">1</span>)</span>
+<span id="cb27-199"><a href="#cb27-199" aria-hidden="true" tabindex="-1"></a>ASB <span class="ot">&lt;-</span> <span class="cf">function</span>(t, th) <span class="fu">mean</span>(t<span class="sc">-</span>th)</span>
+<span id="cb27-200"><a href="#cb27-200" aria-hidden="true" tabindex="-1"></a>RMSE <span class="ot">&lt;-</span> <span class="cf">function</span>(t, th) <span class="fu">sqrt</span>(<span class="fu">mean</span>((t<span class="sc">-</span>th)<span class="sc">^</span><span class="dv">2</span>))</span>
+<span id="cb27-201"><a href="#cb27-201" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-202"><a href="#cb27-202" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(s)){</span>
+<span id="cb27-203"><a href="#cb27-203" aria-hidden="true" tabindex="-1"></a>  ind <span class="ot">&lt;-</span> <span class="fu">which</span>(TH <span class="sc">==</span> s[i])</span>
+<span id="cb27-204"><a href="#cb27-204" aria-hidden="true" tabindex="-1"></a>  res.ASB[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">ASB</span>(RES[ind, <span class="dv">1</span>], s[i])</span>
+<span id="cb27-205"><a href="#cb27-205" aria-hidden="true" tabindex="-1"></a>  res.RMSE[i, <span class="dv">1</span>] <span class="ot">&lt;-</span> <span class="fu">RMSE</span>(RES[ind, <span class="dv">1</span>], s[i])</span>
+<span id="cb27-206"><a href="#cb27-206" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb27-207"><a href="#cb27-207" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-208"><a href="#cb27-208" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-209"><a href="#cb27-209" aria-hidden="true" tabindex="-1"></a><span class="in">```{r asb_rmse_plot,dev='png'}</span></span>
+<span id="cb27-210"><a href="#cb27-210" aria-hidden="true" tabindex="-1"></a>df_asb_rmse <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">theta =</span> s, <span class="at">ASB =</span> res.ASB[, <span class="dv">1</span>], <span class="at">RMSE =</span> res.RMSE[, <span class="dv">1</span>])</span>
+<span id="cb27-211"><a href="#cb27-211" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(df_asb_rmse)</span>
+<span id="cb27-212"><a href="#cb27-212" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-213"><a href="#cb27-213" aria-hidden="true" tabindex="-1"></a>df_asb_rmse_long <span class="ot">&lt;-</span> reshape2<span class="sc">::</span><span class="fu">melt</span>(df_asb_rmse, <span class="at">id.vars =</span> <span class="st">"theta"</span>, <span class="at">variable.name =</span> <span class="st">"Metric"</span>, <span class="at">value.name =</span> <span class="st">"value"</span>)</span>
+<span id="cb27-214"><a href="#cb27-214" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-215"><a href="#cb27-215" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(df_asb_rmse_long, <span class="fu">aes</span>(<span class="at">x =</span> theta, <span class="at">y =</span> value, <span class="at">color =</span> Metric)) <span class="sc">+</span></span>
+<span id="cb27-216"><a href="#cb27-216" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>, <span class="at">color =</span> <span class="st">"grey60"</span>) <span class="sc">+</span></span>
+<span id="cb27-217"><a href="#cb27-217" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb27-218"><a href="#cb27-218" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb27-219"><a href="#cb27-219" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"MST accuracy across the ability range"</span>,</span>
+<span id="cb27-220"><a href="#cb27-220" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"True theta"</span>, <span class="at">y =</span> <span class="st">"Metric value"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb27-221"><a href="#cb27-221" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">12</span>)</span>
+<span id="cb27-222"><a href="#cb27-222" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-223"><a href="#cb27-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-224"><a href="#cb27-224" aria-hidden="true" tabindex="-1"></a>ASB near zero at every θ indicates the design is unbiased across the ability range; a systematic upward or downward drift at the extremes would indicate the module design under- or over-estimates examinees at those levels. RMSE typically rises toward both ends of the θ range, since fewer items in the bank concentrate information near the middle of the scale (θ = 0).</span>
+<span id="cb27-225"><a href="#cb27-225" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-226"><a href="#cb27-226" aria-hidden="true" tabindex="-1"></a><span class="fu">### MST vs. CAT comparison</span></span>
+<span id="cb27-227"><a href="#cb27-227" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-228"><a href="#cb27-228" aria-hidden="true" tabindex="-1"></a>This block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, <span class="in">`randomesque = 5`</span> for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2.</span>
+<span id="cb27-229"><a href="#cb27-229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-230"><a href="#cb27-230" aria-hidden="true" tabindex="-1"></a><span class="in">```{r cat_mst_sim,message=FALSE,warning=FALSE,results='hide'}</span></span>
+<span id="cb27-231"><a href="#cb27-231" aria-hidden="true" tabindex="-1"></a>s <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">2</span>, <span class="dv">2</span>, <span class="fl">0.5</span>)</span>
+<span id="cb27-232"><a href="#cb27-232" aria-hidden="true" tabindex="-1"></a>TH <span class="ot">&lt;-</span> <span class="fu">rep</span>(s, <span class="at">each =</span> <span class="dv">1000</span>)</span>
+<span id="cb27-233"><a href="#cb27-233" aria-hidden="true" tabindex="-1"></a>DATA <span class="ot">&lt;-</span> <span class="fu">genPattern</span>(TH, it<span class="fl">.2</span>PL, <span class="at">seed =</span> <span class="dv">1</span>)</span>
+<span id="cb27-234"><a href="#cb27-234" aria-hidden="true" tabindex="-1"></a>RES <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="cn">NA</span>, <span class="fu">length</span>(TH), <span class="dv">4</span>)</span>
+<span id="cb27-235"><a href="#cb27-235" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-236"><a href="#cb27-236" aria-hidden="true" tabindex="-1"></a>start.mst <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>)</span>
+<span id="cb27-237"><a href="#cb27-237" aria-hidden="true" tabindex="-1"></a>start.cat <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">theta =</span> <span class="dv">0</span>, <span class="at">randomesque =</span> <span class="dv">5</span>)</span>
+<span id="cb27-238"><a href="#cb27-238" aria-hidden="true" tabindex="-1"></a>test.cat <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">itemSelect =</span> <span class="st">"MFI"</span>, <span class="at">randomesque =</span> <span class="dv">5</span>)</span>
+<span id="cb27-239"><a href="#cb27-239" aria-hidden="true" tabindex="-1"></a>test.mst <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>, <span class="at">moduleSelect =</span> <span class="st">"MFI"</span>)</span>
+<span id="cb27-240"><a href="#cb27-240" aria-hidden="true" tabindex="-1"></a>stop <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">rule =</span> <span class="st">"length"</span>, <span class="at">thr =</span> <span class="dv">45</span>)</span>
+<span id="cb27-241"><a href="#cb27-241" aria-hidden="true" tabindex="-1"></a>final <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">method =</span> <span class="st">"BM"</span>)</span>
+<span id="cb27-242"><a href="#cb27-242" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-243"><a href="#cb27-243" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> (i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(TH)){</span>
+<span id="cb27-244"><a href="#cb27-244" aria-hidden="true" tabindex="-1"></a>  pr <span class="ot">&lt;-</span> <span class="fu">randomCAT</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb27-245"><a href="#cb27-245" aria-hidden="true" tabindex="-1"></a>                  <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">genSeed =</span> i, <span class="at">start =</span> start.cat,</span>
+<span id="cb27-246"><a href="#cb27-246" aria-hidden="true" tabindex="-1"></a>                  <span class="at">test =</span> test.cat, <span class="at">stop =</span> stop, <span class="at">final =</span> final)</span>
+<span id="cb27-247"><a href="#cb27-247" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">1</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>thFinal</span>
+<span id="cb27-248"><a href="#cb27-248" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">2</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>seFinal</span>
+<span id="cb27-249"><a href="#cb27-249" aria-hidden="true" tabindex="-1"></a>  pr <span class="ot">&lt;-</span> <span class="fu">randomMST</span>(<span class="at">trueTheta =</span> TH[i],</span>
+<span id="cb27-250"><a href="#cb27-250" aria-hidden="true" tabindex="-1"></a>                  <span class="at">itemBank =</span> it<span class="fl">.2</span>PL, <span class="at">genSeed =</span> i, <span class="at">modules =</span> module1,</span>
+<span id="cb27-251"><a href="#cb27-251" aria-hidden="true" tabindex="-1"></a>                  <span class="at">transMatrix =</span> trans, <span class="at">start =</span> start.mst,</span>
+<span id="cb27-252"><a href="#cb27-252" aria-hidden="true" tabindex="-1"></a>                  <span class="at">test =</span> test.mst, <span class="at">final =</span> final)</span>
+<span id="cb27-253"><a href="#cb27-253" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">3</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>thFinal</span>
+<span id="cb27-254"><a href="#cb27-254" aria-hidden="true" tabindex="-1"></a>  RES[i,<span class="dv">4</span>] <span class="ot">&lt;-</span> pr<span class="sc">$</span>seFinal</span>
+<span id="cb27-255"><a href="#cb27-255" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb27-256"><a href="#cb27-256" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-257"><a href="#cb27-257" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-258"><a href="#cb27-258" aria-hidden="true" tabindex="-1"></a><span class="in">```{r cat_mst_summary,dev='png'}</span></span>
+<span id="cb27-259"><a href="#cb27-259" aria-hidden="true" tabindex="-1"></a>df_compare <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb27-260"><a href="#cb27-260" aria-hidden="true" tabindex="-1"></a>  <span class="at">theta     =</span> TH,</span>
+<span id="cb27-261"><a href="#cb27-261" aria-hidden="true" tabindex="-1"></a>  <span class="at">cat_theta =</span> RES[, <span class="dv">1</span>],</span>
+<span id="cb27-262"><a href="#cb27-262" aria-hidden="true" tabindex="-1"></a>  <span class="at">cat_se    =</span> RES[, <span class="dv">2</span>],</span>
+<span id="cb27-263"><a href="#cb27-263" aria-hidden="true" tabindex="-1"></a>  <span class="at">mst_theta =</span> RES[, <span class="dv">3</span>],</span>
+<span id="cb27-264"><a href="#cb27-264" aria-hidden="true" tabindex="-1"></a>  <span class="at">mst_se    =</span> RES[, <span class="dv">4</span>]</span>
+<span id="cb27-265"><a href="#cb27-265" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb27-266"><a href="#cb27-266" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-267"><a href="#cb27-267" aria-hidden="true" tabindex="-1"></a>summary_compare <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(s, <span class="cf">function</span>(th) {</span>
+<span id="cb27-268"><a href="#cb27-268" aria-hidden="true" tabindex="-1"></a>  ind <span class="ot">&lt;-</span> <span class="fu">which</span>(TH <span class="sc">==</span> th)</span>
+<span id="cb27-269"><a href="#cb27-269" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(</span>
+<span id="cb27-270"><a href="#cb27-270" aria-hidden="true" tabindex="-1"></a>    <span class="at">theta    =</span> th,</span>
+<span id="cb27-271"><a href="#cb27-271" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_ASB  =</span> <span class="fu">ASB</span>(df_compare<span class="sc">$</span>cat_theta[ind], th),</span>
+<span id="cb27-272"><a href="#cb27-272" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_RMSE =</span> <span class="fu">RMSE</span>(df_compare<span class="sc">$</span>cat_theta[ind], th),</span>
+<span id="cb27-273"><a href="#cb27-273" aria-hidden="true" tabindex="-1"></a>    <span class="at">cat_SE   =</span> <span class="fu">mean</span>(df_compare<span class="sc">$</span>cat_se[ind]),</span>
+<span id="cb27-274"><a href="#cb27-274" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_ASB  =</span> <span class="fu">ASB</span>(df_compare<span class="sc">$</span>mst_theta[ind], th),</span>
+<span id="cb27-275"><a href="#cb27-275" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_RMSE =</span> <span class="fu">RMSE</span>(df_compare<span class="sc">$</span>mst_theta[ind], th),</span>
+<span id="cb27-276"><a href="#cb27-276" aria-hidden="true" tabindex="-1"></a>    <span class="at">mst_SE   =</span> <span class="fu">mean</span>(df_compare<span class="sc">$</span>mst_se[ind])</span>
+<span id="cb27-277"><a href="#cb27-277" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb27-278"><a href="#cb27-278" aria-hidden="true" tabindex="-1"></a>}))</span>
+<span id="cb27-279"><a href="#cb27-279" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-280"><a href="#cb27-280" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(summary_compare)</span>
+<span id="cb27-281"><a href="#cb27-281" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-282"><a href="#cb27-282" aria-hidden="true" tabindex="-1"></a>summary_long <span class="ot">&lt;-</span> reshape2<span class="sc">::</span><span class="fu">melt</span>(</span>
+<span id="cb27-283"><a href="#cb27-283" aria-hidden="true" tabindex="-1"></a>  summary_compare[, <span class="fu">c</span>(<span class="st">"theta"</span>, <span class="st">"cat_RMSE"</span>, <span class="st">"mst_RMSE"</span>, <span class="st">"cat_SE"</span>, <span class="st">"mst_SE"</span>)],</span>
+<span id="cb27-284"><a href="#cb27-284" aria-hidden="true" tabindex="-1"></a>  <span class="at">id.vars =</span> <span class="st">"theta"</span>, <span class="at">variable.name =</span> <span class="st">"Metric"</span>, <span class="at">value.name =</span> <span class="st">"value"</span></span>
+<span id="cb27-285"><a href="#cb27-285" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb27-286"><a href="#cb27-286" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-287"><a href="#cb27-287" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(summary_long, <span class="fu">aes</span>(<span class="at">x =</span> theta, <span class="at">y =</span> value, <span class="at">color =</span> Metric)) <span class="sc">+</span></span>
+<span id="cb27-288"><a href="#cb27-288" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb27-289"><a href="#cb27-289" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>() <span class="sc">+</span></span>
+<span id="cb27-290"><a href="#cb27-290" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title =</span> <span class="st">"CAT vs. MST: RMSE and average SE across the ability range"</span>,</span>
+<span id="cb27-291"><a href="#cb27-291" aria-hidden="true" tabindex="-1"></a>       <span class="at">x =</span> <span class="st">"True theta"</span>, <span class="at">y =</span> <span class="st">"Value"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb27-292"><a href="#cb27-292" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">12</span>)</span>
+<span id="cb27-293"><a href="#cb27-293" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb27-294"><a href="#cb27-294" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-295"><a href="#cb27-295" aria-hidden="true" tabindex="-1"></a>CAT selects the single best item at every step, so it is expected to match or beat MST's RMSE and average SE at every θ level — MST instead trades some of that per-item precision for the practical advantages of pre-assembled, reviewable modules (content balancing, easier quality control, and no need for real-time item-level adaptation).</span>
+<span id="cb27-296"><a href="#cb27-296" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-297"><a href="#cb27-297" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb27-298"><a href="#cb27-298" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-299"><a href="#cb27-299" aria-hidden="true" tabindex="-1"></a><span class="fu">## Conclusion</span></span>
+<span id="cb27-300"><a href="#cb27-300" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-301"><a href="#cb27-301" aria-hidden="true" tabindex="-1"></a>This vignette worked through MST from the ground up: routing a single examinee by hand with <span class="in">`startModule`</span>/<span class="in">`nextModule`</span> (via both θ and raw-score cutoffs), running full simulated administrations with <span class="in">`randomMST`</span> under three different routing rules, and evaluating a complete design's accuracy (ASB, RMSE) across the ability range. The final comparison against <span class="in">`catR`</span>'s <span class="in">`randomCAT`</span> quantifies the precision MST gives up relative to fully adaptive CAT in exchange for its practical advantages — fixed, reviewable modules assembled ahead of time rather than item-by-item adaptive selection.</span>
+<span id="cb27-302"><a href="#cb27-302" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-303"><a href="#cb27-303" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-304"><a href="#cb27-304" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-305"><a href="#cb27-305" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-306"><a href="#cb27-306" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-307"><a href="#cb27-307" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-308"><a href="#cb27-308" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-309"><a href="#cb27-309" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-310"><a href="#cb27-310" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-311"><a href="#cb27-311" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-312"><a href="#cb27-312" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-313"><a href="#cb27-313" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-314"><a href="#cb27-314" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-315"><a href="#cb27-315" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-316"><a href="#cb27-316" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-317"><a href="#cb27-317" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-318"><a href="#cb27-318" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-319"><a href="#cb27-319" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-320"><a href="#cb27-320" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-321"><a href="#cb27-321" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb27-322"><a href="#cb27-322" aria-hidden="true" tabindex="-1"></a></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+</div></div></div></div></div>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
