@@ -42,7 +42,7 @@ reticulate::use_virtualenv("r-tensorflow")
 
 
 # Keras on the MNIST dataset
-The code bellow works with the keras and psycholate library. Most of the code was taken from Chollet and Allaire (1917) book: Deep Learning with R.
+The code bellow works with the keras and psycholate library. Most of the code was taken from Chollet and Allaire (2018) book: Deep Learning with R (see Acknowledgments).
 ```{r set-options}
 
 library(tensorflow)
@@ -162,11 +162,26 @@ differences<-setdiff(1:length(op$predict),which(op$predict==op$observe))
 
 ## Errors
 From the 10000 image test dataset, the network was unable to classify correctly `r length(differences)` images. It may be interesting to visualize these miss classified images.
-```{r,out.width="10%"}
+Each image is labelled predicted/observed.
+```{r errors,fig.width=10,fig.height=ceiling(length(differences)/20)*0.6,out.width="100%"}
 
 length(differences)
-for(i in differences)
+par(mfrow=c(ceiling(length(differences)/20),20),mar=c(0,0,1,0))
+for(i in differences) {
   plot(as.raster(mnist$test$x[i,,],max=255))
+  title(paste0(op$predict[i],"/",op$observe[i]),cex.main=0.8,font.main=1)
+}
 
 ```
 
+
+# Acknowledgments
+The network, data preparation and training code follow the MNIST example in chapter 2 ("A first look at a neural network") of Chollet and Allaire (2018). The data come from the MNIST database (LeCun et al., 1998). The model diagram is drawn with deepviz, and the confusion matrix and scatterplot use helper functions from rwf.
+
+- Chollet, F., & Allaire, J. J. (2018). *Deep Learning with R*. Manning Publications.
+- LeCun, Y., Bottou, L., Bengio, Y., & Haffner, P. (1998). Gradient-based learning applied to document recognition. *Proceedings of the IEEE, 86*(11), 2278–2324.
+- LeCun, Y., Cortes, C., & Burges, C. J. C. *The MNIST database of handwritten digits*. <http://yann.lecun.com/exdb/mnist/>
+- Allaire, J. J., & Chollet, F. *keras: R Interface to 'Keras'*. R package. <https://keras.posit.co/>
+- Allaire, J. J., & Tang, Y. *tensorflow: R Interface to 'TensorFlow'*. R package. <https://tensorflow.rstudio.com/>
+- de Vries, A. *deepviz: Visualize deep learning models*. R package. <https://github.com/andrie/deepviz>
+- *rwf*: R functions used across these examples. <https://github.com/sedzinfo/rwf>
