@@ -34,9 +34,10 @@ graph on its own so it's easy to study in isolation.
 
 **The idea:** A trend can be true in *every single subgroup* of your data, yet
 completely reverse once you combine all the groups together. Imagine three
-sales teams that are each individually improving month over month — but
-because of how their starting points are staggered, the *company-wide* average
-looks like it's declining. Nothing dishonest is happening; it's just a
+schools where students who study more score higher *within each school* — but
+the school where students study most has the lowest-scoring intake, so across
+all schools combined, more study looks linked to *lower* scores. Nothing
+dishonest is happening; it's just a
 consequence of how the groups sit relative to each other.
 
 ```{r simpsons}
@@ -194,8 +195,9 @@ because it fits your training data perfectly.
 
 # Anscombe's Quartet
 
-**The idea:** Four datasets can have the *exact same* mean, variance,
-correlation, and even the same best-fit regression line — while looking
+**The idea:** Four datasets can have *nearly identical* means, variances,
+correlations, and best-fit regression lines (equal to two or three decimal
+places) — while looking
 nothing alike when plotted. One is a clean straight-line relationship, one is
 a curve, one has a single outlier bending an otherwise perfect line, and one
 is a vertical cluster distorted by a single extreme point. The lesson: summary
@@ -230,7 +232,7 @@ p1 <- ggplot(al, aes(x, y)) +
 p1
 ```
 
-Every one of these four panels has identical summary numbers. Only by
+Every one of these four panels has virtually identical summary numbers. Only by
 plotting them do you see that dataset II is curved, dataset III has an outlier
 throwing off an otherwise perfect line, and dataset IV is driven entirely by
 one extreme x-value.
@@ -342,7 +344,7 @@ p3 <- ggplot(wr, aes(x = group, y = value)) +
   ) +
   labs(
     title    = "Will Rogers Phenomenon",
-    subtitle = "Reclassifying one patient raises the average survival of BOTH groups",
+    subtitle = "Moving one value from A to B raises the average of BOTH groups",
     x = NULL, y = "Value"
   ) + theme_bw(base_size = 13) +
   theme(plot.title = element_text(face = "bold", size = 12),
@@ -519,8 +521,9 @@ p2
 ```
 
 Same underlying dataset — we've just zoomed into the red-shaded window of X
-values. The correlation inside that window drops sharply from 0.80 to close
-to zero, even though nothing about the true relationship changed.
+values. The correlation inside that window drops sharply from
+`r round(r_full,2)` to about `r round(r_sub,2)`, even though nothing about the
+true relationship changed.
 
 ## Panel 3 — Correlation as a Function of Window Width
 
@@ -557,7 +560,7 @@ p3 <- ggplot(curve_dat, aes(window_width, r)) +
   scale_y_continuous(limits = c(0, 1)) +
   labs(
     title    = "Observed r vs. Range Width",
-    subtitle = "Narrowing the observed range drives correlation to zero",
+    subtitle = "Narrowing the observed range shrinks the observed correlation",
     x = "Width of observed x-window",
     y = "Observed Pearson r"
   ) + t
@@ -619,8 +622,8 @@ intuition expects.
 
 # False Positive Paradox (Base Rate Fallacy)
 
-**The idea:** Even a highly accurate medical test can be wrong about *you*
-more often than it's right, if the condition it's testing for is rare. If a
+**The idea:** Even a highly accurate medical test can be wrong about *you* as
+often as it's right, or more often, if the condition it's testing for is rare. If a
 test is 99% accurate (both at correctly flagging sick people and correctly
 clearing healthy ones), but only 1% of the population actually has the
 disease, roughly half of all positive results will still be false alarms.
@@ -654,17 +657,19 @@ p2
 ```
 
 The y-axis (positive predictive value) is the chance a positive result is a
-*true* positive. At 1% prevalence it's barely above 50%, even though the test
-itself is 99% accurate. As the disease becomes more common (moving right), the
+*true* positive. At 1% prevalence it's only `r round(hit$ppv*100)`% — a coin
+flip — even though the test itself is 99% accurate. As the disease becomes more common (moving right), the
 test becomes far more trustworthy.
 
 # Parrondo's Paradox
 
 **The idea:** Take two gambling games that are each, individually, rigged to
-lose money on average. Now alternate between them, switching back and forth.
-Astonishingly, the combined strategy can *win* over time. This happens because
-one game's outcome (win/lose) changes what odds you face in the other game —
-their interaction creates an opportunity that neither game has on its own.
+lose money on average. Now switch between them in a fixed pattern (A, B, B, A,
+B, B, ...). Astonishingly, the combined strategy can *win* over time. This
+happens because Game B's odds depend on your current capital (whether it is a
+multiple of 3), and the moves made in Game A knock your capital out of Game B's
+unfavorable state more often than Game B alone would — their interaction
+creates an opportunity that neither game has on its own.
 
 ```{r parrondo, fig.width=8}
 play_game <- function(game, capital) {
@@ -677,14 +682,14 @@ run_strat <- function(strategy, rounds = 300) {
   sapply(seq_len(rounds), function(i) {
     g <- if (strategy == "A") "A"
     else if (strategy == "B") "B"
-    else if (i %% 2 == 1) "A" else "B"
+    else if (i %% 3 == 1) "A" else "B"   # repeating A, B, B pattern
     cap <<- play_game(g, cap)
     cap
   })
 }
 
 n_sims <- 40
-par_dat <- do.call(rbind, lapply(c("A", "B", "A+B (alternating)"), function(strat) {
+par_dat <- do.call(rbind, lapply(c("A", "B", "A+B (ABB pattern)"), function(strat) {
   do.call(rbind, lapply(seq_len(n_sims), function(s) {
     set.seed(s * 17)
     data.frame(round = seq_len(300), capital = run_strat(strat),
@@ -692,6 +697,7 @@ par_dat <- do.call(rbind, lapply(c("A", "B", "A+B (alternating)"), function(stra
   }))
 }))
 par_mean <- aggregate(capital ~ round + strategy, par_dat, mean)
+end_cap  <- with(par_mean[par_mean$round == 300, ], setNames(capital, strategy))
 
 p3 <- ggplot(par_dat, aes(round, capital,
                           group = interaction(sim, strategy), color = strategy)) +
@@ -699,19 +705,24 @@ p3 <- ggplot(par_dat, aes(round, capital,
   geom_line(data = par_mean, aes(group = strategy), linewidth = 1.3) +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black", linewidth = 0.6) +
   scale_color_manual(
-    values = c("A" = C1, "B" = CG, "A+B (alternating)" = C3),
-    labels = c("Game A  (losing)", "Game B  (losing)", "Alternate A+B  (winning!)")
+    values = c("A" = C1, "B" = CG, "A+B (ABB pattern)" = C3),
+    labels = c("A" = "Game A  (losing)", "B" = "Game B  (losing)",
+               "A+B (ABB pattern)" = "Switching A,B,B  (winning!)")
   ) +
   labs(title = "Parrondo's Paradox",
-       subtitle = "Two losing games → winning strategy when alternated",
+       subtitle = "Two losing games → winning strategy when played in an A,B,B pattern",
        x = "Round", y = "Capital", color = NULL) + t
 
 p3
 ```
 
 Both Game A (red) and Game B (grey) drift below zero on average — they're
-losing propositions on their own. But alternating between them (green) climbs
-steadily upward. Combining two "bad" strategies can beat either one alone.
+losing propositions on their own (average capital after 300 rounds:
+`r end_cap["A"]` and `r end_cap["B"]`). But playing them in the repeating
+pattern A, B, B (green) climbs upward, to `r end_cap["A+B (ABB pattern)"]`
+after 300 rounds. Note that simple one-for-one alternation (ABAB) is not
+enough with these parameters: it still loses slightly. Combining two "bad"
+strategies can beat either one alone.
 
 # Survivorship Bias
 
@@ -719,9 +730,10 @@ steadily upward. Combining two "bad" strategies can beat either one alone.
 back to base, the startups that became famous, the people who "made it" —
 you get a distorted picture of what actually causes success, because the
 failures that could tell a different story are invisible to you. Here,
-"quality" and "outcome" both include a random luck component, but if we only
-look at data points that crossed a "survived" threshold, quality looks like a
-much stronger predictor of success than it really is.
+"outcome" depends partly on quality and partly on luck, but if we only look at
+data points that crossed a "survived" threshold, the relationship between
+quality and outcome is distorted — in this case it is flattened, because
+low-quality survivors are exactly the ones who got very lucky.
 
 ```{r survivorship}
 set.seed(42)
@@ -730,6 +742,8 @@ quality <- rnorm(n_surv, 50, 12)
 luck    <- rnorm(n_surv, 0, 18)
 outcome <- 0.3 * quality + luck + 20
 sv_dat  <- data.frame(quality, outcome, survived = outcome > 55)
+b_all   <- coef(lm(outcome ~ quality, sv_dat))[[2]]
+b_sv    <- coef(lm(outcome ~ quality, subset(sv_dat, survived)))[[2]]
 
 p4 <- ggplot(sv_dat, aes(quality, outcome)) +
   geom_point(data = subset(sv_dat, !survived),
@@ -748,22 +762,25 @@ p4 <- ggplot(sv_dat, aes(quality, outcome)) +
   annotate("text", x = 74, y = 84,  hjust = 1, size = 2.7, color = C2,
            label = "observed survivors") +
   labs(title = "Survivorship Bias",
-       subtitle = "Survivors (blue) make quality look more decisive than it is",
+       subtitle = "Survivors (blue) give a distorted view of how quality relates to outcome",
        x = "Quality", y = "Outcome") + t
 
 p4
 ```
 
-Looking only at the blue "survivors," quality appears to predict outcome
-fairly steeply (solid blue line). But looking at *everyone*, including the
-grey failures, the true relationship (dashed line) is much weaker — luck
-played a bigger role than the survivors-only view suggests.
+Looking only at the blue "survivors," quality barely seems to matter (the
+solid blue line is nearly flat, slope ≈ `r round(b_sv,2)`). Across *everyone*,
+including the grey failures, the true slope (dashed line) is more than twice as
+steep (≈ `r round(b_all,2)`). Judging only by survivors gives a distorted
+picture: their outcomes are inflated by luck, which hides how quality really
+relates to outcome.
 
 # Inspection Paradox
 
 **The idea:** If buses arrive randomly with an average gap of 10 minutes
-between them, and you show up at a random moment, your *expected* wait feels
-longer than "half of 10 minutes." Why? Because you're more likely to arrive
+between them, and you show up at a random moment, your *expected* wait is not
+5 minutes (half the average gap) but the full 10 minutes, because the gap you
+land in averages about 20 minutes. Why? Because you're more likely to arrive
 during a long gap than a short one — long gaps simply take up more clock time,
 so they're easier to "land in." This is why your personal experience of
 waiting always seems worse than the average would suggest.
@@ -803,9 +820,10 @@ p5 <- ggplot(insp_dat, aes(gap, fill = source, color = source)) +
 p5
 ```
 
-The blue curve is the true distribution of gaps between buses (mean 10
-minutes). The red curve is the distribution of gaps that a random arrival
-actually experiences — shifted noticeably to the right, because random
+The blue curve is the true distribution of gaps between buses (mean ≈
+`r round(mean(gap_all),1)` minutes). The red curve is the distribution of gaps
+that a random arrival actually experiences (mean ≈ `r round(mean(gap_hit),1)`
+minutes, about double) — shifted noticeably to the right, because random
 arrivals are "size-biased" toward longer gaps.
 
 # Accuracy Paradox
@@ -834,7 +852,7 @@ make_cm <- function(tp, fp, tn, fn, model_label) {
 acc_dat <- rbind(
   make_cm(0, 0, 9500, 500,
           "Model A  ('always Healthy')\nAccuracy 95%  |  Recall 0%"),
-  make_cm(400, 100, 8650, 850,
+  make_cm(400, 900, 8600, 100,
           "Model B  (real classifier)\nAccuracy 90%  |  Recall 80%")
 )
 
@@ -902,9 +920,10 @@ p7 <- ggplot(fp_dat, aes(own, mean_nbr)) +
 p7
 ```
 
-Most points sit above the dashed diagonal line, meaning most people's friends
-have more connections than they do. Only the most-connected few, at the very
-top, might sit on or below the line.
+Most points (8 of 12 people; several overlap) sit above the dashed diagonal
+line, meaning their friends have more connections than they do. Only the two
+most-connected people (degree 4 and 6, at the far right) fall below it, and two
+people sit exactly on it.
 
 # Braess's Paradox
 
@@ -997,7 +1016,8 @@ p9 <- ggplot(ph_dat, aes(rank, p, fill = sig, color = sig)) +
   annotate("text", x = 3, y = 0.11, hjust = 0, size = 2.9, color = C1,
            label = paste0(sum(ph_dat$sig), " 'significant' results\n(all truly null!)")) +
   labs(title = "P-hacking / Multiple Comparisons",
-       subtitle = "100 tests on pure noise — ~5 cross α=0.05 by chance alone",
+       subtitle = paste0("100 tests on pure noise — about 5 expected to cross α=0.05 by chance (",
+                         sum(ph_dat$sig), " here)"),
        x = "Test (sorted by p-value)", y = "p-value") + t
 
 p9

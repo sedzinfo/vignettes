@@ -51,7 +51,8 @@ several of which are strongly correlated (e.g. `wt` and `disp`) — exactly the
 setting where ridge/lasso earn their keep over plain `lm()`.
 
 ```{r data-setup}
-# y is centered (mean-subtracted); X will be standardized inside glmnet itself
+# y is centered; X is standardized inside glmnet for the CV/IC fits (standardize = TRUE);
+# the coefficient-path plots and hridge use raw X (standardize = FALSE)
 y <- as.matrix(scale(mtcars$mpg, center = TRUE, scale = FALSE))
 X <- as.matrix(mtcars[, !names(mtcars) %in% "mpg"])
 dim(X)
@@ -76,9 +77,11 @@ ridge_cv <- cv.glmnet(X, y, alpha = 0, lambda = lambdas_to_try,
 plot(ridge_cv)
 ```
 
-The plot shows cross-validated error (y-axis) against $\log(\lambda)$ (x-axis) —
-a U-shape is typical: too small a $\lambda$ overfits, too large underfits, and
-the dashed vertical line marks the minimum.
+The plot shows cross-validated MSE (y-axis) against $-\log(\lambda)$ (x-axis, so
+penalty strength decreases from left to right). Too large a $\lambda$ underfits
+(left), too small overfits (right). The two dotted vertical lines mark
+`lambda.min` (minimum CV error) and `lambda.1se` (the largest $\lambda$ whose CV
+error is within one standard error of that minimum).
 
 ```{r ridge-cv-fit}
 lambda_cv <- ridge_cv$lambda.min
@@ -102,14 +105,20 @@ freely estimated) — it's the trace of the **ridge hat matrix**
 $H = X(X^\top X + \lambda I)^{-1}X^\top$, which continuously decreases from
 $p$ (at $\lambda=0$, same as OLS) toward 0 as $\lambda \to \infty$.
 
+One caveat: `glmnet` minimizes $\frac{1}{2N}\text{RSS} + \frac{\lambda}{2}\sum\beta_j^2$
+(and scales $y$ internally), so its $\lambda$ is not on the same scale as the
+$\lambda$ in $X^\top X + \lambda I$. The df computed here is therefore an
+approximation, not the exact effective df of each `glmnet` fit. The residuals
+come from the actual `glmnet` predictions, and BIC uses the usual
+$\text{df} \cdot \log(n)$ penalty.
+
 ```{r ridge-information-criteria}
 X_scaled <- scale(X)
 aic <- bic <- c()
 
 for (lambda in seq(lambdas_to_try)) {
   model <- glmnet(X, y, alpha = 0, lambda = lambdas_to_try[lambda], standardize = TRUE)
-  betas <- as.vector((as.matrix(coef(model))[-1, ]))
-  resid <- y - (X_scaled %*% betas)
+  resid <- y - predict(model, X)
 
   # Ridge hat matrix and its trace = effective degrees of freedom
   ld <- lambdas_to_try[lambda] * diag(ncol(X_scaled))
@@ -117,10 +126,10 @@ for (lambda in seq(lambdas_to_try)) {
   df <- tr(H)  # tr() comes from the psych package
 
   aic[lambda] <- nrow(X_scaled) * log(t(resid) %*% resid) + 2 * df
-  bic[lambda] <- nrow(X_scaled) * log(t(resid) %*% resid) + 2 * df * log(nrow(X_scaled))
+  bic[lambda] <- nrow(X_scaled) * log(t(resid) %*% resid) + df * log(nrow(X_scaled))
 }
 
-plot(log(lambdas_to_try), aic, col = "orange", type = "l", ylim = c(190, 260),
+plot(log(lambdas_to_try), aic, col = "orange", type = "l", ylim = range(c(aic, bic)),
      ylab = "Information Criterion")
 lines(log(lambdas_to_try), bic, col = "skyblue3")
 legend("bottomright", lwd = 1, col = c("orange", "skyblue3"), legend = c("AIC", "BIC"))
@@ -129,7 +138,8 @@ legend("bottomright", lwd = 1, col = c("orange", "skyblue3"), legend = c("AIC", 
 BIC penalizes model complexity (degrees of freedom) more heavily than AIC once
 you have more than a handful of observations, which is why it typically prefers
 a larger $\lambda$ (a simpler, more shrunk model) than AIC does — visible here as
-the skyblue curve's minimum sitting to the right of the orange curve's.
+the skyblue curve's minimum (at $\lambda \approx$ `r round(lambdas_to_try[which.min(bic)],2)`)
+sitting to the right of the orange curve's (at $\lambda \approx$ `r round(lambdas_to_try[which.min(aic)],2)`).
 
 ```{r ridge-aic-bic-fit}
 lambda_aic <- lambdas_to_try[which.min(aic)]
@@ -150,10 +160,11 @@ c(rsq_ridge_aic = rsq_ridge_aic, rsq_ridge_bic = rsq_ridge_bic)
 ## Visualizing the shrinkage itself
 
 This is the most direct illustration of what ridge actually *does*. Each line is
-one predictor's coefficient, traced across every value of $\lambda$ tried. Follow
-any single line from left (small $\lambda$, close to the unpenalized OLS
-coefficient) to right (large $\lambda$): it bends toward zero, but — unlike
-lasso below — none of the lines ever *touch* zero and stay there.
+one predictor's coefficient, traced across every value of $\lambda$ tried. The
+x-axis is $-\log(\lambda)$, so $\lambda$ grows from right to left. Follow any
+single line from right (small $\lambda$, close to the unpenalized OLS
+coefficient) to left (large $\lambda$): it bends toward zero, but — unlike
+lasso below — none of the lines ever reaches zero and stays there.
 
 ```{r ridge-coefficient-path}
 plot(glmnet(X, y, alpha = 0, lambda = lambdas_to_try, standardize = FALSE), xvar = "lambda")
@@ -170,9 +181,11 @@ predictor's own simple (univariate) regression:
 
 $$\text{minimize} \quad \sum(y_i - X_i\beta)^2 + \lambda \sum w_j \beta_j^2$$
 
-Predictors whose univariate slope estimate is more uncertain (larger standard
-error, hence larger $w_j$) get shrunk more; predictors we're more confident
-about get shrunk less.
+Predictors whose univariate slope has a larger standard error get a larger
+$w_j$ and are shrunk more. Because $X$ is not standardized here, these weights
+largely reflect each predictor's units (e.g. `disp`, measured in cubic inches,
+gets a tiny weight), so standardize $X$ first if you want $w_j$ to reflect
+uncertainty.
 
 ```{r hridge-weights}
 # w_j = variance of the coefficient from a simple regression of y on X[,j] alone
@@ -185,7 +198,7 @@ weights
 ```
 
 ```{r hridge-fit}
-hridge_loss <- function(betas) {
+hridge_loss <- function(betas, y, X, lambda, weights) {
   sum((y - X %*% betas)^2) + lambda * sum(weights * betas^2)
 }
 
@@ -194,7 +207,10 @@ hridge <- function(y, X, lambda, weights) {
   model_init <- glmnet(X, y, alpha = 0, lambda = lambda, standardize = FALSE)
   betas_init <- as.vector(model_init$beta)
 
-  coef <- optim(betas_init, hridge_loss)$par
+  # Pass lambda/weights explicitly so the loss never picks up a global variable;
+  # BFGS converges here, while the default Nelder-Mead stops at maxit for 10 parameters
+  coef <- optim(betas_init, hridge_loss, y = y, X = X, lambda = lambda,
+                weights = weights, method = "BFGS")$par
   fitted <- X %*% coef
   rsq <- cor(y, fitted)^2
   names(coef) <- colnames(X)
@@ -237,7 +253,9 @@ legend("bottomright", lwd = 1, col = 1:6, legend = colnames(X), cex = 0.7)
 ```
 
 Compare this plot to ridge's coefficient path above: here, lines don't just bend
-toward zero, they hit zero and stay there as $\lambda$ grows — each one dropping
+toward zero, they hit zero and stay there as $\lambda$ grows (moving left on the
+$-\log(\lambda)$ axis; the numbers along the top count the non-zero
+coefficients) — each one dropping
 out is lasso "deciding" that predictor isn't worth keeping at that penalty
 strength.
 
@@ -260,9 +278,9 @@ held-out number here.
 # Elastic net: mixing L1 and L2
 
 Elastic net adds both penalties at once, weighted by `alpha` between 0 (pure
-ridge) and 1 (pure lasso):
+ridge) and 1 (pure lasso). In `glmnet`'s parameterization the penalty is:
 
-$$\lambda \left[ \alpha \sum\lvert\beta_j\rvert + (1-\alpha)\sum\beta_j^2 \right]$$
+$$\lambda \left[ \alpha \sum\lvert\beta_j\rvert + \tfrac{1-\alpha}{2}\sum\beta_j^2 \right]$$
 
 It's useful when you want lasso's variable-selection behavior but have groups of
 correlated predictors — pure lasso tends to arbitrarily pick just one predictor
@@ -272,16 +290,15 @@ component lets correlated predictors share the credit more smoothly.
 Here, `caret::train()` searches over both `alpha` and `lambda` simultaneously
 (`method = "glmnet"`), using repeated cross-validation to score each combination.
 
-Note: the original script builds the training data with `cbind(y, X)` and then
-fits `mpg ~ .`. That silently fails here — `y <- scale(mtcars$mpg, ...)` strips
-the column name, so `cbind(y, X)` produces a column literally named `""` (`V1`
-once coerced to a data frame), not `mpg`, and the formula can't find `mpg`. Naming
-the column explicitly fixes it:
+Note: building the data with `cbind(y, X)` would not work. `scale()` returns an
+unnamed column, so the first column is named `""` (`V1` once coerced to a data
+frame), and `mpg ~ .` fails with "object 'mpg' not found". Naming the column
+explicitly avoids this:
 
 ```{r elastic-net, results='hide'}
 library(caret)
 train_control <- trainControl(method = "repeatedcv", number = 5, repeats = 5,
-                               search = "random", verboseIter = TRUE)
+                               search = "random", verboseIter = FALSE)
 
 data_enet <- data.frame(mpg = as.vector(y), X)
 elastic_net_model <- train(mpg ~ ., data = data_enet, method = "glmnet",

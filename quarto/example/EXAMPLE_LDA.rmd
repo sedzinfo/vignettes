@@ -45,7 +45,7 @@ where $\mathbf{a}_k$ is the vector of discriminant coefficients (the *scaling* m
 
 $$\hat{y} = \arg\max_k \left[ \log \pi_k - \tfrac{1}{2} \delta_k^2(\mathbf{x}) \right]$$
 
-where $\pi_k$ is the prior probability of class $k$ and $\delta_k^2(\mathbf{x})$ is the Mahalanobis distance from $\mathbf{x}$ to the $k$-th class centroid.
+where $\pi_k$ is the prior probability of class $k$ and $\delta_k^2(\mathbf{x})$ is the squared Mahalanobis distance from $\mathbf{x}$ to the $k$-th class centroid.
 
 **Key assumptions:**
 
@@ -54,7 +54,7 @@ where $\pi_k$ is the prior probability of class $k$ and $\delta_k^2(\mathbf{x})$
 | Multivariate normality | Predictors follow a multivariate normal distribution within each class |
 | Homogeneity of covariance | All classes share the same covariance matrix $\boldsymbol{\Sigma}$ (relaxed in QDA) |
 | No perfect multicollinearity | Predictors must not be linearly dependent |
-| Adequate sample size | At least $p + 1$ observations per class recommended |
+| Adequate sample size | The smallest class should comfortably exceed the number of predictors $p$ |
 
 The **singular values** (SVD) returned by `MASS::lda` quantify the importance of each discriminant function: larger values indicate greater between-class separation relative to within-class scatter.
 
@@ -109,6 +109,8 @@ plot_multiplot(p1, p2, cols=2)
 
 We fit LDA using all available predictors to discriminate infertile cases from controls. Because there are only two classes ($K = 2$), LDA produces a single discriminant function ($K - 1 = 1$).
 
+Note that `case ~ .` also enters the matching identifiers `stratum` and `pooled.stratum` as if they were numeric predictors, although their values are arbitrary labels. Likewise, `age` and `parity` were matching variables, so by design they carry almost no discriminating information. In a real analysis the identifiers should be dropped (e.g. `case ~ education + age + parity + induced + spontaneous`), and matched data are better analysed with conditional logistic regression (`survival::clogit`). The education dummies and the 0/1/2 abortion counts also depart from the multivariate normality assumption. They are kept here to illustrate the mechanics of LDA.
+
 ```{r model}
 model <- MASS::lda(case ~ ., data=infert)
 ```
@@ -123,7 +125,7 @@ result <- report_lda(model=model)
 
 ### Prior Probabilities and Class Counts
 
-Prior probabilities reflect the proportion of each class in the training data. LDA uses these priors to penalise or favour predictions toward a class based on its base rate. Because the two classes are balanced by design (matched case-control study), priors are approximately equal.
+Prior probabilities reflect the proportion of each class in the training data. LDA uses these priors to penalise or favour predictions toward a class based on its base rate. Because each infertile case was matched with two fertile controls, the priors are about 2:1 (`r round(model$prior["0"],3)` for controls, `r round(model$prior["1"],3)` for cases), which pushes borderline observations toward the control class.
 
 ```{r priors}
 result$prior_counts
@@ -131,7 +133,7 @@ result$prior_counts
 
 ### Class Means (Group Centroids)
 
-The group means show the average value of each predictor in each class. Large differences between class means on a predictor indicate that it is likely to be a strong discriminator. Here, `spontaneous` and `induced` both show notably higher means in the case group.
+The group means show the average value of each predictor in each class. Large differences between class means on a predictor indicate that it is likely to be a strong discriminator. Here, only `spontaneous` shows a clearly higher mean in the case group (`r round(model$means["1","spontaneous"],2)` vs `r round(model$means["0","spontaneous"],2)`). `induced` differs only slightly (`r round(model$means["1","induced"],2)` vs `r round(model$means["0","induced"],2)`), and `age` and `parity` are almost identical because they were matching variables.
 
 ```{r means}
 round(result$means, 3)
@@ -139,23 +141,27 @@ round(result$means, 3)
 
 ### Discriminant Function Coefficients
 
-The coefficients (the *scaling* matrix) define the linear combination of predictors that maximises class separation. Larger absolute values indicate a stronger contribution to discrimination. Coefficients are analogous to standardised regression coefficients but optimised for class separation rather than prediction error.
+The coefficients (the *scaling* matrix) define the linear combination of predictors that maximises class separation. They are raw (unstandardised) weights, scaled so that the discriminant scores have unit within-group variance. Their size therefore depends on each predictor's units (e.g. `age` is per year), so to compare predictors multiply each coefficient by that predictor's pooled within-group standard deviation, or use structure correlations.
 
 ```{r coefficients}
 round(result$coeficients, 4)
 ```
 
-Positive coefficients push scores toward the infertile case class; negative coefficients push toward the control class. `spontaneous` and `induced` carry the largest positive weights, consistent with the clinical hypothesis that prior abortion history is associated with secondary infertility.
+Positive coefficients push scores toward the infertile case class; negative coefficients push toward the control class (the case centroid lies on the positive side of LD1 in this fit; the sign of a discriminant function is arbitrary). `education12+ yrs` (`r round(model$scaling["education12+ yrs",1],2)`) and `spontaneous` (`r round(model$scaling["spontaneous",1],2)`) carry the largest positive raw weights, followed by `induced` (`r round(model$scaling["induced",1],2)`). Because raw coefficients depend on units, these weights alone do not rank the predictors' importance; a standardised comparison is needed for that.
 
 ### Model Description — Singular Values
 
-The singular value (SVD) of the single discriminant function quantifies the ratio of between-class to within-class standard deviation on that function. A value greater than 1 indicates that the classes are separated by more than one within-class standard deviation — a practically meaningful separation.
+`MASS::lda` reports the singular value (SVD) of the single discriminant function as the ratio of between- to within-group standard deviation on that function. The between-group part is weighted by group size, so the value grows with the sample size and is not an effect size. A more interpretable measure of separation is the distance between the two class centroids on LD1, which is expressed in within-class standard deviation units because the discriminant scores have unit within-group variance.
 
 ```{r model_desc}
 result$model_description
 cat(sprintf("\nVariance explained by LD1: 100%% (only one function for K=2)\n"))
 cat(sprintf("Between/within-class SD ratio: %.4f\n", result$model_description$SDV))
+centroids<-tapply(predict(model)$x[,1],infert$case,mean)
+cat(sprintf("LD1 centroids: control = %.3f, case = %.3f (distance = %.3f within-class SD)\n",centroids["0"],centroids["1"],diff(centroids)))
 ```
+
+The two class centroids are only about `r round(diff(centroids),1)` within-class standard deviations apart, a moderate separation, even though the singular value (`r round(model$svd,2)`) looks large.
 
 ### Discriminant Scores
 
@@ -164,14 +170,16 @@ We can project all observations onto the single discriminant axis and visualise 
 ```{r scores_plot, fig.width=8, fig.height=4, dev='png', fig.retina=2}
 scores <- predict(model)$x
 df_scores <- data.frame(LD1=scores[,1], case=factor(infert$case, labels=c("Control","Case")))
+# LD1 score where P(case)=0.5: midpoint of centroids shifted by the log prior ratio
+boundary<-mean(centroids)+log(model$prior["0"]/model$prior["1"])/diff(centroids)
 
 ggplot(df_scores, aes(x=LD1, fill=case)) +
   geom_density(alpha=0.55) +
   scale_fill_manual(values=c("#2166ac","#d6604d")) +
-  geom_vline(xintercept=0, linetype="dashed", colour="grey40") +
+  geom_vline(xintercept=boundary, linetype="dashed", colour="grey40") +
   theme_bw() +
   labs(title="Distribution of discriminant scores (LD1)",
-       subtitle="Vertical dashed line = decision boundary at 0",
+       subtitle=sprintf("Dashed line = LD1 score where P(case) = 0.5 (%.2f)",boundary),
        x="Linear Discriminant 1", y="Density", fill=NULL)
 ```
 
@@ -189,7 +197,7 @@ The confusion matrix below shows how well the model classifies the *training* ob
 result$cmatrix
 ```
 
-Each cell shows the percentage of observations in the observed class (rows) that were assigned to the predicted class (columns). The diagonal gives the per-class accuracy; off-diagonal cells are misclassification rates.
+Rows give the predicted class and columns the observed class, and each cell is a count of observations; the diagonal holds the correct classifications. The `p` column is the precision of each predicted class, the `p` row is the recall of each observed class (`r as.numeric(result$cmatrix["p","0"])` for controls but only `r as.numeric(result$cmatrix["p","1"])` for cases), and the bottom-right cell is the overall accuracy (`r as.numeric(result$cmatrix["p","p"])`).
 
 ```{r accuracy}
 # Overall accuracy from the confusion matrix
@@ -242,7 +250,7 @@ cat("LD1 proportion of trace:", round(prop_trace[1], 4), "\n")
 cat("LD2 proportion of trace:", round(prop_trace[2], 4), "\n")
 ```
 
-LD1 typically captures the dominant separation (setosa vs. the other two species); LD2 captures the residual separation between versicolor and virginica.
+LD1 captures almost all of the separation (`r round(100*prop_trace[1],1)`% of the trace): setosa lies far from the other two species, and versicolor and virginica are also largely separated along LD1. LD2 adds only a small extra contrast between versicolor and virginica.
 
 ### Discriminant Space Plot
 

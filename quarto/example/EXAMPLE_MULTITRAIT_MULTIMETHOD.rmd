@@ -31,11 +31,11 @@ options(future.show.progress = FALSE)
 graphics.off()
 options(width=400)
 options(digits=3)
-options(scippen=999)
+options(scipen=999)
 ```
 
 ## Data simulation
-Data are simulated using lavaan. From this simulation it is possible to extract 3 factors (t1 t2 t3) and 3 arbitrary levels (m1 m2 m3).
+Data are simulated using lavaan from a three-factor model (t1 t2 t3). The rows are then split into three arbitrary blocks labelled m1 m2 m3 and reshaped to wide format. Because each block comes from different simulated cases, the data contain no method variance and no shared trait variance across methods. They only illustrate how to specify and compare the models; they cannot show convergent or discriminant validity.
 ```{r,simulation}
 # specify population model
 population_model<-'t1=~x1+0.8*x2+1.2*x3
@@ -62,19 +62,19 @@ lavaan::fitMeasures(dm,findex)
 semPlot::semPaths(dm,"model",layout="tree2",what="std")
 ```
 
-## Model spesification for MTMM
-In order to perform CFA MTMM we need at least four models  
+## Model specification for MTMM
+Following Widaman (1985) and Byrne (2016, ch. 10), CFA MTMM requires at least four nested models
 - Model 1 Freely correlated traits and methods  
 - Model 2 No traits – freely correlated methods  
 - Model 3 Perfectly correlated traits – freely correlated methods  
 - Model 4 Freely correlated traits – perfectly independent methods  
 
 Then models 2-4 are compared with model 1
-- Model 2 should be worst than model 1
-- Model 3 should be worst than model 1
-- Model 4 should be as good as model 1
+- Model 2 should be worse than model 1 (convergent validity)
+- Model 3 should be worse than model 1 (discriminant validity among traits)
+- Model 4 should be as good as model 1 (discriminant validity among methods, no common method bias)
 
-It is easier to spesify these models incrementally.
+It is easier to specify these models incrementally.
 ```{r,spesification,out.width="100%"}
 methods<-"
 method_1=~x1.m1+x2.m1+x3.m1+x4.m1+x5.m1+x6.m1+x7.m1+x8.m1+x9.m1
@@ -172,12 +172,12 @@ correlated_residuals_model<-paste0(traits,correlated_residuals)
 perfectly_correlated_residuals_model<-paste0(traits,perfectly_correlated_residuals)
 ```
 
-The four model spesifications can be easilly inspected with cat.
+The four model specifications can be easily inspected with cat. Note that perfectly_correlated_residuals_model is defined above for reference but is not fitted on this page.
 ```{r}
 cat(freely_correlated_traits_methods_model)
 cat(methods_only_model)
 cat(perfectly_correlated_traits_model)
-cat(perfectly_correlated_methods_model)
+cat(perfectly_independent_methods_model)
 ```
 
 ## Model 1 Freely correlated traits and methods  
@@ -222,15 +222,17 @@ semPlot::semPaths(imm,"model",whatLabels="std",layout="tree2",residuals=FALSE,ex
 # freely correlated traits / freely correlated methods
 # no traits / freely correlated methods
 lavaan::anova(fm,mm) # Evidence of convergent validity for significant results
-# Compare 
+# Compare
 # freely correlated traits / freely correlated methods
 # perfectly correlated traits / freely correlated methods
-lavaan::anova(fm,ctm) # Weak evidence for discriminant validity for significant results
-# Compare 
+lavaan::anova(fm,ctm) # Evidence of discriminant validity among traits for significant results (a lenient test, since traits are only tested against r = 1)
+# Compare
 # freely correlated traits / freely correlated methods
 # freely correlated traits / perfectly independent methods
-lavaan::anova(fm,imm) # Evidence for discriminant validity for non significant results
+lavaan::anova(fm,imm) # Evidence of discriminant validity among methods (no common method bias) for non significant results
 ```
+
+Note: with these simulated data the freely correlated traits and methods model fits poorly (CFI = `r round(lavaan::fitMeasures(fm,"cfi"),2)`), and Model 4 gives an improper solution (smallest estimated residual variance = `r round(min(diag(lavaan::lavInspect(imm,"est")$theta)),3)`). The chi-square differences therefore reflect misspecification, not real convergent or discriminant validity. Check fit and admissibility of every model before interpreting the comparisons.
 
 # Other models
 
@@ -243,7 +245,8 @@ cmm<-lavaan::cfa(perfectly_correlated_methods_model,data=mtmm_data,std.lv=TRUE)
 semPlot::semPaths(cmm,"model",whatLabels="std",layout="tree2",residuals=FALSE,exoCov=TRUE,bifactor=c("t1","t2","t3"),rotation=2,sizeLat=2,sizeMan=2)
 ```
 
-## Freely correlated traits – correlated residuals
+## Freely correlated traits – indicator-specific correlated residuals
+Residuals of the same indicator are correlated across methods (e.g. x1.m1 with x1.m2). This models indicator-specific effects. It is not the correlated-uniqueness MTMM model (Kenny, 1976; Marsh, 1989), which correlates residuals of indicators sharing the same method.
 ```{r,m7,fig.width=15,fig.height=10,dev='png',fig.retina=2}
 crm<-lavaan::cfa(correlated_residuals_model,data=mtmm_data,std.lv=TRUE)
 # lavaan::inspect(crm,what="std")
@@ -251,3 +254,9 @@ crm<-lavaan::cfa(correlated_residuals_model,data=mtmm_data,std.lv=TRUE)
 # lavaan::fitMeasures(crm,findex)
 semPlot::semPaths(crm,"model",whatLabels="std",layout="spring",residuals=FALSE,exoCov=TRUE,rotation=2,sizeLat=2.5,sizeMan=2.5)
 ```
+
+# References
+- Byrne, B. M. (2016). *Structural equation modeling with AMOS: Basic concepts, applications, and programming* (3rd ed.). Routledge. Chapter 10: Testing evidence of construct validity: The multitrait-multimethod model.
+- Kenny, D. A. (1976). An empirical application of confirmatory factor analysis to the multitrait-multimethod matrix. *Journal of Experimental Social Psychology, 12*(3), 247-252. https://doi.org/10.1016/0022-1031(76)90055-X
+- Marsh, H. W. (1989). Confirmatory factor analyses of multitrait-multimethod data: Many problems and a few solutions. *Applied Psychological Measurement, 13*(4), 335-361. https://doi.org/10.1177/014662168901300402
+- Widaman, K. F. (1985). Hierarchically nested covariance structure models for multitrait-multimethod data. *Applied Psychological Measurement, 9*(1), 1-26. https://doi.org/10.1177/014662168500900101

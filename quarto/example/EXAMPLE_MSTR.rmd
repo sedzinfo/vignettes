@@ -34,7 +34,7 @@ library(catR)
 
 This vignette demonstrates Multi-Stage Testing (MST) using the `mstR` package alongside helper functions from `rwf`. MST is an adaptive testing methodology that sits between traditional linear tests and fully adaptive Computerised Adaptive Testing (CAT). Instead of selecting items one at a time, MST groups items into **modules** and selects the next module based on the examinee's performance on the previous one.
 
-A typical MST design has multiple **stages** (e.g., stage 1 → stage 2 → stage 3) and multiple **panels** (parallel test forms). Within each stage, an examinee is routed to an easy, medium, or hard module depending on their estimated ability (θ). This balances measurement precision with practical constraints such as content balancing and test security.
+A typical MST design has multiple **stages** (e.g., stage 1 → stage 2 → stage 3) and multiple **panels** (parallel test forms). Stage 1 is usually a single routing module; after each stage, the examinee is routed to an easier or harder module in the next stage depending on their provisional ability estimate (θ̂). This balances measurement precision with practical constraints such as content balancing and test security.
 
 Key concepts used throughout this vignette:
 
@@ -42,13 +42,13 @@ Key concepts used throughout this vignette:
 - **Modules**: subsets of items from the bank assigned to specific positions in the MST design.
 - **Transition matrix**: defines which modules can follow which — routing rules between stages.
 - **Cutoff matrix**: θ or raw-score thresholds that determine which module an examinee is routed to next.
-- **θ (theta)**: the latent ability estimate on the standard normal scale.
+- **θ (theta)**: the latent ability, scaled here to a standard normal distribution; θ̂ denotes its estimate.
 
 Installation instructions for rwf can be found on the [rwf GitHub repository](https://github.com/sedzinfo/rwf)
 
 ## Basic Examples
 
-This section constructs a small 1-3-2 MST design by hand and demonstrates the two core routing functions: `startModule` and `nextModule`.
+This section constructs a small 1-2-3 MST design by hand and demonstrates the two core routing functions: `startModule` and `nextModule`.
 
 **Item bank construction**: Six groups of items are generated using `genDichoMatrix` under the 2PL model. The difficulty priors (`bPrior`) are shifted so that items in different modules cover different regions of the ability scale — negative difficulties for easy modules and positive difficulties for hard modules.
 
@@ -60,9 +60,9 @@ This section constructs a small 1-3-2 MST design by hand and demonstrates the tw
 
 **`thetaEst`**: Estimates θ from the response pattern `x` on the first 8 items using Maximum Likelihood (ML). This estimate is then used to determine the next module.
 
-**`nextModule` with θ cutoffs** (`cut`): Routes to the next module based on whether the ML θ estimate falls below or above the defined thresholds (e.g., θ < 0 → module 2; θ ≥ 0 → module 3). Two calls show routing for the estimated θ and for a fixed θ of −0.2.
+**`nextModule` with θ cutoffs** (`cut`): Each row of the cutoff matrix holds two module numbers and the threshold between them; the first module is chosen if the value is strictly below the threshold, the second otherwise. At stage 2, θ < 0 → module 2 and θ ≥ 0 → module 3; at stage 3, θ < −1 → module 4, −1 ≤ θ < 1 → module 5 and θ ≥ 1 → module 6 (within the paths allowed by the transition matrix). Two calls show routing for the estimated θ and for a fixed θ of −0.2.
 
-**`nextModule` with score cutoffs** (`cut.score`): Routes based on raw number-correct scores rather than θ estimates. This is useful when IRT scoring is not available or when content-balancing rules are score-based.
+**`nextModule` with score cutoffs** (`cut.score`): Routes based on raw number-correct scores rather than θ estimates. In this case the `theta` argument must hold the examinee's summed score over all administered items: here, the score on module 1 (`x`) plus the score on module 3 (`x3`), i.e. 4 + 4 = 8, which is below the threshold of 10 between modules 5 and 6, so module 5 is selected. This is useful when IRT scoring is not available or when content-balancing rules are score-based.
 
 ```{r excamples0,message=FALSE,warning=FALSE,results='hide',dev='png'}
 it.MST <- rbind(genDichoMatrix(8, model = "2PL"), 
@@ -105,30 +105,31 @@ cut.score <- rbind(c(2, 3,  5),
                    c(4, 5,  5),
                    c(5, 6, 10))
 
-nextModule(itemBank = it.MST, modules = modules, transMatrix = trans, current.module = 3, out = c(1:8, 15:20), cutoff = cut.score,theta = th)
+x3<-c(1,0,1,1,0,1)
+nextModule(itemBank = it.MST, modules = modules, transMatrix = trans, current.module = 3, out = c(1:8, 15:20), cutoff = cut.score,theta = sum(c(x,x3)))
 
 ```
 
 ## Simulation Examples
 
-This section runs full MST simulations using `randomMST` and compares MST performance against CAT using `randomCAT`. A 100-item bank with five 2PL items is used, assembled into six modules of 15 items each across a 1-2-2-1 branching design.
+This section runs full MST simulations using `randomMST` and compares MST performance against CAT using `randomCAT`. A 100-item bank (five distinct 2PL items recycled 20 times) is used; 90 of its items are assembled into six modules of 15 items each in a 1-2-3 design.
 
 **Item bank** (`it.2PL`): Five 2PL items with discrimination values from 0.8 to 1.2 and difficulties spanning −0.8 to 1.1, recycled to fill a 100-item bank. Parameters `c = 0` and `d = 1` indicate no guessing and no slipping.
 
-**Module membership** (A1–F1): Six pre-defined sets of 15 item indices each, assembled into `module1`. A1 is the stage-1 routing module; B1/C1 are stage-2 easy/hard modules; D1/E1/F1 are the three stage-3 modules.
+**Module membership** (A1–F1): Six pre-defined sets of 15 item indices each, assembled into `module1`. A1 is the stage-1 routing module; B1/C1 are the two stage-2 modules; D1/E1/F1 are the three stage-3 modules. Because the bank repeats only five items, the modules have nearly identical difficulty (mean b from −0.11 to 0.21), so "easier" and "harder" refer to routing position rather than to item content.
 
-**Simulation 1 — MFI module selection** (`mst.ex1`): A single MST run at true θ = 0 using ML scoring and Maximum Fisher Information (MFI) for module selection. The two `Ii()` calls confirm the routing decision by comparing total Fisher information in module 2 vs. module 3 at the stage-1 θ estimate — the module with higher information should be selected. `plot(mst.ex1)` draws the routing path taken through the MST design.
+**Simulation 1 — MFI module selection** (`mst.ex1`): A single MST run at true θ = 0 using ML scoring and Maximum Fisher Information (MFI) for module selection. The two `Ii()` calls confirm the routing decision by comparing total Fisher information in module 2 vs. module 3 at the stage-1 θ estimate (`mst.ex1$thetaProv[1]`, available because `allTheta = TRUE`) — the module with higher information should be selected. `plot(mst.ex1)` draws the routing path taken through the MST design.
 
-**Simulation 2 — θ cutoff routing** (`mst.ex2`): Routes modules using θ thresholds (θ < 0 → easy; 0 ≤ θ ≤ 0.3 → medium; θ > 0.3 → hard). Run at true θ = 1 to verify that the design routes to the harder modules.
+**Simulation 2 — θ cutoff routing** (`mst.ex2`): Routes modules using θ thresholds: at stage 2, θ < 0 → module 2 and θ ≥ 0 → module 3; at stage 3, θ < −0.3 → module 4, −0.3 ≤ θ < 0.3 → module 5 and θ ≥ 0.3 → module 6 (within the paths allowed by the transition matrix). Run at true θ = 1 to verify that the design routes along the upper path (modules 1 → 3 → 6).
 
-**Simulation 3 — score cutoff routing** (`mst.ex3`): Routes using raw number-correct score thresholds rather than θ estimates. The scoring method is set to `"score"` for both routing and final estimation — useful when IRT calibration is not available at administration time.
+**Simulation 3 — score cutoff routing** (`mst.ex3`): Routes using raw number-correct score thresholds rather than θ estimates. The scoring method is set to `"score"` for both routing (`test3`) and final scoring (`final3`), so `thFinal` is the number-correct score rather than a θ estimate — useful when IRT calibration is not available at administration time.
 
-**ASB and RMSE across the ability range**: A large-scale simulation (1000 replications × 9 ability levels from −2 to +2, all routed through the `module1` design) estimates two accuracy metrics across the full latent trait range:
+**ASB and RMSE across the ability range**: A large-scale simulation (1000 replications × 9 ability levels from −2 to +2, all routed through the `module1` design with BM provisional scoring and ML final scoring) estimates two accuracy metrics across the full latent trait range:
 
 - **ASB (Average Signed Bias)**: mean difference between estimated and true θ — positive values indicate systematic overestimation, negative indicate underestimation.
 - **RMSE (Root Mean Square Error)**: overall estimation accuracy combining both bias and variance. Lower values indicate a more precise test design.
 
-**MST vs. CAT comparison**: The final block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, randomesque = 5 for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2. Both `thFinal` (final ability estimate) and `seFinal` (standard error of measurement) are stored in `RES` for comparison of precision between the two adaptive testing formats.
+**MST vs. CAT comparison**: The final block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, randomesque = 5 for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2. Both formats administer 45 items. Each simulee's full response pattern to the 100-item bank is generated once with `genPattern` and passed to both `randomCAT` and `randomMST` through `responses`, so the two designs are compared on the same simulated examinees. Both `thFinal` (final ability estimate) and `seFinal` (standard error of measurement) are stored in `RES` for comparison of precision between the two adaptive testing formats.
 
 ```{r mst_examples,message=FALSE,warning=FALSE,results='hide',dev='png'}
 A1 <- c(7, 13, 14, 15, 22, 28, 34, 38, 51, 59, 70, 84, 85, 87, 89)
@@ -152,10 +153,11 @@ start <- list(theta = 0)
 
 test <- list(method = "ML", moduleSelect = "MFI")
 final <- list(method = "ML")
-mst.ex1 <- randomMST(trueTheta = 0, itemBank = it.2PL, modules = module1, transMatrix = trans, genSeed = 1, start = start, test = test, final = final)
+mst.ex1 <- randomMST(trueTheta = 0, itemBank = it.2PL, modules = module1, transMatrix = trans, genSeed = 1, start = start, test = test, final = final, allTheta = TRUE)
 
-sum(Ii(0.204, it.2PL[module1[, 2] == 1, ])$Ii)
-sum(Ii(0.204, it.2PL[module1[, 3] == 1, ])$Ii)
+th1<-mst.ex1$thetaProv[1]
+sum(Ii(th1, it.2PL[module1[, 2] == 1, ])$Ii)
+sum(Ii(th1, it.2PL[module1[, 3] == 1, ])$Ii)
 
 plot(mst.ex1, border.col = "grey", arrow.col = "grey")
 
@@ -172,25 +174,26 @@ cut2 <- rbind(c(2, 3,  7.5),
 
 test3 <- list(method = "score", cutoff = cut2)
 final3 <- list(method = "score")
-mst.ex3 <- randomMST(trueTheta = 1, itemBank = it.2PL, modules = module1, transMatrix = trans, genSeed = 1, start = start, test = test3, final = final)
+mst.ex3 <- randomMST(trueTheta = 1, itemBank = it.2PL, modules = module1, transMatrix = trans, genSeed = 1, start = start, test = test3, final = final3)
 ```
 
 ### Accuracy across the ability range
 
-The block below runs 1000 replications at each of 9 true θ levels (from −2 to +2) through the `module1` design, then computes **ASB** and **RMSE** at every level from the resulting θ estimates.
+The block below runs 1000 replications at each of 9 true θ levels (from −2 to +2) through the `module1` design, then computes **ASB** and **RMSE** at every level from the resulting θ estimates. Response patterns are generated once with `genPattern` and passed to `randomMST` through `responses`, so every simulee answers independently generated items.
 
 ```{r asb_rmse_sim,message=FALSE,warning=FALSE,results='hide'}
 s <- seq(-2, 2, 0.5)
 TH <- rep(s, each = 1000)
+DATA <- genPattern(TH, it.2PL, seed = 1)
 RES <- matrix(NA, length(TH), 1)
 start <- list(theta = 0)
 test <- list(method = "BM", moduleSelect = "MFI")
 final <- list(method = "ML")
 
 for (i in 1:length(TH)){
-  prov <- randomMST(trueTheta = TH[i],
+  prov <- randomMST(trueTheta = TH[i], responses = DATA[i, ],
                     itemBank = it.2PL, modules = module1,
-                    transMatrix = trans, genSeed = i, start = start,
+                    transMatrix = trans, start = start,
                     test = test, final = final)
   RES[i, 1] <- prov$thFinal
 }
@@ -221,7 +224,7 @@ ggplot(df_asb_rmse_long, aes(x = theta, y = value, color = Metric)) +
   theme_bw(base_size = 12)
 ```
 
-ASB near zero at every θ indicates the design is unbiased across the ability range; a systematic upward or downward drift at the extremes would indicate the module design under- or over-estimates examinees at those levels. RMSE typically rises toward both ends of the θ range, since fewer items in the bank concentrate information near the middle of the scale (θ = 0).
+ASB stays close to zero in the middle of the range and drifts slightly outward at the extremes (`r round(res.ASB[1,1],2)` at θ = −2, `r round(res.ASB[length(s),1],2)` at θ = +2), the typical outward bias of ML final estimates: very low abilities are slightly underestimated and very high abilities slightly overestimated. RMSE is lowest near the middle of the scale (`r round(min(res.RMSE[,1]),2)` at θ = `r s[which.min(res.RMSE[,1])]`) and rises to `r round(res.RMSE[1,1],2)` at θ = −2 and `r round(res.RMSE[length(s),1],2)` at θ = +2, because the bank's item difficulties (−0.8 to 1.1) concentrate information near the middle of the scale.
 
 ### MST vs. CAT comparison
 
@@ -231,6 +234,7 @@ This block compares MST (BM scoring, MFI module selection) against CAT (45-item 
 s <- seq(-2, 2, 0.5)
 TH <- rep(s, each = 1000)
 DATA <- genPattern(TH, it.2PL, seed = 1)
+set.seed(1)
 RES <- matrix(NA, length(TH), 4)
 
 start.mst <- list(theta = 0)
@@ -241,13 +245,13 @@ stop <- list(rule = "length", thr = 45)
 final <- list(method = "BM")
 
 for (i in 1:length(TH)){
-  pr <- randomCAT(trueTheta = TH[i],
-                  itemBank = it.2PL, genSeed = i, start = start.cat,
+  pr <- randomCAT(trueTheta = TH[i], responses = DATA[i, ],
+                  itemBank = it.2PL, start = start.cat,
                   test = test.cat, stop = stop, final = final)
   RES[i,1] <- pr$thFinal
   RES[i,2] <- pr$seFinal
-  pr <- randomMST(trueTheta = TH[i],
-                  itemBank = it.2PL, genSeed = i, modules = module1,
+  pr <- randomMST(trueTheta = TH[i], responses = DATA[i, ],
+                  itemBank = it.2PL, modules = module1,
                   transMatrix = trans, start = start.mst,
                   test = test.mst, final = final)
   RES[i,3] <- pr$thFinal
@@ -292,7 +296,7 @@ ggplot(summary_long, aes(x = theta, y = value, color = Metric)) +
   theme_bw(base_size = 12)
 ```
 
-CAT selects the single best item at every step, so it is expected to match or beat MST's RMSE and average SE at every θ level — MST instead trades some of that per-item precision for the practical advantages of pre-assembled, reviewable modules (content balancing, easier quality control, and no need for real-time item-level adaptation).
+With both formats answering the same simulated response patterns, CAT has a lower RMSE than MST at `r sum(summary_compare$cat_RMSE<summary_compare$mst_RMSE)` of `r nrow(summary_compare)` θ levels (CAT `r round(min(summary_compare$cat_RMSE),2)`–`r round(max(summary_compare$cat_RMSE),2)` vs. MST `r round(min(summary_compare$mst_RMSE),2)`–`r round(max(summary_compare$mst_RMSE),2)`) and a lower average SE at `r sum(summary_compare$cat_SE<summary_compare$mst_SE)` of `r nrow(summary_compare)` levels. The RMSE gap is small near the middle of the scale and largest at the extremes (`r round(max(summary_compare$mst_RMSE-summary_compare$cat_RMSE),2)` at θ = `r summary_compare$theta[which.max(summary_compare$mst_RMSE-summary_compare$cat_RMSE)]`). Both formats show the inward bias typical of BM scoring — positive ASB at low θ and negative ASB at high θ, i.e. estimates pulled toward the prior mean of 0 — and it is somewhat stronger for MST (ASB `r round(summary_compare$mst_ASB[1],2)` at θ = −2 and `r round(summary_compare$mst_ASB[nrow(summary_compare)],2)` at θ = +2, vs. `r round(summary_compare$cat_ASB[1],2)` and `r round(summary_compare$cat_ASB[nrow(summary_compare)],2)` for CAT). This is the expected pattern: CAT selects the single best item at every step, so it should match or beat MST's precision — MST instead trades some of that per-item precision for the practical advantages of pre-assembled, reviewable modules (content balancing, easier quality control, and no need for real-time item-level adaptation).
 
 ---
 

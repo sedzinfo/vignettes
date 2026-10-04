@@ -27,10 +27,13 @@ source(paste0(directory, "code_options.R"))
 library(thurstonianIRT)
 ```
 
+The model is the Thurstonian IRT model of Brown and Maydeu-Olivares (2011), fitted with the thurstonianIRT package (Bürkner, Schulte & Holling, 2019).
+
 ## The data
 
-First the data have to be encoded from Rank to binary.
-Examples of encoding are shown bellow.
+Forced-choice rankings must be expressed as binary pairwise outcomes: for each pair {i, k} in a block, y = 1 if item i is preferred to item k and 0 otherwise (Brown & Maydeu-Olivares, 2011).
+In the examples below, rank 1 denotes the most preferred item.
+The `triplets` data are already in this pairwise format; raw ranks could instead be passed to `make_TIRT_data(..., format = "ranks", direction = "smaller")`, which performs this recoding automatically.
 
 ### Example 1
 
@@ -95,13 +98,12 @@ spesification_mplus<-make_mplus_code(data_tirt)
 
 ```
 
-## Model Spesification
+## Model Specification
 ```{r spesification}
-# Spesification in lavaan
+# Specification in lavaan
 cat(spesification_lavaan)
 
-# Spesification in MPLUS
-cat(spesification_lavaan)
+# Specification in MPLUS
 cat(spesification_mplus$TITLE)
 cat(spesification_mplus$DATA)
 cat(spesification_mplus$VARIABLE)
@@ -135,9 +137,8 @@ semPlot::semPaths(model,what="paths",rotation=2,reorder=FALSE)
 
 ## Evaluate Model
 ```{r evaluate}
-# Fit indices
-pt<-options(fit=c("GFI","AGFI","RMSEA","NFI","NNFI","CFI","RNI","IFI","SRMR","AIC","AICc","BIC","CAIC"))
-fit_index<-data.frame(fit=lavaan::inspect(model,"fit"))
+# Fit indices (ULSMV estimator: robust chi-square-based indices; AIC/BIC are not available)
+fit_index<-data.frame(fit=lavaan::fitMeasures(model,c("chisq.scaled","df.scaled","pvalue.scaled","cfi.scaled","tli.scaled","rmsea.scaled","srmr","gfi")))
 round(fit_index,2)
 
 # Explained variance
@@ -155,7 +156,6 @@ lavaan::parameterEstimates(model,se=TRUE,
                            pvalue=TRUE,
                            ci=TRUE,
                            level=0.95,
-                           boot.ci.type="perc",
                            standardized=TRUE,
                            fmi=FALSE,
                            remove.system.eq=TRUE,
@@ -198,6 +198,8 @@ score_new<-reshape(score_new[,c("id","trait","estimate")], direction="wide", idv
 
 ## Print Scores
 
+`score` contains lavaan (ULSMV) factor-score estimates for all `r nrow(score)` respondents; `score_new` contains Bayesian (Stan) posterior-mean estimates for two respondents treated as new data, so small differences between the two are expected.
+
 ```{r score_new}
 
 head(score)
@@ -205,6 +207,12 @@ head(score)
 score_new
 
 ```
+
+## References
+
+Brown, A., & Maydeu-Olivares, A. (2011). Item response modeling of forced-choice questionnaires. *Educational and Psychological Measurement, 71*(3), 460–502. https://doi.org/10.1177/0013164410375112
+
+Bürkner, P.-C., Schulte, N., & Holling, H. (2019). On the statistical and practical limitations of Thurstonian IRT models. *Educational and Psychological Measurement, 79*(5), 827–854. https://doi.org/10.1177/0013164419832063
 
 
 

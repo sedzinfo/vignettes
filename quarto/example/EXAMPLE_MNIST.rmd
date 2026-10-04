@@ -42,7 +42,7 @@ reticulate::use_virtualenv("r-tensorflow")
 
 
 # Keras on the MNIST dataset
-The code bellow works with the keras and psycholate library. Most of the code was taken from Chollet and Allaire (2018) book: Deep Learning with R (see Acknowledgments).
+The code below uses the keras library, plus helper functions from rwf for the confusion matrix and scatterplot. Much of the code follows the MNIST example in Chollet and Allaire (2018), Deep Learning with R (see Acknowledgments).
 ```{r set-options}
 
 library(tensorflow)
@@ -52,7 +52,7 @@ directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDo
 source(paste0(directory, "code_rwf.R"))
 options(width=1000)
 options(digits=3)
-options(scippen=999)
+options(scipen=999)
 par(mai=c(.001,.001,.001,.001),mar=c(.001,.001,.001,.001),oma=c(.001,.001,.001,.001))
 
 ```
@@ -62,7 +62,7 @@ The dataset is obtained from keras::dataset_mnist() function then usually we hav
 - Split the dataset in train and test datasets.  
 - Scale the dataset (values in dataset should be -1 to 1 or 0 to 1).  
 - Scaling on the test dataset should be done using the mean and sd of the training dataset.  
-In this case, much of the aforementioned work is done already. In the mnist dataset, data are split into train and test, input and output. What is done bellow, is to simply rename the some variables to make our life a bit easier. The dataset consists of 60000 representations of train images and 10000 representations of test images and their corresponding labels.
+In this case the train/test split is already done: dataset_mnist() returns separate train and test sets, each with inputs (x) and labels (y); scaling is done further below. What is done below is simply to rename some variables to make our life a bit easier. The dataset consists of 60000 representations of train images and 10000 representations of test images and their corresponding labels.
 ```{r train_test}
 
 mnist<-dataset_mnist()
@@ -74,12 +74,12 @@ test_labels<-mnist$test$y
 ```
 
 ## How the data look like
-Each image is a 28*28 pixel grayscale of handwritten numbers, and their respective number values are stored in the labels datasets. Lets see the first image in the test dataset:
+Each image is a 28*28 pixel grayscale of handwritten numbers, and their respective number values are stored in the labels datasets. Let's see the first image in the test dataset:
 ```{r shape,out.width="100%"}
 
 test_images[1,,] # this is how the image looks as a matrix representation
 plot(as.raster(test_images[1,,],max=255)) # this is how the image looks like as a raster representation
-test_labels[1] # and this is it's corresponding value
+test_labels[1] # and this is its corresponding value
 
 ```
 
@@ -97,7 +97,7 @@ test_labels<-to_categorical(test_labels)
 ```
 
 # Network specification
-The specified network for our task, is a simple sequential network with an input layer, two hidden layers, and an output layer of 10 units. Each unit in each layer connects with all other units in their neighboring layer. Each unit in the output layer represents 10 digits from 1 to 0 [1 2 3 4 5 6 7 8 9 0]. The measures employed to evaluate the network accuracy is the root mean square, categorical cross entropy and accuracy. The choice of these methods partly depends on the nature of the output. In our case the output units should return 0 or 1.
+The specified network for our task is a simple sequential network that takes 784 inputs, passes them through three fully connected hidden layers (100, 1000 and 1000 units, ReLU activation), and ends in an output layer of 10 units with softmax activation. Each unit in each layer connects with all units in the neighboring layers. Each of the 10 output units represents one digit, in the order 0, 1, 2, ..., 9. The network is trained by minimising categorical cross-entropy (the loss) and is evaluated with accuracy, the proportion of images whose highest-scoring output unit matches the true digit. The choice of these measures partly depends on the nature of the output. In our case the labels are one-hot encoded (a 1 for the true digit, 0 elsewhere), and the softmax output layer returns 10 probabilities that sum to 1; the predicted digit is the unit with the highest probability.
 ```{r spesification}
 
 network<-keras_model_sequential() %>%
@@ -120,7 +120,7 @@ network %>% evaluate(test_images,test_labels)
 ```
 
 # Network evaluation
-In order to see how well the network performs, we use the test dataset. The output of the test data is in a matrix form since each output unit represents a digit, and we have to classify 10 digits, the matrix is a 10*10000 dataset. However, after a short transformation it is possible to obtain a vector of integers from 0 to 9.
+In order to see how well the network performs, we use the test dataset. The test labels are stored in one-hot form as a 10000 x 10 matrix (one row per image, one column per digit). However, after a short transformation it is possible to obtain a vector of integers from 0 to 9.
 ```{r output_transformation}
 
 rtl<-c()
@@ -132,13 +132,13 @@ deepviz::plot_model(network)
 ```
 
 ## Confusion matrix
-An ideal model should produce a confusion matrix where all observed variables match the predicted variables. This is represented by having all high frequencies in the diagonal whilst all off diagonal values should ideally be 0. In fact, the confusion matrix indicates around 98% prediction accuracy from 10000 images.
+An ideal model should produce a confusion matrix where every predicted digit matches the observed digit. This is represented by having all high frequencies in the diagonal whilst all off diagonal values should ideally be 0. In the table below, rows are predicted digits and columns are observed digits; the "p" column gives the precision for each predicted digit, the "p" row the recall for each observed digit, and the bottom-right cell the overall accuracy. In the heatmap, observed digits are on the vertical axis and predicted digits on the horizontal axis. The confusion matrix indicates around 98% prediction accuracy from 10000 images.
 ```{r confusion_matrix}
 
 predicted <- as.integer(predict(network, test_images) %>% k_argmax())
 observed  <- apply(test_labels, 1, which.max) - 1
 op <- data.frame(predict=predicted, observe=observed)
-confusion_matrix_percent(op$predict, op$observe)
+confusion_matrix_percent(observed=op$observe,predicted=op$predict)
 
 cm <- as.data.frame(table(observe=observed, predict=predicted))
 library(ggplot2)
@@ -152,7 +152,7 @@ ggplot(cm, aes(x=predict, y=observe, fill=Freq)) +
 ```
 
 ## Scatterplot
-Another descriptive representation can be done using a scatterplot. In that case, all observations (observed and predicted data) should fall in the regression line.
+Another descriptive view is a scatterplot of observed against predicted digits. If every prediction were correct, all points would lie on the diagonal (observed = predicted); the small off-diagonal points are the misclassified images. Because digits are categories, the fitted line and correlation are only a rough summary.
 ```{r,out.width="100%",results="hide"}
 
 plot_scatterplot(op)
@@ -161,7 +161,7 @@ differences<-setdiff(1:length(op$predict),which(op$predict==op$observe))
 ```
 
 ## Errors
-From the 10000 image test dataset, the network was unable to classify correctly `r length(differences)` images. It may be interesting to visualize these miss classified images.
+From the 10000 image test dataset, the network was unable to classify correctly `r length(differences)` images. It may be interesting to visualize these misclassified images.
 Each image is labelled predicted/observed.
 ```{r errors,fig.width=10,fig.height=ceiling(length(differences)/20)*0.6,out.width="100%"}
 
@@ -176,12 +176,12 @@ for(i in differences) {
 
 
 # Acknowledgments
-The network, data preparation and training code follow the MNIST example in chapter 2 ("A first look at a neural network") of Chollet and Allaire (2018). The data come from the MNIST database (LeCun et al., 1998). The model diagram is drawn with deepviz, and the confusion matrix and scatterplot use helper functions from rwf.
+The data preparation, compile settings and overall workflow follow the MNIST example in section 2.1 ("A first look at a neural network") of Chollet and Allaire (2018); the network here is larger than the book's (three hidden layers instead of one 512-unit layer) and is trained for 30 epochs with a batch size of 784. The data come from the MNIST database (LeCun et al., 1998). The model diagram is drawn with deepviz, and the confusion matrix and scatterplot use helper functions from rwf.
 
 - Chollet, F., & Allaire, J. J. (2018). *Deep Learning with R*. Manning Publications.
 - LeCun, Y., Bottou, L., Bengio, Y., & Haffner, P. (1998). Gradient-based learning applied to document recognition. *Proceedings of the IEEE, 86*(11), 2278–2324.
 - LeCun, Y., Cortes, C., & Burges, C. J. C. *The MNIST database of handwritten digits*. <http://yann.lecun.com/exdb/mnist/>
-- Allaire, J. J., & Chollet, F. *keras: R Interface to 'Keras'*. R package. <https://keras.posit.co/>
+- Allaire, J. J., & Chollet, F. *keras: R Interface to 'Keras'*. R package. <https://CRAN.R-project.org/package=keras>
 - Allaire, J. J., & Tang, Y. *tensorflow: R Interface to 'TensorFlow'*. R package. <https://tensorflow.rstudio.com/>
-- de Vries, A. *deepviz: Visualize deep learning models*. R package. <https://github.com/andrie/deepviz>
+- de Vries, A. (2019). *deepviz: Visualize Neural Network Architectures*. R package. <https://github.com/andrie/deepviz>
 - *rwf*: R functions used across these examples. <https://github.com/sedzinfo/rwf>

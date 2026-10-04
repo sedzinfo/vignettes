@@ -33,7 +33,7 @@ knitr::opts_chunk$set(cex = 2)
 
 
 
-# Simulating a CAT IRT using catR
+# Simulating a CAT using catR
 
 This document is a practical exercise illustrating a Computerized Adaptive Testing (CAT) simulation. CAT is grounded in Item Response Theory (IRT) and requires prior estimation of item parameters. Its purpose is to deliver short, tailored questionnaires by selecting items from a pool in real time based on each respondent's estimated ability. For example, if a participant answers a difficult item correctly, the algorithm skips easier items and instead presents a harder one to narrow down the ability estimate more efficiently. As a result, participants do not need to respond to every item in the pool. This simulation uses an item pool of 200 items with a maximum of 40 items administered per respondent.
 The `catR` package handles the simulation, while `foreach` and `doSNOW` are used for parallel computation.
@@ -76,7 +76,7 @@ data<-genPattern(th=seq(-10,10,length=1000),it=itemBank,model=NULL,seed=1)
 summary(data[,1:9])
 ```
 
-## Estimate parameters using a third package
+## Estimate full-information scores with mirt
 
 Treating the simulated response matrix as real participant data (one row per respondent), the `mirt` package is used to estimate item parameters and respondent ability scores under the assumption that all items were administered. These **full-information scores** serve as a benchmark against the CAT estimates produced in the next step.
 
@@ -89,9 +89,9 @@ mirt_model<-mirt::mirt(data=data.frame(data),model=1,itemtype="2PL",technical=li
 Each respondent is administered a CAT drawn from the 200-item pool, with a maximum of 40 items. The simulation is configured through four control lists:
 
 - **`start`** — defines first-item selection. The initial item is chosen to have a difficulty closest to θ = 0 (`startSelect = "bOpt"`), a neutral starting point before any ability information is available.
-- **`test`** — controls item selection and scoring during the adaptive phase. Ability is estimated using Bayesian Modal (BM) estimation (Birnbaum, 1969). Although EAP is generally the recommended estimator for unidimensional IRT, BM was found to yield scores highly correlated with the `mirt` EAP benchmark in this setup. Items are selected by `bOpt`, with a `randomesque = 5` parameter introducing slight randomisation by sampling from the 5 most informative candidates. The estimation range is set to [−20, 20] to prevent ability estimates from collapsing at the boundaries.
+- **`test`** — controls item selection and scoring during the adaptive phase. Ability is estimated using Bayesian Modal (BM) estimation (Birnbaum, 1969). EAP (the default of `mirt::fscores`) is a common choice; here BM, catR's default, produced scores that correlate highly with the `mirt` EAP benchmark (see Plot 1). BM uses catR's default standard normal prior N(0, 1), which pulls extreme estimates toward 0; this shows up in the conditional bias reported by `simulateRespondents` at the end of the page. Items are selected by `bOpt` (the item whose difficulty *b* is closest to the current ability estimate), and `randomesque = 5` adds slight randomisation by drawing the next item at random from the 5 items with *b* closest to the current estimate. The estimation range is widened from the default [−4, 4] to [−20, 20] so that estimates are not cut off at ±4.
 - **`final`** — specifies the scoring method applied at test termination (BM, same range).
-- **`stop`** — defines termination criteria. The test ends when either 40 items have been administered or the standard error of the provisional ability estimate drops below 0.3 — whichever occurs first.
+- **`stop`** — defines termination criteria. The test ends when either 40 items have been administered or the standard error of the provisional ability estimate drops to 0.3 or below — whichever occurs first.
 
 ```{r simulation,echo=TRUE,fig.align="center"}
 start<-list(theta=0,nrItems=1,startSelect="bOpt")
@@ -122,9 +122,9 @@ result<-data.frame(result,mirt_scores=as.numeric(mirt::fscores(mirt_model)))
 The results are summarised graphically across six panels:
 
 - **Plot 1 — CAT vs. mirt scores:** Scatter plot of CAT ability estimates against `mirt` EAP scores. CAT respondents answered at most 40 items, while `mirt` scores are based on all 200 responses. High agreement between the two validates the adaptive procedure.
-- **Plot 2 — Items administered vs. CAT theta:** Respondents with ability estimates far from 0 (extreme thetas) tend to require more items before the precision criterion is met, because test information is lower in the tails of the ability distribution.
-- **Plot 3 — Items administered vs. SE:** Higher item counts are associated with elevated SE for two reasons: (1) the test was forced to stop at 40 items regardless of precision, and (2) extreme ability levels inherently have higher measurement error. Because extreme scores also require more items, both effects compound.
-- **Plot 4 — CAT theta vs. SE:** Standard error increases at the extremes of the ability scale — a direct consequence of lower test information in the tails. Recall that SE is approximately the inverse square root of the information function.
+- **Plot 2 — Items administered vs. CAT theta:** Respondents with extreme abilities need more items, because the CAT starts at θ = 0 and the first items, with *b* near 0, carry little information about them. The estimate has to work its way outward, slowed by the N(0, 1) prior, and the pool also has fewer items in the tails (*b* ~ N(0, 4)).
+- **Plot 3 — Items administered vs. SE:** For tests that ended before 40 items the SE sits just below the 0.3 target (between `r round(min(result$se[result$questions<40]),2)` and 0.3), because these tests stopped once precision was reached. SE above 0.3 appears only at exactly 40 items: these `r sum(result$questions>=40)` respondents hit the length cap before reaching the target, which happens for extreme abilities where the pool has few items with matching difficulty.
+- **Plot 4 — CAT theta vs. SE:** Standard error stays near 0.3 over most of the scale and increases only at the extremes, where the 40-item cap is reached before enough information is collected. Recall that SE is approximately the inverse square root of the test information (for BM, the information plus the prior's contribution).
 - **Plot 5 — Distribution of CAT estimated scores.**
 - **Plot 6 — Distribution of mirt estimated scores.**
 
@@ -169,14 +169,16 @@ p6 <- ggplot(result, aes(x = round(mirt_scores, 0))) +
 
 ## Conclusion
 
-The distribution of estimated scores is approximately uniform, which is expected: the response-generation function sampled ability values evenly across the theta range, so all levels are equally represented. In a real-world scenario, ability scores tend to follow a roughly normal distribution, with most respondents clustered near the region of highest test information.
+The CAT estimates are roughly uniform between about −6 and 6, as expected because the true abilities were evenly spaced, with pile-ups at the ends of their range (`r round(min(result$est_theta),1)` to `r round(max(result$est_theta),1)`) where the pool runs out and the N(0, 1) prior compresses the most extreme abilities (true θ runs from −10 to 10). The `mirt` scores are mound-shaped and on a narrower scale because `mirt` standardises the latent distribution to N(0, 1) when it calibrates the items. In real applications abilities are usually roughly normal, and item banks are built so that information is highest where most respondents are.
 
 `catR` also provides `simulateRespondents`, a convenience function that runs a complete CAT simulation and computes summary diagnostics — bias, RMSE, and mean SE — as a function of true ability.
 
 ```{r results1,echo=TRUE,fig.width=20,fig.height=15,results="hide",out.width=1000,fig.align="center",dev='png',fig.retina=2}
 result_simulate_respondents<-simulateRespondents(thetas=seq(-6,6,.01),itemBank=itemBank,genSeed=NULL,start=start,test=test,stop=stop,final=final)
 result_simulate_respondents
-plot(result_simulate_respondents)
+invisible(capture.output(plot(result_simulate_respondents)))
 
 ```
+
+Overall, the simulated CATs used `r round(result_simulate_respondents$testLength,1)` items on average, with a correlation of `r round(result_simulate_respondents$correlation,3)` between true and estimated abilities and an RMSE of `r round(result_simulate_respondents$RMSE,3)`. The conditional bias shows the pull of the N(0, 1) prior toward 0: it is positive at the low end (`r round(result_simulate_respondents$condBias[1],2)` at θ ≈ `r round(result_simulate_respondents$condTheta[1],1)`) and negative at the high end (`r round(result_simulate_respondents$condBias[10],2)` at θ ≈ `r round(result_simulate_respondents$condTheta[10],1)`).
 
