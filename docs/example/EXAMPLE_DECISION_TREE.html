@@ -206,7 +206,7 @@ window.Quarto = {
   </li>  
         <li>
     <a class="dropdown-item" href="./EXAMPLE_TIRT_SCORING_GR.html">
- <span class="dropdown-text">Βαθμολόγηση Thurstonian IRT — Θεωρία και Εφαρμογή</span></a>
+ <span class="dropdown-text">Βαθμολόγηση Thurstonian IRT — Θεωρία</span></a>
   </li>  
     </ul>
   </li>
@@ -321,7 +321,7 @@ window.Quarto = {
 </div>
 <section id="description" class="level2">
 <h2 class="anchored" data-anchor-id="description">Description</h2>
-<p>This shows the output of PART RPART functions from rwf. Installation instructions for rwf can be found <a href="https://github.com/sedzinfo/rwf">here</a> These functions are not installed by default they are in /rwf/working_functions/OTHER/ML_TREE_RPART.R</p>
+<p>This page reproduces the steps of rwf’s <code>report_rtree()</code> using <code>rpart</code> directly; both models are fit on the training part of the first of 10 folds created by rwf’s <code>k_fold()</code>. Installation instructions for rwf can be found <a href="https://github.com/sedzinfo/rwf">here</a> <code>report_rtree()</code> is not installed by default; it is in /rwf/working_functions/OTHER/ML_TREE_RPART.R</p>
 </section>
 <section id="theoretical-background" class="level2">
 <h2 class="anchored" data-anchor-id="theoretical-background">Theoretical Background</h2>
@@ -341,15 +341,15 @@ window.Quarto = {
 <h3 class="anchored" data-anchor-id="cost-complexity-pruning">Cost-complexity pruning</h3>
 <p>A tree grown to full depth almost always <strong>overfits</strong> — it captures noise along with signal. <code>rpart</code> addresses this with <strong>cost-complexity pruning</strong>: every subtree <span class="math inline">\(T\)</span> is scored as</p>
 <p><span class="math display">\[R_\alpha(T) = R(T) + \alpha \, |T|\]</span></p>
-<p>where <span class="math inline">\(R(T)\)</span> is the tree’s error (relative to the root), <span class="math inline">\(|T|\)</span> is the number of terminal nodes, and <span class="math inline">\(\alpha\)</span> (called <code>CP</code> in <code>rpart</code>’s output) penalizes tree size. Varying <span class="math inline">\(\alpha\)</span> from 0 to 1 produces a nested sequence of subtrees, from the full tree down to a single root node — this sequence is stored in <code>model$cptable</code>.</p>
+<p>where <span class="math inline">\(R(T)\)</span> is the tree’s error (relative to the root), <span class="math inline">\(|T|\)</span> is the number of terminal nodes, and <span class="math inline">\(\alpha\)</span> (called <code>CP</code> in <code>rpart</code>’s output) penalizes tree size. Varying <span class="math inline">\(\alpha\)</span> from 0 to 1 produces a nested sequence of subtrees, from the grown tree (stopped at <code>rpart</code>’s default <code>cp = 0.01</code>) down to a single root node — this sequence is stored in <code>model$cptable</code>.</p>
 </section>
 <section id="cross-validated-tree-size" class="level3">
 <h3 class="anchored" data-anchor-id="cross-validated-tree-size">Cross-validated tree size</h3>
-<p>Because the <em>apparent</em> error of a tree always decreases as it grows (a larger tree can always fit the training data at least as well), <code>rpart</code> estimates each subtree’s error via internal <strong>k-fold cross-validation</strong>. <code>cptable</code> reports, for every candidate <code>CP</code> value: the relative error on the training data (<code>rel error</code>), the cross-validated error (<code>xerror</code>), and its standard deviation (<code>xstd</code>). The code below selects the tree whose <code>CP</code> gives the <strong>minimum <code>xerror</code></strong> — a common, slightly more permissive alternative is the “1-SE rule” (the smallest tree within one standard error of the minimum), which favors an even simpler tree.</p>
+<p>Because the <em>apparent</em> error of a tree always decreases as it grows (a larger tree can always fit the training data at least as well), <code>rpart</code> estimates each subtree’s error via internal <strong>k-fold cross-validation</strong>. <code>cptable</code> reports, for every candidate <code>CP</code> value: the relative error on the training data (<code>rel error</code>), the cross-validated error (<code>xerror</code>), and its standard deviation (<code>xstd</code>). The code below selects the tree whose <code>CP</code> gives the <strong>minimum <code>xerror</code></strong> — a common, more conservative alternative is the “1-SE rule” (the smallest tree whose <code>xerror</code> is within one standard error of the minimum), which favors a simpler tree.</p>
 </section>
 <section id="variable-importance" class="level3">
 <h3 class="anchored" data-anchor-id="variable-importance">Variable importance</h3>
-<p>A predictor’s importance is the sum of the improvement in impurity (Gini, for classification) or sum-of-squares (for regression) attributable to it — counting not only splits where it was the <em>primary</em> splitter, but also splits where it acted as a <strong>surrogate</strong> (a stand-in used when the primary splitting variable is missing). This is why a variable can show non-trivial importance even if it never appears as a labeled split in the final tree diagram.</p>
+<p>A predictor’s importance is the sum of the goodness-of-split (improvement in Gini impurity for classification, or in sum-of-squares for regression) for every split where it is the <em>primary</em> splitter, plus, for every split where it serves as a <strong>surrogate</strong> (a stand-in used when the primary splitting variable is missing), the primary split’s improvement weighted by the surrogate’s adjusted agreement. This is why a variable can show non-trivial importance even if it never appears as a labeled split in the final tree diagram.</p>
 <div class="cell" data-layout-align="center">
 <details open="" class="code-fold">
 <summary>Code</summary>
@@ -371,9 +371,10 @@ window.Quarto = {
 </div>
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># kfolding</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>train_test_classification<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>infert,</span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">model_formula=</span>infert_formula)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># kfolding (seed fixed so folds, rpart's internal cross-validation and the prose below are reproducible)</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">12345</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>train_test_classification<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>infert,</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">model_formula=</span>infert_formula)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>Fold Cases: 1 Train: 223 Test: 25 Total: 248 Unique Train: 223 Unique Test: 25 
@@ -406,7 +407,7 @@ Fold Cases: 10 Train: 455 Test: 51 Total: 506 Unique Train: 455 Unique Test: 51 
 </div>
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># srpart models</span></span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># rpart models</span></span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>rtree_classification<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">rpart</span>(infert_formula,</span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>                                   train_test_classification<span class="sc">$</span>f<span class="sc">$</span>train<span class="sc">$</span>f1,</span>
 <span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">model=</span><span class="cn">TRUE</span>,<span class="at">x=</span><span class="cn">TRUE</span>,<span class="at">y=</span><span class="cn">TRUE</span>)</span>
@@ -422,7 +423,7 @@ Fold Cases: 10 Train: 455 Test: 51 Total: 506 Unique Train: 455 Unique Test: 51 
 <p>The classification tree predicts <code>case</code> (secondary infertility, from the classic <code>infert</code> case-control study) from <code>age</code>, <code>parity</code>, <code>education</code>, <code>spontaneous</code>, and <code>induced</code> (prior abortions).</p>
 <section id="growing-and-pruning-the-tree" class="level3">
 <h3 class="anchored" data-anchor-id="growing-and-pruning-the-tree">Growing and pruning the tree</h3>
-<p><code>rtree_classification</code> was grown to full depth in the <code>create_models</code> chunk above. Here it is pruned back to the <code>CP</code> value that minimizes the cross-validated error (<code>xerror</code>) in its <code>cptable</code>.</p>
+<p><code>rtree_classification</code> was grown with rpart’s default stopping rules (<code>cp = 0.01</code>, <code>minsplit = 20</code>, <code>minbucket = 7</code>) in the <code>create_models</code> chunk above. Here it is pruned back to the <code>CP</code> value that minimizes the cross-validated error (<code>xerror</code>) in its <code>cptable</code>.</p>
 <div class="cell" data-layout-align="center">
 <details open="" class="code-fold">
 <summary>Code</summary>
@@ -445,7 +446,7 @@ Fold Cases: 10 Train: 455 Test: 51 Total: 506 Unique Train: 455 Unique Test: 51 
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
 <span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
 <span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
-<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Relative Influence"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Importance (sum of split improvements)"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
 <span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
 <span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
 <span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
@@ -459,7 +460,7 @@ Fold Cases: 10 Train: 455 Test: 51 Total: 506 Unique Train: 455 Unique Test: 51 
 </div>
 </div>
 </div>
-<p>Longer bars mean the predictor contributed more to reducing impurity across the tree’s splits (as primary splitter or as a surrogate). For <code>infert</code>, <code>age</code> and <code>education</code> typically dominate — consistent with the epidemiological finding that secondary infertility risk in this dataset tracks strongly with age and prior reproductive history.</p>
+<p>Longer bars mean the predictor contributed more to reducing impurity across the tree’s splits (as primary splitter or as a surrogate). Here <strong>spontaneous</strong> dominates (importance 13.01), followed by <strong>parity</strong> and <strong>age</strong>, with <strong>education</strong> contributing least. Note that <code>infert</code> is a matched case-control study in which cases and controls were matched on age, parity and education, so the substantive signal is in the prior-abortion variables (<code>spontaneous</code>, <code>induced</code>); splits on age or parity largely reflect sampling noise in this training fold.</p>
 </section>
 <section id="the-full-unpruned-tree" class="level3">
 <h3 class="anchored" data-anchor-id="the-full-unpruned-tree">The full, unpruned tree</h3>
@@ -474,22 +475,18 @@ Fold Cases: 10 Train: 455 Test: 51 Total: 506 Unique Train: 455 Unique Test: 51 
 node), split, n, loss, yval, (yprob)
       * denotes terminal node
 
-  1) root 223 74 0 (0.6681614 0.3318386)  
-    2) spontaneous&lt; 0.5 128 26 0 (0.7968750 0.2031250) *
-    3) spontaneous&gt;=0.5 95 47 1 (0.4947368 0.5052632)  
-      6) parity&gt;=3.5 20  6 0 (0.7000000 0.3000000) *
-      7) parity&lt; 3.5 75 33 1 (0.4400000 0.5600000)  
-       14) age&lt; 30.5 44 19 0 (0.5681818 0.4318182)  
-         28) age&gt;=28.5 10  2 0 (0.8000000 0.2000000) *
-         29) age&lt; 28.5 34 17 0 (0.5000000 0.5000000)  
-           58) age&lt; 27.5 25 11 0 (0.5600000 0.4400000)  
-            116) parity&gt;=1.5 16  6 0 (0.6250000 0.3750000) *
-            117) parity&lt; 1.5 9  4 1 (0.4444444 0.5555556) *
-           59) age&gt;=27.5 9  3 1 (0.3333333 0.6666667) *
-       15) age&gt;=30.5 31  8 1 (0.2580645 0.7419355) *</code></pre>
+ 1) root 223 72 0 (0.6771300 0.3228700)  
+   2) spontaneous&lt; 0.5 128 24 0 (0.8125000 0.1875000) *
+   3) spontaneous&gt;=0.5 95 47 1 (0.4947368 0.5052632)  
+     6) parity&gt;=3.5 21  5 0 (0.7619048 0.2380952) *
+     7) parity&lt; 3.5 74 31 1 (0.4189189 0.5810811)  
+      14) age&lt; 30.5 40 17 0 (0.5750000 0.4250000)  
+        28) spontaneous&lt; 1.5 28  9 0 (0.6785714 0.3214286) *
+        29) spontaneous&gt;=1.5 12  4 1 (0.3333333 0.6666667) *
+      15) age&gt;=30.5 34  8 1 (0.2352941 0.7647059) *</code></pre>
 </div>
 </div>
-<p>This is the text representation of the tree <em>before</em> pruning — every line is one node: its splitting rule, the number of observations that reach it (<code>n</code>), the misclassification loss, and the predicted class with its probability. Compare its size to the pruned <code>model</code> used in the plots below — pruning typically collapses several of these nodes back together.</p>
+<p>This is the text representation of the tree <em>before</em> pruning — every line is one node: its splitting rule, the number of observations that reach it (<code>n</code>), the misclassification loss, and the predicted class with its probability. Compare its size to the pruned <code>model</code> used in the plots below: in this run the full tree has 5 terminal nodes and the pruned tree 5. When the minimum <code>xerror</code> occurs at the largest tree in the <code>cptable</code>, pruning leaves the tree unchanged; with other data or a smaller <code>cp</code>, pruning would collapse some of these nodes.</p>
 </section>
 <section id="choosing-the-tree-size-via-cross-validation" class="level3">
 <h3 class="anchored" data-anchor-id="choosing-the-tree-size-via-cross-validation">Choosing the tree size via cross-validation</h3>
@@ -518,15 +515,14 @@ rpart::rpart(formula = infert_formula, data = train_test_classification$f$train$
 Variables actually used in tree construction:
 [1] age         parity      spontaneous
 
-Root node error: 74/223 = 0.33184
+Root node error: 72/223 = 0.32287
 
 n= 223 
 
         CP nsplit rel error  xerror     xstd
-1 0.060811      0   1.00000 1.00000 0.095022
-2 0.020270      3   0.79730 0.97297 0.094356
-3 0.013514      5   0.75676 0.90541 0.092516
-4 0.010000      6   0.74324 0.85135 0.090854</code></pre>
+1 0.083333      0   1.00000 1.00000 0.096977
+2 0.055556      3   0.75000 1.00000 0.096977
+3 0.010000      4   0.69444 0.86111 0.092923</code></pre>
 </div>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -543,7 +539,7 @@ n= 223
 </div>
 </div>
 </div>
-<p><code>plotcp()</code> plots cross-validated <strong>relative error</strong> (<code>xerror</code>, with one-SE error bars) against <code>CP</code> (bottom axis) and tree size (top axis) — the dashed horizontal line marks one standard error above the minimum, the usual reference for the “1-SE rule”. <code>rsq.rpart()</code> adds two more panels: apparent vs.&nbsp;cross-validated <strong>R-squared</strong> and <strong>relative error</strong> by tree size. Because this is a <em>classification</em> tree, these values are derived from the Gini/deviance-based loss rather than explained variance, so read them as “relative predictive error” rather than a literal R²: they still show the same pattern — error falls quickly for the first few splits, then flattens (or the cross-validated curve turns back up), which is exactly the point captured by pruning to minimum <code>xerror</code>.</p>
+<p><code>plotcp()</code> plots cross-validated <strong>relative error</strong> (<code>xerror</code>, with one-SE error bars) against <code>CP</code> (bottom axis) and tree size (top axis) — the dotted horizontal line marks one standard error above the minimum, the usual reference for the “1-SE rule”. <code>rsq.rpart()</code> prints the <code>cptable</code> and adds two more panels: apparent vs.&nbsp;cross-validated <strong>R-squared</strong>, and cross-validated <strong>relative error</strong>, against the number of splits. Because this is a <em>classification</em> tree, these values are 1 minus the relative misclassification error (relative to the root node’s error of 72/223), not explained variance, so read them as relative predictive error rather than a literal R²; <code>rsq.rpart()</code> itself warns that it “may not be applicable for this method”. Here cross-validated error drops only from 1.00 to 0.86 of the root error (about 28% vs 32% misclassification) and is lowest at the largest tree in the <code>cptable</code>, which is why the minimum-<code>xerror</code> rule keeps the full tree.</p>
 </section>
 <section id="error-by-size-summary" class="level3">
 <h3 class="anchored" data-anchor-id="error-by-size-summary">Error-by-size summary</h3>
@@ -570,7 +566,7 @@ n= 223
 </div>
 </div>
 </div>
-<p>This re-plots the same <code>cptable</code> metrics (<code>rel error</code>, <code>xerror</code>, <code>xstd</code>) on one axis, as tree size grows from a single node onward. The title reports the tree size (<code>nsplit</code>) at which <code>xerror</code> is minimized — the size the pruned <code>model</code> was cut back to.</p>
+<p>This re-plots all four <code>cptable</code> columns (<code>CP</code>, <code>rel error</code>, <code>xerror</code>, <code>xstd</code>) on one axis against tree size (number of terminal nodes = <code>nsplit + 1</code>), from a single node onward. The title reports the tree size at which <code>xerror</code> is minimized — the size the pruned <code>model</code> retains (here 5 terminal nodes, i.e.&nbsp;the full tree).</p>
 </section>
 <section id="the-pruned-tree-diagram" class="level3">
 <h3 class="anchored" data-anchor-id="the-pruned-tree-diagram">The pruned tree diagram</h3>
@@ -587,7 +583,7 @@ n= 223
 </div>
 </div>
 </div>
-<p>Each box is a node: the top line is the predicted class (and, depending on plotting options, the predicted probability), the bottom line is the percentage of the sample that lands in that node. Following the branches down from the root shows the sequence of yes/no rules — e.g.&nbsp;an age threshold, then a threshold on prior spontaneous/induced abortions — that separate higher- from lower-risk groups.</p>
+<p>Each box is a node showing the predicted class (top), the fitted probability that <code>case = 1</code> (middle), and the percentage of the training sample in that node (bottom). Following the branches down from the root shows the sequence of yes/no rules — here the splits use, in order from the root, spontaneous, parity, age: first whether the woman had any prior spontaneous abortion, then parity, then age — that separate higher- from lower-risk groups.</p>
 </section>
 <section id="raw-model-components" class="level3">
 <h3 class="anchored" data-anchor-id="raw-model-components">Raw model components</h3>
@@ -608,27 +604,22 @@ n= 223
 </details>
 <div class="cell-output cell-output-stdout">
 <pre><code>$frame
-            var   n  wt dev yval complexity ncompete nsurrogate     yval2.V1     yval2.V2     yval2.V3     yval2.V4     yval2.V5 yval2.nodeprob
-1   spontaneous 223 223  74    1 0.06081081        4          3   1.00000000 149.00000000  74.00000000   0.66816143   0.33183857     1.00000000
-2        &lt;leaf&gt; 128 128  26    1 0.00000000        0          0   1.00000000 102.00000000  26.00000000   0.79687500   0.20312500     0.57399103
-3        parity  95  95  47    2 0.06081081        4          2   2.00000000  47.00000000  48.00000000   0.49473684   0.50526316     0.42600897
-6        &lt;leaf&gt;  20  20   6    1 0.00000000        0          0   1.00000000  14.00000000   6.00000000   0.70000000   0.30000000     0.08968610
-7           age  75  75  33    2 0.06081081        4          0   2.00000000  33.00000000  42.00000000   0.44000000   0.56000000     0.33632287
-14          age  44  44  19    1 0.02027027        4          0   1.00000000  25.00000000  19.00000000   0.56818182   0.43181818     0.19730942
-28       &lt;leaf&gt;  10  10   2    1 0.01000000        0          0   1.00000000   8.00000000   2.00000000   0.80000000   0.20000000     0.04484305
-29          age  34  34  17    1 0.02027027        3          0   1.00000000  17.00000000  17.00000000   0.50000000   0.50000000     0.15246637
-58       parity  25  25  11    1 0.01351351        3          2   1.00000000  14.00000000  11.00000000   0.56000000   0.44000000     0.11210762
-116      &lt;leaf&gt;  16  16   6    1 0.01000000        0          0   1.00000000  10.00000000   6.00000000   0.62500000   0.37500000     0.07174888
-117      &lt;leaf&gt;   9   9   4    2 0.01000000        0          0   2.00000000   4.00000000   5.00000000   0.44444444   0.55555556     0.04035874
-59       &lt;leaf&gt;   9   9   3    2 0.01000000        0          0   2.00000000   3.00000000   6.00000000   0.33333333   0.66666667     0.04035874
-15       &lt;leaf&gt;  31  31   8    2 0.00000000        0          0   2.00000000   8.00000000  23.00000000   0.25806452   0.74193548     0.13901345
+           var   n  wt dev yval complexity ncompete nsurrogate     yval2.V1     yval2.V2     yval2.V3     yval2.V4     yval2.V5 yval2.nodeprob
+1  spontaneous 223 223  72    1 0.08333333        4          3   1.00000000 151.00000000  72.00000000   0.67713004   0.32286996     1.00000000
+2       &lt;leaf&gt; 128 128  24    1 0.00000000        0          0   1.00000000 104.00000000  24.00000000   0.81250000   0.18750000     0.57399103
+3       parity  95  95  47    2 0.08333333        4          2   2.00000000  47.00000000  48.00000000   0.49473684   0.50526316     0.42600897
+6       &lt;leaf&gt;  21  21   5    1 0.00000000        0          0   1.00000000  16.00000000   5.00000000   0.76190476   0.23809524     0.09417040
+7          age  74  74  31    2 0.08333333        4          2   2.00000000  31.00000000  43.00000000   0.41891892   0.58108108     0.33183857
+14 spontaneous  40  40  17    1 0.05555556        4          0   1.00000000  23.00000000  17.00000000   0.57500000   0.42500000     0.17937220
+28      &lt;leaf&gt;  28  28   9    1 0.00000000        0          0   1.00000000  19.00000000   9.00000000   0.67857143   0.32142857     0.12556054
+29      &lt;leaf&gt;  12  12   4    2 0.01000000        0          0   2.00000000   4.00000000   8.00000000   0.33333333   0.66666667     0.05381166
+15      &lt;leaf&gt;  34  34   8    2 0.00000000        0          0   2.00000000   8.00000000  26.00000000   0.23529412   0.76470588     0.15246637
 
 $cp
           CP nsplit rel.error    xerror       xstd
-1 0.06081081      0 1.0000000 1.0000000 0.09502215
-2 0.02027027      3 0.7972973 0.9729730 0.09435623
-3 0.01351351      5 0.7567568 0.9054054 0.09251572
-4 0.01000000      6 0.7432432 0.8513514 0.09085443
+1 0.08333333      0 1.0000000 1.0000000 0.09697723
+2 0.05555556      3 0.7500000 1.0000000 0.09697723
+3 0.01000000      4 0.6944444 0.8611111 0.09292314
 
 $parameters
                parameters
@@ -644,49 +635,41 @@ xval                10.00
 
 $splits
           name count ncat      improve index        adj
-1  spontaneous   223   -1 9.9556555346   0.5 0.00000000
-2      induced   223   -1 0.1687856769   0.5 0.00000000
-3          age   223    1 0.0487339694  28.5 0.00000000
-4       parity   223    1 0.0307495195   5.5 0.00000000
-5    education   223    3 0.0255840635   1.0 0.00000000
-6       parity     0   -1 0.6367713004   2.5 0.14736842
-7      induced     0    1 0.6008968610   0.5 0.06315789
-8          age     0    1 0.5874439462  30.5 0.03157895
-9       parity    95    1 2.1347368421   3.5 0.00000000
-10         age    95   -1 1.9493639760  30.5 0.00000000
-11 spontaneous    95   -1 1.8011884550   1.5 0.00000000
-12   education    95    3 0.0458479532   2.0 0.00000000
-13     induced    95    1 0.0426671253   0.5 0.00000000
-14     induced     0    1 0.8315789474   1.5 0.20000000
-15   education     0    3 0.8210526316   3.0 0.15000000
-16         age    75   -1 3.4981231672  30.5 0.00000000
-17 spontaneous    75   -1 2.1288963211   1.5 0.00000000
-18      parity    75    1 0.5377777778   1.5 0.00000000
-19     induced    75    1 0.0145905707   0.5 0.00000000
-20   education    75    3 0.0044444444   4.0 0.00000000
-21         age    44    1 1.3909090909  28.5 0.00000000
-22      parity    44    1 0.8587662338   1.5 0.00000000
-23 spontaneous    44   -1 0.7575757576   1.5 0.00000000
-24   education    44    3 0.7159090909   5.0 0.00000000
-25     induced    44   -1 0.0151515152   0.5 0.00000000
-26         age    34   -1 0.6800000000  27.5 0.00000000
-27 spontaneous    34   -1 0.6800000000   1.5 0.00000000
-28      parity    34    1 0.5604395604   1.5 0.00000000
-29   education    34    3 0.0671936759   6.0 0.00000000
-30      parity    25    1 0.3755555556   1.5 0.00000000
-31     induced    25   -1 0.0847058824   0.5 0.00000000
-32         age    25    1 0.0251282051  25.5 0.00000000
-33   education    25    3 0.0005555556   7.0 0.00000000
-34         age     0    1 0.8400000000  23.5 0.55555556
-35     induced     0    1 0.6800000000   0.5 0.11111111
+1  spontaneous   223   -1 1.101199e+01   0.5 0.00000000
+2          age   223    1 4.012376e-01  24.5 0.00000000
+3       parity   223   -1 1.614884e-01   5.5 0.00000000
+4      induced   223    1 1.074566e-01   0.5 0.00000000
+5    education   223    3 5.389627e-02   1.0 0.00000000
+6       parity     0   -1 6.367713e-01   3.5 0.14736842
+7      induced     0    1 6.143498e-01   0.5 0.09473684
+8          age     0    1 5.874439e-01  22.0 0.03157895
+9       parity    95    1 3.848662e+00   3.5 0.00000000
+10 spontaneous    95   -1 3.205054e+00   1.5 0.00000000
+11         age    95   -1 2.794648e+00  30.5 0.00000000
+12     induced    95    1 2.890226e-01   0.5 0.00000000
+13   education    95    3 2.547368e-01   2.0 0.00000000
+14     induced     0    1 8.210526e-01   1.5 0.19047619
+15   education     0    3 8.105263e-01   3.0 0.14285714
+16         age    74   -1 4.241733e+00  30.5 0.00000000
+17 spontaneous    74   -1 4.006567e+00   1.5 0.00000000
+18      parity    74    1 1.496324e-01   1.5 0.00000000
+19   education    74    3 3.611794e-02   4.0 0.00000000
+20     induced    74   -1 1.453066e-04   0.5 0.00000000
+21   education     0    3 5.675676e-01   5.0 0.05882353
+22      parity     0    1 5.540541e-01   1.5 0.02941176
+23 spontaneous    40   -1 2.002381e+00   1.5 0.00000000
+24         age    40    1 1.800000e+00  28.5 0.00000000
+25   education    40    3 8.357143e-01   6.0 0.00000000
+26      parity    40    1 2.423077e-01   1.5 0.00000000
+27     induced    40   -1 1.125000e-01   0.5 0.00000000
 
 $importance
             importance
-spontaneous  9.9556555
-age          6.0920634
-parity       3.9774416
-induced      1.0974540
-education    0.3202105
+spontaneous 13.0143706
+parity       5.5962386
+age          4.5894799
+induced      1.7763196
+education    0.7993226
 
 $ordered
             ordered
@@ -719,7 +702,7 @@ $call
 <span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>model<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">prune</span>(rtree_regression,<span class="at">cp=</span>rtree_regression<span class="sc">$</span>cptable[<span class="fu">which.min</span>(rtree_regression<span class="sc">$</span>cptable[,<span class="st">"xerror"</span>]),<span class="st">"CP"</span>])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
-<p>As with the classification tree, <code>rtree_regression</code> is pruned to the <code>CP</code> value that minimizes the cross-validated error — here, cross-validated sum-of-squares error rather than a classification loss.</p>
+<p>As with the classification tree, <code>rtree_regression</code> is pruned to the <code>CP</code> value that minimizes the cross-validated error — here, cross-validated sum-of-squares error rather than a classification loss. In this run the minimum <code>xerror</code> is again at the largest tree in the <code>cptable</code>, so the pruned tree keeps all 9 terminal nodes of the grown tree.</p>
 </section>
 <section id="variable-importance-2" class="level3">
 <h3 class="anchored" data-anchor-id="variable-importance-2">Variable importance</h3>
@@ -731,7 +714,7 @@ $call
 <span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
 <span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
 <span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
-<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Relative Influence"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Importance (sum of split improvements)"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
 <span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
 <span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
 <span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
@@ -760,23 +743,23 @@ $call
 node), split, n, deviance, yval
       * denotes terminal node
 
- 1) root 455 39083.0700 22.56044  
-   2) rm&lt; 6.941 387 16101.1700 19.97494  
-     4) lstat&gt;=14.4 157  3186.1910 14.93376  
-       8) crim&gt;=5.7819 72  1001.7790 11.94583 *
-       9) crim&lt; 5.7819 85   997.1341 17.46471 *
-     5) lstat&lt; 14.4 230  6201.5100 23.41609  
-      10) lstat&gt;=4.91 210  3803.1840 22.64000  
-        20) lstat&gt;=9.545 108   671.3588 20.91019 *
-        21) lstat&lt; 9.545 102  2466.4880 24.47157  
-          42) nox&lt; 0.589 95  1074.2850 23.81263 *
-          43) nox&gt;=0.589 7   791.1486 33.41429 *
-      11) lstat&lt; 4.91 20   943.7455 31.56500 *
-   3) rm&gt;=6.941 68  5671.6280 37.27500  
-     6) rm&lt; 7.437 40  1859.2740 31.96250  
+ 1) root 455 39028.0200 22.62110  
+   2) rm&lt; 6.941 383 14615.6000 19.86214  
+     4) lstat&gt;=14.4 154  2953.9890 14.98182  
+       8) crim&gt;=6.99237 64  1004.3600 12.05156 *
+       9) crim&lt; 6.99237 90  1009.3230 17.06556 *
+     5) lstat&lt; 14.4 229  5527.0850 23.14410  
+      10) lstat&gt;=9.715 105   658.5320 20.74000 *
+      11) lstat&lt; 9.715 124  3747.8000 25.17984  
+        22) age&lt; 89.45 116  1750.8600 24.44052  
+          44) rm&lt; 6.543 73   676.5392 22.67945 *
+          45) rm&gt;=6.543 43   463.5707 27.43023 *
+        23) age&gt;=89.45 8  1014.1600 35.90000 *
+   3) rm&gt;=6.941 72  5989.0990 37.29722  
+     6) rm&lt; 7.435 43  1888.1360 31.99070  
       12) lstat&gt;=9.65 7   432.9971 23.05714 *
-      13) lstat&lt; 9.65 33   753.3824 33.85152 *
-     7) rm&gt;=7.437 28  1070.7240 44.86429 *</code></pre>
+      13) lstat&lt; 9.65 36   787.8522 33.72778 *
+     7) rm&gt;=7.435 29  1094.7260 45.16552 *</code></pre>
 </div>
 </div>
 <p>The unpruned tree’s text form: each node reports its split rule, the number of training observations reaching it (<code>n</code>), the deviance (residual sum of squares) within the node, and the predicted <code>medv</code> (the node mean).</p>
@@ -806,22 +789,22 @@ rpart::rpart(formula = boston_formula, data = train_test_regression$f$train$f1,
     model = TRUE, x = TRUE, y = TRUE)
 
 Variables actually used in tree construction:
-[1] crim  lstat nox   rm   
+[1] age   crim  lstat rm   
 
-Root node error: 39083/455 = 85.897
+Root node error: 39028/455 = 85.776
 
 n= 455 
 
         CP nsplit rel error  xerror     xstd
-1 0.442910      0   1.00000 1.00634 0.087441
-2 0.171774      1   0.55709 0.66046 0.065434
-3 0.070149      2   0.38532 0.44843 0.055320
-4 0.037218      3   0.31517 0.38452 0.048706
-5 0.030378      4   0.27795 0.36591 0.048963
-6 0.017217      5   0.24757 0.32233 0.045867
-7 0.017024      6   0.23035 0.31291 0.045432
-8 0.015379      7   0.21333 0.31120 0.045832
-9 0.010000      8   0.19795 0.29028 0.042735</code></pre>
+1 0.472054      0   1.00000 1.00432 0.087594
+2 0.157183      1   0.52795 0.58725 0.058026
+3 0.077028      2   0.37076 0.43127 0.050213
+4 0.028717      3   0.29374 0.33234 0.043749
+5 0.025181      4   0.26502 0.34388 0.049606
+6 0.024093      5   0.23984 0.33471 0.049507
+7 0.017098      6   0.21574 0.31787 0.049487
+8 0.015649      7   0.19865 0.32133 0.049491
+9 0.010000      8   0.18300 0.30027 0.049051</code></pre>
 </div>
 <div class="cell-output-display">
 <div class="quarto-figure quarto-figure-center">
@@ -838,7 +821,7 @@ n= 455
 </div>
 </div>
 </div>
-<p>Here <code>rsq.rpart()</code>’s R² panel is a literal R²: the proportion of <code>medv</code>’s variance explained, both on the training data (apparent) and under cross-validation. The gap between the two lines is the model’s optimism — how much worse the tree performs on unseen data than on the data it was fit to — and it typically widens as the tree grows past the point where pruning is applied.</p>
+<p>Here <code>rsq.rpart()</code>’s R² panel is a literal R²: the proportion of <code>medv</code>’s variance explained, both on the training data (apparent) and under cross-validation. The gap between the two lines is the model’s optimism — how much worse the tree performs on unseen data than on the data it was fit to. Here it grows from about 0.06 after one split to about 0.12 at the largest tree (apparent R² ≈ 0.82 vs.&nbsp;cross-validated ≈ 0.70), while cross-validated R² is still at its maximum at the largest tree, so no pruning was needed.</p>
 </section>
 <section id="error-by-size-summary-1" class="level3">
 <h3 class="anchored" data-anchor-id="error-by-size-summary-1">Error-by-size summary</h3>
@@ -865,7 +848,7 @@ n= 455
 </div>
 </div>
 </div>
-<p>Same three <code>cptable</code> series (<code>rel error</code>, <code>xerror</code>, <code>xstd</code>) as in the classification section, plotted against tree size, with the size at minimum <code>xerror</code> called out in the title.</p>
+<p>Same four <code>cptable</code> series (<code>CP</code>, <code>rel error</code>, <code>xerror</code>, <code>xstd</code>) as in the classification section, plotted against tree size (<code>nsplit + 1</code>), with the size at minimum <code>xerror</code> (9 terminal nodes) called out in the title.</p>
 </section>
 <section id="the-pruned-tree-diagram-1" class="level3">
 <h3 class="anchored" data-anchor-id="the-pruned-tree-diagram-1">The pruned tree diagram</h3>
@@ -882,7 +865,7 @@ n= 455
 </div>
 </div>
 </div>
-<p>Each box shows the node’s predicted <code>medv</code> and the percentage of observations it contains. Following the splits down — typically starting with <code>rm</code> or <code>lstat</code> — shows how the tree partitions the housing stock into progressively more homogeneous price segments, e.g.&nbsp;“high rooms, low lstat” neighborhoods landing in the highest-value terminal nodes.</p>
+<p>Each box shows the node’s predicted <code>medv</code> and the percentage of observations it contains. Following the splits down — typically starting with <code>rm</code> or <code>lstat</code> — shows how the tree partitions the housing stock into progressively more homogeneous price segments, e.g.&nbsp;dwellings with the most rooms (the right-most branch on <code>rm</code>) land in the highest-value leaf (mean <code>medv</code> ≈ 45.2), while smaller homes in high-<code>lstat</code> areas land in the lowest (≈ 12.1).</p>
 </section>
 <section id="raw-model-components-1" class="level3">
 <h3 class="anchored" data-anchor-id="raw-model-components-1">Raw model components</h3>
@@ -904,35 +887,35 @@ n= 455
 <div class="cell-output cell-output-stdout">
 <pre><code>$frame
       var   n  wt        dev     yval  complexity ncompete nsurrogate
-1      rm 455 455 39083.0679 22.56044 0.442909794        4          5
-2   lstat 387 387 16101.1669 19.97494 0.171774266        4          5
-4    crim 157 157  3186.1911 14.93376 0.030378327        4          5
-8  &lt;leaf&gt;  72  72  1001.7787 11.94583 0.006512289        0          0
-9  &lt;leaf&gt;  85  85   997.1341 17.46471 0.006584179        0          0
-5   lstat 230 230  6201.5105 23.41609 0.037217677        4          2
-10  lstat 210 210  3803.1840 22.64000 0.017023680        4          5
-20 &lt;leaf&gt; 108 108   671.3588 20.91019 0.001661500        0          0
-21    nox 102 102  2466.4875 24.47157 0.015378888        4          5
-42 &lt;leaf&gt;  95  95  1074.2848 23.81263 0.008014052        0          0
-43 &lt;leaf&gt;   7   7   791.1486 33.41429 0.010000000        0          0
-11 &lt;leaf&gt;  20  20   943.7455 31.56500 0.006066504        0          0
-3      rm  68  68  5671.6275 37.27500 0.070148778        4          5
-6   lstat  40  40  1859.2738 31.96250 0.017217026        4          5
+1      rm 455 455 39028.0175 22.62110 0.472053621        4          5
+2   lstat 383 383 14615.6010 19.86214 0.157182655        4          5
+4    crim 154 154  2953.9891 14.98182 0.024093103        4          5
+8  &lt;leaf&gt;  64  64  1004.3598 12.05156 0.008611929        0          0
+9  &lt;leaf&gt;  90  90  1009.3232 17.06556 0.005709086        0          0
+5   lstat 229 229  5527.0845 23.14410 0.028716625        4          5
+10 &lt;leaf&gt; 105 105   658.5320 20.74000 0.001051925        0          0
+11    age 124 124  3747.7996 25.17984 0.025181398        4          5
+22     rm 116 116  1750.8596 24.44052 0.015649006        4          5
+44 &lt;leaf&gt;  73  73   676.5392 22.67945 0.004513536        0          0
+45 &lt;leaf&gt;  43  43   463.5707 27.43023 0.003416614        0          0
+23 &lt;leaf&gt;   8   8  1014.1600 35.90000 0.010000000        0          0
+3      rm  72  72  5989.0994 37.29722 0.077027680        4          5
+6   lstat  43  43  1888.1363 31.99070 0.017097638        4          5
 12 &lt;leaf&gt;   7   7   432.9971 23.05714 0.010000000        0          0
-13 &lt;leaf&gt;  33  33   753.3824 33.85152 0.002807544        0          0
-7  &lt;leaf&gt;  28  28  1070.7243 44.86429 0.008535775        0          0
+13 &lt;leaf&gt;  36  36   787.8522 33.72778 0.003580613        0          0
+7  &lt;leaf&gt;  29  29  1094.7255 45.16552 0.009323713        0          0
 
 $cp
           CP nsplit rel.error    xerror       xstd
-1 0.44290979      0 1.0000000 1.0063380 0.08744051
-2 0.17177427      1 0.5570902 0.6604637 0.06543379
-3 0.07014878      2 0.3853159 0.4484320 0.05532020
-4 0.03721768      3 0.3151672 0.3845216 0.04870609
-5 0.03037833      4 0.2779495 0.3659127 0.04896274
-6 0.01721703      5 0.2475712 0.3223345 0.04586656
-7 0.01702368      6 0.2303541 0.3129123 0.04543191
-8 0.01537889      7 0.2133305 0.3112009 0.04583152
-9 0.01000000      8 0.1979516 0.2902768 0.04273488
+1 0.47205362      0 1.0000000 1.0043157 0.08759429
+2 0.15718266      1 0.5279464 0.5872495 0.05802625
+3 0.07702768      2 0.3707637 0.4312720 0.05021296
+4 0.02871663      3 0.2937360 0.3323424 0.04374889
+5 0.02518140      4 0.2650194 0.3438781 0.04960597
+6 0.02409310      5 0.2398380 0.3347075 0.04950675
+7 0.01709764      6 0.2157449 0.3178695 0.04948660
+8 0.01564901      7 0.1986473 0.3213327 0.04949119
+9 0.01000000      8 0.1829983 0.3002653 0.04905131
 
 $parameters
                parameters
@@ -948,98 +931,102 @@ xval                10.00
 
 $splits
       name count ncat    improve      index        adj
-1       rm   455   -1 0.44290979   6.941000 0.00000000
-2    lstat   455    1 0.43880403   9.645000 0.00000000
-3    indus   455    1 0.24746701   6.660000 0.00000000
-4  ptratio   455    1 0.24217158  19.900000 0.00000000
-5      nox   455    1 0.22651382   0.669500 0.00000000
-6    lstat     0    1 0.88791209   4.150000 0.25000000
-7  ptratio     0    1 0.87912088  14.550000 0.19117647
-8    indus     0    1 0.86153846   1.605000 0.07352941
-9       zn     0   -1 0.85934066  87.500000 0.05882353
-10     tax     0    1 0.85274725 222.500000 0.01470588
-11   lstat   387    1 0.41695520  14.400000 0.00000000
-12     nox   387    1 0.28133418   0.669500 0.00000000
-13    crim   387    1 0.26028672   5.848030 0.00000000
-14 ptratio   387    1 0.21674887  19.900000 0.00000000
-15     age   387    1 0.21559276  75.750000 0.00000000
-16     age     0    1 0.81912145  84.450000 0.55414013
-17     dis     0   -1 0.79069767   2.239350 0.48407643
-18   indus     0    1 0.78294574  16.570000 0.46496815
-19     nox     0    1 0.78294574   0.576500 0.46496815
-20     tax     0    1 0.78036176 434.500000 0.45859873
-21    crim   157    1 0.37263246   5.781900 0.00000000
-22     nox   157    1 0.35052978   0.607000 0.00000000
-23     dis   157   -1 0.33267904   2.003700 0.00000000
-24     tax   157    1 0.31605240 567.500000 0.00000000
-25 ptratio   157    1 0.29004176  19.450000 0.00000000
-26     rad     0    1 0.90445860  16.000000 0.79166667
-27     tax     0    1 0.87898089 567.500000 0.73611111
-28     nox     0    1 0.78343949   0.657000 0.52777778
-29     dis     0   -1 0.77070064   2.283450 0.50000000
-30 ptratio     0    1 0.75159236  20.150000 0.45833333
-31   lstat   230    1 0.23455269   4.910000 0.00000000
-32     dis   230    1 0.23092460   1.602400 0.00000000
-33      rm   230   -1 0.20223323   6.543000 0.00000000
-34    crim   230   -1 0.10599652   4.866945 0.00000000
-35    chas   230   -1 0.08645123   0.500000 0.00000000
-36      zn     0   -1 0.92173913  87.500000 0.10000000
-37    crim     0    1 0.91739130   0.017895 0.05000000
-38   lstat   210    1 0.17494227   9.545000 0.00000000
-39      rm   210   -1 0.13091948   6.142000 0.00000000
-40     dis   210    1 0.10923387   1.685150 0.00000000
-41    crim   210   -1 0.08265259   6.239465 0.00000000
-42    chas   210   -1 0.05248255   0.500000 0.00000000
-43     nox     0    1 0.71428571   0.496000 0.41176471
-44      rm     0   -1 0.70476190   6.028500 0.39215686
-45     dis     0   -1 0.70000000   4.428100 0.38235294
-46     age     0    1 0.69523810  58.750000 0.37254902
-47   indus     0    1 0.69047619   7.625000 0.36274510
-48     nox   102   -1 0.24368829   0.589000 0.00000000
-49     dis   102    1 0.21063519   2.338200 0.00000000
-50     age   102   -1 0.20274815  87.950000 0.00000000
-51   black   102    1 0.19683594 367.195000 0.00000000
-52    crim   102   -1 0.19640705   1.163695 0.00000000
-53     age     0   -1 0.99019608  87.600000 0.85714286
-54     dis     0    1 0.99019608   2.149100 0.85714286
-55    crim     0   -1 0.98039216   1.163695 0.71428571
-56   indus     0   -1 0.98039216  16.570000 0.71428571
-57   black     0    1 0.97058824 356.340000 0.57142857
-58      rm    68   -1 0.48339378   7.437000 0.00000000
-59   lstat    68    1 0.31437520   4.680000 0.00000000
-60 ptratio    68    1 0.27224566  19.700000 0.00000000
-61     rad    68    1 0.23264553  16.000000 0.00000000
-62    crim    68    1 0.23264553   2.742235 0.00000000
-63   lstat     0    1 0.76470588   3.990000 0.42857143
-64 ptratio     0    1 0.64705882  14.750000 0.14285714
-65   black     0    1 0.64705882 389.885000 0.14285714
-66    crim     0   -1 0.63235294   0.112760 0.10714286
-67   indus     0   -1 0.63235294  18.840000 0.10714286
-68   lstat    40    1 0.36191238   9.650000 0.00000000
-69 ptratio    40    1 0.25026077  19.700000 0.00000000
-70     rad    40    1 0.19094876   7.500000 0.00000000
-71     nox    40    1 0.16641663   0.639000 0.00000000
-72   indus    40    1 0.15179398   9.500000 0.00000000
-73    crim     0    1 0.90000000   0.724605 0.42857143
-74     nox     0    1 0.90000000   0.659000 0.42857143
-75     rad     0    1 0.87500000  16.000000 0.28571429
-76     tax     0    1 0.87500000 534.500000 0.28571429
-77   indus     0    1 0.85000000  15.015000 0.14285714
+1       rm   455   -1 0.47205362   6.941000 0.00000000
+2    lstat   455    1 0.43775919   9.725000 0.00000000
+3    indus   455    1 0.26019021   6.660000 0.00000000
+4  ptratio   455    1 0.24287674  19.650000 0.00000000
+5      nox   455    1 0.21408796   0.669500 0.00000000
+6    lstat     0    1 0.89010989   4.150000 0.30555556
+7  ptratio     0    1 0.86593407  14.550000 0.15277778
+8       zn     0   -1 0.85274725  81.250000 0.06944444
+9    indus     0    1 0.85274725   1.605000 0.06944444
+10    crim     0    1 0.84615385   0.013355 0.02777778
+11   lstat   383    1 0.41972461  14.400000 0.00000000
+12     nox   383    1 0.26937201   0.669500 0.00000000
+13    crim   383    1 0.23890675   9.280695 0.00000000
+14 ptratio   383    1 0.21640988  19.900000 0.00000000
+15     age   383    1 0.21263549  75.750000 0.00000000
+16     age     0    1 0.80939948  88.100000 0.52597403
+17     dis     0   -1 0.77806789   2.239350 0.44805195
+18     nox     0    1 0.77545692   0.576500 0.44155844
+19   indus     0    1 0.77284595  16.570000 0.43506494
+20     tax     0    1 0.77284595 434.500000 0.43506494
+21    crim   154    1 0.31831737   6.992370 0.00000000
+22     nox   154    1 0.31053788   0.607000 0.00000000
+23     dis   154   -1 0.29028800   2.003700 0.00000000
+24     tax   154    1 0.25291593 567.500000 0.00000000
+25   lstat   154    1 0.24584057  19.830000 0.00000000
+26     rad     0    1 0.87012987  16.000000 0.68750000
+27     tax     0    1 0.85714286 567.500000 0.65625000
+28     nox     0    1 0.74675325   0.661500 0.39062500
+29     dis     0   -1 0.74025974   2.202000 0.37500000
+30     age     0    1 0.69480519  98.600000 0.26562500
+31   lstat   229    1 0.20277471   9.715000 0.00000000
+32      rm   229   -1 0.18504482   6.543000 0.00000000
+33     dis   229    1 0.14439126   1.600900 0.00000000
+34   indus   229    1 0.06429180   4.100000 0.00000000
+35     tax   229    1 0.06289683 222.500000 0.00000000
+36     nox     0    1 0.73799127   0.519000 0.42857143
+37   indus     0    1 0.72489083   7.625000 0.40000000
+38      rm     0   -1 0.72052402   6.260000 0.39047619
+39     dis     0   -1 0.69868996   4.480250 0.34285714
+40    crim     0    1 0.68995633   0.130245 0.32380952
+41     age   124   -1 0.26222854  89.450000 0.00000000
+42     nox   124   -1 0.25623370   0.618000 0.00000000
+43     dis   124    1 0.23254331   2.149100 0.00000000
+44    crim   124   -1 0.21670627   1.383930 0.00000000
+45     tax   124   -1 0.19648951 426.000000 0.00000000
+46     dis     0    1 0.98387097   2.149100 0.75000000
+47     nox     0   -1 0.97580645   0.589000 0.62500000
+48 ptratio     0    1 0.96774194  14.750000 0.50000000
+49    crim     0   -1 0.95967742   1.163695 0.37500000
+50   indus     0   -1 0.95967742  16.570000 0.37500000
+51      rm   116   -1 0.34882849   6.543000 0.00000000
+52   lstat   116    1 0.25126720   5.410000 0.00000000
+53 ptratio   116    1 0.14390779  15.750000 0.00000000
+54     tax   116    1 0.07743844 267.500000 0.00000000
+55     nox   116    1 0.07722395   0.512500 0.00000000
+56   lstat     0    1 0.74137931   5.055000 0.30232558
+57      zn     0   -1 0.68965517  31.500000 0.16279070
+58 ptratio     0    1 0.68965517  15.750000 0.16279070
+59    crim     0    1 0.67241379   0.017895 0.11627907
+60     age     0   -1 0.66379310  68.650000 0.09302326
+61      rm    72   -1 0.50195153   7.435000 0.00000000
+62   lstat    72    1 0.37062504   4.680000 0.00000000
+63 ptratio    72    1 0.25679102  19.700000 0.00000000
+64     rad    72    1 0.21966661  16.000000 0.00000000
+65    crim    72    1 0.21966661   2.742235 0.00000000
+66   lstat     0    1 0.79166667   4.330000 0.48275862
+67 ptratio     0    1 0.66666667  14.750000 0.17241379
+68   indus     0   -1 0.63888889  18.840000 0.10344828
+69    chas     0   -1 0.63888889   0.500000 0.10344828
+70   black     0    1 0.63888889 389.885000 0.10344828
+71   lstat    43    1 0.35341036   9.650000 0.00000000
+72 ptratio    43    1 0.24469424  19.700000 0.00000000
+73     rad    43    1 0.17534867   7.500000 0.00000000
+74     nox    43    1 0.16270057   0.639000 0.00000000
+75   indus    43    1 0.14847490   9.500000 0.00000000
+76    crim     0    1 0.90697674   0.724605 0.42857143
+77     nox     0    1 0.90697674   0.659000 0.42857143
+78     rad     0    1 0.88372093  16.000000 0.28571429
+79     tax     0    1 0.88372093 534.500000 0.28571429
+80   indus     0    1 0.86046512  15.015000 0.14285714
 
 $importance
         importance
-rm      20312.8197
-lstat   15008.8306
-indus    5454.9079
-nox      4911.5665
-dis      4613.0525
-age      4483.2607
-tax      4399.5737
-ptratio  4245.1475
-crim     2271.4609
-zn       1163.7095
-rad      1132.1841
-black     735.1209
+rm      22477.9316
+lstat   15187.8465
+indus    5171.4753
+age      4515.9648
+nox      4456.5997
+dis      4222.5449
+ptratio  3923.8046
+tax      3476.6470
+crim     2540.5153
+zn       1378.8214
+rad       837.1138
+black     310.9901
+chas      310.9901
 
 $ordered
         ordered
@@ -1579,9 +1566,9 @@ $call
 <span id="cb33-26"><a href="#cb33-26" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb33-27"><a href="#cb33-27" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-28"><a href="#cb33-28" aria-hidden="true" tabindex="-1"></a><span class="fu">## Description</span></span>
-<span id="cb33-29"><a href="#cb33-29" aria-hidden="true" tabindex="-1"></a>This shows the output of PART RPART functions from rwf.</span>
+<span id="cb33-29"><a href="#cb33-29" aria-hidden="true" tabindex="-1"></a>This page reproduces the steps of rwf's <span class="in">`report_rtree()`</span> using <span class="in">`rpart`</span> directly; both models are fit on the training part of the first of 10 folds created by rwf's <span class="in">`k_fold()`</span>.</span>
 <span id="cb33-30"><a href="#cb33-30" aria-hidden="true" tabindex="-1"></a>Installation instructions for rwf can be found <span class="co">[</span><span class="ot">here</span><span class="co">](https://github.com/sedzinfo/rwf)</span></span>
-<span id="cb33-31"><a href="#cb33-31" aria-hidden="true" tabindex="-1"></a>These functions are not installed by default they are in /rwf/working_functions/OTHER/ML_TREE_RPART.R</span>
+<span id="cb33-31"><a href="#cb33-31" aria-hidden="true" tabindex="-1"></a><span class="in">`report_rtree()`</span> is not installed by default; it is in /rwf/working_functions/OTHER/ML_TREE_RPART.R</span>
 <span id="cb33-32"><a href="#cb33-32" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-33"><a href="#cb33-33" aria-hidden="true" tabindex="-1"></a><span class="fu">## Theoretical Background</span></span>
 <span id="cb33-34"><a href="#cb33-34" aria-hidden="true" tabindex="-1"></a></span>
@@ -1602,15 +1589,15 @@ $call
 <span id="cb33-49"><a href="#cb33-49" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-50"><a href="#cb33-50" aria-hidden="true" tabindex="-1"></a>$$R_\alpha(T) = R(T) + \alpha \, |T|$$</span>
 <span id="cb33-51"><a href="#cb33-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-52"><a href="#cb33-52" aria-hidden="true" tabindex="-1"></a>where $R(T)$ is the tree's error (relative to the root), $|T|$ is the number of terminal nodes, and $\alpha$ (called <span class="in">`CP`</span> in <span class="in">`rpart`</span>'s output) penalizes tree size. Varying $\alpha$ from 0 to 1 produces a nested sequence of subtrees, from the full tree down to a single root node — this sequence is stored in <span class="in">`model$cptable`</span>.</span>
+<span id="cb33-52"><a href="#cb33-52" aria-hidden="true" tabindex="-1"></a>where $R(T)$ is the tree's error (relative to the root), $|T|$ is the number of terminal nodes, and $\alpha$ (called <span class="in">`CP`</span> in <span class="in">`rpart`</span>'s output) penalizes tree size. Varying $\alpha$ from 0 to 1 produces a nested sequence of subtrees, from the grown tree (stopped at <span class="in">`rpart`</span>'s default <span class="in">`cp = 0.01`</span>) down to a single root node — this sequence is stored in <span class="in">`model$cptable`</span>.</span>
 <span id="cb33-53"><a href="#cb33-53" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-54"><a href="#cb33-54" aria-hidden="true" tabindex="-1"></a><span class="fu">### Cross-validated tree size</span></span>
 <span id="cb33-55"><a href="#cb33-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-56"><a href="#cb33-56" aria-hidden="true" tabindex="-1"></a>Because the *apparent* error of a tree always decreases as it grows (a larger tree can always fit the training data at least as well), `rpart` estimates each subtree's error via internal **k-fold cross-validation**. `cptable` reports, for every candidate `CP` value: the relative error on the training data (`rel error`), the cross-validated error (`xerror`), and its standard deviation (`xstd`). The code below selects the tree whose `CP` gives the **minimum `xerror`** — a common, slightly more permissive alternative is the "1-SE rule" (the smallest tree within one standard error of the minimum), which favors an even simpler tree.</span>
+<span id="cb33-56"><a href="#cb33-56" aria-hidden="true" tabindex="-1"></a>Because the *apparent* error of a tree always decreases as it grows (a larger tree can always fit the training data at least as well), `rpart` estimates each subtree's error via internal **k-fold cross-validation**. `cptable` reports, for every candidate `CP` value: the relative error on the training data (`rel error`), the cross-validated error (`xerror`), and its standard deviation (`xstd`). The code below selects the tree whose `CP` gives the **minimum `xerror`** — a common, more conservative alternative is the "1-SE rule" (the smallest tree whose <span class="in">`xerror`</span> is within one standard error of the minimum), which favors a simpler tree.</span>
 <span id="cb33-57"><a href="#cb33-57" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-58"><a href="#cb33-58" aria-hidden="true" tabindex="-1"></a><span class="fu">### Variable importance</span></span>
 <span id="cb33-59"><a href="#cb33-59" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-60"><a href="#cb33-60" aria-hidden="true" tabindex="-1"></a>A predictor's importance is the sum of the improvement in impurity (Gini, for classification) or sum-of-squares (for regression) attributable to it — counting not only splits where it was the *primary* splitter, but also splits where it acted as a **surrogate** (a stand-in used when the primary splitting variable is missing). This is why a variable can show non-trivial importance even if it never appears as a labeled split in the final tree diagram.</span>
+<span id="cb33-60"><a href="#cb33-60" aria-hidden="true" tabindex="-1"></a>A predictor's importance is the sum of the goodness-of-split (improvement in Gini impurity for classification, or in sum-of-squares for regression) for every split where it is the *primary* splitter, plus, for every split where it serves as a **surrogate** (a stand-in used when the primary splitting variable is missing), the primary split's improvement weighted by the surrogate's adjusted agreement. This is why a variable can show non-trivial importance even if it never appears as a labeled split in the final tree diagram.</span>
 <span id="cb33-61"><a href="#cb33-61" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb33-62"><a href="#cb33-62" aria-hidden="true" tabindex="-1"></a><span class="in">```{r create_models,include=TRUE}</span></span>
 <span id="cb33-63"><a href="#cb33-63" aria-hidden="true" tabindex="-1"></a>infert_formula<span class="ot">&lt;-</span><span class="fu">formula</span>(<span class="fu">factor</span>(case)<span class="sc">~</span>age<span class="sc">+</span>parity<span class="sc">+</span>education<span class="sc">+</span>spontaneous<span class="sc">+</span>induced)</span>
@@ -1619,210 +1606,211 @@ $call
 <span id="cb33-66"><a href="#cb33-66" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(infert_formula)</span>
 <span id="cb33-67"><a href="#cb33-67" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(boston_formula)</span>
 <span id="cb33-68"><a href="#cb33-68" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-69"><a href="#cb33-69" aria-hidden="true" tabindex="-1"></a><span class="co"># kfolding</span></span>
-<span id="cb33-70"><a href="#cb33-70" aria-hidden="true" tabindex="-1"></a>train_test_classification<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>infert,</span>
-<span id="cb33-71"><a href="#cb33-71" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">model_formula=</span>infert_formula)</span>
-<span id="cb33-72"><a href="#cb33-72" aria-hidden="true" tabindex="-1"></a>train_test_regression<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>MASS<span class="sc">::</span>Boston,</span>
-<span id="cb33-73"><a href="#cb33-73" aria-hidden="true" tabindex="-1"></a>                              <span class="at">model_formula=</span>boston_formula)</span>
-<span id="cb33-74"><a href="#cb33-74" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-75"><a href="#cb33-75" aria-hidden="true" tabindex="-1"></a><span class="co"># srpart models</span></span>
-<span id="cb33-76"><a href="#cb33-76" aria-hidden="true" tabindex="-1"></a>rtree_classification<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">rpart</span>(infert_formula,</span>
-<span id="cb33-77"><a href="#cb33-77" aria-hidden="true" tabindex="-1"></a>                                   train_test_classification<span class="sc">$</span>f<span class="sc">$</span>train<span class="sc">$</span>f1,</span>
-<span id="cb33-78"><a href="#cb33-78" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">model=</span><span class="cn">TRUE</span>,<span class="at">x=</span><span class="cn">TRUE</span>,<span class="at">y=</span><span class="cn">TRUE</span>)</span>
-<span id="cb33-79"><a href="#cb33-79" aria-hidden="true" tabindex="-1"></a>rtree_regression<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">rpart</span>(boston_formula,</span>
-<span id="cb33-80"><a href="#cb33-80" aria-hidden="true" tabindex="-1"></a>                               train_test_regression<span class="sc">$</span>f<span class="sc">$</span>train<span class="sc">$</span>f1,</span>
-<span id="cb33-81"><a href="#cb33-81" aria-hidden="true" tabindex="-1"></a>                               <span class="at">model=</span><span class="cn">TRUE</span>,<span class="at">x=</span><span class="cn">TRUE</span>,<span class="at">y=</span><span class="cn">TRUE</span>)</span>
-<span id="cb33-82"><a href="#cb33-82" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-83"><a href="#cb33-83" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-84"><a href="#cb33-84" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-85"><a href="#cb33-85" aria-hidden="true" tabindex="-1"></a><span class="fu">## Rpart Classification</span></span>
-<span id="cb33-86"><a href="#cb33-86" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-87"><a href="#cb33-87" aria-hidden="true" tabindex="-1"></a>The classification tree predicts <span class="in">`case`</span> (secondary infertility, from the classic <span class="in">`infert`</span> case-control study) from <span class="in">`age`</span>, <span class="in">`parity`</span>, <span class="in">`education`</span>, <span class="in">`spontaneous`</span>, and <span class="in">`induced`</span> (prior abortions).</span>
-<span id="cb33-88"><a href="#cb33-88" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-89"><a href="#cb33-89" aria-hidden="true" tabindex="-1"></a><span class="fu">### Growing and pruning the tree</span></span>
-<span id="cb33-90"><a href="#cb33-90" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-91"><a href="#cb33-91" aria-hidden="true" tabindex="-1"></a><span class="in">`rtree_classification`</span> was grown to full depth in the <span class="in">`create_models`</span> chunk above. Here it is pruned back to the <span class="in">`CP`</span> value that minimizes the cross-validated error (<span class="in">`xerror`</span>) in its <span class="in">`cptable`</span>.</span>
-<span id="cb33-92"><a href="#cb33-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-93"><a href="#cb33-93" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_prune,echo=TRUE}</span></span>
-<span id="cb33-94"><a href="#cb33-94" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">data.frame</span>(rtree_classification<span class="sc">$</span>cptable)</span>
-<span id="cb33-95"><a href="#cb33-95" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(result<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
-<span id="cb33-96"><a href="#cb33-96" aria-hidden="true" tabindex="-1"></a>minimun_size<span class="ot">&lt;-</span><span class="fu">as.numeric</span>(<span class="fu">as.character</span>(result[<span class="fu">which.min</span>(result[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]))</span>
-<span id="cb33-97"><a href="#cb33-97" aria-hidden="true" tabindex="-1"></a>initial_model<span class="ot">&lt;-</span>rtree_classification</span>
-<span id="cb33-98"><a href="#cb33-98" aria-hidden="true" tabindex="-1"></a>model<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">prune</span>(rtree_classification,</span>
-<span id="cb33-99"><a href="#cb33-99" aria-hidden="true" tabindex="-1"></a>                    <span class="at">cp=</span>rtree_classification<span class="sc">$</span>cptable[<span class="fu">which.min</span>(rtree_classification<span class="sc">$</span>cptable[,<span class="st">"xerror"</span>]),<span class="st">"CP"</span>])</span>
-<span id="cb33-100"><a href="#cb33-100" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-101"><a href="#cb33-101" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-102"><a href="#cb33-102" aria-hidden="true" tabindex="-1"></a><span class="fu">### Variable importance</span></span>
-<span id="cb33-103"><a href="#cb33-103" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-104"><a href="#cb33-104" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_importance,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-105"><a href="#cb33-105" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span>model<span class="sc">$</span>variable.importance</span>
-<span id="cb33-106"><a href="#cb33-106" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">names=</span><span class="fu">names</span>(importance),<span class="at">importance=</span>importance)</span>
-<span id="cb33-107"><a href="#cb33-107" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
-<span id="cb33-108"><a href="#cb33-108" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
-<span id="cb33-109"><a href="#cb33-109" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
-<span id="cb33-110"><a href="#cb33-110" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Relative Influence"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
-<span id="cb33-111"><a href="#cb33-111" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
-<span id="cb33-112"><a href="#cb33-112" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
-<span id="cb33-113"><a href="#cb33-113" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
-<span id="cb33-114"><a href="#cb33-114" aria-hidden="true" tabindex="-1"></a>plot_importance</span>
-<span id="cb33-115"><a href="#cb33-115" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-116"><a href="#cb33-116" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-117"><a href="#cb33-117" aria-hidden="true" tabindex="-1"></a>Longer bars mean the predictor contributed more to reducing impurity across the tree's splits (as primary splitter or as a surrogate). For <span class="in">`infert`</span>, <span class="in">`age`</span> and <span class="in">`education`</span> typically dominate — consistent with the epidemiological finding that secondary infertility risk in this dataset tracks strongly with age and prior reproductive history.</span>
-<span id="cb33-118"><a href="#cb33-118" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-119"><a href="#cb33-119" aria-hidden="true" tabindex="-1"></a><span class="fu">### The full, unpruned tree</span></span>
-<span id="cb33-120"><a href="#cb33-120" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-121"><a href="#cb33-121" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_full_tree_text,echo=TRUE}</span></span>
-<span id="cb33-122"><a href="#cb33-122" aria-hidden="true" tabindex="-1"></a>rtree_classification</span>
-<span id="cb33-123"><a href="#cb33-123" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-124"><a href="#cb33-124" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-125"><a href="#cb33-125" aria-hidden="true" tabindex="-1"></a>This is the text representation of the tree *before* pruning — every line is one node: its splitting rule, the number of observations that reach it (<span class="in">`n`</span>), the misclassification loss, and the predicted class with its probability. Compare its size to the pruned <span class="in">`model`</span> used in the plots below — pruning typically collapses several of these nodes back together.</span>
-<span id="cb33-126"><a href="#cb33-126" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-127"><a href="#cb33-127" aria-hidden="true" tabindex="-1"></a><span class="fu">### Choosing the tree size via cross-validation</span></span>
-<span id="cb33-128"><a href="#cb33-128" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-129"><a href="#cb33-129" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_cv_size,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-130"><a href="#cb33-130" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">plotcp</span>(model)</span>
-<span id="cb33-131"><a href="#cb33-131" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">rsq.rpart</span>(model)</span>
-<span id="cb33-132"><a href="#cb33-132" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-133"><a href="#cb33-133" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-134"><a href="#cb33-134" aria-hidden="true" tabindex="-1"></a><span class="in">`plotcp()`</span> plots cross-validated **relative error** (`xerror`, with one-SE error bars) against `CP` (bottom axis) and tree size (top axis) — the dashed horizontal line marks one standard error above the minimum, the usual reference for the "1-SE rule". `rsq.rpart()` adds two more panels: apparent vs. cross-validated **R-squared** and **relative error** by tree size. Because this is a *classification* tree, these values are derived from the Gini/deviance-based loss rather than explained variance, so read them as "relative predictive error" rather than a literal R²: they still show the same pattern — error falls quickly for the first few splits, then flattens (or the cross-validated curve turns back up), which is exactly the point captured by pruning to minimum <span class="in">`xerror`</span>.</span>
-<span id="cb33-135"><a href="#cb33-135" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-136"><a href="#cb33-136" aria-hidden="true" tabindex="-1"></a><span class="fu">### Error-by-size summary</span></span>
-<span id="cb33-137"><a href="#cb33-137" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-138"><a href="#cb33-138" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_prune_plot,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-139"><a href="#cb33-139" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
-<span id="cb33-140"><a href="#cb33-140" aria-hidden="true" tabindex="-1"></a>error<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(error<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
-<span id="cb33-141"><a href="#cb33-141" aria-hidden="true" tabindex="-1"></a>tree_size<span class="ot">&lt;-</span>error[<span class="fu">which.min</span>(error[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]</span>
-<span id="cb33-142"><a href="#cb33-142" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span>reshape2<span class="sc">::</span><span class="fu">melt</span>(error,<span class="at">id.vars=</span><span class="st">"nsplit"</span>)</span>
-<span id="cb33-143"><a href="#cb33-143" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(error)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"Split"</span>,<span class="st">"Metric"</span>,<span class="st">"value"</span>)</span>
-<span id="cb33-144"><a href="#cb33-144" aria-hidden="true" tabindex="-1"></a>plot_prune<span class="ot">&lt;-</span><span class="fu">ggplot</span>(error,<span class="fu">aes</span>(<span class="at">x=</span>Split,<span class="at">y=</span>value,<span class="at">color=</span>Metric))<span class="sc">+</span></span>
-<span id="cb33-145"><a href="#cb33-145" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">group=</span>Metric))<span class="sc">+</span></span>
-<span id="cb33-146"><a href="#cb33-146" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>()<span class="sc">+</span></span>
-<span id="cb33-147"><a href="#cb33-147" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="fu">paste</span>(<span class="st">"Error Plot"</span>,<span class="st">"Suggested Size:"</span>,tree_size),<span class="at">y=</span><span class="st">"Metric value"</span>,<span class="at">x=</span><span class="st">"Size of Tree"</span>)<span class="sc">+</span></span>
-<span id="cb33-148"><a href="#cb33-148" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)</span>
-<span id="cb33-149"><a href="#cb33-149" aria-hidden="true" tabindex="-1"></a>plot_prune</span>
-<span id="cb33-150"><a href="#cb33-150" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-151"><a href="#cb33-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-152"><a href="#cb33-152" aria-hidden="true" tabindex="-1"></a>This re-plots the same <span class="in">`cptable`</span> metrics (<span class="in">`rel error`</span>, <span class="in">`xerror`</span>, <span class="in">`xstd`</span>) on one axis, as tree size grows from a single node onward. The title reports the tree size (<span class="in">`nsplit`</span>) at which <span class="in">`xerror`</span> is minimized — the size the pruned <span class="in">`model`</span> was cut back to.</span>
-<span id="cb33-153"><a href="#cb33-153" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-154"><a href="#cb33-154" aria-hidden="true" tabindex="-1"></a><span class="fu">### The pruned tree diagram</span></span>
-<span id="cb33-155"><a href="#cb33-155" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-156"><a href="#cb33-156" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_final_tree,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-157"><a href="#cb33-157" aria-hidden="true" tabindex="-1"></a>rpart.plot<span class="sc">::</span><span class="fu">rpart.plot</span>(model,<span class="at">type=</span><span class="dv">1</span>)</span>
-<span id="cb33-158"><a href="#cb33-158" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-159"><a href="#cb33-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-160"><a href="#cb33-160" aria-hidden="true" tabindex="-1"></a>Each box is a node: the top line is the predicted class (and, depending on plotting options, the predicted probability), the bottom line is the percentage of the sample that lands in that node. Following the branches down from the root shows the sequence of yes/no rules — e.g. an age threshold, then a threshold on prior spontaneous/induced abortions — that separate higher- from lower-risk groups.</span>
-<span id="cb33-161"><a href="#cb33-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-162"><a href="#cb33-162" aria-hidden="true" tabindex="-1"></a><span class="fu">### Raw model components</span></span>
-<span id="cb33-163"><a href="#cb33-163" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-164"><a href="#cb33-164" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_export,echo=TRUE}</span></span>
-<span id="cb33-165"><a href="#cb33-165" aria-hidden="true" tabindex="-1"></a>frame<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>frame)</span>
-<span id="cb33-166"><a href="#cb33-166" aria-hidden="true" tabindex="-1"></a>cp<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
-<span id="cb33-167"><a href="#cb33-167" aria-hidden="true" tabindex="-1"></a>parameters<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">parameters=</span><span class="fu">unlist</span>(model<span class="sc">$</span>control))</span>
-<span id="cb33-168"><a href="#cb33-168" aria-hidden="true" tabindex="-1"></a>splits<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">name=</span><span class="fu">row.names</span>(model<span class="sc">$</span>splits),model<span class="sc">$</span>splits,<span class="at">row.names=</span><span class="cn">NULL</span>)</span>
-<span id="cb33-169"><a href="#cb33-169" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">importance=</span>model<span class="sc">$</span>variable.importance)</span>
-<span id="cb33-170"><a href="#cb33-170" aria-hidden="true" tabindex="-1"></a>ordered<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">ordered=</span>model<span class="sc">$</span>ordered)</span>
-<span id="cb33-171"><a href="#cb33-171" aria-hidden="true" tabindex="-1"></a>data<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">y=</span>model<span class="sc">$</span>y,<span class="at">x=</span>model<span class="sc">$</span>x,<span class="at">model=</span>model<span class="sc">$</span>model)</span>
-<span id="cb33-172"><a href="#cb33-172" aria-hidden="true" tabindex="-1"></a>call<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">call=</span><span class="fu">call_to_string</span>(model))</span>
-<span id="cb33-173"><a href="#cb33-173" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">frame=</span>frame,<span class="at">cp=</span>cp,<span class="at">parameters=</span>parameters,<span class="at">splits=</span>splits,<span class="at">importance=</span>importance,<span class="at">ordered=</span>ordered,<span class="at">call=</span>call)</span>
-<span id="cb33-174"><a href="#cb33-174" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-175"><a href="#cb33-175" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(result)</span>
-<span id="cb33-176"><a href="#cb33-176" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-177"><a href="#cb33-177" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-178"><a href="#cb33-178" aria-hidden="true" tabindex="-1"></a><span class="in">`result`</span> bundles the pruned model's internals — node <span class="in">`frame`</span> (one row per node), the <span class="in">`cp`</span> table, control <span class="in">`parameters`</span>, raw <span class="in">`splits`</span>, <span class="in">`importance`</span>, factor-<span class="in">`ordered`</span> flags, and the model <span class="in">`call`</span> — for programmatic inspection or export, without needing to pick through <span class="in">`model`</span>'s S3 structure directly.</span>
-<span id="cb33-179"><a href="#cb33-179" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-180"><a href="#cb33-180" aria-hidden="true" tabindex="-1"></a><span class="fu">## Rpart Regression</span></span>
-<span id="cb33-181"><a href="#cb33-181" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-182"><a href="#cb33-182" aria-hidden="true" tabindex="-1"></a>The regression tree predicts <span class="in">`medv`</span> (median owner-occupied home value, in $1000s) from the 13 other variables in the classic <span class="in">`MASS::Boston`</span> housing dataset.</span>
-<span id="cb33-183"><a href="#cb33-183" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-184"><a href="#cb33-184" aria-hidden="true" tabindex="-1"></a><span class="fu">### Growing and pruning the tree</span></span>
-<span id="cb33-185"><a href="#cb33-185" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-186"><a href="#cb33-186" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_prune,echo=TRUE}</span></span>
-<span id="cb33-187"><a href="#cb33-187" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">data.frame</span>(rtree_regression<span class="sc">$</span>cptable)</span>
-<span id="cb33-188"><a href="#cb33-188" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(result<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
-<span id="cb33-189"><a href="#cb33-189" aria-hidden="true" tabindex="-1"></a>minimun_size<span class="ot">&lt;-</span><span class="fu">as.numeric</span>(<span class="fu">as.character</span>(result[<span class="fu">which.min</span>(result[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]))</span>
-<span id="cb33-190"><a href="#cb33-190" aria-hidden="true" tabindex="-1"></a>initial_model<span class="ot">&lt;-</span>rtree_regression</span>
-<span id="cb33-191"><a href="#cb33-191" aria-hidden="true" tabindex="-1"></a>model<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">prune</span>(rtree_regression,<span class="at">cp=</span>rtree_regression<span class="sc">$</span>cptable[<span class="fu">which.min</span>(rtree_regression<span class="sc">$</span>cptable[,<span class="st">"xerror"</span>]),<span class="st">"CP"</span>])</span>
-<span id="cb33-192"><a href="#cb33-192" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-193"><a href="#cb33-193" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-194"><a href="#cb33-194" aria-hidden="true" tabindex="-1"></a>As with the classification tree, <span class="in">`rtree_regression`</span> is pruned to the <span class="in">`CP`</span> value that minimizes the cross-validated error — here, cross-validated sum-of-squares error rather than a classification loss.</span>
-<span id="cb33-195"><a href="#cb33-195" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-196"><a href="#cb33-196" aria-hidden="true" tabindex="-1"></a><span class="fu">### Variable importance</span></span>
-<span id="cb33-197"><a href="#cb33-197" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-198"><a href="#cb33-198" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_importance,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-199"><a href="#cb33-199" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span>model<span class="sc">$</span>variable.importance</span>
-<span id="cb33-200"><a href="#cb33-200" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">names=</span><span class="fu">names</span>(importance),<span class="at">importance=</span>importance)</span>
-<span id="cb33-201"><a href="#cb33-201" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
-<span id="cb33-202"><a href="#cb33-202" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
-<span id="cb33-203"><a href="#cb33-203" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
-<span id="cb33-204"><a href="#cb33-204" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Relative Influence"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
-<span id="cb33-205"><a href="#cb33-205" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
-<span id="cb33-206"><a href="#cb33-206" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
-<span id="cb33-207"><a href="#cb33-207" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
-<span id="cb33-208"><a href="#cb33-208" aria-hidden="true" tabindex="-1"></a>plot_importance</span>
-<span id="cb33-209"><a href="#cb33-209" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-210"><a href="#cb33-210" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-211"><a href="#cb33-211" aria-hidden="true" tabindex="-1"></a>For Boston housing, <span class="in">`rm`</span> (average rooms per dwelling) and <span class="in">`lstat`</span> (% lower-status population) are almost always the two dominant predictors of <span class="in">`medv`</span> — this importance ranking is the tree-based analogue of the strong linear associations well known from OLS models fit to this same dataset.</span>
-<span id="cb33-212"><a href="#cb33-212" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-213"><a href="#cb33-213" aria-hidden="true" tabindex="-1"></a><span class="fu">### The full, unpruned tree</span></span>
-<span id="cb33-214"><a href="#cb33-214" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-215"><a href="#cb33-215" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_full_tree_text,echo=TRUE}</span></span>
-<span id="cb33-216"><a href="#cb33-216" aria-hidden="true" tabindex="-1"></a>rtree_regression</span>
-<span id="cb33-217"><a href="#cb33-217" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-218"><a href="#cb33-218" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-219"><a href="#cb33-219" aria-hidden="true" tabindex="-1"></a>The unpruned tree's text form: each node reports its split rule, the number of training observations reaching it (<span class="in">`n`</span>), the deviance (residual sum of squares) within the node, and the predicted <span class="in">`medv`</span> (the node mean).</span>
-<span id="cb33-220"><a href="#cb33-220" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-221"><a href="#cb33-221" aria-hidden="true" tabindex="-1"></a><span class="fu">### Choosing the tree size via cross-validation</span></span>
-<span id="cb33-222"><a href="#cb33-222" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-223"><a href="#cb33-223" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_cv_size,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-224"><a href="#cb33-224" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">plotcp</span>(model)</span>
-<span id="cb33-225"><a href="#cb33-225" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">rsq.rpart</span>(model)</span>
-<span id="cb33-226"><a href="#cb33-226" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-227"><a href="#cb33-227" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-228"><a href="#cb33-228" aria-hidden="true" tabindex="-1"></a>Here <span class="in">`rsq.rpart()`</span>'s R² panel is a literal R²: the proportion of <span class="in">`medv`</span>'s variance explained, both on the training data (apparent) and under cross-validation. The gap between the two lines is the model's optimism — how much worse the tree performs on unseen data than on the data it was fit to — and it typically widens as the tree grows past the point where pruning is applied.</span>
-<span id="cb33-229"><a href="#cb33-229" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-230"><a href="#cb33-230" aria-hidden="true" tabindex="-1"></a><span class="fu">### Error-by-size summary</span></span>
-<span id="cb33-231"><a href="#cb33-231" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-232"><a href="#cb33-232" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_prune_plot,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-233"><a href="#cb33-233" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
-<span id="cb33-234"><a href="#cb33-234" aria-hidden="true" tabindex="-1"></a>error<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(error<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
-<span id="cb33-235"><a href="#cb33-235" aria-hidden="true" tabindex="-1"></a>tree_size<span class="ot">&lt;-</span>error[<span class="fu">which.min</span>(error[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]</span>
-<span id="cb33-236"><a href="#cb33-236" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span>reshape2<span class="sc">::</span><span class="fu">melt</span>(error,<span class="at">id.vars=</span><span class="st">"nsplit"</span>)</span>
-<span id="cb33-237"><a href="#cb33-237" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(error)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"Split"</span>,<span class="st">"Metric"</span>,<span class="st">"value"</span>)</span>
-<span id="cb33-238"><a href="#cb33-238" aria-hidden="true" tabindex="-1"></a>plot_prune<span class="ot">&lt;-</span><span class="fu">ggplot</span>(error,<span class="fu">aes</span>(<span class="at">x=</span>Split,<span class="at">y=</span>value,<span class="at">color=</span>Metric))<span class="sc">+</span></span>
-<span id="cb33-239"><a href="#cb33-239" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">group=</span>Metric))<span class="sc">+</span></span>
-<span id="cb33-240"><a href="#cb33-240" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>()<span class="sc">+</span></span>
-<span id="cb33-241"><a href="#cb33-241" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="fu">paste</span>(<span class="st">"Error Plot"</span>,<span class="st">"Suggested Size:"</span>,tree_size),<span class="at">y=</span><span class="st">"Metric value"</span>,<span class="at">x=</span><span class="st">"Size of Tree"</span>)<span class="sc">+</span></span>
-<span id="cb33-242"><a href="#cb33-242" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)</span>
-<span id="cb33-243"><a href="#cb33-243" aria-hidden="true" tabindex="-1"></a>plot_prune</span>
-<span id="cb33-244"><a href="#cb33-244" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-245"><a href="#cb33-245" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-246"><a href="#cb33-246" aria-hidden="true" tabindex="-1"></a>Same three <span class="in">`cptable`</span> series (<span class="in">`rel error`</span>, <span class="in">`xerror`</span>, <span class="in">`xstd`</span>) as in the classification section, plotted against tree size, with the size at minimum <span class="in">`xerror`</span> called out in the title.</span>
-<span id="cb33-247"><a href="#cb33-247" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-248"><a href="#cb33-248" aria-hidden="true" tabindex="-1"></a><span class="fu">### The pruned tree diagram</span></span>
-<span id="cb33-249"><a href="#cb33-249" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-250"><a href="#cb33-250" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_final_tree,echo=TRUE,dev='png'}</span></span>
-<span id="cb33-251"><a href="#cb33-251" aria-hidden="true" tabindex="-1"></a>rpart.plot<span class="sc">::</span><span class="fu">rpart.plot</span>(model,<span class="at">type=</span><span class="dv">1</span>)</span>
-<span id="cb33-252"><a href="#cb33-252" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-253"><a href="#cb33-253" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-254"><a href="#cb33-254" aria-hidden="true" tabindex="-1"></a>Each box shows the node's predicted <span class="in">`medv`</span> and the percentage of observations it contains. Following the splits down — typically starting with <span class="in">`rm`</span> or <span class="in">`lstat`</span> — shows how the tree partitions the housing stock into progressively more homogeneous price segments, e.g. "high rooms, low lstat" neighborhoods landing in the highest-value terminal nodes.</span>
-<span id="cb33-255"><a href="#cb33-255" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-256"><a href="#cb33-256" aria-hidden="true" tabindex="-1"></a><span class="fu">### Raw model components</span></span>
-<span id="cb33-257"><a href="#cb33-257" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-258"><a href="#cb33-258" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_export,echo=TRUE}</span></span>
-<span id="cb33-259"><a href="#cb33-259" aria-hidden="true" tabindex="-1"></a>frame<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>frame)</span>
-<span id="cb33-260"><a href="#cb33-260" aria-hidden="true" tabindex="-1"></a>cp<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
-<span id="cb33-261"><a href="#cb33-261" aria-hidden="true" tabindex="-1"></a>parameters<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">parameters=</span><span class="fu">unlist</span>(model<span class="sc">$</span>control))</span>
-<span id="cb33-262"><a href="#cb33-262" aria-hidden="true" tabindex="-1"></a>splits<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">name=</span><span class="fu">row.names</span>(model<span class="sc">$</span>splits),model<span class="sc">$</span>splits,<span class="at">row.names=</span><span class="cn">NULL</span>)</span>
-<span id="cb33-263"><a href="#cb33-263" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">importance=</span>model<span class="sc">$</span>variable.importance)</span>
-<span id="cb33-264"><a href="#cb33-264" aria-hidden="true" tabindex="-1"></a>ordered<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">ordered=</span>model<span class="sc">$</span>ordered)</span>
-<span id="cb33-265"><a href="#cb33-265" aria-hidden="true" tabindex="-1"></a>data<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">y=</span>model<span class="sc">$</span>y,<span class="at">x=</span>model<span class="sc">$</span>x,<span class="at">model=</span>model<span class="sc">$</span>model)</span>
-<span id="cb33-266"><a href="#cb33-266" aria-hidden="true" tabindex="-1"></a>call<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">call=</span><span class="fu">call_to_string</span>(model))</span>
-<span id="cb33-267"><a href="#cb33-267" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">frame=</span>frame,<span class="at">cp=</span>cp,<span class="at">parameters=</span>parameters,<span class="at">splits=</span>splits,<span class="at">importance=</span>importance,<span class="at">ordered=</span>ordered,<span class="at">call=</span>call)</span>
-<span id="cb33-268"><a href="#cb33-268" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-269"><a href="#cb33-269" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(result)</span>
-<span id="cb33-270"><a href="#cb33-270" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb33-271"><a href="#cb33-271" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb33-272"><a href="#cb33-272" aria-hidden="true" tabindex="-1"></a>Same bundling as the classification section — the pruned regression model's <span class="in">`frame`</span>, <span class="in">`cp`</span> table, <span class="in">`parameters`</span>, <span class="in">`splits`</span>, <span class="in">`importance`</span>, <span class="in">`ordered`</span> flags, and <span class="in">`call`</span>.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb33-69"><a href="#cb33-69" aria-hidden="true" tabindex="-1"></a><span class="co"># kfolding (seed fixed so folds, rpart's internal cross-validation and the prose below are reproducible)</span></span>
+<span id="cb33-70"><a href="#cb33-70" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">12345</span>)</span>
+<span id="cb33-71"><a href="#cb33-71" aria-hidden="true" tabindex="-1"></a>train_test_classification<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>infert,</span>
+<span id="cb33-72"><a href="#cb33-72" aria-hidden="true" tabindex="-1"></a>                                  <span class="at">model_formula=</span>infert_formula)</span>
+<span id="cb33-73"><a href="#cb33-73" aria-hidden="true" tabindex="-1"></a>train_test_regression<span class="ot">&lt;-</span><span class="fu">k_fold</span>(<span class="at">df=</span>MASS<span class="sc">::</span>Boston,</span>
+<span id="cb33-74"><a href="#cb33-74" aria-hidden="true" tabindex="-1"></a>                              <span class="at">model_formula=</span>boston_formula)</span>
+<span id="cb33-75"><a href="#cb33-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-76"><a href="#cb33-76" aria-hidden="true" tabindex="-1"></a><span class="co"># rpart models</span></span>
+<span id="cb33-77"><a href="#cb33-77" aria-hidden="true" tabindex="-1"></a>rtree_classification<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">rpart</span>(infert_formula,</span>
+<span id="cb33-78"><a href="#cb33-78" aria-hidden="true" tabindex="-1"></a>                                   train_test_classification<span class="sc">$</span>f<span class="sc">$</span>train<span class="sc">$</span>f1,</span>
+<span id="cb33-79"><a href="#cb33-79" aria-hidden="true" tabindex="-1"></a>                                   <span class="at">model=</span><span class="cn">TRUE</span>,<span class="at">x=</span><span class="cn">TRUE</span>,<span class="at">y=</span><span class="cn">TRUE</span>)</span>
+<span id="cb33-80"><a href="#cb33-80" aria-hidden="true" tabindex="-1"></a>rtree_regression<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">rpart</span>(boston_formula,</span>
+<span id="cb33-81"><a href="#cb33-81" aria-hidden="true" tabindex="-1"></a>                               train_test_regression<span class="sc">$</span>f<span class="sc">$</span>train<span class="sc">$</span>f1,</span>
+<span id="cb33-82"><a href="#cb33-82" aria-hidden="true" tabindex="-1"></a>                               <span class="at">model=</span><span class="cn">TRUE</span>,<span class="at">x=</span><span class="cn">TRUE</span>,<span class="at">y=</span><span class="cn">TRUE</span>)</span>
+<span id="cb33-83"><a href="#cb33-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-84"><a href="#cb33-84" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-85"><a href="#cb33-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-86"><a href="#cb33-86" aria-hidden="true" tabindex="-1"></a><span class="fu">## Rpart Classification</span></span>
+<span id="cb33-87"><a href="#cb33-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-88"><a href="#cb33-88" aria-hidden="true" tabindex="-1"></a>The classification tree predicts <span class="in">`case`</span> (secondary infertility, from the classic <span class="in">`infert`</span> case-control study) from <span class="in">`age`</span>, <span class="in">`parity`</span>, <span class="in">`education`</span>, <span class="in">`spontaneous`</span>, and <span class="in">`induced`</span> (prior abortions).</span>
+<span id="cb33-89"><a href="#cb33-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-90"><a href="#cb33-90" aria-hidden="true" tabindex="-1"></a><span class="fu">### Growing and pruning the tree</span></span>
+<span id="cb33-91"><a href="#cb33-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-92"><a href="#cb33-92" aria-hidden="true" tabindex="-1"></a><span class="in">`rtree_classification`</span> was grown with rpart's default stopping rules (<span class="in">`cp = 0.01`</span>, <span class="in">`minsplit = 20`</span>, <span class="in">`minbucket = 7`</span>) in the <span class="in">`create_models`</span> chunk above. Here it is pruned back to the <span class="in">`CP`</span> value that minimizes the cross-validated error (<span class="in">`xerror`</span>) in its <span class="in">`cptable`</span>.</span>
+<span id="cb33-93"><a href="#cb33-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-94"><a href="#cb33-94" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_prune,echo=TRUE}</span></span>
+<span id="cb33-95"><a href="#cb33-95" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">data.frame</span>(rtree_classification<span class="sc">$</span>cptable)</span>
+<span id="cb33-96"><a href="#cb33-96" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(result<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
+<span id="cb33-97"><a href="#cb33-97" aria-hidden="true" tabindex="-1"></a>minimun_size<span class="ot">&lt;-</span><span class="fu">as.numeric</span>(<span class="fu">as.character</span>(result[<span class="fu">which.min</span>(result[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]))</span>
+<span id="cb33-98"><a href="#cb33-98" aria-hidden="true" tabindex="-1"></a>initial_model<span class="ot">&lt;-</span>rtree_classification</span>
+<span id="cb33-99"><a href="#cb33-99" aria-hidden="true" tabindex="-1"></a>model<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">prune</span>(rtree_classification,</span>
+<span id="cb33-100"><a href="#cb33-100" aria-hidden="true" tabindex="-1"></a>                    <span class="at">cp=</span>rtree_classification<span class="sc">$</span>cptable[<span class="fu">which.min</span>(rtree_classification<span class="sc">$</span>cptable[,<span class="st">"xerror"</span>]),<span class="st">"CP"</span>])</span>
+<span id="cb33-101"><a href="#cb33-101" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-102"><a href="#cb33-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-103"><a href="#cb33-103" aria-hidden="true" tabindex="-1"></a><span class="fu">### Variable importance</span></span>
+<span id="cb33-104"><a href="#cb33-104" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-105"><a href="#cb33-105" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_importance,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-106"><a href="#cb33-106" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span>model<span class="sc">$</span>variable.importance</span>
+<span id="cb33-107"><a href="#cb33-107" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">names=</span><span class="fu">names</span>(importance),<span class="at">importance=</span>importance)</span>
+<span id="cb33-108"><a href="#cb33-108" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
+<span id="cb33-109"><a href="#cb33-109" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
+<span id="cb33-110"><a href="#cb33-110" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
+<span id="cb33-111"><a href="#cb33-111" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Importance (sum of split improvements)"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
+<span id="cb33-112"><a href="#cb33-112" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
+<span id="cb33-113"><a href="#cb33-113" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
+<span id="cb33-114"><a href="#cb33-114" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
+<span id="cb33-115"><a href="#cb33-115" aria-hidden="true" tabindex="-1"></a>plot_importance</span>
+<span id="cb33-116"><a href="#cb33-116" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-117"><a href="#cb33-117" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-118"><a href="#cb33-118" aria-hidden="true" tabindex="-1"></a>Longer bars mean the predictor contributed more to reducing impurity across the tree's splits (as primary splitter or as a surrogate). Here **`r names(model$variable.importance)[1]`** dominates (importance `r round(model$variable.importance[1],2)`), followed by **`r names(model$variable.importance)[2]`** and **`r names(model$variable.importance)[3]`**, with **`r names(model$variable.importance)[length(model$variable.importance)]`** contributing least. Note that <span class="in">`infert`</span> is a matched case-control study in which cases and controls were matched on age, parity and education, so the substantive signal is in the prior-abortion variables (<span class="in">`spontaneous`</span>, <span class="in">`induced`</span>); splits on age or parity largely reflect sampling noise in this training fold.</span>
+<span id="cb33-119"><a href="#cb33-119" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-120"><a href="#cb33-120" aria-hidden="true" tabindex="-1"></a><span class="fu">### The full, unpruned tree</span></span>
+<span id="cb33-121"><a href="#cb33-121" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-122"><a href="#cb33-122" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_full_tree_text,echo=TRUE}</span></span>
+<span id="cb33-123"><a href="#cb33-123" aria-hidden="true" tabindex="-1"></a>rtree_classification</span>
+<span id="cb33-124"><a href="#cb33-124" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-125"><a href="#cb33-125" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-126"><a href="#cb33-126" aria-hidden="true" tabindex="-1"></a>This is the text representation of the tree *before* pruning — every line is one node: its splitting rule, the number of observations that reach it (<span class="in">`n`</span>), the misclassification loss, and the predicted class with its probability. Compare its size to the pruned <span class="in">`model`</span> used in the plots below: in this run the full tree has <span class="in">`r sum(rtree_classification$frame$var=="&lt;leaf&gt;")`</span> terminal nodes and the pruned tree <span class="in">`r sum(model$frame$var=="&lt;leaf&gt;")`</span>. When the minimum <span class="in">`xerror`</span> occurs at the largest tree in the <span class="in">`cptable`</span>, pruning leaves the tree unchanged; with other data or a smaller <span class="in">`cp`</span>, pruning would collapse some of these nodes.</span>
+<span id="cb33-127"><a href="#cb33-127" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-128"><a href="#cb33-128" aria-hidden="true" tabindex="-1"></a><span class="fu">### Choosing the tree size via cross-validation</span></span>
+<span id="cb33-129"><a href="#cb33-129" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-130"><a href="#cb33-130" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_cv_size,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-131"><a href="#cb33-131" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">plotcp</span>(model)</span>
+<span id="cb33-132"><a href="#cb33-132" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">rsq.rpart</span>(model)</span>
+<span id="cb33-133"><a href="#cb33-133" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-134"><a href="#cb33-134" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-135"><a href="#cb33-135" aria-hidden="true" tabindex="-1"></a><span class="in">`plotcp()`</span> plots cross-validated **relative error** (`xerror`, with one-SE error bars) against `CP` (bottom axis) and tree size (top axis) — the dotted horizontal line marks one standard error above the minimum, the usual reference for the "1-SE rule". `rsq.rpart()` prints the `cptable` and adds two more panels: apparent vs. cross-validated **R-squared**, and cross-validated **relative error**, against the number of splits. Because this is a *classification* tree, these values are 1 minus the relative misclassification error (relative to the root node's error of `r model$frame$dev[1]`/`r model$frame$n[1]`), not explained variance, so read them as relative predictive error rather than a literal R²; `rsq.rpart()` itself warns that it "may not be applicable for this method". Here cross-validated error drops only from 1.00 to `r round(min(model$cptable[,"xerror"]),2)` of the root error (about `r round(100*min(model$cptable[,"xerror"])*model$frame$dev[1]/model$frame$n[1])`% vs `r round(100*model$frame$dev<span class="co">[</span><span class="ot">1</span><span class="co">]</span>/model$frame$n<span class="co">[</span><span class="ot">1</span><span class="co">]</span>)<span class="in">`% misclassification) and is lowest at the largest tree in the `</span>cptable<span class="in">`, which is why the minimum-`</span>xerror` rule keeps the full tree.</span>
+<span id="cb33-136"><a href="#cb33-136" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-137"><a href="#cb33-137" aria-hidden="true" tabindex="-1"></a><span class="fu">### Error-by-size summary</span></span>
+<span id="cb33-138"><a href="#cb33-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-139"><a href="#cb33-139" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_prune_plot,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-140"><a href="#cb33-140" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
+<span id="cb33-141"><a href="#cb33-141" aria-hidden="true" tabindex="-1"></a>error<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(error<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
+<span id="cb33-142"><a href="#cb33-142" aria-hidden="true" tabindex="-1"></a>tree_size<span class="ot">&lt;-</span>error[<span class="fu">which.min</span>(error[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]</span>
+<span id="cb33-143"><a href="#cb33-143" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span>reshape2<span class="sc">::</span><span class="fu">melt</span>(error,<span class="at">id.vars=</span><span class="st">"nsplit"</span>)</span>
+<span id="cb33-144"><a href="#cb33-144" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(error)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"Split"</span>,<span class="st">"Metric"</span>,<span class="st">"value"</span>)</span>
+<span id="cb33-145"><a href="#cb33-145" aria-hidden="true" tabindex="-1"></a>plot_prune<span class="ot">&lt;-</span><span class="fu">ggplot</span>(error,<span class="fu">aes</span>(<span class="at">x=</span>Split,<span class="at">y=</span>value,<span class="at">color=</span>Metric))<span class="sc">+</span></span>
+<span id="cb33-146"><a href="#cb33-146" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">group=</span>Metric))<span class="sc">+</span></span>
+<span id="cb33-147"><a href="#cb33-147" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>()<span class="sc">+</span></span>
+<span id="cb33-148"><a href="#cb33-148" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="fu">paste</span>(<span class="st">"Error Plot"</span>,<span class="st">"Suggested Size:"</span>,tree_size),<span class="at">y=</span><span class="st">"Metric value"</span>,<span class="at">x=</span><span class="st">"Size of Tree"</span>)<span class="sc">+</span></span>
+<span id="cb33-149"><a href="#cb33-149" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)</span>
+<span id="cb33-150"><a href="#cb33-150" aria-hidden="true" tabindex="-1"></a>plot_prune</span>
+<span id="cb33-151"><a href="#cb33-151" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-152"><a href="#cb33-152" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-153"><a href="#cb33-153" aria-hidden="true" tabindex="-1"></a>This re-plots all four <span class="in">`cptable`</span> columns (<span class="in">`CP`</span>, <span class="in">`rel error`</span>, <span class="in">`xerror`</span>, <span class="in">`xstd`</span>) on one axis against tree size (number of terminal nodes = <span class="in">`nsplit + 1`</span>), from a single node onward. The title reports the tree size at which <span class="in">`xerror`</span> is minimized — the size the pruned <span class="in">`model`</span> retains (here <span class="in">`r as.character(tree_size)`</span> terminal nodes, i.e. the full tree).</span>
+<span id="cb33-154"><a href="#cb33-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-155"><a href="#cb33-155" aria-hidden="true" tabindex="-1"></a><span class="fu">### The pruned tree diagram</span></span>
+<span id="cb33-156"><a href="#cb33-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-157"><a href="#cb33-157" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_final_tree,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-158"><a href="#cb33-158" aria-hidden="true" tabindex="-1"></a>rpart.plot<span class="sc">::</span><span class="fu">rpart.plot</span>(model,<span class="at">type=</span><span class="dv">1</span>)</span>
+<span id="cb33-159"><a href="#cb33-159" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-160"><a href="#cb33-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-161"><a href="#cb33-161" aria-hidden="true" tabindex="-1"></a>Each box is a node showing the predicted class (top), the fitted probability that <span class="in">`case = 1`</span> (middle), and the percentage of the training sample in that node (bottom). Following the branches down from the root shows the sequence of yes/no rules — here the splits use, in order from the root, <span class="in">`r paste(setdiff(unique(as.character(model$frame$var)),"&lt;leaf&gt;"),collapse=", ")`</span>: first whether the woman had any prior spontaneous abortion, then parity, then age — that separate higher- from lower-risk groups.</span>
+<span id="cb33-162"><a href="#cb33-162" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-163"><a href="#cb33-163" aria-hidden="true" tabindex="-1"></a><span class="fu">### Raw model components</span></span>
+<span id="cb33-164"><a href="#cb33-164" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-165"><a href="#cb33-165" aria-hidden="true" tabindex="-1"></a><span class="in">```{r classification_export,echo=TRUE}</span></span>
+<span id="cb33-166"><a href="#cb33-166" aria-hidden="true" tabindex="-1"></a>frame<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>frame)</span>
+<span id="cb33-167"><a href="#cb33-167" aria-hidden="true" tabindex="-1"></a>cp<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
+<span id="cb33-168"><a href="#cb33-168" aria-hidden="true" tabindex="-1"></a>parameters<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">parameters=</span><span class="fu">unlist</span>(model<span class="sc">$</span>control))</span>
+<span id="cb33-169"><a href="#cb33-169" aria-hidden="true" tabindex="-1"></a>splits<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">name=</span><span class="fu">row.names</span>(model<span class="sc">$</span>splits),model<span class="sc">$</span>splits,<span class="at">row.names=</span><span class="cn">NULL</span>)</span>
+<span id="cb33-170"><a href="#cb33-170" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">importance=</span>model<span class="sc">$</span>variable.importance)</span>
+<span id="cb33-171"><a href="#cb33-171" aria-hidden="true" tabindex="-1"></a>ordered<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">ordered=</span>model<span class="sc">$</span>ordered)</span>
+<span id="cb33-172"><a href="#cb33-172" aria-hidden="true" tabindex="-1"></a>data<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">y=</span>model<span class="sc">$</span>y,<span class="at">x=</span>model<span class="sc">$</span>x,<span class="at">model=</span>model<span class="sc">$</span>model)</span>
+<span id="cb33-173"><a href="#cb33-173" aria-hidden="true" tabindex="-1"></a>call<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">call=</span><span class="fu">call_to_string</span>(model))</span>
+<span id="cb33-174"><a href="#cb33-174" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">frame=</span>frame,<span class="at">cp=</span>cp,<span class="at">parameters=</span>parameters,<span class="at">splits=</span>splits,<span class="at">importance=</span>importance,<span class="at">ordered=</span>ordered,<span class="at">call=</span>call)</span>
+<span id="cb33-175"><a href="#cb33-175" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-176"><a href="#cb33-176" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb33-177"><a href="#cb33-177" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-178"><a href="#cb33-178" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-179"><a href="#cb33-179" aria-hidden="true" tabindex="-1"></a><span class="in">`result`</span> bundles the pruned model's internals — node <span class="in">`frame`</span> (one row per node), the <span class="in">`cp`</span> table, control <span class="in">`parameters`</span>, raw <span class="in">`splits`</span>, <span class="in">`importance`</span>, factor-<span class="in">`ordered`</span> flags, and the model <span class="in">`call`</span> — for programmatic inspection or export, without needing to pick through <span class="in">`model`</span>'s S3 structure directly.</span>
+<span id="cb33-180"><a href="#cb33-180" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-181"><a href="#cb33-181" aria-hidden="true" tabindex="-1"></a><span class="fu">## Rpart Regression</span></span>
+<span id="cb33-182"><a href="#cb33-182" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-183"><a href="#cb33-183" aria-hidden="true" tabindex="-1"></a>The regression tree predicts <span class="in">`medv`</span> (median owner-occupied home value, in $1000s) from the 13 other variables in the classic <span class="in">`MASS::Boston`</span> housing dataset.</span>
+<span id="cb33-184"><a href="#cb33-184" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-185"><a href="#cb33-185" aria-hidden="true" tabindex="-1"></a><span class="fu">### Growing and pruning the tree</span></span>
+<span id="cb33-186"><a href="#cb33-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-187"><a href="#cb33-187" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_prune,echo=TRUE}</span></span>
+<span id="cb33-188"><a href="#cb33-188" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">data.frame</span>(rtree_regression<span class="sc">$</span>cptable)</span>
+<span id="cb33-189"><a href="#cb33-189" aria-hidden="true" tabindex="-1"></a>result<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(result<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
+<span id="cb33-190"><a href="#cb33-190" aria-hidden="true" tabindex="-1"></a>minimun_size<span class="ot">&lt;-</span><span class="fu">as.numeric</span>(<span class="fu">as.character</span>(result[<span class="fu">which.min</span>(result[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]))</span>
+<span id="cb33-191"><a href="#cb33-191" aria-hidden="true" tabindex="-1"></a>initial_model<span class="ot">&lt;-</span>rtree_regression</span>
+<span id="cb33-192"><a href="#cb33-192" aria-hidden="true" tabindex="-1"></a>model<span class="ot">&lt;-</span>rpart<span class="sc">::</span><span class="fu">prune</span>(rtree_regression,<span class="at">cp=</span>rtree_regression<span class="sc">$</span>cptable[<span class="fu">which.min</span>(rtree_regression<span class="sc">$</span>cptable[,<span class="st">"xerror"</span>]),<span class="st">"CP"</span>])</span>
+<span id="cb33-193"><a href="#cb33-193" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-194"><a href="#cb33-194" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-195"><a href="#cb33-195" aria-hidden="true" tabindex="-1"></a>As with the classification tree, <span class="in">`rtree_regression`</span> is pruned to the <span class="in">`CP`</span> value that minimizes the cross-validated error — here, cross-validated sum-of-squares error rather than a classification loss. In this run the minimum <span class="in">`xerror`</span> is again at the largest tree in the <span class="in">`cptable`</span>, so the pruned tree keeps all <span class="in">`r sum(model$frame$var=="&lt;leaf&gt;")`</span> terminal nodes of the grown tree.</span>
+<span id="cb33-196"><a href="#cb33-196" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-197"><a href="#cb33-197" aria-hidden="true" tabindex="-1"></a><span class="fu">### Variable importance</span></span>
+<span id="cb33-198"><a href="#cb33-198" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-199"><a href="#cb33-199" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_importance,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-200"><a href="#cb33-200" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span>model<span class="sc">$</span>variable.importance</span>
+<span id="cb33-201"><a href="#cb33-201" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">names=</span><span class="fu">names</span>(importance),<span class="at">importance=</span>importance)</span>
+<span id="cb33-202"><a href="#cb33-202" aria-hidden="true" tabindex="-1"></a>importance<span class="sc">$</span>names<span class="ot">&lt;-</span><span class="fu">factor</span>(importance<span class="sc">$</span>names,<span class="at">levels=</span><span class="fu">rev</span>(<span class="fu">as.character</span>(importance<span class="sc">$</span>names)))</span>
+<span id="cb33-203"><a href="#cb33-203" aria-hidden="true" tabindex="-1"></a>plot_importance<span class="ot">&lt;-</span><span class="fu">ggplot</span>(importance,<span class="fu">aes</span>(<span class="at">x=</span>names,<span class="at">y=</span>importance))<span class="sc">+</span></span>
+<span id="cb33-204"><a href="#cb33-204" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>(<span class="at">stat=</span><span class="st">'identity'</span>)<span class="sc">+</span></span>
+<span id="cb33-205"><a href="#cb33-205" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="st">"Importance Plot"</span>,<span class="at">y=</span><span class="st">"Importance (sum of split improvements)"</span>,<span class="at">x=</span><span class="st">"Predictor"</span>)<span class="sc">+</span></span>
+<span id="cb33-206"><a href="#cb33-206" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)<span class="sc">+</span></span>
+<span id="cb33-207"><a href="#cb33-207" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">limits=</span><span class="fu">rev</span>(<span class="fu">levels</span>(names)))<span class="sc">+</span></span>
+<span id="cb33-208"><a href="#cb33-208" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_flip</span>()</span>
+<span id="cb33-209"><a href="#cb33-209" aria-hidden="true" tabindex="-1"></a>plot_importance</span>
+<span id="cb33-210"><a href="#cb33-210" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-211"><a href="#cb33-211" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-212"><a href="#cb33-212" aria-hidden="true" tabindex="-1"></a>For Boston housing, <span class="in">`rm`</span> (average rooms per dwelling) and <span class="in">`lstat`</span> (% lower-status population) are almost always the two dominant predictors of <span class="in">`medv`</span> — this importance ranking is the tree-based analogue of the strong linear associations well known from OLS models fit to this same dataset.</span>
+<span id="cb33-213"><a href="#cb33-213" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-214"><a href="#cb33-214" aria-hidden="true" tabindex="-1"></a><span class="fu">### The full, unpruned tree</span></span>
+<span id="cb33-215"><a href="#cb33-215" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-216"><a href="#cb33-216" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_full_tree_text,echo=TRUE}</span></span>
+<span id="cb33-217"><a href="#cb33-217" aria-hidden="true" tabindex="-1"></a>rtree_regression</span>
+<span id="cb33-218"><a href="#cb33-218" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-219"><a href="#cb33-219" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-220"><a href="#cb33-220" aria-hidden="true" tabindex="-1"></a>The unpruned tree's text form: each node reports its split rule, the number of training observations reaching it (<span class="in">`n`</span>), the deviance (residual sum of squares) within the node, and the predicted <span class="in">`medv`</span> (the node mean).</span>
+<span id="cb33-221"><a href="#cb33-221" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-222"><a href="#cb33-222" aria-hidden="true" tabindex="-1"></a><span class="fu">### Choosing the tree size via cross-validation</span></span>
+<span id="cb33-223"><a href="#cb33-223" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-224"><a href="#cb33-224" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_cv_size,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-225"><a href="#cb33-225" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">plotcp</span>(model)</span>
+<span id="cb33-226"><a href="#cb33-226" aria-hidden="true" tabindex="-1"></a>rpart<span class="sc">::</span><span class="fu">rsq.rpart</span>(model)</span>
+<span id="cb33-227"><a href="#cb33-227" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-228"><a href="#cb33-228" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-229"><a href="#cb33-229" aria-hidden="true" tabindex="-1"></a>Here <span class="in">`rsq.rpart()`</span>'s R² panel is a literal R²: the proportion of <span class="in">`medv`</span>'s variance explained, both on the training data (apparent) and under cross-validation. The gap between the two lines is the model's optimism — how much worse the tree performs on unseen data than on the data it was fit to. Here it grows from about <span class="in">`r round(diff(rev(1-model$cptable[2,c("rel error","xerror")])),2)`</span> after one split to about <span class="in">`r round(diff(rev(1-model$cptable[nrow(model$cptable),c("rel error","xerror")])),2)`</span> at the largest tree (apparent R² ≈ <span class="in">`r sprintf("%.2f",1-model$cptable[nrow(model$cptable),"rel error"])`</span> vs. cross-validated ≈ <span class="in">`r sprintf("%.2f",1-model$cptable[nrow(model$cptable),"xerror"])`</span>), while cross-validated R² is still at its maximum at the largest tree, so no pruning was needed.</span>
+<span id="cb33-230"><a href="#cb33-230" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-231"><a href="#cb33-231" aria-hidden="true" tabindex="-1"></a><span class="fu">### Error-by-size summary</span></span>
+<span id="cb33-232"><a href="#cb33-232" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-233"><a href="#cb33-233" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_prune_plot,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-234"><a href="#cb33-234" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
+<span id="cb33-235"><a href="#cb33-235" aria-hidden="true" tabindex="-1"></a>error<span class="sc">$</span>nsplit<span class="ot">&lt;-</span><span class="fu">factor</span>(error<span class="sc">$</span>nsplit<span class="sc">+</span><span class="dv">1</span>)</span>
+<span id="cb33-236"><a href="#cb33-236" aria-hidden="true" tabindex="-1"></a>tree_size<span class="ot">&lt;-</span>error[<span class="fu">which.min</span>(error[,<span class="st">"xerror"</span>]),<span class="st">"nsplit"</span>]</span>
+<span id="cb33-237"><a href="#cb33-237" aria-hidden="true" tabindex="-1"></a>error<span class="ot">&lt;-</span>reshape2<span class="sc">::</span><span class="fu">melt</span>(error,<span class="at">id.vars=</span><span class="st">"nsplit"</span>)</span>
+<span id="cb33-238"><a href="#cb33-238" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(error)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"Split"</span>,<span class="st">"Metric"</span>,<span class="st">"value"</span>)</span>
+<span id="cb33-239"><a href="#cb33-239" aria-hidden="true" tabindex="-1"></a>plot_prune<span class="ot">&lt;-</span><span class="fu">ggplot</span>(error,<span class="fu">aes</span>(<span class="at">x=</span>Split,<span class="at">y=</span>value,<span class="at">color=</span>Metric))<span class="sc">+</span></span>
+<span id="cb33-240"><a href="#cb33-240" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="fu">aes</span>(<span class="at">group=</span>Metric))<span class="sc">+</span></span>
+<span id="cb33-241"><a href="#cb33-241" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>()<span class="sc">+</span></span>
+<span id="cb33-242"><a href="#cb33-242" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">title=</span><span class="fu">paste</span>(<span class="st">"Error Plot"</span>,<span class="st">"Suggested Size:"</span>,tree_size),<span class="at">y=</span><span class="st">"Metric value"</span>,<span class="at">x=</span><span class="st">"Size of Tree"</span>)<span class="sc">+</span></span>
+<span id="cb33-243"><a href="#cb33-243" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>)</span>
+<span id="cb33-244"><a href="#cb33-244" aria-hidden="true" tabindex="-1"></a>plot_prune</span>
+<span id="cb33-245"><a href="#cb33-245" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-246"><a href="#cb33-246" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-247"><a href="#cb33-247" aria-hidden="true" tabindex="-1"></a>Same four <span class="in">`cptable`</span> series (<span class="in">`CP`</span>, <span class="in">`rel error`</span>, <span class="in">`xerror`</span>, <span class="in">`xstd`</span>) as in the classification section, plotted against tree size (<span class="in">`nsplit + 1`</span>), with the size at minimum <span class="in">`xerror`</span> (<span class="in">`r as.character(tree_size)`</span> terminal nodes) called out in the title.</span>
+<span id="cb33-248"><a href="#cb33-248" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-249"><a href="#cb33-249" aria-hidden="true" tabindex="-1"></a><span class="fu">### The pruned tree diagram</span></span>
+<span id="cb33-250"><a href="#cb33-250" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-251"><a href="#cb33-251" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_final_tree,echo=TRUE,dev='png'}</span></span>
+<span id="cb33-252"><a href="#cb33-252" aria-hidden="true" tabindex="-1"></a>rpart.plot<span class="sc">::</span><span class="fu">rpart.plot</span>(model,<span class="at">type=</span><span class="dv">1</span>)</span>
+<span id="cb33-253"><a href="#cb33-253" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-254"><a href="#cb33-254" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-255"><a href="#cb33-255" aria-hidden="true" tabindex="-1"></a>Each box shows the node's predicted <span class="in">`medv`</span> and the percentage of observations it contains. Following the splits down — typically starting with <span class="in">`rm`</span> or <span class="in">`lstat`</span> — shows how the tree partitions the housing stock into progressively more homogeneous price segments, e.g. dwellings with the most rooms (the right-most branch on <span class="in">`rm`</span>) land in the highest-value leaf (mean <span class="in">`medv`</span> ≈ <span class="in">`r round(max(model$frame$yval[model$frame$var=="&lt;leaf&gt;"]),1)`</span>), while smaller homes in high-<span class="in">`lstat`</span> areas land in the lowest (≈ <span class="in">`r round(min(model$frame$yval[model$frame$var=="&lt;leaf&gt;"]),1)`</span>).</span>
+<span id="cb33-256"><a href="#cb33-256" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-257"><a href="#cb33-257" aria-hidden="true" tabindex="-1"></a><span class="fu">### Raw model components</span></span>
+<span id="cb33-258"><a href="#cb33-258" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-259"><a href="#cb33-259" aria-hidden="true" tabindex="-1"></a><span class="in">```{r regression_export,echo=TRUE}</span></span>
+<span id="cb33-260"><a href="#cb33-260" aria-hidden="true" tabindex="-1"></a>frame<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>frame)</span>
+<span id="cb33-261"><a href="#cb33-261" aria-hidden="true" tabindex="-1"></a>cp<span class="ot">&lt;-</span><span class="fu">data.frame</span>(model<span class="sc">$</span>cptable)</span>
+<span id="cb33-262"><a href="#cb33-262" aria-hidden="true" tabindex="-1"></a>parameters<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">parameters=</span><span class="fu">unlist</span>(model<span class="sc">$</span>control))</span>
+<span id="cb33-263"><a href="#cb33-263" aria-hidden="true" tabindex="-1"></a>splits<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">name=</span><span class="fu">row.names</span>(model<span class="sc">$</span>splits),model<span class="sc">$</span>splits,<span class="at">row.names=</span><span class="cn">NULL</span>)</span>
+<span id="cb33-264"><a href="#cb33-264" aria-hidden="true" tabindex="-1"></a>importance<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">importance=</span>model<span class="sc">$</span>variable.importance)</span>
+<span id="cb33-265"><a href="#cb33-265" aria-hidden="true" tabindex="-1"></a>ordered<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">ordered=</span>model<span class="sc">$</span>ordered)</span>
+<span id="cb33-266"><a href="#cb33-266" aria-hidden="true" tabindex="-1"></a>data<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">y=</span>model<span class="sc">$</span>y,<span class="at">x=</span>model<span class="sc">$</span>x,<span class="at">model=</span>model<span class="sc">$</span>model)</span>
+<span id="cb33-267"><a href="#cb33-267" aria-hidden="true" tabindex="-1"></a>call<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">call=</span><span class="fu">call_to_string</span>(model))</span>
+<span id="cb33-268"><a href="#cb33-268" aria-hidden="true" tabindex="-1"></a>result<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">frame=</span>frame,<span class="at">cp=</span>cp,<span class="at">parameters=</span>parameters,<span class="at">splits=</span>splits,<span class="at">importance=</span>importance,<span class="at">ordered=</span>ordered,<span class="at">call=</span>call)</span>
+<span id="cb33-269"><a href="#cb33-269" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-270"><a href="#cb33-270" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(result)</span>
+<span id="cb33-271"><a href="#cb33-271" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb33-272"><a href="#cb33-272" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb33-273"><a href="#cb33-273" aria-hidden="true" tabindex="-1"></a>Same bundling as the classification section — the pruned regression model's <span class="in">`frame`</span>, <span class="in">`cp`</span> table, <span class="in">`parameters`</span>, <span class="in">`splits`</span>, <span class="in">`importance`</span>, <span class="in">`ordered`</span> flags, and <span class="in">`call`</span>.</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 
