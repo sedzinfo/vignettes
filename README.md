@@ -10,12 +10,12 @@ Most functions used in the tutorials come from the [rwf](https://github.com/sedz
 
 ## Sites
 
-| Site | Pages | Description |
+| Site | Description |
 |---|---|---|
-| [EAP Ability Estimation](https://sedzinfo.github.io/vignettes/cat_irt_eap/) | 6 | Computerised adaptive testing with EAP scoring, rebuilt step by step in base R for six IRT models and checked against catR |
-| [Worked Examples in R](https://sedzinfo.github.io/vignettes/example/) | 11 | Decision trees, LDA, regularized regression, Keras, measurement invariance, multitrait-multimethod, Thurstonian IRT, adaptive testing and statistical paradoxes |
-| [Illustrations in R](https://sedzinfo.github.io/vignettes/illustration/) | 8 | Data visualisation with real data: Arctic sea ice, global temperature, airport weather, Gapminder, EU wages, colour charts and optical illusions |
-| [Scale Validation in R](https://sedzinfo.github.io/vignettes/validation/) | 3 | Item statistics, reliability, correlations and factor structure for the BFI-44 and the IPIP-50 (OCEAN) |
+| [EAP Ability Estimation](https://sedzinfo.github.io/vignettes/cat_irt_eap/) |  Computerised adaptive testing with EAP scoring, rebuilt step by step in base R for six IRT models and checked against catR |
+| [Worked Examples in R](https://sedzinfo.github.io/vignettes/example/) | Decision trees, LDA, regularized regression, Keras, measurement invariance, multitrait-multimethod, Thurstonian IRT, adaptive testing and statistical paradoxes |
+| [Illustrations in R](https://sedzinfo.github.io/vignettes/illustration/) | Data visualisation with real data: Arctic sea ice, global temperature, airport weather, Gapminder, EU wages, colour charts and optical illusions |
+| [Scale Validation in R](https://sedzinfo.github.io/vignettes/validation/) | Item statistics, reliability, correlations and factor structure for the BFI-44 and the IPIP-50 (OCEAN) |
 
 ## Structure
 
