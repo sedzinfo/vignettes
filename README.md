@@ -45,10 +45,6 @@ Pages that need data downloads, Python (Keras/TensorFlow) or packages no longer 
 2. Render it with `render.R`, then commit the whole folder including `_freeze/`.
 3. The site appears at `https://sedzinfo.github.io/vignettes/<name>/` with a card on the landing page.
 
-## Comments
-
-Each page has a comment box ([giscus](https://giscus.app)) set in `_quarto.yml`. Comments are stored in this repository's Discussions, one discussion per page.
-
 ## License
 
 GPL-3, see [LICENSE](LICENSE).
