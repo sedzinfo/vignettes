@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 QUARTO = ROOT / "quarto"
 DOCS = Path(os.environ.get("DOCS_DIR", ROOT / "docs"))
 REPO_URL = "https://github.com/sedzinfo/vignettes"
+CONSENT = (QUARTO / "_ga_consent.html").read_text(encoding="utf-8")  # cookie banner + Google Analytics, shared with the Quarto sites
 
 
 def website_field(config: str, key: str) -> str:
@@ -106,10 +107,11 @@ page = f"""<!doctype html>
 
   <footer class="border-top py-3 text-center text-muted small">
     <a class="text-muted" href="{REPO_URL}">{REPO_URL.removeprefix("https://")}</a>
+    · <a class="text-muted" href="#cookie-settings">Cookie settings</a>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-</body>
+{CONSENT}</body>
 </html>
 """
 

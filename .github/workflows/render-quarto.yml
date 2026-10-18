@@ -1,7 +1,8 @@
 # Renders Quarto projects in quarto/<name>/ into docs/<name>/ and commits the
 # result, so GitHub Pages (main branch, /docs folder) serves:
 #   https://sedzinfo.github.io/vignettes/<name>/
-# On push, only the sites with changed files are rendered.
+# On push, only the sites with changed files are rendered (all of them when a
+# file shared by every site, directly in quarto/, changes).
 # From the Actions tab, "Run workflow" renders one site by name, or "all".
 name: Render Quarto sites
 
@@ -56,10 +57,11 @@ jobs:
             sites="$all"
           else
             changed="$(git diff --name-only "$BEFORE" "$AFTER")"
-            if echo "$changed" | grep -q '^\.github/workflows/render-quarto\.yml$'; then
+            # the workflow, or a file every site includes (quarto/_ga_consent.html), changed: render all
+            if echo "$changed" | grep -qE '^(\.github/workflows/render-quarto\.yml|quarto/[^/]+)$'; then
               sites="$all"
             else
-              sites="$(echo "$changed" | { grep '^quarto/' || true; } | cut -d/ -f2 | sort -u)"
+              sites="$(echo "$changed" | { grep '^quarto/[^/]*/' || true; } | cut -d/ -f2 | sort -u)"
             fi
           fi
           echo "Sites: $(echo $sites)"
