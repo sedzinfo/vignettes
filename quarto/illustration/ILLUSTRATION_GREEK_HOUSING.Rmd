@@ -131,12 +131,23 @@ title_income      <- "How much faster house prices grew than incomes since 2015 
 # in pixels, so it lands in the same place whatever the chart's height
 oecd_url <- paste0("https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ",
                    "&df[id]=DSD_AN_HOUSE_PRICES%40DF_HOUSE_PRICES&df[ag]=OECD.ECO.MPD")
+# chart height in pixels, set on the widget itself (width stays 100% of the
+# page), so the chart always fills the box it is drawn in — no scroll bars.
+# Returned inside a tagList: printed straight from a chunk, a widget's height
+# is overridden by the chunk's figure size; inside a tagList it is kept
+# The plotly toolbar goes down the right edge, so it never covers a long title
+sized <- function(p, h) {
+  p <- plotly::layout(p, modebar = list(orientation = "v"))
+  p$height <- h
+  htmltools::tagList(p)
+}
+
 add_source <- function(p, what, b) {
   plotly::layout(p,
     margin = list(b = b),
     annotations = list(list(
       text = paste0("Source: <a href='", oecd_url, "'>OECD, Analytical house prices indicators</a>",
-                    " (", what, "), annual; 2015 = 100 index shown as % change since 2015"),
+                    " (", what, ")"),
       xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
       xanchor = "right", yanchor = "top", showarrow = FALSE,
       font = list(size = 11, color = "gray50"))))
@@ -159,7 +170,7 @@ df_greece <- df_housing %>%
 
 df_greece_temp <- df_greece[order(df_greece$measure, df_greece$year), c("year", "indicator", "change")]
 
-plot_ly(df_greece_temp, height = 800, width = 900, 
+plot_ly(df_greece_temp,
         x = ~year,
         y = ~change,
         color = ~indicator,
@@ -176,13 +187,14 @@ plot_ly(df_greece_temp, height = 800, width = 900,
                  xaxis = list(title = "Year", tickangle = -90),
                  yaxis = list(title = "% vs 2015", ticksuffix = "%"),
                  legend = list(orientation = "h", y = -0.2),
-                 font = list(size = 16, color = "gray25"),
+                 font = list(size = 13, color = "gray25"),
                  shapes = list(list(type = "line",
                                     x0 = min(df_greece_temp$year),
                                     x1 = max(df_greece_temp$year),
                                     y0 = 0, y1 = 0,
                                     line = list(dash = "dot", color = "gray")))) %>%
-  add_source("rent prices RPI, house prices HPI, price-to-income HPI_YDH, price-to-rent HPI_RPI", b = 190)
+  add_source("RPI, HPI, HPI_YDH, HPI_RPI", b = 150) %>%
+  sized(520)
 
 
 ```
@@ -201,7 +213,7 @@ country_plot <- function(cname) {
     arrange(measure, year) %>%
     select(year, indicator, change)
 
-  plot_ly(d, height = 800, width =900,
+  plot_ly(d,
           x = ~year,
           y = ~change,
           color = ~indicator,
@@ -218,12 +230,13 @@ country_plot <- function(cname) {
                    xaxis = list(title = "", tickangle = -90),
                    yaxis = list(title = "% vs 2015", ticksuffix = "%"),
                    legend = list(orientation = "h", y = -0.2),
-                   font = list(size = 10, color = "gray25"),
+                   font = list(size = 13, color = "gray25"),
                    shapes = list(list(type = "line",
                                       x0 = min(d$year), x1 = max(d$year),
                                       y0 = 0, y1 = 0,
                                       line = list(dash = "dot", color = "gray")))) %>%
-    add_source("rent prices RPI, house prices HPI, price-to-income HPI_YDH, price-to-rent HPI_RPI", b = 190)
+    add_source("RPI, HPI, HPI_YDH, HPI_RPI", b = 150) %>%
+    sized(520)
 }
 
 # Greece first, then every other country alphabetically
@@ -243,7 +256,7 @@ The `frame` argument of `plot_ly` turns a bar chart into a play/pause animation 
 
 ```{r bar_race}
 bar_race <- function(d, title, what) {
-  plot_ly(height = 800, width =1000) %>%
+  plot_ly() %>%
     add_bars(data = d[d$color == "gray70", ],
              x = ~rank, y = ~change, frame = ~year, ids = ~rank,
              marker = list(color = "gray70"),
@@ -256,11 +269,12 @@ bar_race <- function(d, title, what) {
              textposition = "outside", textangle = 90, showlegend = FALSE) %>%
     layout(xaxis  = list(title = "Rank", tickmode = "array"),
            yaxis  = list(title = "% vs 2015", ticksuffix = "%"),
-           title  = title,
-           margin = list(l = 50, r = 50, b = 200, t = 100),
-           font   = list(size = 20, color = "gray25", weight = "bold")) %>%
+           title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+           margin = list(l = 50, r = 30, t = 70),
+           font   = list(size = 13, color = "gray25")) %>%
     animation_opts(frame = 1000, transition = 0, easing = "linear", redraw = TRUE) %>%
-    add_source(what, b = 330)
+    add_source(what, b = 200) %>%
+    sized(620)
 }
 
 bar_race(df_rent, title_rent, "rent prices, RPI")

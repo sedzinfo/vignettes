@@ -135,13 +135,24 @@ pct <- function(v) sprintf("%+.0f%%", round(v) + 0)
 # when it is downloaded as a PNG from the plotly toolbar): `b` is the bottom
 # margin that makes room for it; the note sits at the bottom of that margin,
 # in pixels, so it lands in the same place whatever the chart's height
+# chart height in pixels, set on the widget itself (width stays 100% of the
+# page), so the chart always fills the box it is drawn in — no scroll bars.
+# Returned inside a tagList: printed straight from a chunk, a widget's height
+# is overridden by the chunk's figure size; inside a tagList it is kept
+# The plotly toolbar goes down the right edge, so it never covers a long title
+sized <- function(p, h) {
+  p <- plotly::layout(p, modebar = list(orientation = "v"))
+  p$height <- h
+  htmltools::tagList(p)
+}
+
 add_source <- function(p, what, b) {
   plotly::layout(p,
     margin = list(b = b),
     annotations = list(list(
       text = paste0("Source: Eurostat, <a href='https://ec.europa.eu/eurostat/databrowser/view/nama_10_fte/default/table'>nama_10_fte</a>",
-                    " (wages) and <a href='https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_aind/default/table'>prc_hicp_aind</a>",
-                    " (consumer prices) — ", what, "; % change since 2015"),
+                    " and <a href='https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_aind/default/table'>prc_hicp_aind</a>",
+                    " (", what, ")"),
       xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
       xanchor = "right", yanchor = "top", showarrow = FALSE,
       font = list(size = 11, color = "gray50"))))
@@ -158,13 +169,13 @@ The three lines tell the whole story: when the wage line runs below the price li
 labels_measure <- c(wages = "Wages", prices = "Consumer prices", real = "Real wages")
 pal <- c("Consumer prices" = "#E74C3C", "Real wages" = "#3cb44b", "Wages" = "#0082c8")
 
-country_plot <- function(cname, font_size = 16) {
+country_plot <- function(cname, font_size = 13) {
   d <- df_pay %>%
     filter(country == cname, year >= 2005) %>%
     mutate(indicator = labels_measure[measure]) %>%
     arrange(measure, year)
 
-  plot_ly(d, height = 800, width = 900,
+  plot_ly(d,
           x = ~year,
           y = ~change,
           color = ~indicator,
@@ -186,7 +197,8 @@ country_plot <- function(cname, font_size = 16) {
                                       x0 = min(d$year), x1 = max(d$year),
                                       y0 = 0, y1 = 0,
                                       line = list(dash = "dot", color = "gray")))) %>%
-    add_source("wages, consumer prices, real wages", b = 170)
+    add_source("wages, consumer prices, real wages", b = 150) %>%
+    sized(520)
 }
 
 country_plot("Greece")
@@ -196,7 +208,7 @@ The same chart for every other country, alphabetically:
 
 ```{r all_countries}
 countries <- sort(setdiff(unique(df_pay$country), "Greece"))
-htmltools::tagList(lapply(countries, country_plot, font_size = 12))
+htmltools::tagList(lapply(countries, country_plot))
 ```
 
 ---
@@ -222,11 +234,12 @@ bar_race <- function(d, title, what) {
              textposition = "outside", textangle = 90, showlegend = FALSE) %>%
     layout(xaxis  = list(title = "Rank", tickmode = "array"),
            yaxis  = list(title = "% vs 2015", ticksuffix = "%"),
-           title  = title,
-           margin = list(l = 50, r = 50, b = 200, t = 100),
-           font   = list(size = 20, color = "gray25", weight = "bold")) %>%
+           title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+           margin = list(l = 50, r = 30, t = 70),
+           font   = list(size = 13, color = "gray25")) %>%
     animation_opts(frame = 1000, transition = 0, easing = "linear", redraw = TRUE) %>%
-    add_source(what, b = 330)
+    add_source(what, b = 200) %>%
+    sized(620)
 }
 
 bar_race(df_race_wages,  title_wages,  "wages")
