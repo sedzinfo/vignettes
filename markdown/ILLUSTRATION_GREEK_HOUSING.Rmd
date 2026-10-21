@@ -26,7 +26,7 @@ source(paste0(directory, "R/code_rwf.R"))
 
 The OECD publishes yearly **analytical house price indicators** for its members and partner countries: an index of **rent prices**, an index of **house prices**, and two affordability ratios — **price-to-income** and **price-to-rent**. The OECD gives them as indices with 2015 = 100; here every value is turned into a plain **percentage change since 2015** — "+13%" means rents are 13% higher than in 2015. They show how much each market moved, not the level of rents in euros.
 
-This vignette pulls the series straight from the OECD data API and builds the same kind of visualisations as the [EU Salary Race](ILLUSTRATION_EU_SALARY.html): a ranked "bar chart race" and a shareable GIF — with Greece highlighted in red against the rest of Europe in gray. It starts with a look at Greece on its own, since rents and house prices there have taken very different paths.
+This vignette pulls the series straight from the OECD data API and builds the same kind of visualisations as the [EU Salary Race](ILLUSTRATION_EU_SALARY.html): four ranked "bar chart races" (one per indicator) and a shareable GIF of each — with Greece highlighted in red against the rest of Europe in gray. It starts with a look at Greece on its own, since rents and house prices there have taken very different paths, followed by the same chart for every other country.
 
 ---
 
@@ -113,15 +113,17 @@ race_data <- function(df, which, highlight = "Greece", from = 2015) {
   d
 }
 
-df_rent   <- race_data(df_housing, "RPI")      # rent prices
-df_house_price <- race_data(df_housing, "HPI")  # house price to income
-df_income <- race_data(df_housing, "HPI_YDH")  # house price to income
-df_income_rent <- race_data(df_housing, "HPI_RPI")  # house price to income
+df_rent        <- race_data(df_housing, "RPI")      # rent prices
+df_house_price <- race_data(df_housing, "HPI")      # house prices
+df_income      <- race_data(df_housing, "HPI_YDH")  # house price to income
+df_price_rent  <- race_data(df_housing, "HPI_RPI")  # house price to rent
 
-title_rent   <- "How much more expensive rents got since 2015 (%)"
+title_rent        <- "How much more expensive rents got since 2015 (%)"
+title_house_price <- "How much more expensive houses got since 2015 (%)"
+title_price_rent  <- "How much faster house prices grew than rents since 2015 (%)"
 # "+13%" / "-3%"; rounding first (+ 0 turns -0 into 0) so -0.4 reads "+0%", never "-0%"
 pct <- function(v) sprintf("%+.0f%%", round(v) + 0)
-title_income <- "How much faster house prices grew than incomes since 2015 (%)"
+title_income      <- "How much faster house prices grew than incomes since 2015 (%)"
 
 # data source as a footnote inside each plotly chart (it stays on the chart
 # when it is downloaded as a PNG from the plotly toolbar): `b` is the bottom
@@ -145,7 +147,7 @@ add_source <- function(p, what, b) {
 
 ## Greece at a glance
 
-Before racing Greece against Europe, it helps to see its three indicators side by side, as a change against 2015 (the dotted zero line). Rents and house prices both fell hard after 2010, but they recovered at very different speeds — and because incomes recovered more slowly still, the price-to-income line shows how much less affordable buying a home has become.
+Before racing Greece against Europe, it helps to see its four indicators side by side, as a change against 2015 (the dotted zero line). House prices and rents both fell hard in the years of the crisis, but they recovered at very different speeds: the price-to-rent line shows how much faster house prices have climbed than rents, and — because incomes recovered more slowly still — the price-to-income line shows how much less affordable buying a home has become.
 
 ```{r greece}
 labels_measure <- c(RPI = "Rent prices", HPI = "House prices",
@@ -157,7 +159,7 @@ df_greece <- df_housing %>%
 
 df_greece_temp <- df_greece[order(df_greece$measure, df_greece$year), c("year", "indicator", "change")]
 
-plot_ly(df_greece_temp,
+plot_ly(df_greece_temp, height = 800, width = 900, 
         x = ~year,
         y = ~change,
         color = ~indicator,
@@ -185,6 +187,7 @@ plot_ly(df_greece_temp,
 
 ```
 
+The code below generates a plot for each country, showing the change in rents, house prices, price-to-income and price-to-rent since 2015. Greece is plotted first, then every other country alphabetically.
 
 ```{r all_countries}
 
@@ -198,7 +201,7 @@ country_plot <- function(cname) {
     arrange(measure, year) %>%
     select(year, indicator, change)
 
-  plot_ly(d, height = 800,
+  plot_ly(d, height = 800, width =900,
           x = ~year,
           y = ~change,
           color = ~indicator,
@@ -236,11 +239,11 @@ htmltools::tagList(lapply(countries, country_plot))
 
 ### Step 1 — bar chart race, ranked
 
-The `frame` argument of `plot_ly` turns a bar chart into a play/pause animation stepping through each year, and plotting by `rank` instead of country name makes the bars physically reorder every year. Greece is layered on top in red so it is always visible against the gray field. The same function draws both races: rents, and house prices relative to income.
+The `frame` argument of `plot_ly` turns a bar chart into a play/pause animation stepping through each year, and plotting by `rank` instead of country name makes the bars physically reorder every year. Greece is layered on top in red so it is always visible against the gray field. The same function draws four races: rents, house prices, and house prices relative to incomes and to rents.
 
 ```{r bar_race}
 bar_race <- function(d, title, what) {
-  plot_ly() %>%
+  plot_ly(height = 800, width =1000) %>%
     add_bars(data = d[d$color == "gray70", ],
              x = ~rank, y = ~change, frame = ~year, ids = ~rank,
              marker = list(color = "gray70"),
@@ -261,82 +264,117 @@ bar_race <- function(d, title, what) {
 }
 
 bar_race(df_rent, title_rent, "rent prices, RPI")
+bar_race(df_house_price, title_house_price, "house prices, HPI")
+bar_race(df_income, title_income, "price-to-income ratio, HPI_YDH")
+bar_race(df_price_rent, title_price_rent, "price-to-rent ratio, HPI_RPI")
 ```
 
-```{r bar_race_income}
-bar_race(df_income, title_income, "price-to-income ratio, HPI_YDH")
-```
 
 ### Step 2 — dark themed GIF with `gganimate`
 
-A rendered GIF is easier to share than an interactive chart. `ggplot2` + `gganimate` recreates the ranked rent race as a horizontal bar chart with a dark background, country labels and a large year watermark.
+A rendered GIF is easier to share than an interactive chart. `ggplot2` + `gganimate` recreates each of the four ranked races as a horizontal bar chart with a dark background, country labels and a large year watermark.
 
 ```{r gif, eval=TRUE}
-n_countries <- max(df_rent$rank)
-hi  <- max(df_rent$change)
-lo  <- min(0, min(df_rent$change))   # a few markets were below 2015 for a while
-pad <- (hi - lo) * 0.02
+race_gif <- function(d, title, file) {
+  n_countries <- max(d$rank)
+  hi  <- max(d$change)
+  lo  <- min(0, min(d$change))   # a few markets were below 2015 for a while
+  pad <- (hi - lo) * 0.02
 
-p <- ggplot(df_rent, aes(x = rank, y = change, fill = color, group = country)) +
-  geom_col(width = 0.85, show.legend = FALSE) +
-  # country names left of the panel, value at the end of each bar
-  geom_text(aes(y = lo - pad, label = country, color = color),
-            hjust = 1, size = 3.8, fontface = "bold", show.legend = FALSE) +
-  geom_text(aes(y = pmax(change, 0) + pad, label = pct(change)),
-            hjust = 0, color = "gray80", size = 3.2) +
-  geom_hline(yintercept = 0, color = "#546E7A", linewidth = 0.4) +
-  scale_fill_identity() +
-  scale_color_identity() +
-  scale_x_reverse(breaks = NULL) +
-  scale_y_continuous(labels = function(v) paste0(v, "%"),
-                     expand = expansion(mult = c(0.02, 0.1))) +
-  geom_text(
-    data = df_rent %>% dplyr::distinct(year),
-    aes(x = n_countries, y = hi, label = year),
-    inherit.aes = FALSE,
-    hjust = 1, vjust = 0,
-    size = 20, color = "white", alpha = 0.15,
-    fontface = "bold"
-  ) +
-  coord_flip(clip = "off") +
-  labs(title   = title_rent,
-       x       = NULL,
-       y       = "% vs 2015",
-       caption = "Source: OECD Analytical house prices indicators  |  Greece highlighted in red") +
-  theme_minimal(base_size = 10) +
-  theme(
-    plot.background    = element_rect(fill = "#0F1923", color = NA),
-    panel.background   = element_rect(fill = "#0F1923", color = NA),
-    panel.grid.major.x = element_line(color = "#1E2D3D", linewidth = 0.4),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor   = element_blank(),
-    axis.text.x   = element_text(color = "#90A4AE", size = 10),
-    axis.text.y   = element_blank(),
-    axis.title.x  = element_text(color = "#90A4AE", size = 10),
-    plot.title    = element_text(color = "white", face = "bold", size = 12,
-                                  margin = margin(12, 0, 8, 0)),
-    plot.caption  = element_text(color = "#546E7A", size = 8, hjust = 1,
-                                  margin = margin(8, 0, 8, 0)),
-    plot.margin   = margin(10, 40, 10, 130)) +
-  transition_states(year, transition_length = 0, state_length = 5) +
-  ease_aes("cubic-in-out")
+  p <- ggplot(d, aes(x = rank, y = change, fill = color, group = country)) +
+    geom_col(width = 0.85, show.legend = FALSE) +
+    # country names left of the panel, value at the end of each bar
+    geom_text(aes(y = lo - pad, label = country, color = color),
+              hjust = 1, size = 3.8, fontface = "bold", show.legend = FALSE) +
+    geom_text(aes(y = pmax(change, 0) + pad, label = pct(change)),
+              hjust = 0, color = "gray80", size = 3.2) +
+    geom_hline(yintercept = 0, color = "#546E7A", linewidth = 0.4) +
+    scale_fill_identity() +
+    scale_color_identity() +
+    scale_x_reverse(breaks = NULL) +
+    scale_y_continuous(labels = function(v) paste0(v, "%"),
+                       expand = expansion(mult = c(0.02, 0.1))) +
+    geom_text(
+      data = d %>% dplyr::distinct(year),
+      aes(x = n_countries, y = hi, label = year),
+      inherit.aes = FALSE,
+      hjust = 1, vjust = 0,
+      size = 20, color = "white", alpha = 0.15,
+      fontface = "bold"
+    ) +
+    coord_flip(clip = "off") +
+    labs(title   = title,
+         x       = NULL,
+         y       = "% vs 2015",
+         caption = "Source: OECD Analytical house prices indicators  |  Greece highlighted in red") +
+    theme_minimal(base_size = 10) +
+    theme(
+      plot.background    = element_rect(fill = "#0F1923", color = NA),
+      panel.background   = element_rect(fill = "#0F1923", color = NA),
+      panel.grid.major.x = element_line(color = "#1E2D3D", linewidth = 0.4),
+      panel.grid.major.y = element_blank(),
+      panel.grid.minor   = element_blank(),
+      axis.text.x   = element_text(color = "#90A4AE", size = 10),
+      axis.text.y   = element_blank(),
+      axis.title.x  = element_text(color = "#90A4AE", size = 10),
+      plot.title    = element_text(color = "white", face = "bold", size = 12,
+                                    margin = margin(12, 0, 8, 0)),
+      plot.caption  = element_text(color = "#546E7A", size = 8, hjust = 1,
+                                    margin = margin(8, 0, 8, 0)),
+      plot.margin   = margin(10, 40, 10, 130)) +
+    transition_states(year, transition_length = 0, state_length = 5) +
+    ease_aes("cubic-in-out")
 
-animate(p,
-        nframes  = 100,
-        fps      = 10,
-        duration = 20,
-        width    = 900,
-        height   = 900,
-        units    = "px",
-        res      = 100,   # set explicitly: when knitting, gganimate otherwise uses the chunk dpi
-        renderer = gifski_renderer("greek_housing_race.gif"))
+  animate(p,
+          nframes  = 100,
+          fps      = 10,
+          duration = 20,
+          width    = 900,
+          height   = 900,
+          units    = "px",
+          res      = 100,   # set explicitly: when knitting, gganimate otherwise uses the chunk dpi
+          renderer = gifski_renderer(file))
+}
+
+gifs <- c(rent        = "greek_housing_race_rent.gif",
+          house_price = "greek_housing_race_house_price.gif",
+          income      = "greek_housing_race_income.gif",
+          price_rent  = "greek_housing_race_price_rent.gif")
+
+# each GIF is drawn in its own chunk below: knitr shows only one animate()
+# result per chunk
 ```
 
-> **Note:** rendering the GIF takes a couple of minutes and requires an internet connection to reach the OECD API. The GIF is written to the working directory (`getwd()`).
+#### Rents
+
+```{r gif0, eval=TRUE}
+race_gif(df_rent, title_rent, gifs[["rent"]])
+```
+
+#### House prices
+
+```{r gif1, eval=TRUE}
+race_gif(df_house_price, title_house_price, gifs[["house_price"]])
+```
+
+#### House prices against incomes
+
+```{r gif2, eval=TRUE}
+race_gif(df_income, title_income, gifs[["income"]])
+```
+
+#### House prices against rents
+
+```{r gif3, eval=TRUE}
+race_gif(df_price_rent, title_price_rent, gifs[["price_rent"]])
+```
+
+
+> **Note:** rendering the four GIFs takes several minutes and requires an internet connection to reach the OECD API. The GIFs are written to the working directory (`getwd()`).
 
 ---
 
-## What the chart shows
+## What the charts show
 
 ```{r facts, include=FALSE}
 last_year <- max(df_housing$year)
@@ -345,11 +383,16 @@ grc_rent <- df_rent[df_rent$country == "Greece", ]
 grc_rent_low_year <- grc_rent$year[which.min(grc_rent$change)]
 grc_rent_rank     <- df_rent$rank[df_rent$country == "Greece" & df_rent$year == last_year]
 grc_income_rank   <- df_income$rank[df_income$country == "Greece" & df_income$year == last_year]
+grc_house_rank    <- df_house_price$rank[df_house_price$country == "Greece" & df_house_price$year == last_year]
+grc_prent_rank    <- df_price_rent$rank[df_price_rent$country == "Greece" & df_price_rent$year == last_year]
+# countries with data in the last year (a few have not published it yet)
+n_last <- function(d) sum(d$year == last_year)
 ```
 
 - In Greece, rents kept falling after 2015 and bottomed out in **`r grc_rent_low_year`** (**`r pct(min(grc_rent$change))`** against 2015). By `r last_year` they were **`r pct(grc("RPI", last_year))`**, while house prices were **`r pct(grc("HPI", last_year))`**: since 2015, buying has become far more expensive than renting.
-- House prices also outran incomes: the price-to-income ratio was **`r pct(grc("HPI_YDH", last_year))`** against 2015, which puts Greece **`r scales::ordinal(grc_income_rank)`** of `r max(df_income$rank)` European countries in how much less affordable homes have become.
-- In the rent race Greece was **`r scales::ordinal(grc_rent_rank)`** of `r max(df_rent$rank)` in `r last_year`: rents rose less there than in most of Europe. The race ranks how much each market moved since 2015, not which country has the most expensive rents.
+- House prices also outran incomes: the price-to-income ratio was **`r pct(grc("HPI_YDH", last_year))`** against 2015, which puts Greece **`r scales::ordinal(grc_income_rank)`** of `r n_last(df_income)` European countries in how much less affordable homes have become.
+- In the house price race Greece was **`r scales::ordinal(grc_house_rank)`** of `r n_last(df_house_price)`, and in the price-to-rent race **`r scales::ordinal(grc_prent_rank)`** of `r n_last(df_price_rent)` (**`r pct(grc("HPI_RPI", last_year))`**): since 2015, house prices in Greece have outgrown rents by that much.
+- In the rent race Greece was **`r scales::ordinal(grc_rent_rank)`** of `r n_last(df_rent)` in `r last_year`: rents rose less there than in most of Europe. The race ranks how much each market moved since 2015, not which country has the most expensive rents.
 - **A caveat for Greece:** the OECD rent index comes from the rents in consumer price statistics, which follow *all* tenancies, most of them on older contracts. Rents asked for new leases, the ones a person moving house actually faces, have risen much faster than this index shows — listing-based indices (e.g. Spitogatos or the Bank of Greece's analyses) are the place to look for those.
 
 ---
@@ -362,14 +405,16 @@ grc_income_rank   <- df_income$rank[df_income$country == "Greece" & df_income$ye
 df_rent <- race_data(df_housing, "RPI", highlight = "Portugal")
 ```
 
-### Race another indicator
+### Start the race from another year
 
-```{r custom_measure, eval=FALSE}
-bar_race(race_data(df_housing, "HPI"), "How much house prices rose since 2015 (%)", "house prices, HPI")
-bar_race(race_data(df_housing, "HPI_RPI"), "House prices against rents since 2015 (%)", "price-to-rent ratio, HPI_RPI")
+```{r custom_from, eval=FALSE}
+# e.g. since the pandemic; values stay "% vs 2015" (the OECD's base year)
+bar_race(race_data(df_housing, "RPI", from = 2020), title_rent, "rent prices, RPI")
 ```
 
 ### Change the animation speed
+
+The GIFs' timing is set by the `animate()` call at the end of `race_gif()`:
 
 ```{r custom_speed, eval=FALSE}
 animate(p, nframes = 50, fps = 5, duration = 10, ...)   # faster / shorter
