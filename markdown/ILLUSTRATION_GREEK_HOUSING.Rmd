@@ -58,6 +58,23 @@ url <- paste0("https://sdmx.oecd.org/public/rest/data/",
               "&format=csvfilewithlabels")
 df_raw <- read.csv(url, fileEncoding = "UTF-8-BOM", check.names = FALSE)
 
+df_raw$STRUCTURE_NAME<-NULL
+df_raw$STRUCTURE<-NULL
+df_raw$STRUCTURE_ID<-NULL
+df_raw$ACTION<-NULL
+df_raw$`Time period`<-NULL
+df_raw$`Observation value`<-NULL
+df_raw$`Base period`<-NULL
+df_raw$OBS_STATUS<-NULL
+df_raw$Decimals<-NULL
+df_raw$DECIMALS<-NULL
+df_raw$ADJUSTMENT<-NULL
+df_raw$Adjustment<-NULL
+df_raw$`Unit multiplier`<-NULL
+df_raw$UNIT_MULT<-NULL
+df_raw$OBS_STATUS<-NULL
+df_raw$`Observation status`<-NULL
+
 europe <- c("AUT", "BEL", "BGR", "HRV", "CZE", "DNK", "EST", "FIN", "FRA", "DEU",
             "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "NLD", "POL", "PRT",
             "ROU", "SVK", "SVN", "ESP", "SWE", "NOR", "CHE", "ISL", "GBR")
@@ -97,7 +114,9 @@ race_data <- function(df, which, highlight = "Greece", from = 2015) {
 }
 
 df_rent   <- race_data(df_housing, "RPI")      # rent prices
+df_house_price <- race_data(df_housing, "HPI")  # house price to income
 df_income <- race_data(df_housing, "HPI_YDH")  # house price to income
+df_income_rent <- race_data(df_housing, "HPI_RPI")  # house price to income
 
 title_rent   <- "How much more expensive rents got since 2015 (%)"
 # "+13%" / "-3%"; rounding first (+ 0 turns -0 into 0) so -0.4 reads "+0%", never "-0%"
@@ -129,32 +148,86 @@ add_source <- function(p, what, b) {
 Before racing Greece against Europe, it helps to see its three indicators side by side, as a change against 2015 (the dotted zero line). Rents and house prices both fell hard after 2010, but they recovered at very different speeds — and because incomes recovered more slowly still, the price-to-income line shows how much less affordable buying a home has become.
 
 ```{r greece}
-labels_measure <- c(RPI = "Rent prices", HPI = "House prices", HPI_YDH = "Price to income")
+labels_measure <- c(RPI = "Rent prices", HPI = "House prices",
+                    HPI_YDH = "Price to income", HPI_RPI = "Price to rent")
 
 df_greece <- df_housing %>%
   filter(country == "Greece", measure %in% names(labels_measure)) %>%
   mutate(indicator = labels_measure[measure])
 
-df_greece_temp<-df_greece[order(df_greece$measure, df_greece$year), c("year", "indicator", "change")]
+df_greece_temp <- df_greece[order(df_greece$measure, df_greece$year), c("year", "indicator", "change")]
 
 plot_ly(df_greece_temp,
         x = ~year,
         y = ~change,
         color = ~indicator,
-        colors = c("#0082c8", "#E74C3C", "#3cb44b"),
+        colors = c("#0082c8", "#E74C3C", "#3cb44b", "#f39c12"),
         type = "scatter",
         mode = "lines+markers",
         text = ~paste0("Year: ", year, "<br>", indicator, ": ", sprintf("%+.1f%%", change)),
         hoverinfo = "text",
-        marker = list(size = 8)) %>%
-  plotly::layout(title = "Greece: change since 2015 (%)",
+        marker = list(size = 10)) %>%
+  plotly::layout(title = list(text = "Greece: change in house pricing since 2015 (%)",
+                              x = 0.02, xanchor = "left",
+                              y = 0.97, yanchor = "top"),
+                 margin = list(t = 80),
                  xaxis = list(title = "Year", tickangle = -90),
                  yaxis = list(title = "% vs 2015", ticksuffix = "%"),
                  legend = list(orientation = "h", y = -0.2),
                  font = list(size = 16, color = "gray25"),
-                 shapes = list(list(type = "line", x0 = min(df_greece$year), x1 = max(df_greece$year),
-                                    y0 = 0, y1 = 0, line = list(dash = "dot", color = "gray")))) %>%
-  add_source("rent prices RPI, house prices HPI, price-to-income HPI_YDH", b = 190)
+                 shapes = list(list(type = "line",
+                                    x0 = min(df_greece_temp$year),
+                                    x1 = max(df_greece_temp$year),
+                                    y0 = 0, y1 = 0,
+                                    line = list(dash = "dot", color = "gray")))) %>%
+  add_source("rent prices RPI, house prices HPI, price-to-income HPI_YDH, price-to-rent HPI_RPI", b = 190)
+
+
+```
+
+
+```{r all_countries}
+
+labels_measure <- c(RPI = "Rent prices", HPI = "House prices",
+                    HPI_YDH = "Price to income", HPI_RPI = "Price to rent")
+
+country_plot <- function(cname) {
+  d <- df_housing %>%
+    filter(country == cname, measure %in% names(labels_measure)) %>%
+    mutate(indicator = labels_measure[measure]) %>%
+    arrange(measure, year) %>%
+    select(year, indicator, change)
+
+  plot_ly(d, height = 800,
+          x = ~year,
+          y = ~change,
+          color = ~indicator,
+          colors = c("#0082c8", "#E74C3C", "#3cb44b", "#f39c12"),
+          type = "scatter",
+          mode = "lines+markers",
+          text = ~paste0("Year: ", year, "<br>", indicator, ": ", sprintf("%+.1f%%", change)),
+          hoverinfo = "text",
+          marker = list(size = 8)) %>%
+    plotly::layout(title = list(text = paste0(cname, ": change in house pricing since 2015 (%)"),
+                                x = 0.02, xanchor = "left",
+                                y = 0.97, yanchor = "top"),
+                   margin = list(t = 80),
+                   xaxis = list(title = "", tickangle = -90),
+                   yaxis = list(title = "% vs 2015", ticksuffix = "%"),
+                   legend = list(orientation = "h", y = -0.2),
+                   font = list(size = 10, color = "gray25"),
+                   shapes = list(list(type = "line",
+                                      x0 = min(d$year), x1 = max(d$year),
+                                      y0 = 0, y1 = 0,
+                                      line = list(dash = "dot", color = "gray")))) %>%
+    add_source("rent prices RPI, house prices HPI, price-to-income HPI_YDH, price-to-rent HPI_RPI", b = 190)
+}
+
+# Greece first, then every other country alphabetically
+countries <- c("Greece", sort(setdiff(unique(df_housing$country), "Greece")))
+
+htmltools::tagList(lapply(countries, country_plot))
+
 ```
 
 ---
