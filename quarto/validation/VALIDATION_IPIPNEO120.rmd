@@ -1,0 +1,476 @@
+---
+title: "IPIP-NEO-120: Measurement Invariance Across Sex, Countries and Age"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{IPIP-NEO-120 Measurement Invariance}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+```
+
+```{r load, include=FALSE}
+library(psych)
+library(lavaan)
+library(ggplot2)
+library(reshape2)
+
+load("data/df_ipipneo120.rda")
+key <- read.csv("data/ipipneo120_key.csv", stringsAsFactors = FALSE)
+
+domains     <- c(N = "Neuroticism", E = "Extraversion", O = "Openness",
+                 A = "Agreeableness", C = "Conscientiousness")
+facet_codes <- sort(unique(key$facet_code))[order(match(substr(sort(unique(key$facet_code)), 1, 1), names(domains)))]
+facet_names <- setNames(key$facet[match(facet_codes, key$facet_code)], facet_codes)
+facet_label <- setNames(paste(facet_codes, facet_names), facet_codes)
+
+# Facet scores: mean of the 4 items (the - keyed items are already reversed in the data file)
+facets <- as.data.frame(sapply(facet_codes, function(f) rowMeans(df_ipipneo120[, key$item[key$facet_code == f]])))
+dat <- cbind(facets, df_ipipneo120)
+dat$agegroup <- cut(dat$age, c(13, 17, 21, 29, 39, 49, 80),
+                    labels = c("14-17", "18-21", "22-29", "30-39", "40-49", "50-80"))
+us <- dat[dat$country == "USA", ]
+
+fit_names <- c("cfi.robust", "rmsea.robust", "srmr")
+
+# Step 1: one-factor model of a domain's six facets; while it fits poorly (CFI < .95 or
+# RMSEA > .08), add the residual covariance with the largest modification index, at most 3
+baseline_model <- function(dom, data, max_add = 3) {
+  model <- paste0(dom, " =~ ", paste(grep(paste0("^", dom), facet_codes, value = TRUE), collapse = " + "))
+  fit   <- cfa(model, data = data, estimator = "MLR")
+  start <- fitMeasures(fit, fit_names)
+  added <- character(0)
+  while (length(added) < max_add &&
+         (fitMeasures(fit, "cfi.robust") < 0.95 || fitMeasures(fit, "rmsea.robust") > 0.08)) {
+    mi    <- modindices(fit, sort. = TRUE)
+    mi    <- mi[mi$op == "~~", ][1, ]
+    added <- c(added, paste(mi$lhs, "~~", mi$rhs))
+    model <- paste(c(model, tail(added, 1)), collapse = "\n")
+    fit   <- cfa(model, data = data, estimator = "MLR")
+  }
+  list(model = model, added = added, start = start, final = fitMeasures(fit, fit_names))
+}
+
+# Steps 2-4: configural, metric (equal loadings) and scalar (equal loadings and intercepts)
+# models; if scalar invariance fails by Chen's (2007) criteria, free the intercept with the
+# largest score test, one at a time (partial invariance), keeping at least two invariant
+invariance <- function(model, data, group, dom) {
+  groups <- levels(droplevels(data[[group]]))
+  run <- function(equal, partial = character(0))
+    cfa(model, data = data, group = group, group.label = groups, group.equal = equal,
+        group.partial = partial, estimator = "MLR")
+  fits <- list(configural = run(character(0)), metric = run("loadings"),
+               scalar = run(c("loadings", "intercepts")))
+  fm <- t(sapply(fits, fitMeasures, fit_names))
+  passes <- function(f) fitMeasures(f, "cfi.robust") - fm["metric", 1] >= -0.010 &&
+                        fitMeasures(f, "rmsea.robust") - fm["metric", 2] <= 0.015
+  final <- fits$scalar
+  freed <- character(0)
+  n_ind <- length(grep(paste0("^", dom), facet_codes))
+  while (!passes(final) && length(freed) < n_ind - 2) {
+    score <- lavTestScore(final)$uni
+    pt    <- parTable(final)
+    row   <- match(score$lhs, pt$plabel)
+    is_int <- pt$op[row] == "~1"
+    chi2  <- tapply(score$X2[is_int], pt$lhs[row][is_int], sum)
+    freed <- c(freed, names(which.max(chi2)))
+    final <- run(c("loadings", "intercepts"), paste(freed, "~1"))
+  }
+  if (length(freed)) fm <- rbind(fm, partial = fitMeasures(final, fit_names))
+  table <- data.frame(step = rownames(fm), fm, row.names = NULL)
+  table$d_cfi   <- c(NA, fm[2, 1] - fm[1, 1], fm[-(1:2), 1] - fm[2, 1])
+  table$d_rmsea <- c(NA, fm[2, 2] - fm[1, 2], fm[-(1:2), 2] - fm[2, 2])
+  metric_ok <- table$d_cfi[2] >= -0.010 && table$d_rmsea[2] <= 0.015
+  list(table = table, freed = freed, fit = final, groups = groups, passes = passes(final), metric_ok = metric_ok)
+}
+
+# Latent means of each group relative to the first, in pooled latent SD units
+latent_means <- function(inv, dom) {
+  pe  <- parameterEstimates(inv$fit)
+  m   <- pe$est[pe$lhs == dom & pe$op == "~1"]
+  v   <- pe$est[pe$lhs == dom & pe$op == "~~" & pe$rhs == dom]
+  n   <- unlist(lavInspect(inv$fit, "nobs"))
+  data.frame(group = inv$groups, mean = (m - m[1]) / sqrt(sum((n - 1) * v) / (sum(n) - length(n))))
+}
+
+run_domains <- function(data, group) lapply(setNames(names(domains), names(domains)),
+                                            function(dom) invariance(baselines[[dom]]$model, data, group, dom))
+
+invariance_table <- function(results) {
+  tab <- do.call(rbind, lapply(names(results), function(dom)
+    cbind(domain = domains[[dom]], results[[dom]]$table)))
+  knitr::kable(tab, digits = 3, row.names = FALSE,
+               col.names = c("Domain", "Model", "CFI", "RMSEA", "SRMR", "ΔCFI", "ΔRMSEA"))
+}
+
+freed_table <- function(results) {
+  knitr::kable(data.frame(
+    domain = unname(domains),
+    metric = ifelse(sapply(results, `[[`, "metric_ok"), "yes", "no"),
+    freed  = sapply(results, function(r) if (length(r$freed)) paste(facet_label[r$freed], collapse = ", ") else "none"),
+    holds  = ifelse(sapply(results, `[[`, "passes"), "yes", "no")),
+    row.names = FALSE,
+    col.names = c("Domain", "Metric invariance", "Facet intercepts freed (in order)", "Partial scalar invariance reached"))
+}
+
+metric_fails <- function(results) unname(domains[!sapply(results, `[[`, "metric_ok")])
+```
+
+## Description
+
+Comparing the mean scores of two groups assumes that the questionnaire measures the same thing in the same way in both. **Measurement invariance** tests that assumption, in a sequence of increasingly strict multi-group confirmatory factor models (Vandenberg & Lance, 2000; Putnick & Bornstein, 2016):
+
+| Level | Constraint across groups | What it allows |
+|---|---|---|
+| **Configural** | Same factor structure | The construct has the same form |
+| **Metric** (weak) | Equal loadings | Comparing correlations and regressions |
+| **Scalar** (strong) | Equal loadings and intercepts | Comparing **means** |
+
+If scalar invariance fails, a group difference in observed scores mixes a difference in the trait with differences in how particular items or facets work in each group. **Partial invariance** (Byrne, Shavelson & Muthén, 1989) frees the intercepts that differ and compares latent means through the indicators that remain invariant. A step is accepted here when it lowers CFI by no more than .010 and raises RMSEA by no more than .015 (Chen, 2007); chi-square tests are not used, because with thousands of respondents per group they reject any constraint.
+
+The questionnaire is the **IPIP-NEO-120** (Johnson, 2014): 120 public-domain items from the [International Personality Item Pool](https://ipip.ori.org/) that measure the 30 facets of the NEO PI-R five-factor model, four items per facet and six facets per domain. Respondents rated each item from 1 (*very inaccurate*) to 5 (*very accurate*). The tests below ask whether its scores can be compared between **men and women**, between **12 countries** and between **age groups**, and what the comparisons show where they are allowed.
+
+### Data and cleaning
+
+Johnson made the 619,150 protocols collected online between 2001 and 2011 freely available on the [Open Science Framework](https://osf.io/wxvth/), with the [scoring key](https://osf.io/ycvdk/). [`data/prepare_ipipneo120.R`](https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/prepare_ipipneo120.R) applies the rules below. Johnson had already screened the protocols, so the consistency check (the even-odd index of Johnson, 2005, on the 30 pairs of half-facets) removes very few; most exclusions are incomplete protocols.
+
+```{r cleaning, echo=FALSE}
+cleaning <- attr(df_ipipneo120, "cleaning")
+cleaning$rule <- c("All 120 items answered", "Sex recorded", "Age between 14 and 80",
+                   "Even-odd consistency at least .30", "All rules together")
+knitr::kable(cleaning, col.names = c("Rule", "Excluded", "Remaining"),
+             format.args = list(big.mark = ","), row.names = FALSE)
+```
+
+From the cleaned protocols, a reproducible random sample was kept: 30,000 from the USA, used for the comparisons of sex and age within one country, and up to 3,000 from each of 11 other countries.
+
+```{r sample, echo=FALSE}
+sample_tab <- do.call(rbind, lapply(levels(dat$country), function(cn) {
+  s <- dat[dat$country == cn, ]
+  data.frame(country = cn, n = nrow(s), women = 100 * mean(s$sex == "Female"),
+             age = mean(s$age), age_sd = sd(s$age))
+}))
+knitr::kable(sample_tab, digits = 1, row.names = FALSE, format.args = list(big.mark = ","),
+             col.names = c("Country", "Respondents", "% women", "Mean age", "SD age"))
+```
+
+## Item List
+
+<details>
+<summary>Show the 120 items with their facet and keying</summary>
+
+```{r itemlist, echo=FALSE}
+knitr::kable(key[, c("item", "domain", "facet_code", "facet", "key", "text")],
+             col.names = c("Item", "Domain", "Code", "Facet", "Key", "Wording"), row.names = FALSE)
+```
+
+</details>
+
+## Reliability
+
+```{r reliability}
+facet_alpha <- sapply(facet_codes, function(f)
+  psych::alpha(df_ipipneo120[, key$item[key$facet_code == f]], warnings = FALSE)$total$raw_alpha)
+domain_alpha <- sapply(names(domains), function(dom)
+  psych::alpha(df_ipipneo120[, key$item[substr(key$facet_code, 1, 1) == dom]], warnings = FALSE)$total$raw_alpha)
+knitr::kable(data.frame(domain = unname(domains), alpha = domain_alpha,
+                        facet_min = tapply(facet_alpha, substr(facet_codes, 1, 1), min)[names(domains)],
+                        facet_max = tapply(facet_alpha, substr(facet_codes, 1, 1), max)[names(domains)],
+                        lowest = sapply(names(domains), function(dom) {
+                          a <- facet_alpha[substr(facet_codes, 1, 1) == dom]; facet_label[names(which.min(a))] })),
+             digits = 2, row.names = FALSE,
+             col.names = c("Domain (24 items)", "Alpha", "Lowest facet alpha", "Highest facet alpha", "Lowest facet"))
+```
+
+With four items each, the facet scales are short, and their alphas (`r sprintf("%.2f-%.2f", min(facet_alpha), max(facet_alpha))`) are lower than those of the 24-item domain scales. This is why the invariance tests of the domains use the six facet scores as indicators rather than the 24 single items.
+
+## The Five-Factor Structure
+
+Before testing whether the structure is the same across groups, check that it is there: an exploratory factor analysis of the 30 facets in the US sample.
+
+```{r efa, fig.width=8, fig.height=9, dev='png', fig.retina=2}
+efa <- fa(us[, facet_codes], nfactors = 5, rotate = "oblimin", fm = "ml")
+L <- unclass(efa$loadings)
+colnames(L) <- sapply(seq_len(ncol(L)), function(j)
+  names(which.max(tapply(L[, j], substr(facet_codes, 1, 1), mean))))
+L <- L[, names(domains)]
+found <- colnames(L)[apply(abs(L), 1, which.max)]
+cat(sprintf("Facets whose largest loading is on their own domain: %d of %d\n",
+            sum(found == substr(facet_codes, 1, 1)), length(facet_codes)))
+misplaced <- found != substr(facet_codes, 1, 1)
+print(data.frame(facet = facet_label[misplaced], largest_loading_on = domains[found[misplaced]], row.names = NULL))
+
+long <- melt(L, varnames = c("facet", "factor"), value.name = "loading")
+long$label  <- factor(facet_label[as.character(long$facet)], levels = rev(facet_label))
+long$domain <- factor(domains[substr(as.character(long$facet), 1, 1)], levels = domains)
+long$factor <- factor(domains[as.character(long$factor)], levels = domains)
+ggplot(long, aes(x = factor, y = label, fill = loading)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  geom_text(aes(label = ifelse(abs(loading) >= 0.30, sprintf("%.2f", loading), "")), size = 2.8) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                       midpoint = 0, limits = c(-1, 1), name = "loading") +
+  facet_grid(domain ~ ., scales = "free_y", space = "free_y") +
+  theme_bw(base_size = 9) +
+  theme(strip.text.y = element_text(angle = 0), axis.title = element_blank(), panel.grid = element_blank()) +
+  ggtitle("Five-factor EFA of the 30 facets (US sample, ML, oblimin)\nValues >= |0.30| shown")
+```
+
+The facets that load more on another domain than on their own each make sense from their content: activity level and assertiveness go with the energetic, goal-directed side of Conscientiousness, self-consciousness with low Extraversion, immoderation (giving in to cravings) with low Conscientiousness, emotionality (openness to feelings) with Neuroticism, and dutifulness shares Conscientiousness with Agreeableness. A one-factor model per domain therefore cannot fit perfectly, which the next step deals with.
+
+## Step 1: A Baseline Model for Each Domain
+
+Invariance is tested on a model that fits in each group, so the first step is a model that fits in the whole sample. Each domain is modelled as one factor measured by its six facet scores. A single factor rarely fits a Big Five domain perfectly, because some facets share variance beyond the domain (Depression and Self-Consciousness, for example, are closer to each other than to Anger). Residual covariances are added from the modification indices in the US sample, the largest first and at most three per domain, and kept fixed in form for all the comparisons.
+
+```{r baseline}
+baselines <- lapply(setNames(names(domains), names(domains)), baseline_model, data = us)
+pretty_cov <- function(x) {
+  p <- strsplit(x, " ~~ ")[[1]]
+  paste(facet_names[p[1]], "with", facet_names[p[2]])
+}
+knitr::kable(data.frame(
+  domain = unname(domains),
+  cfi0   = sapply(baselines, function(b) b$start[["cfi.robust"]]),
+  rmsea0 = sapply(baselines, function(b) b$start[["rmsea.robust"]]),
+  added  = sapply(baselines, function(b) paste(sapply(b$added, pretty_cov), collapse = "; ")),
+  cfi    = sapply(baselines, function(b) b$final[["cfi.robust"]]),
+  rmsea  = sapply(baselines, function(b) b$final[["rmsea.robust"]]),
+  srmr   = sapply(baselines, function(b) b$final[["srmr"]])),
+  digits = 3, row.names = FALSE,
+  col.names = c("Domain", "CFI (one factor)", "RMSEA (one factor)", "Residual covariances added",
+                "CFI", "RMSEA", "SRMR"))
+```
+
+The added covariances are substantively sensible pairs of neighbouring facets, and with them every domain model fits well.
+
+## Step 2: Men and Women
+
+```{r sex}
+inv_sex <- run_domains(us, "sex")
+invariance_table(inv_sex)
+freed_table(inv_sex)
+
+# Cohen's d of women minus men, used for the domains and facets below
+cohen_d <- function(x, g) {
+  m <- tapply(x, g, mean); v <- tapply(x, g, var); n <- tapply(x, g, length)
+  unname((m["Female"] - m["Male"]) / sqrt(sum((n - 1) * v) / (sum(n) - 2)))
+}
+facet_d <- data.frame(facet = facet_codes, d = sapply(facet_codes, function(f) cohen_d(us[[f]], us$sex)))
+```
+
+Metric invariance holds in `r 5 - length(metric_fails(inv_sex))` of the 5 domains: the facets measure the domains with the same loadings for men and women. Full scalar invariance fails in every domain; it holds once some facet intercepts are freed. A freed intercept means that men and women with the same level of the domain score differently on that facet. In Agreeableness, for example, women score much higher than men on Sympathy (*d* = `r sprintf("%.2f", facet_d$d[facet_d$facet == "A6"])`), Altruism (`r sprintf("%.2f", facet_d$d[facet_d$facet == "A3"])`) and Modesty (`r sprintf("%.2f", facet_d$d[facet_d$facet == "A5"])`), but not on Trust (`r sprintf("%.2f", facet_d$d[facet_d$facet == "A1"])`), so the facets cannot all share one domain-level difference (the facet chart below).
+
+### Latent and observed sex differences
+
+The latent mean difference uses only the invariant facets; the observed difference is the plain difference in the 24-item domain score. Positive values mean higher scores for women.
+
+```{r sexdiff, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+domain_score <- sapply(names(domains), function(dom) rowMeans(us[, key$item[substr(key$facet_code, 1, 1) == dom]]))
+sex_diff <- data.frame(
+  domain   = factor(unname(domains), levels = rev(domains)),
+  latent   = sapply(names(domains), function(dom) latent_means(inv_sex[[dom]], dom)$mean[2]),
+  observed = apply(domain_score, 2, cohen_d, g = us$sex))
+knitr::kable(sex_diff, digits = 2, row.names = FALSE,
+             col.names = c("Domain", "Latent d (partial scalar model)", "Observed d (domain score)"))
+
+ggplot(melt(sex_diff, id.vars = "domain"), aes(x = value, y = domain, colour = variable)) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_point(size = 3, position = position_dodge(width = 0.5)) +
+  scale_colour_manual(values = c(latent = "#d6604d", observed = "#2166ac"),
+                      labels = c(latent = "Latent (invariant facets)", observed = "Observed domain score"), name = NULL) +
+  labs(x = "Standardised difference (positive = higher for women)", y = NULL) +
+  theme_bw(base_size = 10) + theme(legend.position = "top") +
+  ggtitle("Sex differences in the five domains (US sample)")
+```
+
+```{r sexfacets, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+facet_d$domain <- factor(domains[substr(facet_d$facet, 1, 1)], levels = domains)
+facet_d$freed  <- facet_d$facet %in% unlist(lapply(inv_sex, `[[`, "freed"))
+facet_d$label  <- factor(facet_label[facet_d$facet], levels = rev(facet_label))
+ggplot(facet_d, aes(x = d, y = label, fill = freed)) +
+  geom_col(width = 0.7) +
+  geom_vline(xintercept = 0) +
+  scale_fill_manual(values = c(`FALSE` = "grey65", `TRUE` = "#d6604d"),
+                    labels = c(`FALSE` = "Intercept invariant", `TRUE` = "Intercept freed"), name = NULL) +
+  facet_grid(domain ~ ., scales = "free_y", space = "free_y") +
+  labs(x = "Cohen's d (positive = higher for women)", y = NULL) +
+  theme_bw(base_size = 9) + theme(legend.position = "top", strip.text.y = element_text(angle = 0)) +
+  ggtitle("Sex differences in the 30 facets (US sample)")
+```
+
+Costa, Terracciano and McCrae (2001), across 26 cultures, found that women score higher than men on Neuroticism and Agreeableness, and that some facets show differences in the opposite direction to their domain: women higher on openness to feelings, men higher on assertiveness and openness to ideas. The same appears here: women score higher on Emotionality (openness to feelings, *d* = `r sprintf("%.2f", facet_d$d[facet_d$facet == "O3"])`), men on Assertiveness (`r sprintf("%.2f", facet_d$d[facet_d$facet == "E3"])`) and Intellect (openness to ideas, `r sprintf("%.2f", facet_d$d[facet_d$facet == "O5"])`). The latent and observed domain differences agree closely, because the freed facets differ in both directions and largely cancel out in the domain score.
+
+## Step 3: Twelve Countries
+
+```{r country}
+inv_country <- run_domains(dat, "country")
+invariance_table(inv_country)
+freed_table(inv_country)
+```
+
+Across the twelve countries the picture is similar at the domain level: metric invariance holds in `r 5 - length(metric_fails(inv_country))` of the 5 domains, and comparing latent means requires freeing several facet intercepts per domain. The facet-level map below shows how much stricter the comparison of countries is when the items themselves are examined.
+
+## Step 4: Age Groups
+
+```{r age}
+inv_age <- run_domains(us, "agegroup")
+invariance_table(inv_age)
+freed_table(inv_age)
+```
+
+### Personality across age
+
+`r if (length(metric_fails(inv_age))) paste0("Across age groups, metric invariance fails for ", paste(metric_fails(inv_age), collapse = " and "), ": its facets do not relate to the domain in the same way at every age, so its latent age trend below should be read with caution. ") else ""`For the other domains, partial scalar invariance allows latent means to be compared across age groups. The first plot shows them relative to the 14-17 group; the second shows the observed domain scores by single year of age for men and women, smoothed.
+
+```{r agemeans, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+age_lm <- do.call(rbind, lapply(names(domains), function(dom)
+  cbind(domain = domains[[dom]], latent_means(inv_age[[dom]], dom))))
+age_lm$domain <- factor(age_lm$domain, levels = domains)
+age_lm$group  <- factor(age_lm$group, levels = levels(dat$agegroup))
+ggplot(age_lm, aes(x = group, y = mean, colour = domain, group = domain)) +
+  geom_hline(yintercept = 0, colour = "grey70") +
+  geom_line(linewidth = 1) + geom_point(size = 2) +
+  scale_colour_manual(values = c("#d6604d", "#e6ab02", "#1b9e77", "#2166ac", "#7570b3"), name = NULL) +
+  labs(x = "Age group", y = "Latent mean (SD units, 14-17 = 0)") +
+  theme_bw(base_size = 10) +
+  ggtitle("Latent domain means by age group (US sample, partial scalar models)")
+```
+
+```{r agecurves, fig.width=10, fig.height=4.5, dev='png', fig.retina=2}
+age_obs <- data.frame(age = us$age, sex = us$sex, scale(domain_score))
+names(age_obs)[-(1:2)] <- unname(domains)
+age_long <- melt(age_obs, id.vars = c("age", "sex"), variable.name = "domain", value.name = "z")
+age_mean <- aggregate(z ~ age + sex + domain, data = age_long[age_long$age <= 65, ], FUN = mean)
+ggplot(age_mean, aes(x = age, y = z, colour = sex)) +
+  geom_point(alpha = 0.25, size = 0.8) +
+  geom_smooth(method = "loess", span = 0.6, se = FALSE, linewidth = 1) +
+  facet_wrap(~ domain, nrow = 1) +
+  scale_colour_manual(values = c(Male = "#2166ac", Female = "#d6604d"), name = NULL) +
+  labs(x = "Age", y = "Domain score (z)") +
+  theme_bw(base_size = 10) + theme(legend.position = "top") +
+  ggtitle("Observed domain scores by age and sex (US sample, ages 14-65)",
+          subtitle = "Points: mean at each year of age; lines: loess")
+```
+
+The age trends agree with the **maturity principle** (Roberts, Walton & Viechtbauer, 2006) and with Soto, John, Gosling and Potter's (2011) cross-sectional study of more than a million internet respondents aged 10 to 65: Agreeableness (latent difference between the oldest and youngest groups `r sprintf("%+.2f", age_lm$mean[age_lm$domain == "Agreeableness" & age_lm$group == "50-80"])` SD) and Conscientiousness (`r sprintf("%+.2f", age_lm$mean[age_lm$domain == "Conscientiousness" & age_lm$group == "50-80"])`) are higher at older ages, and Neuroticism is lower (`r sprintf("%+.2f", age_lm$mean[age_lm$domain == "Neuroticism" & age_lm$group == "50-80"])`). Women score higher than men on Neuroticism and Agreeableness at every age. Openness shows why invariance matters: its latent mean rises into the twenties while the observed score stays almost flat, because the latent mean rests only on the facets whose intercepts were kept equal (`r paste(facet_names[setdiff(grep("^O", facet_codes, value = TRUE), inv_age$O$freed)], collapse = ", ")`), while the freed facets (`r paste(facet_names[inv_age$O$freed], collapse = ", ")`) follow different age trends. These are cross-sectional differences between people of different ages, not changes within people.
+
+## Facet-Level Invariance Map
+
+The domain models above use facet scores. The same tests can be run inside each facet, with its four items as indicators, which is a much stricter look at the items themselves.
+
+```{r facetmap, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+facet_step <- function(f, data, group) {
+  model <- paste0("F =~ ", paste(key$item[key$facet_code == f], collapse = " + "))
+  groups <- levels(droplevels(data[[group]]))
+  cfi <- sapply(list(character(0), "loadings", c("loadings", "intercepts")), function(eq)
+    fitMeasures(cfa(model, data = data, group = group, group.label = groups, group.equal = eq,
+                    estimator = "MLR"), "cfi.robust"))
+  data.frame(facet = f, configural = cfi[1], metric = cfi[2] - cfi[1], scalar = cfi[3] - cfi[2])
+}
+facet_map <- rbind(
+  cbind(grouping = "Sex (USA)",      do.call(rbind, lapply(facet_codes, facet_step, data = us,  group = "sex"))),
+  cbind(grouping = "Country (12)",   do.call(rbind, lapply(facet_codes, facet_step, data = dat, group = "country"))),
+  cbind(grouping = "Age group (USA)", do.call(rbind, lapply(facet_codes, facet_step, data = us,  group = "agegroup"))))
+
+knitr::kable(aggregate(cbind(metric_fails = metric < -0.010, scalar_fails = scalar < -0.010,
+                             poor_configural = configural < 0.95) ~ grouping, data = facet_map, FUN = sum),
+             row.names = FALSE,
+             col.names = c("Grouping", "Metric fails (ΔCFI < -.010)", "Scalar fails (ΔCFI < -.010)",
+                           "Configural CFI < .95"))
+
+map_long <- melt(facet_map, id.vars = c("grouping", "facet", "configural"),
+                 variable.name = "step", value.name = "d_cfi")
+map_long$label    <- factor(facet_label[map_long$facet], levels = rev(facet_label))
+map_long$grouping <- factor(map_long$grouping, levels = c("Sex (USA)", "Age group (USA)", "Country (12)"))
+map_long$step     <- factor(map_long$step, levels = c("metric", "scalar"), labels = c("Metric", "Scalar"))
+ggplot(map_long, aes(x = step, y = label, fill = pmax(d_cfi, -0.06))) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = ifelse(d_cfi < -0.010, sprintf("%.3f", d_cfi), "")), size = 2.3) +
+  scale_fill_gradient2(low = "#d6604d", mid = "white", high = "#2166ac", midpoint = -0.010,
+                       limits = c(-0.06, 0.005), name = "ΔCFI") +
+  facet_wrap(~ grouping, nrow = 1) +
+  labs(x = NULL, y = NULL) +
+  theme_bw(base_size = 9) + theme(panel.grid = element_blank()) +
+  ggtitle("Change in CFI when loadings (metric) and intercepts (scalar) are equated",
+          subtitle = "Each facet as a one-factor model of its 4 items; values shown where ΔCFI < -.010 (shading capped at -.06)")
+```
+
+```{r facetmap_worst}
+worst <- facet_map[order(facet_map$scalar), ][1:6, ]
+worst$facet <- facet_label[worst$facet]
+knitr::kable(worst, digits = 3, row.names = FALSE,
+             col.names = c("Grouping", "Facet", "Configural CFI", "ΔCFI metric", "ΔCFI scalar"))
+```
+
+```{r liberalism}
+knitr::kable(key[key$facet_code == "O6", c("item", "key", "text")], row.names = FALSE,
+             col.names = c("Item", "Key", "Wording"), caption = "The four Liberalism (O6) items")
+```
+
+At the item level, loadings are equal across groups almost everywhere, but intercepts are not, and least of all across countries. The worst case is **Liberalism**, whose items ask about voting for liberal or conservative candidates, moral relativism and being tough on crime: what these mean depends on each country's politics, so neither the loadings nor the intercepts are the same across countries. `r paste(facet_label[unique(facet_map$facet[facet_map$configural < 0.95])], collapse = ", ")` fit poorly even before any equality constraint (configural CFI below .95 in at least one grouping), so their four items are not a clean single factor in the first place.
+
+The practical lesson: the domain scores of the IPIP-NEO-120 can be compared across sex, age and these countries at the latent level, using the invariant facets; raw facet scores, and especially raw item scores, should not be compared across countries without testing first.
+
+## Summary
+
+```{r summary, echo=FALSE}
+count_freed <- function(res) sum(sapply(res, function(r) length(r$freed)))
+knitr::kable(data.frame(
+  evidence = c("Reliability", "Five-factor structure", "Baseline models",
+               "Invariance: sex", "Invariance: countries", "Invariance: age groups",
+               "Sex differences", "Facet-level map"),
+  result = c(
+    sprintf("Domain alpha %.2f-%.2f; facet alpha %.2f-%.2f", min(domain_alpha), max(domain_alpha),
+            min(facet_alpha), max(facet_alpha)),
+    sprintf("%d of 30 facets load highest on their own domain", sum(found == substr(facet_codes, 1, 1))),
+    sprintf("CFI %.3f-%.3f after at most 3 residual covariances per domain",
+            min(sapply(baselines, function(b) b$final[["cfi.robust"]])),
+            max(sapply(baselines, function(b) b$final[["cfi.robust"]]))),
+    sprintf("Metric holds in %d of 5 domains; partial scalar after freeing %d of 30 facet intercepts",
+            5 - length(metric_fails(inv_sex)), count_freed(inv_sex)),
+    sprintf("Metric holds in %d of 5 domains; partial scalar after freeing %d of 30 facet intercepts",
+            5 - length(metric_fails(inv_country)), count_freed(inv_country)),
+    sprintf("Metric holds in %d of 5 domains (not %s); partial scalar after freeing %d of 30 facet intercepts",
+            5 - length(metric_fails(inv_age)), paste(metric_fails(inv_age), collapse = ", "), count_freed(inv_age)),
+    sprintf("Women higher on Neuroticism (latent d = %.2f) and Agreeableness (%.2f)",
+            sex_diff$latent[1], sex_diff$latent[4]),
+    sprintf("Scalar invariance of the items fails for %d (sex), %d (age) and %d (countries) of 30 facets",
+            sum(facet_map$scalar[facet_map$grouping == "Sex (USA)"] < -0.010),
+            sum(facet_map$scalar[facet_map$grouping == "Age group (USA)"] < -0.010),
+            sum(facet_map$scalar[facet_map$grouping == "Country (12)"] < -0.010)))),
+  col.names = c("Evidence", "Result"), row.names = FALSE)
+```
+
+## References
+
+**Byrne, B. M., Shavelson, R. J., & Muthén, B. (1989).** Testing for the equivalence of factor covariance and mean structures: The issue of partial measurement invariance. *Psychological Bulletin*, *105*(3), 456-466.
+
+**Chen, F. F. (2007).** Sensitivity of goodness of fit indexes to lack of measurement invariance. *Structural Equation Modeling*, *14*(3), 464-504.
+
+**Costa, P. T., Jr., Terracciano, A., & McCrae, R. R. (2001).** Gender differences in personality traits across cultures: Robust and surprising findings. *Journal of Personality and Social Psychology*, *81*(2), 322-331.
+
+**Johnson, J. A. (2005).** Ascertaining the validity of individual protocols from Web-based personality inventories. *Journal of Research in Personality*, *39*(1), 103-129.
+
+**Johnson, J. A. (2014).** Measuring thirty facets of the Five Factor Model with a 120-item public domain inventory: Development of the IPIP-NEO-120. *Journal of Research in Personality*, *51*, 78-89.
+
+**Putnick, D. L., & Bornstein, M. H. (2016).** Measurement invariance conventions and reporting: The state of the art and future directions for psychological research. *Developmental Review*, *41*, 71-90.
+
+**Roberts, B. W., Walton, K. E., & Viechtbauer, W. (2006).** Patterns of mean-level change in personality traits across the life course: A meta-analysis of longitudinal studies. *Psychological Bulletin*, *132*(1), 1-25.
+
+**Soto, C. J., John, O. P., Gosling, S. D., & Potter, J. (2011).** Age differences in personality traits from 10 to 65: Big Five domains and facets in a large cross-sectional sample. *Journal of Personality and Social Psychology*, *100*(2), 330-348.
+
+**Vandenberg, R. J., & Lance, C. E. (2000).** A review and synthesis of the measurement invariance literature: Suggestions, practices, and recommendations for organizational research. *Organizational Research Methods*, *3*(1), 4-70.
+
+Data: Johnson's IPIP-NEO data repository, [osf.io/tbmh5](https://osf.io/tbmh5/). Items: International Personality Item Pool, [ipip.ori.org](https://ipip.ori.org/).
