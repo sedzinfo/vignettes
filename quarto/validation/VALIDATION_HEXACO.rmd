@@ -1,0 +1,400 @@
+---
+title: "HEXACO Validation: Six Factors or Five?"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{HEXACO Validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+```
+
+```{r load, include=FALSE}
+library(psych)
+library(ggplot2)
+library(reshape2)
+
+load("data/df_hexaco.rda")
+key <- read.csv("data/hexaco_key.csv", stringsAsFactors = FALSE)
+
+domains  <- c("Honesty-Humility", "Emotionality", "Extraversion",
+              "Agreeableness", "Conscientiousness", "Openness")
+dom_abbr <- setNames(c("H", "E", "X", "A", "C", "O"), domains)
+facets   <- unique(key$facet)                       # 24 facets, in domain order
+facet_domain <- setNames(key$domain[match(facets, key$facet)], facets)
+
+# Reverse-key the "-" items on the 1-7 scale
+df <- df_hexaco[, key$item]
+df[, key$key == "-"] <- 8 - df[, key$key == "-"]
+
+facet_scores <- as.data.frame(sapply(facets, function(f) rowMeans(df[, key$facet == f])))
+
+# Heatmap of a loading matrix with rows grouped by domain
+plot_loadings <- function(L, title) {
+  long <- melt(L, varnames = c("facet", "factor"), value.name = "loading")
+  long$facet  <- factor(long$facet, levels = rev(facets))
+  long$domain <- factor(facet_domain[as.character(long$facet)], levels = domains)
+  ggplot(long, aes(x = factor, y = facet, fill = loading)) +
+    geom_tile(color = "white", linewidth = 0.3) +
+    geom_text(aes(label = ifelse(abs(loading) >= 0.30, sprintf("%.2f", loading), "")), size = 2.8) +
+    scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                         midpoint = 0, limits = c(-1, 1), name = "loading") +
+    facet_grid(domain ~ ., scales = "free_y", space = "free_y") +
+    theme_bw(base_size = 9) +
+    theme(strip.text.y = element_text(angle = 0, size = 8),
+          axis.title = element_blank(), panel.grid = element_blank()) +
+    ggtitle(title)
+}
+
+# Name each factor after the domain(s) whose facets load on it (mean loading >= |0.30|)
+factor_label <- function(L) apply(L, 2, function(l) {
+  m <- tapply(l, facet_domain[rownames(L)], mean)
+  m <- m[abs(m) >= 0.30]
+  m <- m[order(-abs(m))]
+  paste0(ifelse(m < 0, "-", ""), dom_abbr[names(m)], collapse = " + ")
+})
+```
+
+## Description
+
+The **HEXACO model** (Lee & Ashton, 2004; Ashton & Lee, 2007) describes personality with six broad factors instead of the Big Five: **H**onesty-Humility, **E**motionality, e**X**traversion, **A**greeableness, **C**onscientiousness and **O**penness to Experience. The new factor is Honesty-Humility (sincerity, fairness, greed avoidance, modesty). Lexical studies in many languages found it as a sixth factor when the adjectives people use to describe each other are analysed. HEXACO Emotionality and Agreeableness are also rotated versions of Big Five Neuroticism and Agreeableness: sentimentality moves into Emotionality, and anger (low patience) moves into low Agreeableness.
+
+This tutorial validates the **IPIP-HEXACO scales** (Ashton, Lee & Goldberg, 2007), a public-domain version from the [International Personality Item Pool](https://ipip.ori.org/) with 240 items: 10 items for each of 24 facets, 4 facets per factor. Respondents rated each statement on a 1-7 scale (1 = *strongly disagree*, 4 = *neutral*, 7 = *strongly agree*). Its central question is the one that separates HEXACO from the Big Five measured in the [BFI-44](VALIDATION_BFI44.rmd) and [IPIP-50](VALIDATION_OCEAN.rmd) tutorials: **do the data need a sixth factor, and what happens to Honesty-Humility when only five are allowed?**
+
+### Data and cleaning
+
+The data come from the [Open-Source Psychometrics Project](https://openpsychometrics.org/_rawdata/) (`HEXACO.zip`, 22,786 records). The codebook does not give the keying of the items, so the scoring key in [`data/hexaco_key.csv`](https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/hexaco_key.csv) was matched item by item to the [official IPIP-HEXACO key](https://ipip.ori.org/newHEXACO_PI_key.htm), which also lists the published alpha of each facet. [`data/prepare_hexaco.R`](https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/prepare_hexaco.R) applies the cleaning rules below.
+
+Besides two validity questions and the completion time, the cleaning uses the **even-odd consistency index** (Johnson, 2005): each facet is split into its odd- and even-numbered items, the 24 odd and 24 even half-scores are correlated within the person, and the correlation is corrected to full length with the Spearman-Brown formula. Someone who reads the items gives similar answers to the two halves of a facet (typical values around .8); someone who answers at random does not (values near 0).
+
+```{r cleaning, echo=FALSE}
+cleaning <- attr(df_hexaco, "cleaning")
+cleaning$rule <- c("All 240 items answered",
+                   "Understood the instructions (at least slightly agree)",
+                   "Answered accurately (at least slightly agree)",
+                   "At least 2 seconds per item",
+                   "Even-odd consistency at least .30",
+                   "All rules together")
+knitr::kable(cleaning, col.names = c("Rule", "Excluded", "Remaining"),
+             format.args = list(big.mark = ","), row.names = FALSE)
+```
+
+```{r evenodd, fig.width=7, fig.height=3.5, dev='png', fig.retina=2}
+ggplot(df_hexaco, aes(x = even_odd)) +
+  geom_histogram(binwidth = 0.02, fill = "grey40", colour = "white") +
+  geom_vline(xintercept = 0.30, colour = "#d6604d", linetype = "dashed") +
+  labs(x = "Even-odd consistency (kept respondents)", y = "Respondents") +
+  theme_bw(base_size = 10) +
+  ggtitle("Even-odd consistency of the kept protocols",
+          subtitle = "Dashed line: exclusion threshold (.30)")
+```
+
+## Item List
+
+<details>
+<summary>Show the 240 items with their facet and keying</summary>
+
+```{r itemlist, echo=FALSE}
+knitr::kable(key[, c("item", "domain", "facet", "key", "text")],
+             col.names = c("Label", "Domain", "Facet", "Key", "Item"), row.names = FALSE)
+```
+
+</details>
+
+## Checking the Scoring Key
+
+If an item is keyed in the wrong direction, its correlation with the rest of its facet is negative. After reverse-keying, every one of the 240 items should correlate positively with the other nine items of its facet, whatever its keying.
+
+```{r keycheck, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+item_total <- do.call(rbind, lapply(facets, function(f) {
+  a <- psych::alpha(df[, key$facet == f], check.keys = FALSE, warnings = FALSE)
+  data.frame(item = key$item[key$facet == f], facet = f, key = key$key[key$facet == f],
+             r_drop = a$item.stats$r.drop)
+}))
+cat(sprintf("Corrected item-total correlations: %.2f to %.2f; negative: %d of %d\n",
+            min(item_total$r_drop), max(item_total$r_drop),
+            sum(item_total$r_drop < 0), nrow(item_total)))
+
+item_total$facet <- factor(item_total$facet, levels = rev(facets))
+ggplot(item_total, aes(x = r_drop, y = facet, colour = key)) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_point(size = 2, alpha = 0.8, position = position_jitter(height = 0.15, seed = 1)) +
+  scale_colour_manual(values = c(`+` = "#2166ac", `-` = "#d6604d"),
+                      labels = c(`+` = "+ keyed", `-` = "- keyed (reversed)"), name = NULL) +
+  labs(x = "Corrected item-total correlation", y = NULL) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "top") +
+  ggtitle("Each item against the rest of its facet")
+```
+
+```{r weakitems}
+weak <- item_total[order(item_total$r_drop), ][1:5, ]
+weak$text <- key$text[match(weak$item, key$item)]
+knitr::kable(weak[, c("item", "facet", "key", "r_drop", "text")], digits = 2, row.names = FALSE,
+             col.names = c("Item", "Facet", "Key", "Item-total r", "Wording"))
+```
+
+## Reliability
+
+Cronbach's alpha of the 24 facets in this sample, against the alpha published with the IPIP-HEXACO key, and the alpha of the six domains (40 items each).
+
+```{r reliability, fig.width=7, fig.height=7, dev='png', fig.retina=2}
+facet_alpha <- data.frame(
+  facet     = facets,
+  domain    = facet_domain[facets],
+  sample    = sapply(facets, function(f) psych::alpha(df[, key$facet == f], warnings = FALSE)$total$raw_alpha),
+  published = as.numeric(key$published_alpha[match(facets, key$facet)]))
+cat(sprintf("Facet alpha: %.2f to %.2f (published %.2f to %.2f); mean difference %+.2f\n",
+            min(facet_alpha$sample), max(facet_alpha$sample),
+            min(facet_alpha$published), max(facet_alpha$published),
+            mean(facet_alpha$sample - facet_alpha$published)))
+
+alpha_long <- melt(facet_alpha, id.vars = c("facet", "domain"), variable.name = "source", value.name = "alpha")
+alpha_long$facet <- factor(alpha_long$facet, levels = rev(facets))
+ggplot(alpha_long, aes(x = alpha, y = facet)) +
+  geom_line(aes(group = facet), colour = "grey70") +
+  geom_point(aes(colour = source), size = 2.5) +
+  scale_colour_manual(values = c(sample = "#d6604d", published = "#2166ac"),
+                      labels = c(sample = "This sample", published = "Published (IPIP key)"), name = NULL) +
+  labs(x = "Cronbach's alpha", y = NULL) +
+  theme_bw(base_size = 9) +
+  theme(legend.position = "top") +
+  ggtitle("Facet reliability: this sample against the published values")
+
+diff_alpha <- setNames(facet_alpha$sample - facet_alpha$published, facet_alpha$facet)
+domain_alpha <- sapply(domains, function(d) psych::alpha(df[, key$domain == d], warnings = FALSE)$total$raw_alpha)
+knitr::kable(data.frame(domain = domains, alpha = domain_alpha), digits = 2, row.names = FALSE,
+             col.names = c("Domain (40 items)", "Alpha"))
+```
+
+`r sum(diff_alpha >= -0.01)` of the 24 facets are at least as reliable here as in the published key (within .01). The largest gains are `r paste(names(sort(diff_alpha, decreasing = TRUE))[1:2], collapse = " and ")`; the largest drops are `r paste(names(sort(diff_alpha))[1:2], collapse = " and ")`, both Openness facets, which are a little less homogeneous in this online sample. Every facet stays above .70.
+
+## Facet Correlation Matrix
+
+The factor analyses below work with the 24 facet scores, the usual level for testing the structure of a hierarchical inventory: each facet score averages 10 items, so it is far more reliable than a single item.
+
+```{r facetcor, fig.width=9, fig.height=8, dev='png', fig.retina=2}
+facet_cor <- cor(facet_scores)
+cor_long  <- melt(facet_cor)
+cor_long$Var1 <- factor(cor_long$Var1, levels = facets)
+cor_long$Var2 <- factor(cor_long$Var2, levels = rev(facets))
+
+ggplot(cor_long, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                       midpoint = 0, limits = c(-1, 1), name = "r") +
+  geom_hline(yintercept = seq(4.5, 20.5, 4), colour = "grey30", linewidth = 0.3) +
+  geom_vline(xintercept = seq(4.5, 20.5, 4), colour = "grey30", linewidth = 0.3) +
+  theme_bw(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        axis.title = element_blank(), panel.grid = element_blank()) +
+  ggtitle("IPIP-HEXACO facet intercorrelations\nLines separate the six domains (H, E, X, A, C, O)")
+```
+
+## How Many Factors?
+
+```{r nfactors, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+eig <- eigen(facet_cor, only.values = TRUE)$values
+cat("Eigenvalues 1-8:", sprintf("%.2f", eig[1:8]), "\n")
+cat("Eigenvalues above 1:", sum(eig > 1), "\n")
+
+set.seed(42)
+pa <- fa.parallel(facet_scores, fm = "ml", fa = "fa", n.iter = 20,
+                  main = "Parallel analysis scree plot (24 IPIP-HEXACO facets)")
+```
+
+```{r fitcompare}
+fits <- lapply(4:7, function(k) fa(facet_scores, nfactors = k, rotate = "oblimin", fm = "ml"))
+fit_tab <- data.frame(factors = 4:7,
+                      TLI   = sapply(fits, function(e) e$TLI),
+                      RMSEA = sapply(fits, function(e) e$RMSEA[1]),
+                      BIC   = sapply(fits, function(e) e$BIC))
+knitr::kable(fit_tab, digits = c(0, 3, 3, 0), row.names = FALSE,
+             col.names = c("Factors", "TLI", "RMSEA", "BIC"))
+```
+
+Exactly six eigenvalues are above 1, and BIC, which penalises extra factors, roughly halves from five factors to six. Fit keeps improving with a seventh factor, and parallel analysis suggests `r pa$nfact`: with `r format(nrow(df), big.mark = ",")` respondents, even very small factors are detectable. The seventh eigenvalue (`r sprintf("%.2f", eig[7])`) is below 1, though, and the seventh factor is a minor one:
+
+```{r efa7}
+L7 <- unclass(fits[[4]]$loadings)
+minor <- which.min(apply(abs(L7), 2, max))          # the factor with the weakest top loading
+cat("Facets loading at least |0.30| on the seventh factor:\n")
+print(round(sort(L7[abs(L7[, minor]) >= 0.30, minor]), 2))
+cat("Facets whose largest loading is on it:", sum(apply(abs(L7), 1, which.max) == minor), "\n")
+```
+
+The seventh factor collects risk-taking across three domains: low Fearfulness, high Liveliness and low Prudence. Fearfulness splits almost evenly between it and Emotionality; every other facet keeps its largest loading on its own domain. It is a narrow factor rather than a new domain, so six remains the number the model predicts and the number of broad factors in the data.
+
+## Six Factors
+
+```{r efa6, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+efa6 <- fits[[3]]
+L6 <- unclass(efa6$loadings)
+colnames(L6) <- factor_label(L6)
+L6 <- L6[, dom_abbr]
+colnames(L6) <- domains
+print(round(L6, 2))
+
+found6 <- colnames(L6)[apply(abs(L6), 1, which.max)]
+cat(sprintf("\nFacets whose largest loading is on their own domain: %d of %d\n",
+            sum(found6 == facet_domain[rownames(L6)]), nrow(L6)))
+
+plot_loadings(L6, "Six-factor EFA of the 24 facets (ML, oblimin)\nValues >= |0.30| shown")
+```
+
+```{r phi6}
+phi6 <- efa6$Phi
+dimnames(phi6) <- list(colnames(unclass(efa6$loadings)), colnames(unclass(efa6$loadings)))
+lab6 <- factor_label(unclass(efa6$loadings))
+dimnames(phi6) <- list(names(dom_abbr)[match(lab6, dom_abbr)], names(dom_abbr)[match(lab6, dom_abbr)])
+knitr::kable(round(phi6[domains, domains], 2), caption = "Correlations between the six factors")
+```
+
+Every facet loads on its own factor: a clean recovery of the HEXACO structure. Most factor correlations are small; the largest is between Honesty-Humility and Agreeableness (`r sprintf("%.2f", phi6["Honesty-Humility", "Agreeableness"])`), the two factors that the next section pulls apart.
+
+## Five Factors: Where Does Honesty-Humility Go?
+
+The decisive test for HEXACO is to force a Big Five solution on the same facets.
+
+```{r efa5, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+L5 <- unclass(fits[[2]]$loadings)
+colnames(L5) <- factor_label(L5)
+L5 <- L5[, order(match(substr(colnames(L5), 1, 1), dom_abbr))]
+print(round(L5, 2))
+
+plot_loadings(L5, "Five-factor EFA of the same 24 facets\nHonesty-Humility has no factor of its own")
+```
+
+With only five factors, the four Honesty-Humility facets (sincerity, fairness, greed avoidance, modesty) join the Agreeableness facets (forgiveness, gentleness, flexibility, patience) in one broad factor. That merged factor is close to Big Five **Agreeableness**, which in Big Five inventories includes straightforwardness and modesty. The other four factors hardly change. So the Big Five does not lose the Honesty-Humility content; it folds it into Agreeableness. HEXACO's claim is that the two are distinct: being slow to anger and forgiving (Agreeableness) is not the same as being fair, modest and uninterested in wealth and status (Honesty-Humility). The six-factor solution above supports the claim: the two factors correlate `r sprintf("%.2f", phi6["Honesty-Humility", "Agreeableness"])`, related but clearly distinct, and fit improves substantially when they are separated.
+
+The 50 IPIP items in the [IPIP-50 / OCEAN tutorial](VALIDATION_OCEAN.rmd) have no Honesty-Humility content at all, which is why its five factors are enough there.
+
+## The Hierarchy: From One Factor to Six
+
+Goldberg's (2006) "bass-ackwards" method shows how the factors emerge as more are extracted. Solutions with 1, 2, ..., 6 factors are computed, factor scores are saved at each level, and the scores of each level are correlated with the scores of the next. Each line below links a factor to a factor one level down when they correlate at least .30; the line is thicker the stronger the correlation. Each box is named after the domains whose facets load on it at least .30 on average.
+
+```{r bassackwards, fig.width=10, fig.height=7.5, dev='png', fig.retina=2}
+Z <- scale(facet_scores)
+levels_k <- 1:6
+solutions <- lapply(levels_k, function(k) {
+  e    <- fa(facet_scores, nfactors = k, rotate = "oblimin", fm = "ml", scores = "tenBerge")
+  flip <- sign(colSums(unclass(e$loadings)))          # orient factors so that most loadings are positive
+  L    <- sweep(unclass(e$loadings), 2, flip, "*")
+  list(label = factor_label(L), scores = Z %*% sweep(e$weights, 2, flip, "*"))
+})
+
+# Horizontal position: the six final factors in an order that keeps factors that split from each
+# other side by side; each higher factor sits at the mean position of the final factors it
+# correlates with (weighted by r squared), at least 0.9 apart from its neighbours
+final_order <- c("H", "A", "E", "C", "X", "O")
+final_pos <- match(solutions[[6]]$label, final_order)
+spread <- function(x, gap = 0.9) {
+  o <- order(x)
+  for (i in seq_along(o)[-1]) x[o[i]] <- max(x[o[i]], x[o[i - 1]] + gap)
+  x
+}
+nodes <- do.call(rbind, lapply(levels_k, function(k) {
+  r2 <- cor(solutions[[k]]$scores, solutions[[6]]$scores)^2
+  centre <- as.vector(r2 %*% final_pos / rowSums(r2))
+  data.frame(level = k, id = seq_len(k), x = spread(centre), y = -k, label = solutions[[k]]$label)
+}))
+
+edges <- do.call(rbind, lapply(levels_k[-6], function(k) {
+  r  <- cor(solutions[[k]]$scores, solutions[[k + 1]]$scores)
+  ij <- which(abs(r) >= 0.30, arr.ind = TRUE)
+  from <- nodes[nodes$level == k, ][ij[, 1], ]
+  to   <- nodes[nodes$level == k + 1, ][ij[, 2], ]
+  data.frame(x = from$x, y = from$y, xend = to$x, yend = to$y, r = r[ij],
+             new_H = k == 5 & to$label == "H")
+}))
+
+ggplot() +
+  geom_segment(data = edges, aes(x = x, y = y, xend = xend, yend = yend,
+                                 linewidth = abs(r), colour = new_H)) +
+  geom_label(data = edges, aes(x = (x + xend) / 2, y = (y + yend) / 2, label = sprintf("%.2f", r)),
+             size = 2.6, label.size = 0, fill = "white") +
+  geom_label(data = nodes, aes(x = x, y = y, label = label),
+             size = 3.6, fontface = "bold", fill = "grey95") +
+  scale_linewidth(range = c(0.4, 2.5), guide = "none") +
+  scale_colour_manual(values = c(`FALSE` = "grey55", `TRUE` = "#d6604d"), guide = "none") +
+  scale_y_continuous(breaks = -levels_k, labels = paste(levels_k, ifelse(levels_k == 1, "factor", "factors"))) +
+  scale_x_continuous(expand = expansion(add = 0.6)) +
+  theme_minimal(base_size = 10) +
+  theme(axis.title = element_blank(), axis.text.x = element_blank(), panel.grid = element_blank()) +
+  ggtitle("Bass-ackwards hierarchy of the IPIP-HEXACO facets",
+          subtitle = "H = Honesty-Humility, E = Emotionality, X = Extraversion, A = Agreeableness, C = Conscientiousness, O = Openness\nRed: the step from five to six factors, where Honesty-Humility separates from Agreeableness")
+```
+
+Reading from the top: the single factor is defined mostly by Extraversion and Openness facets; two factors separate the interpersonal facets of Honesty-Humility and Agreeableness from Extraversion and Openness; Emotionality, Conscientiousness and Openness then split off one by one. Up to five factors, Honesty-Humility and Agreeableness travel together. Only at six does that factor divide, into a part that is almost the same as before (Agreeableness) and a new factor, **Honesty-Humility**.
+
+## Item-Level Check
+
+The facet analyses average 10 items at a time. A six-factor analysis of all 240 items shows how many items follow their own domain individually.
+
+```{r itemlevel}
+efa_items <- fa(df, nfactors = 6, rotate = "oblimin", fm = "ml")
+Li <- unclass(efa_items$loadings)
+colnames(Li) <- sapply(seq_len(ncol(Li)), function(j) names(which.max(tapply(Li[, j], key$domain, mean))))
+own <- colnames(Li)[apply(abs(Li), 1, which.max)] == key$domain
+knitr::kable(data.frame(domain = domains,
+                        items = as.vector(table(factor(key$domain, levels = domains))),
+                        own = as.vector(tapply(own, factor(key$domain, levels = domains), sum))),
+             row.names = FALSE, col.names = c("Domain", "Items", "Largest loading on own domain"))
+cat(sprintf("Total: %d of %d items\n", sum(own), length(own)))
+
+misfit <- data.frame(item = key$item, facet = key$facet, largest = colnames(Li)[apply(abs(Li), 1, which.max)],
+                     text = key$text)[!own, ]
+knitr::kable(head(misfit[order(misfit$facet), ], 15), row.names = FALSE,
+             col.names = c("Item", "Facet", "Largest loading on", "Wording"),
+             caption = "First 15 items whose largest loading is on another domain")
+```
+
+The misplaced items cluster in a few places, and most describe content that sits between two domains. The fearlessness items (*Love dangerous situations*, *Am willing to take risks*) load with Openness, the adventurous side of Openness, which is the risk-taking content of the seventh factor above. Some Flexibility items about being upset by criticism or change load with Emotionality, and some Dependence items about needing other people load with Extraversion. These are the items to revise if the inventory were shortened or improved.
+
+## Summary
+
+```{r summary, echo=FALSE}
+knitr::kable(data.frame(
+  evidence = c("Scoring key", "Reliability", "Number of factors", "Six-factor structure",
+               "Five-factor structure", "Hierarchy", "Item level"),
+  result = c(
+    sprintf("All %d items correlate positively with their facet (r = %.2f-%.2f)",
+            nrow(item_total), min(item_total$r_drop), max(item_total$r_drop)),
+    sprintf("Facet alpha %.2f-%.2f, close to the published %.2f-%.2f; domain alpha %.2f-%.2f",
+            min(facet_alpha$sample), max(facet_alpha$sample), min(facet_alpha$published),
+            max(facet_alpha$published), min(domain_alpha), max(domain_alpha)),
+    sprintf("%d eigenvalues above 1; BIC falls from %.0f (5 factors) to %.0f (6 factors)",
+            sum(eig > 1), fit_tab$BIC[2], fit_tab$BIC[3]),
+    sprintf("%d of 24 facets load highest on their own domain", sum(found6 == facet_domain[rownames(L6)])),
+    "Honesty-Humility merges with Agreeableness into one broad factor",
+    "Honesty-Humility is the last factor to emerge, splitting from Agreeableness",
+    sprintf("%d of 240 items load highest on their own domain", sum(own)))),
+  col.names = c("Evidence", "Result"), row.names = FALSE)
+```
+
+## References
+
+**Ashton, M. C., & Lee, K. (2007).** Empirical, theoretical, and practical advantages of the HEXACO model of personality structure. *Personality and Social Psychology Review*, *11*(2), 150-166.
+
+**Ashton, M. C., Lee, K., & Goldberg, L. R. (2007).** The IPIP-HEXACO scales: An alternative, public-domain measure of the personality constructs in the HEXACO model. *Personality and Individual Differences*, *42*(8), 1515-1526.
+
+**Goldberg, L. R. (2006).** Doing it all bass-ackwards: The development of hierarchical factor structures from the top down. *Journal of Research in Personality*, *40*(4), 347-358.
+
+**Johnson, J. A. (2005).** Ascertaining the validity of individual protocols from Web-based personality inventories. *Journal of Research in Personality*, *39*(1), 103-129.
+
+**Lee, K., & Ashton, M. C. (2004).** Psychometric properties of the HEXACO Personality Inventory. *Multivariate Behavioral Research*, *39*(2), 329-358.
+
+Data: Open-Source Psychometrics Project, [openpsychometrics.org/_rawdata](https://openpsychometrics.org/_rawdata/). Items and key: International Personality Item Pool, [ipip.ori.org](https://ipip.ori.org/).
