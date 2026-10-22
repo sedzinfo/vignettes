@@ -105,14 +105,8 @@ page = f"""<!doctype html>
     </div>
   </main>
 
-  <footer class="border-top py-3 text-muted small">
-    <div class="container" style="display: grid; grid-template-columns: 1fr auto 1fr;">
-      <span style="grid-column: 2;"><a class="text-muted" href="https://github.com/sedzinfo">github.com/sedzinfo</a>
-      · <a class="text-muted" href="#cookie-settings">Cookie settings</a>
-      · <a class="text-muted" href="https://sedzinfo.github.io/privacy.html">Privacy</a></span>
-      <a class="text-muted" href="https://sedzinfo.github.io/" style="justify-self: end;">home</a>
-    </div>
-  </footer>
+  <!-- the footer of every site (footer.js in sedzinfo.github.io, loaded via _ga_consent.html) -->
+  <footer id="sedzinfo-footer"></footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 {CONSENT}</body>
