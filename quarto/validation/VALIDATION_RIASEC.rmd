@@ -1,0 +1,552 @@
+---
+title: "RIASEC Validation: Recovering Holland's Hexagon"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{RIASEC Validation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+```
+
+```{r load, include=FALSE}
+library(psych)
+library(lavaan)
+library(ggplot2)
+library(ggrepel)
+library(reshape2)
+
+load("data/df_riasec.rda")
+
+types      <- c("R", "I", "A", "S", "E", "C")
+type_names <- c(R = "Realistic", I = "Investigative", A = "Artistic",
+                S = "Social", E = "Enterprising", C = "Conventional")
+item_cols  <- paste0(rep(types, each = 8), 1:8)
+factors    <- setNames(lapply(types, function(t) paste0(t, 1:8)), type_names)
+
+df <- df_riasec[, item_cols]
+
+item_labels <- rep(type_names, each = 8)
+names(item_labels) <- item_cols
+
+df_lookup <- data.frame(
+  label     = item_cols,
+  dimension = item_labels,
+  description = c(
+    # Realistic R1-R8
+    "Test the quality of parts before shipment",
+    "Lay brick or tile",
+    "Work on an offshore oil-drilling rig",
+    "Assemble electronic parts",
+    "Operate a grinding machine in a factory",
+    "Fix a broken faucet",
+    "Assemble products in a factory",
+    "Install flooring in houses",
+    # Investigative I1-I8
+    "Study the structure of the human body",
+    "Study animal behavior",
+    "Do research on plants or animals",
+    "Develop a new medical treatment or procedure",
+    "Conduct biological research",
+    "Study whales and other types of marine life",
+    "Work in a biology lab",
+    "Make a map of the bottom of an ocean",
+    # Artistic A1-A8
+    "Conduct a musical choir",
+    "Direct a play",
+    "Design artwork for magazines",
+    "Write a song",
+    "Write books or plays",
+    "Play a musical instrument",
+    "Perform stunts for a movie or television show",
+    "Design sets for plays",
+    # Social S1-S8
+    "Give career guidance to people",
+    "Do volunteer work at a non-profit organization",
+    "Help people who have problems with drugs or alcohol",
+    "Teach an individual an exercise routine",
+    "Help people with family-related problems",
+    "Supervise the activities of children at a camp",
+    "Teach children how to read",
+    "Help elderly people with their daily activities",
+    # Enterprising E1-E8
+    "Sell restaurant franchises to individuals",
+    "Sell merchandise at a department store",
+    "Manage the operations of a hotel",
+    "Operate a beauty salon or barber shop",
+    "Manage a department within a large company",
+    "Manage a clothing store",
+    "Sell houses",
+    "Run a toy store",
+    # Conventional C1-C8
+    "Generate the monthly payroll checks for an office",
+    "Inventory supplies using a hand-held computer",
+    "Use a computer program to generate customer bills",
+    "Maintain employee records",
+    "Compute and record statistical and other numerical data",
+    "Operate a calculator",
+    "Handle customers' bank transactions",
+    "Keep shipping and receiving records"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# Scale scores (item means, 1-5) and their z-scores
+scores <- as.data.frame(sapply(factors, function(f) rowMeans(df[, f])))
+scores_z <- as.data.frame(scale(scores))
+
+# Hexagon angles: Realistic at the top, then clockwise I, A, S, E, C every 60 degrees
+hex_angle <- setNames(90 - (0:5) * 60, type_names)
+```
+
+## Description
+
+Holland's (1997) theory of vocational interests sorts people and work environments into six types: **R**ealistic (doers: tools, machines, outdoor work), **I**nvestigative (thinkers: science and research), **A**rtistic (creators: art, music, writing), **S**ocial (helpers: teaching, care, counselling), **E**nterprising (persuaders: selling, managing) and **C**onventional (organisers: records, data, procedures). The theory's distinctive claim is structural: the six types sit on a **hexagon** in the order R-I-A-S-E-C, so neighbouring types (R and I) correlate more than alternate types (R and A), which in turn correlate more than opposite types (R and S).
+
+This tutorial validates a 48-item public-domain RIASEC measure (eight activities per type) in **`r format(nrow(df), big.mark = ",")`** respondents. It goes beyond reliability and factor analysis: it tests the hexagon itself, places university majors in the interest space, and checks the results against published meta-analyses of gender differences and personality correlates.
+
+Respondents rated how much they would like to perform each activity on a 1-5 scale (1 = *Dislike*, 3 = *Neutral*, 5 = *Enjoy*). The questionnaire also contained the Ten Item Personality Inventory (TIPI; Gosling et al., 2003) and a demographic survey with a free-text question on the respondent's university major.
+
+### Data and cleaning
+
+The data come from the [Open-Source Psychometrics Project](https://openpsychometrics.org/_rawdata/) (`RIASEC_data12Dec2018.zip`, 145,828 records collected online in 2015-2018). [`data/prepare_riasec.R`](https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/prepare_riasec.R) applies the cleaning rules below and groups the free-text majors into 16 broad fields; the free text itself is not kept. The most useful rule is built into the questionnaire: a vocabulary checklist asked respondents to tick the words they knew, and three of the sixteen words (*cuivocal*, *florted*, *verdid*) do not exist. A respondent who claims to know a word that does not exist is not reading carefully.
+
+```{r cleaning, echo=FALSE}
+cleaning <- attr(df_riasec, "cleaning")
+cleaning$rule <- c("All 48 items answered",
+                   "No non-existent word ticked",
+                   "At least 2 seconds per item",
+                   "Not the same answer to all 48 items",
+                   "Age between 13 and 80",
+                   "Only record from its network (no retakes)",
+                   "All rules together")
+knitr::kable(cleaning, col.names = c("Rule", "Excluded", "Remaining"),
+             format.args = list(big.mark = ","), row.names = FALSE)
+```
+
+## Item List
+
+```{r itemlist, echo=FALSE}
+knitr::kable(df_lookup, col.names = c("Label", "Type", "Activity"), row.names = FALSE)
+```
+
+## Reliability
+
+Cronbach's alpha and McDonald's omega (total) for each eight-item scale, with the range of corrected item-total correlations. Omega is computed from a one-factor model of each scale: $\omega = (\sum\lambda)^2 / [(\sum\lambda)^2 + \sum\psi]$.
+
+```{r reliability}
+reliability <- do.call(rbind, lapply(names(factors), function(f) {
+  x  <- df[, factors[[f]]]
+  a  <- psych::alpha(x, warnings = FALSE)
+  l  <- as.vector(fa(x, nfactors = 1, fm = "ml")$loadings)
+  data.frame(scale     = f,
+             mean      = mean(rowMeans(x)),
+             sd        = sd(rowMeans(x)),
+             alpha     = a$total$raw_alpha,
+             omega     = sum(l)^2 / (sum(l)^2 + sum(1 - l^2)),
+             r_drop    = sprintf("%.2f-%.2f", min(a$item.stats$r.drop), max(a$item.stats$r.drop)))
+}))
+knitr::kable(reliability, digits = 2, row.names = FALSE,
+             col.names = c("Scale", "Mean", "SD", "Alpha", "Omega", "Item-total r"))
+```
+
+All six scales are highly reliable, which is typical of interest scales: liking one activity of a type goes strongly with liking the others.
+
+## Inter-Item Correlation Matrix
+
+```{r corrmatrix, fig.width=10, fig.height=9, dev='png', fig.retina=2}
+cor_mat  <- cor(df)
+cor_long <- melt(cor_mat)
+cor_long$Var1 <- factor(cor_long$Var1, levels = item_cols)
+cor_long$Var2 <- factor(cor_long$Var2, levels = item_cols)
+
+ggplot(cor_long, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                       midpoint = 0, limits = c(-1, 1), name = "r") +
+  theme_bw(base_size = 9) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, size = 7),
+        axis.text.y = element_text(size = 7),
+        axis.title = element_blank(),
+        panel.grid = element_blank()) +
+  ggtitle("RIASEC inter-item correlation matrix\nItems ordered R-I-A-S-E-C")
+```
+
+Six blocks along the diagonal show the six types. Off the diagonal, most correlations are small but positive: people differ in how much they like activities *in general*, not only in which activities they like.
+
+```{r offblock}
+between <- outer(substr(item_cols, 1, 1), substr(item_cols, 1, 1), "!=")
+cat(sprintf("Correlations between items of different types: %.0f%% positive, mean r = %.2f\n",
+            100 * mean(cor_mat[between] > 0), mean(cor_mat[between])))
+```
+
+## Parallel Analysis
+
+```{r parallel, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+eig <- eigen(cor_mat, only.values = TRUE)$values
+cat(sprintf("First eigenvalue: %.2f (%.0f%% of the variance); second: %.2f\n",
+            eig[1], 100 * eig[1] / length(eig), eig[2]))
+
+set.seed(42)
+pa <- fa.parallel(df, fm = "ml", fa = "fa", n.iter = 5,
+                  main = "Parallel analysis scree plot (RIASEC-48)")
+```
+
+The first eigenvalue stands above the rest. It reflects the **general interest factor** seen above (how much someone likes activities of any kind), which is one reason interest scores are often read *within* a person (which type is highest) rather than only across people. It is modest here, and the next five eigenvalues are clearly above 1 as well: the six types, not one general factor, carry most of the structure.
+
+With `r format(nrow(df), big.mark = ",")` respondents, the random eigenvalues of parallel analysis are almost exactly 1 and very small factors pass the test, so parallel analysis suggests `r pa$nfact` factors. In samples this large it over-extracts; the question is whether the six theoretical factors appear, which the next two sections test.
+
+## Exploratory Factor Analysis (6 Factors)
+
+```{r efa, fig.width=7, fig.height=10, dev='png', fig.retina=2}
+efa <- fa(df, nfactors = 6, rotate = "oblimin", fm = "ml")
+
+# Name each factor after the type whose items load highest on it
+loadings_mat <- unclass(efa$loadings)
+fac_type <- sapply(seq_len(ncol(loadings_mat)), function(j)
+  names(which.max(tapply(loadings_mat[, j], substr(rownames(loadings_mat), 1, 1), mean))))
+colnames(loadings_mat) <- type_names[fac_type]
+loadings_mat <- loadings_mat[, type_names]
+print(round(loadings_mat, 2))
+
+load_long <- melt(loadings_mat, varnames = c("item", "factor"), value.name = "loading")
+load_long$item     <- factor(load_long$item, levels = rev(item_cols))
+load_long$expected <- factor(item_labels[as.character(load_long$item)], levels = type_names)
+
+ggplot(load_long, aes(x = factor, y = item, fill = loading)) +
+  geom_tile(color = "white", linewidth = 0.3) +
+  geom_text(aes(label = ifelse(abs(loading) >= 0.30, sprintf("%.2f", loading), "")), size = 2.5) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                       midpoint = 0, limits = c(-1, 1), name = "loading") +
+  facet_grid(expected ~ ., scales = "free_y", space = "free_y") +
+  theme_bw(base_size = 9) +
+  theme(strip.text.y = element_text(angle = 0, size = 8),
+        axis.text.y = element_text(size = 7),
+        axis.title = element_blank(),
+        panel.grid = element_blank()) +
+  ggtitle("EFA factor loadings (oblimin rotation, 6 factors)\nValues >= |0.30| shown")
+```
+
+```{r efa_check}
+primary <- type_names[substr(rownames(loadings_mat), 1, 1)]
+found   <- colnames(loadings_mat)[apply(abs(loadings_mat), 1, which.max)]
+cat(sprintf("Items whose largest loading is on their own type: %d of %d\n",
+            sum(primary == found), length(found)))
+if (any(primary != found))
+  print(data.frame(item = rownames(loadings_mat)[primary != found],
+                   intended = primary[primary != found], largest = found[primary != found]))
+```
+
+## Confirmatory Factor Analysis
+
+A six-factor model in which each item loads only on its own type, the factors are allowed to correlate, and the items are treated as continuous (robust maximum likelihood).
+
+```{r cfa}
+cfa_model <- paste(sapply(types, function(t)
+  paste0(t, " =~ ", paste(paste0(t, 1:8), collapse = " + "))), collapse = "\n")
+cat(cfa_model, "\n\n")
+
+cfa_fit <- cfa(cfa_model, data = df, estimator = "MLR", std.lv = TRUE)
+fit <- fitMeasures(cfa_fit, c("chisq.scaled", "df", "cfi.robust", "tli.robust",
+                              "rmsea.robust", "srmr"))
+knitr::kable(data.frame(index = c("Chi-square (scaled)", "df", "CFI (robust)", "TLI (robust)",
+                                  "RMSEA (robust)", "SRMR"),
+                        value = round(unname(fit), 3)),
+             col.names = c("Fit index", "Value"), row.names = FALSE)
+```
+
+```{r cfa_loadings, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+std <- standardizedSolution(cfa_fit)
+lam <- std[std$op == "=~", c("lhs", "rhs", "est.std")]
+lam$lhs <- factor(type_names[lam$lhs], levels = type_names)
+
+ggplot(lam, aes(x = lhs, y = est.std)) +
+  geom_boxplot(outlier.shape = NA, fill = "grey95", width = 0.5) +
+  geom_text(aes(label = rhs), size = 2.6, position = position_jitter(width = 0.15, seed = 1)) +
+  ylim(0, 1) +
+  labs(x = NULL, y = "Standardised loading") +
+  theme_bw(base_size = 10) +
+  ggtitle("CFA standardised loadings by type")
+```
+
+With 48 items and tens of thousands of respondents, the chi-square test rejects any model, so the approximate fit indices are the ones to read. They disagree: RMSEA and SRMR (`r sprintf("%.3f", fit[["rmsea.robust"]])` and `r sprintf("%.3f", fit[["srmr"]])`) are acceptable, but CFI (`r sprintf("%.2f", fit[["cfi.robust"]])`) is well below the usual .90-.95 benchmarks. This is the normal result for interest inventories. A strict simple-structure model forbids every cross-loading, yet neighbouring types share activities by design (that is the hexagon), and the general factor adds variance that no single type owns. The EFA above shows where: *Perform stunts for a movie or television show* (A7) loads almost equally on Artistic, Realistic and Enterprising and is the weakest item in the CFA (standardised loading `r sprintf("%.2f", min(lam$est.std))`). For scoring, what matters is that every item loads clearly on its own type (`r sprintf("%.2f-%.2f", min(lam$est.std), max(lam$est.std))`).
+
+## Holland's Hexagon
+
+### Correlations by distance on the hexagon
+
+```{r hexcor}
+scale_cor <- cor(scores)
+knitr::kable(round(scale_cor, 2))
+
+# Distance between two types on the hexagon: 1 = adjacent, 2 = alternate, 3 = opposite
+hex_dist <- outer(0:5, 0:5, function(i, j) pmin(abs(i - j), 6 - abs(i - j)))
+dimnames(hex_dist) <- dimnames(scale_cor)
+lower <- lower.tri(scale_cor)
+
+by_distance <- data.frame(
+  distance = c("Adjacent (e.g. R-I)", "Alternate (e.g. R-A)", "Opposite (e.g. R-S)"),
+  pairs    = as.vector(table(hex_dist[lower])),
+  mean_r   = as.vector(tapply(scale_cor[lower], hex_dist[lower], mean)),
+  min_r    = as.vector(tapply(scale_cor[lower], hex_dist[lower], min)),
+  max_r    = as.vector(tapply(scale_cor[lower], hex_dist[lower], max)))
+knitr::kable(by_distance, digits = 2, row.names = FALSE,
+             col.names = c("Distance", "Pairs", "Mean r", "Min r", "Max r"))
+```
+
+### Randomization test of hypothesized order relations
+
+The hexagon makes **72 predictions** about the 15 correlations: each of the 6 adjacent correlations should exceed each of the 6 alternate and the 3 opposite correlations (36 + 18), and each alternate correlation should exceed each opposite one (18). Hubert and Arabie's (1987) randomization test counts how many predictions hold and compares the count with all 720 ways of assigning the six labels to the hexagon. The **correspondence index** (CI) is (agreements − violations) / 72, from −1 to +1.
+
+```{r rtor}
+pair_idx <- which(lower, arr.ind = TRUE)
+
+order_test <- function(r, d) {
+  rv <- r[pair_idx]; dv <- d[pair_idx]
+  pred <- outer(dv, dv, "<")                         # pair p should correlate more than pair q
+  diff <- outer(rv, rv, "-")
+  c(agree = sum(pred & diff > 0), violate = sum(pred & diff < 0), predictions = sum(pred))
+}
+
+observed <- order_test(scale_cor, hex_dist)
+
+perms <- as.matrix(expand.grid(rep(list(1:6), 6)))
+perms <- perms[apply(perms, 1, function(p) length(unique(p)) == 6), ]   # all 720 orders
+perm_agree <- apply(perms, 1, function(p) order_test(scale_cor[p, p], hex_dist)["agree"])
+
+ci <- (observed[["agree"]] - observed[["violate"]]) / observed[["predictions"]]
+cat(sprintf("Predictions met: %d of %d, violated: %d\nCorrespondence index: %.2f\nExact p (%d permutations): %.4f\n",
+            observed[["agree"]], observed[["predictions"]], observed[["violate"]],
+            ci, nrow(perms), mean(perm_agree >= observed[["agree"]])))
+```
+
+Every one of the 72 predictions holds, so the correspondence index is the maximum of 1. The p-value is as small as this test allows: rotating the hexagon (6 ways) or reflecting it (2 ways) keeps every prediction, so 12 of the 720 labelings fit equally well, and the minimum p is 12/720 ≈ .017. Tracey and Rounds (1993) used this test in a structural meta-analysis of RIASEC correlation matrices and found that the circular order holds across many samples and instruments; this sample is a textbook case.
+
+### The hexagon recovered from the data
+
+Multidimensional scaling of the six scale correlations, using no information about the theory, places the types in two dimensions. If Holland is right, they should fall around a circle in R-I-A-S-E-C order.
+
+```{r mds, fig.width=6.5, fig.height=6.5, dev='png', fig.retina=2}
+mds <- cmdscale(as.dist(1 - scale_cor), k = 2)
+
+# Rotate (and reflect if needed) so that Realistic is at the top and the order runs clockwise,
+# which only changes the orientation of the plot, not distances
+rot <- function(m, a) m %*% matrix(c(cos(a), -sin(a), sin(a), cos(a)), 2)   # rows rotated by a
+mds <- rot(mds, pi / 2 - atan2(mds["Realistic", 2], mds["Realistic", 1]))
+if (mds["Investigative", 1] < 0) mds[, 1] <- -mds[, 1]
+
+mds_df <- data.frame(type = rownames(mds), x = mds[, 1], y = mds[, 2])
+mds_df$angle <- round(90 - atan2(mds_df$y, mds_df$x) * 180 / pi, 6) %% 360
+mds_df <- mds_df[order(mds_df$angle), ]
+cat("Order going clockwise from Realistic:", paste(substr(mds_df$type, 1, 1), collapse = "-"), "\n")
+
+ggplot(mds_df, aes(x, y)) +
+  geom_polygon(fill = "#d6604d", alpha = 0.08, colour = "#d6604d", linewidth = 0.8) +
+  geom_point(size = 4, colour = "#d6604d") +
+  geom_label(aes(label = type), nudge_y = 0.05, size = 3.5) +
+  scale_x_continuous(expand = expansion(mult = 0.2)) +
+  scale_y_continuous(expand = expansion(mult = 0.15)) +
+  coord_equal() +
+  theme_bw(base_size = 10) +
+  theme(axis.title = element_blank(), axis.text = element_blank(),
+        axis.ticks = element_blank(), panel.grid = element_blank()) +
+  ggtitle("Holland's hexagon recovered by multidimensional scaling",
+          subtitle = "Distances = 1 - r between the six scale scores")
+```
+
+The polygon is not a perfect regular hexagon (no empirical one is: Realistic and Investigative usually sit further apart than the theory implies), but the **order** around the circle is the test, and it is the one the theory predicts.
+
+## Majors in the Interest Space
+
+Prediger (1982) showed that the hexagon has two underlying bipolar dimensions: **People vs. Things** (Social against Realistic) and **Data vs. Ideas** (Enterprising and Conventional against Investigative and Artistic). Each respondent's position on these dimensions is the sum of their six z-scores weighted by the cosine and sine of each type's angle on the hexagon.
+
+```{r prediger}
+w_x <- cos(hex_angle * pi / 180)   # horizontal axis: Data (left) vs Ideas (right)
+w_y <- sin(hex_angle * pi / 180)   # vertical axis: Things (top) vs People (bottom)
+knitr::kable(data.frame(type = type_names, angle = hex_angle,
+                        ideas_vs_data = round(w_x, 2), things_vs_people = round(w_y, 2)),
+             row.names = FALSE,
+             col.names = c("Type", "Angle", "Weight: Ideas vs Data", "Weight: Things vs People"))
+
+df_riasec$ideas_data    <- as.vector(as.matrix(scores_z) %*% w_x)
+df_riasec$things_people <- as.vector(as.matrix(scores_z) %*% w_y)
+```
+
+The 16 major groups come from the free-text answers of the respondents who had attended university. If the scales are valid, each group should sit near the type its field calls for: engineering near Realistic, accounting near Conventional, business near Enterprising, art near Artistic, psychology and education near Social.
+
+```{r majors_plane, fig.width=9, fig.height=8, dev='png', fig.retina=2}
+has_major <- !is.na(df_riasec$major_group)
+majors <- aggregate(cbind(ideas_data, things_people) ~ major_group,
+                    data = df_riasec[has_major, ], FUN = mean)
+majors$n <- as.vector(table(df_riasec$major_group))
+
+radius <- 1.15 * max(sqrt(majors$ideas_data^2 + majors$things_people^2))
+hex <- data.frame(type = type_names,
+                  x = radius * cos(hex_angle * pi / 180),
+                  y = radius * sin(hex_angle * pi / 180))
+
+ggplot() +
+  geom_polygon(data = hex, aes(x, y), fill = NA, colour = "grey70", linetype = "dashed") +
+  geom_hline(yintercept = 0, colour = "grey85") +
+  geom_vline(xintercept = 0, colour = "grey85") +
+  geom_label(data = hex, aes(x, y, label = type), fill = "#d6604d", colour = "white",
+             fontface = "bold", size = 3.5) +
+  geom_point(data = majors, aes(ideas_data, things_people, size = n), colour = "#2166ac", alpha = 0.7) +
+  geom_text_repel(data = majors, aes(ideas_data, things_people, label = major_group),
+                  size = 3, seed = 42, min.segment.length = 0) +
+  annotate("text", x = c(-radius, radius, 0, 0) * 1.08, y = c(0, 0, radius, -radius) * 1.08,
+           label = c("DATA", "IDEAS", "THINGS", "PEOPLE"), colour = "grey50", size = 3, fontface = "bold") +
+  scale_size_area(max_size = 9, name = "Respondents") +
+  coord_equal(clip = "off") +
+  theme_bw(base_size = 10) +
+  theme(axis.title = element_blank(), axis.text = element_blank(),
+        axis.ticks = element_blank(), panel.grid = element_blank()) +
+  ggtitle("University majors on Prediger's dimensions of Holland's hexagon",
+          subtitle = "Group means of the two dimension scores; hexagon drawn for orientation")
+```
+
+```{r majors_heatmap, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+profile <- aggregate(scores_z[has_major, ], by = list(major = df_riasec$major_group[has_major]), FUN = mean)
+profile_long <- melt(profile, id.vars = "major", variable.name = "type", value.name = "z")
+profile_long$type <- factor(profile_long$type, levels = type_names)
+
+ggplot(profile_long, aes(x = type, y = major, fill = z)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.2f", z)), size = 3) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d", midpoint = 0, name = "z") +
+  scale_y_discrete(limits = rev(levels(df_riasec$major_group))) +
+  theme_bw(base_size = 10) +
+  theme(axis.title = element_blank(), panel.grid = element_blank()) +
+  ggtitle("Mean RIASEC profile (z-scores) by university major")
+```
+
+```{r majors_top}
+top <- data.frame(major = profile$major,
+                  n = majors$n,
+                  highest = apply(profile[, type_names], 1, function(z) names(z)[order(-z)][1]),
+                  second  = apply(profile[, type_names], 1, function(z) names(z)[order(-z)][2]))
+knitr::kable(top, row.names = FALSE, format.args = list(big.mark = ","),
+             col.names = c("Major", "Respondents", "Highest type", "Second type"))
+```
+
+This is evidence that internal statistics cannot give: the scales separate groups of people who chose different fields, mostly in the directions Holland's theory predicts. Engineering is Realistic, accounting Conventional, business and economics Enterprising, arts and English Artistic, and psychology, social work and education Social.
+
+Medicine, biology and the physical sciences are Investigative, as expected. The exceptions are informative too: **nursing** comes out Investigative rather than Social (Social is second), and **computer science** comes out Realistic. Look at the items: seven of the eight Investigative activities are about biology, medicine or marine life (*Study the structure of the human body*, *Develop a new medical treatment*), and there is no item about computing or mathematics, while *Assemble electronic parts* is a Realistic item. So this Investigative scale is really a *life-science* scale, and a validity study is also a way of finding out what a scale measures in practice. A mathematics or computing item would broaden it.
+
+## Gender Differences
+
+Su, Rounds and Armstrong (2009) meta-analysed vocational interests in over 500,000 people and found large differences on the People-Things dimension: men score higher on Realistic (*d* ≈ 0.84) and women higher on Social (*d* ≈ −0.68), with *d* ≈ 0.93 on Things vs People. Positive *d* means higher scores for men.
+
+```{r gender, fig.width=7, fig.height=4.5, dev='png', fig.retina=2}
+mf <- df_riasec$gender %in% c("Male", "Female")
+cohen_d <- function(x, g) {
+  m <- tapply(x, g, mean); s <- tapply(x, g, var); n <- tapply(x, g, length)
+  unname((m["Male"] - m["Female"]) / sqrt(((n["Male"] - 1) * s["Male"] + (n["Female"] - 1) * s["Female"]) / (sum(n) - 2)))
+}
+g <- droplevels(df_riasec$gender[mf])
+gender_d <- data.frame(
+  scale = c(type_names, "Things vs People"),
+  d = c(sapply(scores[mf, ], cohen_d, g = g), cohen_d(df_riasec$things_people[mf], g)))
+gender_d$scale <- factor(gender_d$scale, levels = rev(gender_d$scale))
+cat(sprintf("Men: %s, women: %s\n", format(sum(g == "Male"), big.mark = ","),
+            format(sum(g == "Female"), big.mark = ",")))
+knitr::kable(gender_d[, c("scale", "d")], digits = 2, row.names = FALSE, col.names = c("Scale", "Cohen's d"))
+
+ggplot(gender_d, aes(x = d, y = scale, fill = d > 0)) +
+  geom_col(width = 0.6) +
+  geom_vline(xintercept = 0) +
+  geom_text(aes(label = sprintf("%.2f", d), hjust = ifelse(d > 0, -0.15, 1.15)), size = 3.2) +
+  scale_fill_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#d6604d"), guide = "none") +
+  scale_x_continuous(expand = expansion(mult = 0.2)) +
+  labs(x = "Cohen's d (positive = higher for men)", y = NULL) +
+  theme_bw(base_size = 10) +
+  ggtitle("Gender differences in RIASEC interests")
+```
+
+The pattern is the one in the meta-analysis: the largest differences are on Realistic and Social and on the Things-People dimension that runs between them, and the other four types differ little. The sizes are smaller, especially for Social. This is a self-selected online sample with twice as many women as men, many of them students of psychology and other social fields, so the men and women here are probably more alike in their interests than in the general population.
+
+## Interests and Personality
+
+Interests and personality are related but distinct. In the meta-analysis by Barrick, Mount and Gupta (2003), the two strongest links were Extraversion with Enterprising (ρ ≈ .41) and Openness with Artistic (ρ ≈ .39). The TIPI measures each Big Five trait with two items (one reverse-keyed, recoded 8 − *x*), so its correlations are attenuated by low reliability.
+
+```{r tipi, fig.width=7, fig.height=4.5, dev='png', fig.retina=2}
+tipi <- df_riasec[, paste0("TIPI", 1:10)]
+rev7 <- function(x) 8 - x
+big5 <- data.frame(
+  Extraversion        = (tipi$TIPI1 + rev7(tipi$TIPI6)) / 2,
+  Agreeableness       = (rev7(tipi$TIPI2) + tipi$TIPI7) / 2,
+  Conscientiousness   = (tipi$TIPI3 + rev7(tipi$TIPI8)) / 2,
+  `Emotional stability` = (rev7(tipi$TIPI4) + tipi$TIPI9) / 2,
+  Openness            = (tipi$TIPI5 + rev7(tipi$TIPI10)) / 2,
+  check.names = FALSE)
+
+rb <- round(cor(scores, big5, use = "pairwise.complete.obs"), 2)
+rb_long <- melt(rb, varnames = c("type", "trait"), value.name = "r")
+rb_long$type <- factor(rb_long$type, levels = rev(type_names))
+
+ggplot(rb_long, aes(x = trait, y = type, fill = r)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_text(aes(label = sprintf("%.2f", r)), size = 3.5) +
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
+                       midpoint = 0, limits = c(-0.6, 0.6), name = "r") +
+  theme_bw(base_size = 10) +
+  theme(axis.title = element_blank(), panel.grid = element_blank()) +
+  ggtitle("RIASEC scales and TIPI Big Five traits")
+```
+
+The correlations are small to moderate (interests are not personality), and the largest ones are where the meta-analysis puts them: Openness with Artistic, Agreeableness and Extraversion with Social, Extraversion with Enterprising. They are smaller than the meta-analytic values, which are corrected for unreliability, while the two-item TIPI scales are short and unreliable.
+
+## Summary
+
+```{r summary, echo=FALSE}
+summary_tab <- data.frame(
+  evidence = c("Reliability", "Factor structure (EFA)", "Factor structure (CFA)",
+               "Hexagonal order", "Majors (criterion groups)", "Gender differences",
+               "Personality correlates"),
+  result = c(
+    sprintf("Alpha %.2f-%.2f, omega %.2f-%.2f", min(reliability$alpha), max(reliability$alpha),
+            min(reliability$omega), max(reliability$omega)),
+    sprintf("%d of %d items load highest on their own type", sum(primary == found), length(found)),
+    sprintf("RMSEA %.3f and SRMR %.3f acceptable, CFI %.2f low (cross-loadings between neighbouring types)",
+            fit[["rmsea.robust"]], fit[["srmr"]], fit[["cfi.robust"]]),
+    sprintf("%d of %d order predictions met, CI = %.2f, p = %.4f", observed[["agree"]],
+            observed[["predictions"]], ci, mean(perm_agree >= observed[["agree"]])),
+    "Most fields score highest on the type their work calls for; nursing and computing reveal a life-science Investigative scale",
+    sprintf("Realistic d = %.2f, Social d = %.2f, Things vs People d = %.2f",
+            gender_d$d[1], gender_d$d[4], gender_d$d[7]),
+    sprintf("Extraversion-Enterprising r = %.2f, Openness-Artistic r = %.2f",
+            rb["Enterprising", "Extraversion"], rb["Artistic", "Openness"])),
+  stringsAsFactors = FALSE)
+knitr::kable(summary_tab, col.names = c("Evidence", "Result"), row.names = FALSE)
+```
+
+## References
+
+**Barrick, M. R., Mount, M. K., & Gupta, R. (2003).** Meta-analysis of the relationship between the five-factor model of personality and Holland's occupational types. *Personnel Psychology*, *56*(1), 45-74.
+
+**Gosling, S. D., Rentfrow, P. J., & Swann, W. B., Jr. (2003).** A very brief measure of the Big-Five personality domains. *Journal of Research in Personality*, *37*(6), 504-528.
+
+**Holland, J. L. (1997).** *Making vocational choices: A theory of vocational personalities and work environments* (3rd ed.). Psychological Assessment Resources.
+
+**Hubert, L., & Arabie, P. (1987).** Evaluating order hypotheses within proximity matrices. *Psychological Bulletin*, *102*(1), 172-178.
+
+**Prediger, D. J. (1982).** Dimensions underlying Holland's hexagon: Missing link between interests and occupations? *Journal of Vocational Behavior*, *21*(3), 259-287.
+
+**Su, R., Rounds, J., & Armstrong, P. I. (2009).** Men and things, women and people: A meta-analysis of sex differences in interests. *Psychological Bulletin*, *135*(6), 859-884.
+
+**Tracey, T. J. G., & Rounds, J. (1993).** Evaluating Holland's and Gati's vocational-interest models: A structural meta-analysis. *Psychological Bulletin*, *113*(2), 229-246.
+
+Data: Open-Source Psychometrics Project, [openpsychometrics.org/_rawdata](https://openpsychometrics.org/_rawdata/).
