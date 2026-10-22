@@ -45,10 +45,6 @@ Pages that need data downloads, Python (Keras/TensorFlow) or packages no longer 
 2. Render it with `render.R`, then commit the whole folder including `_freeze/`.
 3. The site appears at `https://sedzinfo.github.io/vignettes/<name>/` with a card on the landing page.
 
-## License
-
-GPL-3, see [LICENSE](LICENSE).
-
 ![Stars](https://img.shields.io/github/stars/sedzinfo/vignettes)
 ![Watchers](https://img.shields.io/github/watchers/sedzinfo/vignettes)
 ![Repo Size](https://img.shields.io/github/repo-size/sedzinfo/vignettes)
