@@ -150,15 +150,17 @@ knitr::kable(item_stats, digits = c(0, 0, 1, 1, 0, 2, 2), row.names = FALSE,
 ```
 
 ```{r weakest, include=FALSE}
-weakest <- items[which.min(r_drop)]
-rest_q  <- cut(total - resp[, weakest], quantile(total - resp[, weakest], c(0, .25, .75, 1)),
-               include.lowest = TRUE, labels = c("bottom", "middle", "top"))
-p_weak  <- tapply(resp[, weakest], rest_q, mean)
+very_easy <- items[p_item > 0.95]
+medium    <- p_item > 0.2 & p_item < 0.8
+weakest   <- items[medium][which.min(r_drop[medium])]
+rest_q    <- cut(total - resp[, weakest], quantile(total - resp[, weakest], c(0, .25, .75, 1)),
+                 include.lowest = TRUE, labels = c("bottom", "middle", "top"))
+p_weak    <- tapply(resp[, weakest], rest_q, mean)
 ```
 
-KR-20 is `r fmt(kr20)`, high for a 45-item test. The items cover a wide range of difficulty, from *`r key$answer[which.max(p_item)]`* (`r fmt(100 * max(p_item), 1)`% correct) to *`r key$answer[which.min(p_item)]`* (`r fmt(100 * min(p_item), 1)`%), but `r sum(p_item > 0.5)` of the 45 items are answered correctly by more than half of the sample.
+KR-20 is `r fmt(kr20)`. The items cover a wide range of difficulty, from *`r key$answer[which.max(p_item)]`* (`r fmt(100 * max(p_item), 1)`% correct) to *`r key$answer[which.min(p_item)]`* (`r fmt(100 * min(p_item), 1)`%), but `r sum(p_item > 0.5)` of the 45 items are answered correctly by more than half of the sample.
 
-The weakest item is `r weakest` (*`r key$answer[items == weakest]`*, corrected r = `r fmt(min(r_drop))`). Only `r fmt(100 * p_item[weakest], 0)`% choose the keyed pair, and the most common wrong answer is *`r top_wrong[weakest]`*. Respondents in the top quarter of the other 44 items choose the keyed pair only a little more often than those in the bottom quarter (`r fmt(100 * p_weak[["top"]], 0)`% against `r fmt(100 * p_weak[["bottom"]], 0)`%). *Deal* and *sale* are loose synonyms (every sale is a deal, but not every deal is a sale), so even people with large vocabularies disagree about this item. A second problem item is Q26 (*annoying* = *obnoxious*): its most common wrong answer, *`r top_wrong[["Q26"]]`*, is arguably a defensible pair as well, since a hand tally counter is also called a clicker.
+The lowest item-total correlations belong to the easiest items. The `r length(very_easy)` items answered correctly by more than 95% of the respondents have corrected correlations of only `r fmt(min(r_drop[very_easy]))` to `r fmt(max(r_drop[very_easy]))`. This comes from the statistic rather than the items: a point-biserial correlation cannot be large when almost everyone gives the same answer. Among the items of medium difficulty (20% to 80% correct), the weakest is `r weakest` (*`r key$answer[items == weakest]`*, corrected r = `r fmt(r_drop[[weakest]])`). Only `r fmt(100 * p_item[[weakest]], 0)`% choose the keyed pair, and the most common wrong answer is *`r top_wrong[[weakest]]`*. Respondents in the top quarter of the other 44 items choose the keyed pair only somewhat more often than those in the bottom quarter (`r fmt(100 * p_weak[["top"]], 0)`% against `r fmt(100 * p_weak[["bottom"]], 0)`%). *Deal* and *sale* are loose synonyms (every sale is a deal, but not every deal is a sale), so the item seems to depend more on how a respondent reads the two words than on how many words they know. Another item to watch is Q26 (*annoying* = *obnoxious*): its most common wrong answer, *`r top_wrong[["Q26"]]`*, is arguably a defensible pair as well, since a hand tally counter is also called a clicker.
 
 ## Dimensionality
 
@@ -211,15 +213,16 @@ ggplot(load2, aes(x = 100 * p, y = loading)) +
   ggtitle("Two-factor solution of the tetrachoric correlations",
           subtitle = "Each point is an item (labelled by number)")
 
-easy_items <- items[L2[, "Easy-item factor"] > L2[, "Main factor"]]
+easy_items <- items[L2[, "Easy-item factor"] >= 0.30 & L2[, "Easy-item factor"] > L2[, "Main factor"]]
+weak_both  <- items[apply(L2, 1, max) < 0.30]
 native <- !is.na(df_viqt$engnat) & df_viqt$engnat == "Yes"
 eig_native <- eigen(psych::tetrachoric(resp[native, ])$rho, only.values = TRUE)$values
-cat(sprintf("Items loading more on the easy-item factor: %d (%.0f%% to %.0f%% correct)\nFactor correlation: %.2f\nNative speakers only: first eigenvalue %.2f, second %.2f\n",
+cat(sprintf("Items loading at least .30 on the easy-item factor, and more than on the main factor: %d (%.0f%% to %.0f%% correct)\nItems loading below .30 on both factors: %s\nFactor correlation: %.2f\nNative speakers only: first eigenvalue %.2f, second %.2f\n",
             length(easy_items), 100 * min(p_item[easy_items]), 100 * max(p_item[easy_items]),
-            phi2, eig_native[1], eig_native[2]))
+            paste(weak_both, collapse = ", "), phi2, eig_native[1], eig_native[2]))
 ```
 
-The two factors do not split the items by content: both hold synonym pairs. They split them by **difficulty**. The `r length(easy_items)` items that load more on the second factor are the easiest ones (`r fmt(100 * min(p_item[easy_items]), 0)`% to `r fmt(100 * max(p_item[easy_items]), 0)`% correct), and the two factors correlate `r fmt(phi2)`. A tetrachoric correlation between two items that almost everyone gets right rests on the few people who fail them, and slips or lucky guesses move it a lot. Factors that sort binary items by difficulty have been known in item factor analysis for a long time (Carroll, 1945). The second factor is not a native-language effect either: among native English speakers alone the second eigenvalue is still `r fmt(eig_native[2], 1)`. Whether the IRT model, which handles difficulty directly, needs a second dimension is tested with its own fit statistics below.
+The two factors do not split the items by content: both hold synonym pairs. They split them by **difficulty**. The `r length(easy_items)` items that load at least .30 on the second factor, and more than on the first, are all among the `r max(rank(-p_item)[easy_items])` easiest items of the test (`r fmt(100 * min(p_item[easy_items]), 0)`% to `r fmt(100 * max(p_item[easy_items]), 0)`% correct), and the two factors correlate `r fmt(phi2)`. `r paste(weak_both, collapse = ", ")` (*`r key$answer[items %in% weak_both]`*) loads weakly on both. A tetrachoric correlation between two items that almost everyone gets right rests on the few people who fail them, and slips or lucky guesses move it a lot. Factors that sort binary items by difficulty have been known in item factor analysis for a long time (Carroll, 1945). The second factor is not a native-language effect either: among native English speakers alone the second eigenvalue is still `r fmt(eig_native[2], 1)`. Whether the IRT model, which handles difficulty directly, needs a second dimension is tested with its own fit statistics below.
 
 ## Item Response Theory
 
@@ -263,7 +266,7 @@ c3   <- coef(fit_3pl, IRTpars = TRUE, simplify = TRUE)$items[, "g"]
 theta_3pl <- fscores(fit_3pl)[, 1]
 ```
 
-The **2PL is far better than the Rasch model** (BIC lower by `r big(round(comparison$BIC[1] - comparison$BIC[2]))`): the discriminations range from `r fmt(min(pars[, "a"]))` to `r fmt(max(pars[, "a"]))`, so equal slopes cannot hold. The 3PL lowers BIC by a further `r big(round(comparison$BIC[2] - comparison$BIC[3]))` points, much less, and it changes the scores very little (the correlation between 2PL and 3PL abilities is shown below). Most lower asymptotes stay near the prior (median `r fmt(median(c3))`); the largest are `r names(sort(c3, decreasing = TRUE))[1]` (*`r key$answer[items == names(sort(c3, decreasing = TRUE))[1]]`*, c = `r fmt(max(c3))`) and `r names(sort(c3, decreasing = TRUE))[2]` (*`r key$answer[items == names(sort(c3, decreasing = TRUE))[2]]`*, c = `r fmt(sort(c3, decreasing = TRUE)[2])`). These are items that can be solved by elimination: someone who does not know *domicile* can still see that *carnival*, *yeast* and *economy* have nothing to do with each other or with *house*, and pair the two words that are left. The 2PL is used from here on: it fits much better than the Rasch model, and the third parameter adds little.
+The **2PL is far better than the Rasch model** (BIC lower by `r big(round(comparison$BIC[1] - comparison$BIC[2]))`): the discriminations range from `r fmt(min(pars[, "a"]))` to `r fmt(max(pars[, "a"]))`, so equal slopes cannot hold. The 3PL lowers BIC by a further `r big(round(comparison$BIC[2] - comparison$BIC[3]))` points, much less, and it changes the scores very little (the correlation between 2PL and 3PL abilities is shown below). Most lower asymptotes are small (median `r fmt(median(c3))`); the largest are `r names(sort(c3, decreasing = TRUE))[1]` (*`r key$answer[items == names(sort(c3, decreasing = TRUE))[1]]`*, c = `r fmt(max(c3))`) and `r names(sort(c3, decreasing = TRUE))[2]` (*`r key$answer[items == names(sort(c3, decreasing = TRUE))[2]]`*, c = `r fmt(sort(c3, decreasing = TRUE)[2])`). These are items that can be solved by elimination: someone who does not know *domicile* can still see that *carnival*, *yeast* and *economy* have nothing to do with each other or with *house*, and pair the two words that are left. The 2PL is used from here on: it fits much better than the Rasch model, and the third parameter adds little.
 
 ### Overall fit
 
@@ -310,7 +313,7 @@ cat(sprintf("Correlation of 2PL abilities from all 45 items with abilities from 
             k - length(easy_items), r_hard, cor(theta, theta_3pl)))
 ```
 
-Statistically, a second dimension can always be found in `r big(n_resp)` respondents; in practice one is enough. The 2PL reproduces the item pairs closely (SRMSR `r fmt(m2_tab["2PL", "SRMSR"], 3)`), no pair of items shares residual variance (largest Q3 `r fmt(max(q3_pairs))`, for `r rownames(q3)[q3_max[1, 1]]` and `r colnames(q3)[q3_max[1, 2]]`), and abilities estimated without the `r length(easy_items)` easy items correlate `r fmt(r_hard, 3)` with abilities from all 45. The easy-item factor of the tetrachoric analysis does not change who scores high or low.
+With `r big(n_resp)` respondents, even small departures from one dimension can be detected, as the tetrachoric analysis did; in practice one dimension is enough. The 2PL reproduces the item pairs closely (SRMSR `r fmt(m2_tab["2PL", "SRMSR"], 3)`), no pair of items shares much residual variance (largest Q3 `r fmt(max(q3_pairs))`, for `r rownames(q3)[q3_max[1, 1]]` and `r colnames(q3)[q3_max[1, 2]]`), and abilities estimated without the `r length(easy_items)` easy items correlate `r fmt(r_hard, 3)` with abilities from all 45. The easy-item factor of the tetrachoric analysis does not change who scores high or low.
 
 ### Item parameters
 
@@ -361,7 +364,7 @@ ggplot(curves, aes(theta, p)) +
   ggtitle("Item characteristic curves (2PL) with observed proportions")
 ```
 
-The easiest item is right for almost everyone, so its curve only rises at the far left. The hardest item still reaches 50% close to average ability: the test has no truly hard items. The most discriminating item separates people within a narrow band of ability, while the least discriminating one is nearly flat. The worst-fitting item has its points scattered around a flat, low-discrimination curve. For the item with the largest lower asymptote, the observed proportions at low ability stay well above zero, the pattern the 3PL captures.
+The easiest item is right for almost everyone, so its curve only rises at the far left. The hardest item reaches 50% at θ = `r fmt(pars[pick[["Hardest"]], "b"])`, less than one SD above the average respondent: the test has no truly hard items. The most discriminating item separates people within a narrow band of ability, while the least discriminating one is nearly flat. The observed proportions for the worst-fitting item rise at the lowest abilities and then stay near 90% instead of approaching 1, which the item-fit section below explains. For the item with the largest lower asymptote in the 3PL, the lowest group of respondents lies slightly above the 2PL curve and the next groups slightly below it, the S-shape that a lower asymptote describes. The 3PL's c = `r fmt(max(c3))` itself, though, refers to abilities below θ = -2, where only `r fmt(100 * mean(theta < -2), 1)`% of the respondents are, which is one reason lower asymptotes are hard to estimate.
 
 ### Information and precision
 
@@ -429,7 +432,7 @@ ggplot(wright, aes(value, fill = panel)) +
   ggtitle("Person-item map: where the respondents and the items are")
 ```
 
-The test is most precise **below** the average respondent: information peaks at θ = `r fmt(peak_info)`, where the standard error is `r fmt(min(se_curve))`, and the standard error stays at or below 0.30 from θ = `r fmt(precise[1])` to `r fmt(precise[2])`. Above that it rises quickly, to `r fmt(se_curve[which.min(abs(grid_info - 1.5))])` at θ = 1.5, because only `r sum(pars[, "b"] > 0)` items have a difficulty above 0 and the hardest has b = `r fmt(max(pars[, "b"]))`. `r fmt(100 * mean(theta > precise[2]), 0)`% of the respondents are above the precise range. Averaged over the sample, the scores are reliable (empirical reliability `r fmt(rel_emp)`, marginal reliability `r fmt(rel_marg)`, close to KR-20), but the average hides a test that measures the lower half of this sample much better than the upper half. A version of the VIQT for able adults would need harder items, not more items.
+The test is most precise **below** the average respondent: information peaks at θ = `r fmt(peak_info)`, where the standard error is `r fmt(min(se_curve))`, and the standard error stays at or below 0.30 from θ = `r fmt(precise[1])` to `r fmt(precise[2])`. Above that it rises quickly, to `r fmt(se_curve[which.min(abs(grid_info - 1.5))])` at θ = 1.5, because only `r sum(pars[, "b"] > 0)` items have a difficulty above 0 and the hardest has b = `r fmt(max(pars[, "b"]))`. `r fmt(100 * mean(theta > precise[2]), 0)`% of the respondents are above the precise range. Averaged over the sample, the scores are reliable (empirical reliability `r fmt(rel_emp)`, marginal reliability `r fmt(rel_marg)`, close to KR-20), but the average hides a test that measures roughly the lower two thirds of this sample much better than the top third. A version of the VIQT for able adults would need harder items, not more items.
 
 ### Item fit
 
@@ -445,9 +448,21 @@ knitr::kable(data.frame(item = worst$item, answer = key$answer[match(worst$item,
                         rmsea = worst$RMSEA.S_X2),
              digits = c(0, 0, 2, 1, 0, 3), row.names = FALSE,
              col.names = c("Item", "Correct pair", "a", "S-X2", "df", "RMSEA"))
+
+# Where the misfit is: observed minus 2PL-expected proportion correct in tenths of ability
+tenth <- cut(theta, quantile(theta, seq(0, 1, 0.1)), include.lowest = TRUE, labels = 1:10)
+resid_tenth <- t(sapply(worst$item, function(j)
+  tapply(resp[, j] - probtrace(extract.item(fit_2pl, j), theta)[, 2], tenth, mean)))
+knitr::kable(data.frame(item = worst$item, resid_tenth, check.names = FALSE), digits = 2,
+             row.names = FALSE, col.names = c("Item", paste("Tenth", 1:10)))
+
+q26_correct <- tapply(resp[, "Q26"], tenth, mean)
+q26_clicker <- tapply(codes[, "Q26"] == 20, tenth, mean)        # 20 = words 3 and 5: clicker + counter
 ```
 
-`r sum(itf$p.S_X2 < .05)` of the 45 items misfit at p < .05. With `r big(n_resp)` respondents, this test detects deviations far too small to matter, so the size of the misfit is the better guide. The RMSEA of S-X2 is at most `r fmt(max(itf$RMSEA.S_X2), 3)`, so every item follows its curve closely. The worst-fitting items are the ones already noted above. `r worst$item[1]` (*`r key$answer[items == worst$item[1]]`*) has a second defensible pair, and the others are items with a large lower asymptote in the 3PL, where elimination produces more correct answers at low ability than the 2PL allows. The misfit is real but small, and it points to item wording, not to a wrong model.
+`r sum(itf$p.S_X2 < .05)` of the 45 items misfit at p < .05. With `r big(n_resp)` respondents, this test detects deviations far too small to matter, so the size of the misfit is the better guide. The RMSEA of S-X2 is at most `r fmt(max(itf$RMSEA.S_X2), 3)`, so every item follows its curve closely. Even for the three worst items, the observed proportion correct in any tenth of the respondents (ordered by ability) is at most `r fmt(100 * max(abs(resid_tenth)), 0)` percentage points away from the 2PL prediction (second table).
+
+The three worst items misfit for reasons that can be read from their content. On Q26 (*annoying* = *obnoxious*) the proportion correct reaches `r fmt(100 * q26_correct[[2]], 0)`% in the second-lowest tenth of ability and stays between `r fmt(100 * min(q26_correct[2:10]), 0)`% and `r fmt(100 * max(q26_correct[2:10]), 0)`% from there on. Meanwhile the alternative pair *clicker + counter* grows from `r fmt(100 * q26_clicker[[1]], 0)`% in the lowest tenth to `r fmt(100 * max(q26_clicker), 0)`% at its highest: able respondents see a second answer. `r worst$item[2]` and `r worst$item[3]` have, after `r paste(names(sort(c3, decreasing = TRUE))[1:2], collapse = " and ")`, the largest lower asymptotes in the 3PL (c = `r fmt(c3[[worst$item[2]]])` and `r fmt(c3[[worst$item[3]]])`). Low scorers get them right a little more often, and middle scorers a little less often, than the 2PL predicts. The misfit is real but small, and it points to item content, not to a wrong model.
 
 ### *Don't know*: wrong or missing? {#dont-know}
 
@@ -458,16 +473,16 @@ resp_na[codes <= 0] <- NA                            # omitted answers treated a
 theta_na <- fscores(fit_2pl, response.pattern = resp_na)[, "F1"]
 shift <- tapply(theta_na - theta, cut(omitted, c(-1, 0, 2, 5, 10, 45),
                                       labels = c("0", "1-2", "3-5", "6-10", "11 or more")), mean, na.rm = TRUE)
-cat(sprintf("Respondents who omitted at least one item: %.0f%%; median omitted: %d\nCorrelation of abilities (omitted = wrong vs omitted = missing): %.3f (%d respondents omitted every item)\n",
+cat(sprintf("Respondents who omitted at least one item: %.0f%%; median omitted: %d\nCorrelation of abilities (omitted = wrong vs omitted = missing): %.3f\nRespondents who omitted every item (no score when omitted = missing): %d\nAcross items, correlation of %% don't know with %% correct: %.2f\n",
             100 * mean(omitted > 0), median(omitted), cor(theta, theta_na, use = "complete.obs"),
-            sum(is.na(theta_na))))
+            sum(is.na(theta_na)), cor(colMeans(codes == -1), p_item)))
 knitr::kable(data.frame(omitted = names(shift), n = as.vector(table(cut(omitted, c(-1, 0, 2, 5, 10, 45)))),
                         shift = as.vector(shift)),
              digits = 2, row.names = FALSE, format.args = list(big.mark = ","),
              col.names = c("Items omitted", "Respondents", "Mean change in ability when omitted = missing"))
 ```
 
-`r fmt(100 * mean(omitted > 0), 0)`% of the respondents used *don't know* (or left an item blank) at least once. If those answers were treated as missing, scores would barely change for most people (r = `r fmt(cor(theta, theta_na, use = "complete.obs"), 3)`), but they would rise by about `r fmt(shift[["11 or more"]], 1)` SD for those who omitted 11 or more items. That would reward exactly the people who declined to answer the hard items, so the number-right scoring is kept. Its cost is that two people with the same knowledge can score differently if one is more willing to answer when unsure.
+`r fmt(100 * mean(omitted > 0), 0)`% of the respondents used *don't know* (or left an item blank) at least once, so the choice matters. Abilities from the two scorings correlate `r fmt(cor(theta, theta_na, use = "complete.obs"), 2)`. The more items someone omitted, the more their score would rise if omissions were ignored: by `r fmt(shift[["1-2"]])` SD on average for one or two omitted items, and by `r fmt(shift[["11 or more"]])` SD for 11 or more. Omissions are not random. Across items, the share of *don't know* answers correlates `r fmt(cor(colMeans(codes == -1), p_item))` with the proportion correct, so people omit the hard items. Treating omissions as missing would reward exactly the people who declined to answer the hard items, so the number-right scoring is kept. Its cost is that two people with the same knowledge can score differently if one is more willing to answer when unsure, and the instruction not to guess makes such differences likely.
 
 ## Validity
 
@@ -486,6 +501,7 @@ summ <- function(d, by) {
 edu_all   <- cbind(group = "All respondents", summ(d_val, "education"))
 edu_adult <- cbind(group = "Aged 25 or older", summ(d_val[d_val$age >= 25, ], "education"))
 edu <- rbind(edu_all, edu_adult)
+edu$group <- factor(edu$group, levels = c("All respondents", "Aged 25 or older"))
 knitr::kable(edu[, c("group", "education", "n", "mean")], digits = 2, row.names = FALSE,
              format.args = list(big.mark = ","), col.names = c("Group", "Education", "n", "Mean ability"))
 
@@ -550,7 +566,7 @@ native_age <- age_tab[age_tab$engnat == "Yes", ]
 peak_band  <- as.character(native_age$age_band[which.max(native_age$mean)])
 ```
 
-Ability rises steadily with age (r = `r fmt(r_age)`). Among native speakers it climbs from `r fmt(native_age$mean[1])` at ages 13-17 to a peak of `r fmt(max(native_age$mean))` at `r peak_band`. This fits the view of vocabulary as crystallised knowledge that grows through most of adult life (Horn & Cattell, 1966). The data are cross-sectional and self-selected, so the curve mixes ageing with differences between generations and between the kinds of people of each age who take an online vocabulary test.
+Ability rises steadily with age (r = `r fmt(r_age)`). Among native speakers it climbs from `r fmt(native_age$mean[1])` at ages 13-17 to a peak of `r fmt(max(native_age$mean))` at `r peak_band` and levels off after that. Non-native speakers rise with age too, and the gap between the two groups is present at every age. This fits the view of vocabulary as crystallised knowledge that grows through most of adult life (Horn & Cattell, 1966). The data are cross-sectional and self-selected, so the curve mixes ageing with differences between generations and between the kinds of people of each age who take an online vocabulary test.
 
 ### Differential item functioning by native language
 
@@ -605,7 +621,7 @@ c_nonnative <- c_nonnative[order(-c_nonnative$D), ]
 pairs_text  <- function(d) paste0("*", d$answer, "*", collapse = ", ")
 ```
 
-`r sum(mh$ets == "C")` items show large (C) DIF, in both directions: `r nrow(c_native)` are harder for non-native speakers than their total score predicts and `r nrow(c_nonnative)` are easier. The pattern is clear. Items that favour native speakers mostly use short, everyday or informal English words: `r pairs_text(c_native)`. Items that favour non-native speakers mostly use words of Latin origin with close relatives in other European languages, which learners meet in school and in formal writing: `r pairs_text(c_nonnative)` (compare French *domicile*, *épître*, *naissant* or Spanish *domicilio*, *epístola*, *naciente*). Not every item fits the pattern (*despondency* is Latinate but favours native speakers), but the split between learned and everyday vocabulary is plain.
+`r sum(mh$ets == "C")` items show large (C) DIF and `r sum(mh$ets == "B")` moderate (B) DIF, in both directions: of the C items, `r nrow(c_native)` are harder for non-native speakers than their total score predicts and `r nrow(c_nonnative)` are easier. The non-native group is diverse; the most common countries are the United States, India, the Philippines and Germany. The pattern is still clear. Items that favour native speakers mostly turn on everyday or informal English words (*soar*, *drab*, *hanker*, *crimp*, *spade*, *steal*, *hightail*): `r pairs_text(c_native)`. Items that favour non-native speakers mostly turn on words of Latin origin that learners meet in school and in formal writing, and that have close relatives in many European languages: `r pairs_text(c_nonnative)` (compare French *domicile*, *épître*, *naissant* or Spanish *domicilio*, *epístola*, *naciente*). Not every item fits the pattern (*despondency* is Latinate but favours native speakers), but the split between learned and everyday vocabulary is plain.
 
 DIF of this size does not mean these items are faulty. It means a vocabulary score carries a different mix of word knowledge for native and non-native speakers, and comparisons across the two groups should keep that in mind. Because the DIF runs both ways, it largely cancels in the total score. The matching score contains the DIF items themselves, so the classification is approximate.
 
@@ -631,7 +647,7 @@ dif_curves$item <- factor(dif_curves$item, levels = item_lab[show])
 ggplot(dif_curves, aes(theta, p, colour = group)) +
   geom_line(linewidth = 1) +
   facet_wrap(~ item) +
-  scale_colour_manual(values = c(Yes = "#2166ac", No = "#d6604d"),
+  scale_colour_manual(values = c(Yes = "#2166ac", No = "#d6604d"), breaks = c("Yes", "No"),
                       labels = c(Yes = "Native English speaker", No = "Non-native"), name = NULL) +
   labs(x = expression("Ability " * theta * " (native speakers' scale)"), y = "P(correct)") +
   theme_bw(base_size = 10) +
@@ -689,7 +705,7 @@ knitr::kable(data.frame(band = rownames(cat_tab), cat_tab), digits = c(0, 0, 0, 
 ggplot(cat_res, aes(x = full_mirt, y = items, colour = reached)) +
   geom_vline(xintercept = precise[2], linetype = "dashed", colour = "grey50") +
   geom_point(alpha = 0.7, size = 1.8, position = position_jitter(height = 0.3, width = 0, seed = 1)) +
-  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#d6604d"),
+  scale_colour_manual(values = c(`TRUE` = "#2166ac", `FALSE` = "#d6604d"), breaks = c("TRUE", "FALSE"),
                       labels = c(`TRUE` = "SE 0.30 reached", `FALSE` = "All 45 items used, SE above 0.30"),
                       name = NULL) +
   labs(x = expression("Full-test ability " * theta), y = "Items administered") +
@@ -701,9 +717,12 @@ ggplot(cat_res, aes(x = full_mirt, y = items, colour = reached)) +
 
 ```{r cat_numbers, include=FALSE}
 reach <- cat_res[cat_res$reached, ]
+mid   <- cat_res[cat_res$full_mirt > -1 & cat_res$full_mirt <= 0, ]
+above <- cat_res[cat_res$full_mirt > precise[2], ]
+below <- cat_res[cat_res$full_mirt < precise[1], ]
 ```
 
-The base-R EAP functions reproduce `mirt`'s full-test scores (largest difference `r fmt(max(abs(cat_res$full_base - cat_res$full_mirt)), 4)`, from the different quadrature grids). For respondents in the range where the item bank is informative, the adaptive test reaches a standard error of 0.30 after a median of `r median(reach$items)` items, about a quarter of the test. For the more able respondents it never does: above θ ≈ `r fmt(precise[2])`, even all 45 items leave the standard error above 0.30, so the CAT uses the whole bank and ends where the full test would. Overall, `r fmt(100 * mean(cat_res$reached), 0)`% of the simulees reach the target, and CAT and full-test abilities correlate `r fmt(cor(cat_res$theta, cat_res$full_mirt), 3)`. An adaptive version of the VIQT would save most items for average and below-average respondents, but it cannot fix the shortage of hard items; that needs new items.
+The base-R EAP functions agree with `mirt`'s full-test scores to within `r fmt(max(abs(cat_res$full_base - cat_res$full_mirt)), 2)` (the two use different quadrature grids). In the middle of the bank's range the adaptive test is short: for simulees with full-test ability between -1 and 0 it reaches a standard error of 0.30 after a median of `r median(mid$items)` items, `r fmt(100 * median(mid$items) / k, 0)`% of the test. Towards the edges it needs more items. Outside the range where the full test itself has a standard error of 0.30 or less, it mostly cannot reach the target: `r fmt(100 * mean(above$reached), 0)`% of the `r nrow(above)` simulees above θ = `r fmt(precise[2])` do (EAP standard errors include the prior, so some just above the line make it), and `r sum(below$reached)` of the `r nrow(below)` below θ = `r fmt(precise[1])`. These simulees take all 45 items and end where the full test would. Overall, `r fmt(100 * mean(cat_res$reached), 0)`% of the simulees reach the target, those who do need a median of `r median(reach$items)` items, and CAT and full-test abilities correlate `r fmt(cor(cat_res$theta, cat_res$full_mirt), 3)`. An adaptive version of the VIQT would save most items for average and below-average respondents, but it cannot fix the shortage of hard items; that needs new items.
 
 ## Summary
 
@@ -714,10 +733,10 @@ summary_tab <- data.frame(
                "Age", "DIF by native language", "Adaptive testing (simulation)"),
   result = c(
     "Codebook key reproduces the site's number-right score for all 12,173 records",
-    sprintf("KR-20 = %.2f; corrected item-total r %.2f-%.2f (weakest: %s)",
+    sprintf("KR-20 = %.2f; corrected item-total r %.2f-%.2f (lowest for the easiest items; weakest of medium difficulty: %s)",
             kr20, min(r_drop), max(r_drop), item_lab[weakest]),
-    sprintf("First tetrachoric eigenvalue %.1f vs %.1f; second factor = the %d easiest items; abilities without them r = %.3f",
-            eig[1], eig[2], length(easy_items), r_hard),
+    sprintf("First tetrachoric eigenvalue %.1f vs %.1f; second factor = %d of the %d easiest items; abilities without them r = %.3f",
+            eig[1], eig[2], length(easy_items), max(rank(-p_item)[easy_items]), r_hard),
     sprintf("2PL over Rasch (BIC lower by %s); 3PL adds little (abilities r = %.3f with 2PL)",
             big(round(comparison$BIC[1] - comparison$BIC[2])), cor(theta, theta_3pl)),
     sprintf("RMSEA %.3f, SRMSR %.3f, CFI %.3f; largest Q3 %.2f",
