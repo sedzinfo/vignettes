@@ -57,8 +57,9 @@ jobs:
             sites="$all"
           else
             changed="$(git diff --name-only "$BEFORE" "$AFTER")"
-            # the workflow, or a file every site includes (quarto/_ga_consent.html), changed: render all
-            if echo "$changed" | grep -qE '^(\.github/workflows/render-quarto\.yml|quarto/[^/]+)$'; then
+            # the workflow, or a file every site includes (quarto/_shared/: _ga_consent.html,
+            # styles.scss), changed: render all
+            if echo "$changed" | grep -qE '^(\.github/workflows/render-quarto\.yml|quarto/[^/]+|quarto/_shared/.+)$'; then
               sites="$all"
             else
               sites="$(echo "$changed" | { grep '^quarto/[^/]*/' || true; } | cut -d/ -f2 | sort -u)"

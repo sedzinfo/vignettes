@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 QUARTO = ROOT / "quarto"
 DOCS = Path(os.environ.get("DOCS_DIR", ROOT / "docs"))
 REPO_URL = "https://github.com/sedzinfo/vignettes"
-CONSENT = (QUARTO / "_ga_consent.html").read_text(encoding="utf-8")  # cookie banner + Google Analytics, shared with the Quarto sites
+CONSENT = (QUARTO / "_shared" / "_ga_consent.html").read_text(encoding="utf-8")  # cookie banner + Google Analytics, shared with the Quarto sites
 
 
 def website_field(config: str, key: str) -> str:
