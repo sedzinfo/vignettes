@@ -1,15 +1,25 @@
 ---
 title: "Tobit Regression: A Worked Example"
+author: ""
 output:
   html_document:
+    css: styles.css
     theme: flatly
+    highlight: tango
     toc: true
     toc_float: true
     code_folding: show
+    self_contained: true
+vignette: "%\\VignetteIndexEntry{Tobit Regression} %\\VignetteEngine{knitr::rmarkdown} %\\VignetteEncoding{UTF-8}\n"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(message = FALSE, warning = FALSE, fig.width = 8, fig.height = 4.5, fig.align = "center")
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+# wider, shorter figures than the site default; no knitr cache: the page runs in
+# seconds, and cached chunks would not notice an edit to the simulated data
+knitr::opts_chunk$set(fig.width = 8, fig.height = 4.5, cache = FALSE)
 ```
 
 ## The problem: a pile of zeros
@@ -34,6 +44,8 @@ library(ggplot2)
 library(patchwork)  # put plots side by side
 ```
 
+---
+
 ## 1. Simulate the data
 
 The true model: every extra hour of free time per day adds **2 hours** of sport per week ($\beta_1 = 2$), starting from $-4$ ($\beta_0 = -4$), with noise $\sigma = 3$.
@@ -50,6 +62,8 @@ mean(df$censored)   # share of people we see as 0
 ```
 
 About a third of the people are recorded as exactly 0.
+
+---
 
 ## 2. Look at the data
 
@@ -79,6 +93,8 @@ ggplot(df, aes(free_time)) +
   labs(title = "Red: the true y*.  Blue: what we observe (red points below 0 are moved up to 0)",
        x = "free time (hours per day)", y = "hours of sport")
 ```
+
+---
 
 ## 3. Three ways to fit it
 
@@ -153,6 +169,8 @@ ggplot(df, aes(free_time, hours)) +
 - **(a) OLS on all data** is too **flat**: the zeros pull the left end of the line up, so the effect of free time looks smaller than it is.
 - **(b) OLS without the zeros** is also too flat: we kept only people whose noise happened to be high enough, so the sample is no longer random.
 - **(c) Tobit** lands on the true line, because it uses the zeros correctly: as "somewhere at or below 0", not as "exactly 0".
+
+---
 
 ## 4. The model step by step, with formulas
 
@@ -330,6 +348,8 @@ For a person with 3 hours of free time, one more hour adds $`r round(b1, 2)` \ti
 | Effect on the observed $y$ | $\beta_1\,\Phi(z)$ | `b1 * pnorm(z)` |
 | Effect on the chance of being above 0 | $\beta_1\,\phi(z) / \sigma$ | `b1 / sigma * dnorm(z)` |
 
+---
+
 ## 5. Interpreting the coefficients
 
 The Tobit slope (`r round(coef(tobit)[2], 2)`) is the effect on the **latent** $y^*$: one more hour of free time raises the *desire* for sport by about 2 hours. But often we want the effect on what we actually see. Two useful quantities (here $X\beta$ is short for the line $\beta_0 + \beta_1 x$ of section 4):
@@ -393,6 +413,8 @@ round(c(at_average_person = unname(margEff(m)), average_over_people = mean(each_
 
 The two differ because the effect is not the same for everyone: it is small for people with little free time (most of them do no sport anyway) and close to `r round(coef(tobit)[2], 2)` for people with a lot. The effect at the average person is not the average of the effects.
 
+---
+
 ## 6. Reporting the results in APA style
 
 A psychology report (APA 7th edition) needs the reason for using Tobit, the estimates with their uncertainty, the model test, and what the effect means on the observed scale. We collect the numbers from the R objects, so the text below always matches the results:
@@ -448,6 +470,8 @@ knitr::kable(
 - Give 95% confidence intervals. The interval of the average marginal effect is not in the R output; get it with a bootstrap, or report only the effect at the average participant, which has an *SE*.
 - Cite R and the packages; `citation()` and `citation("survival")` in R give the exact references.
 
+---
+
 ## 7. Summary
 
 | | |
@@ -459,3 +483,17 @@ knitr::kable(
 | **Interpretation** | Coefficients are effects on the latent $y^*$; compute marginal effects for the observed $y$ (`censReg::margEff()`), and say whether it is at the average person or averaged over people |
 | **Assumptions** | Normal errors with constant variance; one process decides both *whether* and *how much* |
 | **If the last assumption fails** | e.g. people decide separately whether to do sport and how much: use a two-part (hurdle) model |
+
+---
+
+## References
+
+Amemiya, T. (1984). Tobit models: A survey. *Journal of Econometrics*, *24*(1–2), 3–61.
+
+Henningsen, A. (2026). *censReg: Censored regression (Tobit) models* (R package version 0.5-40). https://CRAN.R-project.org/package=censReg
+
+McDonald, J. F., & Moffitt, R. A. (1980). The uses of Tobit analysis. *The Review of Economics and Statistics*, *62*(2), 318–321.
+
+Therneau, T. (2026). *A package for survival analysis in R* (R package version 3.8-12). https://CRAN.R-project.org/package=survival
+
+Tobin, J. (1958). Estimation of relationships for limited dependent variables. *Econometrica*, *26*(1), 24–36.
