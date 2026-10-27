@@ -1,0 +1,414 @@
+---
+title: "The World Is Having Fewer Babies: Fertility and Ageing Since 1960"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{The World Is Having Fewer Babies}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page runs in seconds, and cached charts would not notice a
+# change to the helper functions they call
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+For a population to stay the same size, without people moving in or out, women need to have about **2.1 children** each: two to replace the parents, and a little more because some children die young and slightly more boys than girls are born. In 1960 almost every country in the world was far above that. Today more than half of all countries are below it, and some are far below: in South Korea women have fewer than one child each.
+
+This data story shows, in plain words:
+
+- **how many countries** have dropped below 2.1, year by year since 1960,
+- **where** — a world map that changes year by year,
+- **how fast** — the path of ten countries, from Niger to South Korea, with Greece in red,
+- **what it does to a country** — population pyramids that turn upside down as fewer children are born and people live longer.
+
+All the data comes from [golemworldbank](https://github.com/sedzinfo/golemworldbank), an R package and Shiny app for exploring World Bank indicators; the page carries its own copy of the data it needs, so it runs without installing anything from GitHub.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "tidyr", "plotly"))
+# The data comes from golemworldbank, copied next to this page in R/mfi_fertility.rds.
+# For every country and indicator, install golemworldbank itself; its data is in
+# Git LFS, so install it from a clone (install_github() can download LFS pointer
+# files instead of the data):
+#   git lfs install
+#   git clone https://github.com/sedzinfo/golemworldbank.git
+# then in R:
+#   devtools::install_local("golemworldbank")
+
+library(dplyr)
+library(plotly)          # interactive charts
+```
+
+---
+
+## The data
+
+golemworldbank ships the World Bank's [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) as one long table, `mfi`: one row per country, indicator and year. `R/mfi_fertility.rds` holds four of its indicators for every country, and the age of the population for six countries:
+
+```{r data}
+# part of golemworldbank's mfi (with the package installed, its mfi has every indicator)
+mfi <- readRDS(paste0(directory, "R/mfi_fertility.rds"))
+
+indicators <- c(
+  fertility  = "Fertility rate, total (births per woman)",
+  aged_65    = "Population ages 65 and above (% of total population)",
+  children   = "Population ages 0-14 (% of total population)",
+  population = "Population, total"
+)
+
+df_world <- mfi %>%
+  filter(`Indicator Name` %in% indicators) %>%
+  mutate(country = recode(`Country Name`, "Korea, Rep." = "South Korea"),
+         code    = `Country Code`,
+         year    = as.numeric(as.character(Year)),
+         measure = names(indicators)[match(`Indicator Name`, indicators)]) %>%
+  select(country, code, measure, year, value) %>%
+  arrange(country, measure, year)
+
+# the population pyramids: the share of men, and of women, in each five-year age group
+ages <- c(sprintf("%02d-%02d", seq(0, 75, 5), seq(4, 79, 5)), "80 and above")
+df_ages <- mfi %>%
+  filter(grepl("^Population ages .*, (male|female) \\(% of (male|female) population\\)$", `Indicator Name`)) %>%
+  mutate(country = recode(`Country Name`, "Korea, Rep." = "South Korea"),
+         year    = as.numeric(as.character(Year)),
+         sex     = ifelse(grepl(", female", `Indicator Name`), "Women", "Men"),
+         age     = sub("^Population ages (.*), (male|female).*$", "\\1", `Indicator Name`)) %>%
+  filter(age %in% ages) %>%
+  mutate(age = factor(sub("80 and above", "80+", age), levels = sub("80 and above", "80+", ages))) %>%
+  select(country, year, sex, age, value)
+
+head(df_world, 12)
+```
+
+| Column | Description |
+|--------|-------------|
+| `country` | Country name (World Bank names, except "South Korea" for "Korea, Rep.") |
+| `code` | Three-letter country code, for the map |
+| `measure` | `fertility` children per woman, `aged_65` and `children` the share of people aged 65 and over and under 15, `population` the number of people |
+| `year` | Year of observation |
+| `value` | The World Bank's value for that country and year |
+
+The **fertility rate** is the number of children a woman would have over her life if, at each age, she had children at the rate women of that age had them that year. It describes one year, not one family: a rate of 1.5 means that at that year's pace, ten women would have fifteen children between them.
+
+```{r helpers}
+replacement <- 2.1   # children per woman that keep a population steady
+last_year <- max(df_world$year[df_world$measure == "fertility"])
+at <- function(m, cty, y) df_world$value[df_world$measure == m & df_world$country == cty & df_world$year == y]
+
+# chart height in pixels, set on the widget itself (width stays 100% of the
+# page), so the chart always fills the box it is drawn in — no scroll bars.
+# Returned inside a tagList: printed straight from a chunk, a widget's height
+# is overridden by the chunk's figure size; inside a tagList it is kept
+# The plotly toolbar goes down the right edge, so it never covers a long title
+sized <- function(p, h) {
+  p <- plotly::layout(p, modebar = list(orientation = "v"))
+  p$height <- h
+  htmltools::tagList(p)
+}
+
+# data source as a footnote inside each chart, at the bottom of the bottom
+# margin `b` (in pixels), so it lands in the same place whatever the height
+source_note <- function(b) {
+  list(text = "Source: World Bank, World Development Indicators, via <a href='https://github.com/sedzinfo/golemworldbank'>golemworldbank</a>",
+       xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
+       xanchor = "right", yanchor = "top", showarrow = FALSE,
+       font = list(size = 11, color = "gray50"))
+}
+
+# end labels: each sits right of its line's last point. Labels closer than
+# `gap` pixels are pushed apart, each group of crowded labels centred on its
+# lines, and joined to their point by a leader line. `per_px` is how many y
+# units one pixel of the plot is worth
+end_labels <- function(ends, per_px, highlight = "", gap = 17) {
+  o <- order(ends$value)
+  y <- ends$value[o]
+  step <- gap * per_px
+  for (pass in 1:3) {
+    for (i in seq_along(y)[-1]) y[i] <- max(y[i], y[i - 1] + step)
+    group <- cumsum(c(TRUE, diff(y) > step + 1e-9))
+    y <- y - ave(y - ends$value[o], group)            # centre each group on its lines
+  }
+  for (i in seq_along(y)[-1]) y[i] <- max(y[i], y[i - 1] + step)
+  ends$label_y[o] <- y
+  lapply(seq_len(nrow(ends)), function(i) {
+    name <- if (ends$country[i] == highlight) paste0("<b>", ends$country[i], "</b>") else ends$country[i]
+    list(x = ends$year[i], y = ends$value[i], xref = "x", yref = "y",
+         ax = 24, ay = -(ends$label_y[i] - ends$value[i]) / per_px,
+         showarrow = TRUE, arrowhead = 0, arrowwidth = 1, arrowcolor = "#B3B3B3",
+         xanchor = "left", text = paste0(name, " ", ends$text[i]),
+         font = list(size = 12, color = "gray25"))
+  })
+}
+
+# the dotted 2.1 line
+replacement_line <- list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = replacement, y1 = replacement,
+                         line = list(dash = "dot", color = "gray"))
+```
+
+---
+
+## More than half the world is below 2.1
+
+```{r counts}
+counts <- df_world %>%
+  filter(measure %in% c("fertility", "aged_65", "children")) %>%
+  select(-code) %>%
+  tidyr::pivot_wider(names_from = measure, values_from = value) %>%
+  group_by(year) %>%
+  summarise(countries     = sum(!is.na(fertility)),
+            low_fertility = sum(fertility < replacement, na.rm = TRUE),
+            more_old      = sum(aged_65 > children, na.rm = TRUE),
+            median        = median(fertility, na.rm = TRUE)) %>%
+  filter(year <= last_year)
+first <- counts[counts$year == min(counts$year), ]
+latest <- counts[counts$year == last_year, ]
+
+h <- 520; b <- 150
+p <- plot_ly(counts, x = ~year) %>%
+  add_lines(y = ~low_fertility, name = "Women have fewer than 2.1 children",
+            line = list(color = "#0082c8", width = 3),
+            text = ~paste0(year, ": ", low_fertility, " of ", countries, " countries"), hoverinfo = "text") %>%
+  add_lines(y = ~more_old, name = "More people over 65 than under 15",
+            line = list(color = "#E74C3C", width = 3),
+            text = ~paste0(year, ": ", more_old, " countries"), hoverinfo = "text") %>%
+  plotly::layout(
+    title  = list(text = "Number of countries where...", x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    margin = list(t = 80, r = 60, b = b),
+    xaxis  = list(title = "", tickangle = -90, dtick = 5),
+    yaxis  = list(title = "countries", rangemode = "tozero"),
+    legend = list(orientation = "h", y = -0.2),
+    annotations = list(
+      list(x = last_year, y = latest$low_fertility, xanchor = "left", xshift = 6, showarrow = FALSE,
+           text = latest$low_fertility, font = list(size = 13, color = "gray25")),
+      list(x = last_year, y = latest$more_old, xanchor = "left", xshift = 6, showarrow = FALSE,
+           text = latest$more_old, font = list(size = 13, color = "gray25")),
+      source_note(b)),
+    font   = list(size = 13, color = "gray25"))
+sized(p, h)
+```
+
+In `r first$year`, women had fewer than 2.1 children in just **`r first$low_fertility` of `r first$countries`** countries. By `r last_year` it was **`r latest$low_fertility` of `r latest$countries`** — more than half. In the middle country of the world, the number of children per woman fell from **`r round(first$median, 1)`** to **`r round(latest$median, 1)`**.
+
+Fewer children, and people living longer, change the shape of a country. In `r first$year` there was **`r first$more_old`** country with more people over 65 than children under 15; in `r last_year` there were **`r latest$more_old`**. The red line follows the blue one about 35 years later — 20 countries in 1972 and 2006, 50 in 1987 and 2024: the children who are not born today are the working-age people who will be missing a generation later.
+
+---
+
+## Where: the map turns blue
+
+Press **Play** to watch the years go by, or drag the slider. Red countries are above 2.1 children per woman, blue ones below, and the closer to gray, the closer to 2.1.
+
+```{r map}
+d <- df_world %>% filter(measure == "fertility", !is.na(code), year <= last_year)
+lo <- 0.5; hi <- 8   # fixed colour range, so a colour means the same thing in every year
+
+p <- plot_ly(d, type = "choropleth", locations = ~code, z = ~value, frame = ~year,
+             zmin = lo, zmax = hi,
+             colorscale = list(list(0, "#0082c8"), list((replacement - lo) / (hi - lo), "#f0efec"), list(1, "#E74C3C")),
+             marker = list(line = list(color = "white", width = 0.3)),
+             text = ~paste0(country, " · ", year, "<br>", round(value, 2), " children per woman"),
+             hoverinfo = "text",
+             colorbar = list(title = list(text = "children<br>per woman"), tickvals = c(1, 2.1, 4, 6, 8), len = 0.6)) %>%
+  plotly::layout(
+    title  = list(text = "Children per woman, by country", x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    geo    = list(showframe = FALSE, showcoastlines = FALSE, projection = list(type = "natural earth"),
+                  bgcolor = "rgba(0,0,0,0)"),
+    margin = list(t = 60, r = 10, l = 10, b = 170),   # room for the slider, then the source
+    annotations = list(source_note(170)),
+    font   = list(size = 13, color = "gray25")) %>%
+  animation_opts(frame = 300, transition = 0, redraw = TRUE) %>%
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(size = 18, color = "gray40")))
+sized(p, 600)
+```
+
+In `r first$year` almost the whole map is red: only `r first$low_fertility` countries were below 2.1. Over the decades blue spreads, first through Europe, North America and East Asia, later through much of Latin America, North Africa, the Middle East and South Asia. By `r last_year` the deepest red is in Africa south of the Sahara, where women in many countries still have four to six children; Afghanistan, Pakistan, Yemen, Iraq and parts of Central Asia are also still well above 2.1. Even there, the numbers are falling.
+
+---
+
+## How fast: ten countries
+
+The dotted line is 2.1 children per woman, the level that keeps a population steady.
+
+```{r countries}
+paths <- c("Niger", "Nigeria", "Israel", "India", "France", "United States", "Italy", "China", "South Korea", "Greece")
+highlight <- "Greece"
+
+d <- df_world %>% filter(measure == "fertility", country %in% paths, year <= last_year)
+h <- 600; b <- 110; t <- 90
+p <- plot_ly()
+for (cty in c(setdiff(paths, highlight), highlight)) {
+  dc <- d[d$country == cty, ]
+  p <- add_lines(p, data = dc, x = ~year, y = ~value, name = cty,
+                 line = list(color = if (cty == highlight) "#E74C3C" else "#B3B3B3", width = if (cty == highlight) 3 else 2),
+                 text = paste0(cty, " · ", dc$year, "<br>", round(dc$value, 2), " children per woman"), hoverinfo = "text")
+}
+ends <- d %>% group_by(country) %>% slice_max(year) %>% ungroup() %>% mutate(text = round(value, 2))
+per_px <- max(d$value) * 1.1 / (h - t - b)
+plotly::layout(p,
+  title  = list(text = "Children per woman, 1960 to today", x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+  margin = list(t = t, r = 160, b = b),
+  xaxis  = list(title = "", tickangle = -90, dtick = 5, range = c(1959.5, last_year + 0.5)),
+  yaxis  = list(title = "children per woman", rangemode = "tozero"),
+  showlegend = FALSE,
+  shapes = list(replacement_line),
+  annotations = c(end_labels(ends, per_px, highlight), list(source_note(b))),
+  font   = list(size = 13, color = "gray25")) %>%
+  sized(h)
+```
+
+The fall did not happen everywhere at the same time or the same speed:
+
+- **South Korea** went from **`r round(at("fertility", "South Korea", 1960), 1)`** children per woman in 1960 to **`r round(at("fertility", "South Korea", last_year), 2)`** in `r last_year`, the lowest of any country with more than 10 million people. **China** fell from `r round(at("fertility", "China", 1960), 1)` to `r round(at("fertility", "China", last_year), 1)`; its jagged start is the famine of 1959 to 1961, when births collapsed, and the rebound in births that followed it.
+- **Italy** and **Greece** have been below 2.1 for decades — Greece since 1981 — and are now at about `r round(at("fertility", "Greece", last_year), 1)`. Of `r latest$countries` countries, Greece has the `r scales::ordinal(rank(df_world$value[df_world$measure == "fertility" & df_world$year == last_year])[df_world$country[df_world$measure == "fertility" & df_world$year == last_year] == "Greece"])` lowest rate.
+- **France** and the **United States** stayed close to 2.1 for a long time and have only recently slipped further, to about `r round(at("fertility", "France", last_year), 1)`.
+- **India** crossed below 2.1 around 2020. **Israel** is the exception among rich countries, at `r round(at("fertility", "Israel", last_year), 1)`.
+- **Nigeria** and **Niger** are still far above, at `r round(at("fertility", "Nigeria", last_year), 1)` and `r round(at("fertility", "Niger", last_year), 1)`, but falling.
+
+---
+
+## What it does: the pyramid turns upside down
+
+A population pyramid shows how many people there are of each age: men on the left, women on the right, the youngest at the bottom. A country with many children is wide at the bottom, like a pyramid. Press **Play** to watch South Korea's change from 1960 to `r last_year`.
+
+```{r pyramid}
+pyramid_data <- function(cty, years = NULL) {
+  d <- df_ages[df_ages$country == cty, ]
+  if (!is.null(years)) d <- d[d$year %in% years, ]
+  d$x <- ifelse(d$sex == "Men", -d$value, d$value)   # men to the left of the middle
+  d$label <- paste0(d$sex, " ", d$age, " · ", d$year, "<br>", round(d$value, 1), "% of all ", tolower(d$sex))
+  d
+}
+# x axis in % either side of the middle, labelled without the minus sign
+pyramid_axis <- function(m) {
+  ticks <- seq(-floor(m / 5) * 5, floor(m / 5) * 5, by = 5)
+  list(title = "% of men (left) and of women (right)", range = c(-m, m),
+       tickvals = ticks, ticktext = paste0(abs(ticks), "%"), zeroline = TRUE, zerolinecolor = "gray")
+}
+
+d <- pyramid_data("South Korea") %>% filter(year <= last_year)
+m <- max(d$value) * 1.1
+b <- 150
+p <- plot_ly(d, x = ~x, y = ~age, color = ~sex, colors = c(Men = "#0082c8", Women = "#E74C3C"),
+             frame = ~year, type = "bar", orientation = "h", text = ~label, hoverinfo = "text",
+             textposition = "none") %>%
+  plotly::layout(
+    title  = list(text = "South Korea: share of the population in each age group", x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    barmode = "overlay", bargap = 0.1,
+    margin = list(t = 80, b = b),
+    xaxis  = pyramid_axis(m),
+    yaxis  = list(title = "age"),
+    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.06),
+    annotations = list(source_note(b)),
+    font   = list(size = 13, color = "gray25")) %>%
+  animation_opts(frame = 250, transition = 200, easing = "linear", redraw = FALSE) %>%
+  animation_slider(currentvalue = list(prefix = "Year ", font = list(size = 18, color = "gray40")))
+sized(p, 640)
+```
+
+In 1960 South Korea was a true pyramid: **`r round(at("children", "South Korea", 1960))`%** of the population was under 15. By `r last_year` the bottom has shrunk to **`r round(at("children", "South Korea", last_year))`%** and the widest part has moved up to the people in their fifties — the large generations born in the 1960s and 1970s. As they grow old there will be fewer and fewer people of working age to support them.
+
+Two countries side by side in `r last_year` show both ends of the story:
+
+```{r pyramid_pair}
+pair <- pyramid_data("Nigeria", last_year) %>% bind_rows(pyramid_data("Greece", last_year))
+m <- max(pair$value) * 1.1
+one <- function(cty, legend) {
+  dc <- pair[pair$country == cty, ]
+  plot_ly(dc, x = ~x, y = ~age, color = ~sex, colors = c(Men = "#0082c8", Women = "#E74C3C"),
+          type = "bar", orientation = "h", text = ~label, hoverinfo = "text", textposition = "none",
+          legendgroup = ~sex, showlegend = legend) %>%
+    plotly::layout(xaxis = pyramid_axis(m))
+}
+b <- 150
+p <- subplot(one("Nigeria", TRUE), one("Greece", FALSE), shareY = TRUE, titleX = TRUE, margin = 0.03) %>%
+  plotly::layout(
+    title  = list(text = paste0("Nigeria and Greece in ", last_year, ": share of the population in each age group"),
+                  x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    barmode = "overlay", bargap = 0.1,
+    margin = list(t = 110, b = b),
+    yaxis  = list(title = "age"),
+    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.08),
+    annotations = list(
+      list(text = "<b>Nigeria</b>", x = 0.24, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+      list(text = "<b>Greece</b>", x = 0.76, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+      source_note(b)),
+    font   = list(size = 13, color = "gray25"))
+sized(p, 560)
+```
+
+Nigeria, at `r round(at("fertility", "Nigeria", last_year), 1)` children per woman, is still a pyramid: the youngest group is the biggest. Greece, below 2.1 for more than forty years, has more people in their fifties than in any other group and fewer children under five than people in their seventies. People aged 65 and over are **`r round(at("aged_65", "Greece", last_year))`%** of Greece's population, children under 15 only **`r round(at("children", "Greece", last_year))`%**.
+
+---
+
+## What the charts show
+
+```{r facts}
+peaks <- df_world %>%
+  filter(measure == "population", country %in% c("China", "South Korea", "Italy", "Greece"), year <= last_year) %>%
+  group_by(country) %>%
+  summarise(peak_year = year[which.max(value)],
+            peak      = round(max(value) / 1e6, 1),
+            now       = round(value[year == last_year] / 1e6, 1)) %>%
+  as.data.frame()
+peaks
+```
+
+- **More than half the world is below 2.1:** **`r latest$low_fertility` of `r latest$countries`** countries in `r last_year`, against `r first$low_fertility` in `r first$year`.
+- **Countries are getting older:** `r latest$more_old` countries now have more people over 65 than children under 15; in `r first$year` there was `r first$more_old`.
+- **Some populations have started to shrink:** the table above shows when the population peaked in four of them. Greece's population peaked in `r peaks$peak_year[peaks$country == "Greece"]`, Italy's in `r peaks$peak_year[peaks$country == "Italy"]`, South Korea's in `r peaks$peak_year[peaks$country == "South Korea"]` and China's in `r peaks$peak_year[peaks$country == "China"]`.
+- **A low rate does not shrink a country at once.** The large generations born earlier are still having children, people live longer, and people move in from other countries. Many countries below 2.1 are still growing; but without immigration, a rate below 2.1 for long enough means fewer people.
+- **Caveats:** the fertility rate is an estimate built from birth registrations, censuses and surveys, and the latest years are often projections that are revised later, especially where births are not all registered. The 2.1 level is for countries where few children die; where more die young, a population needs a little more.
+
+---
+
+## Customising it
+
+### Highlight a different country
+
+```{r custom_highlight, eval=FALSE}
+highlight <- "China"   # then re-run the "countries" chunk
+```
+
+### A different country's pyramid
+
+`R/mfi_fertility.rds` has the age groups for South Korea, Nigeria, Greece, China, Italy and Niger:
+
+```{r custom_pyramid, eval=FALSE}
+d <- pyramid_data("Italy")   # then re-run the rest of the "pyramid" chunk
+```
+
+For every other country, install golemworldbank (see [Packages](#packages)) and use its full `mfi`; its app also has a population pyramid tab:
+
+```r
+library(golemworldbank)   # replaces mfi <- readRDS(...)
+golemworldbank::run_app()
+```
+
+---
+
+## Further reading
+
+- [golemworldbank](https://github.com/sedzinfo/golemworldbank) — the R package and Shiny app this story's data comes from ([documentation](https://sedzinfo.github.io/golemworldbank/))
+- [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) — the World Bank's database behind `mfi`
+- [UN World Population Prospects](https://population.un.org/wpp/) — where the World Bank's fertility and age figures come from
+- [Greece Since 2000](ILLUSTRATION_GREECE_SINCE_2000.html) and [Same Crisis, Different Endings](ILLUSTRATION_EURO_CRISIS.html) — the other golemworldbank data stories
+
+---
+
+*Rendered with R `r getRversion()` · plotly · golemworldbank*
