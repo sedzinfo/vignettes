@@ -284,9 +284,9 @@ The fall did not happen everywhere at the same time or the same speed:
 
 ## What it does: the pyramid turns upside down
 
-A population pyramid shows how many people there are of each age: men on the left, women on the right, the youngest at the bottom. A country with many children is wide at the bottom, like a pyramid. Press **Play** to watch South Korea's change from 1960 to `r last_year`.
+A population pyramid shows how many people there are of each age: men on the left, women on the right, the youngest at the bottom. A country with many children is wide at the bottom, like a pyramid.
 
-```{r pyramid}
+```{r pyramid_pair}
 pyramid_data <- function(cty, years = NULL) {
   d <- df_ages[df_ages$country == cty, ]
   if (!is.null(years)) d <- d[d$year %in% years, ]
@@ -301,32 +301,8 @@ pyramid_axis <- function(m) {
        tickvals = ticks, ticktext = paste0(abs(ticks), "%"), zeroline = TRUE, zerolinecolor = "gray")
 }
 
-d <- pyramid_data("South Korea") %>% filter(year <= last_year)
-m <- max(d$value) * 1.1
-b <- 150
-p <- plot_ly(d, x = ~x, y = ~age, color = ~sex, colors = c(Men = "#0082c8", Women = "#E74C3C"),
-             frame = ~year, type = "bar", orientation = "h", text = ~label, hoverinfo = "text",
-             textposition = "none") %>%
-  plotly::layout(
-    title  = list(text = "South Korea: share of the population in each age group", x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    barmode = "overlay", bargap = 0.1,
-    margin = list(t = 80, b = b),
-    xaxis  = pyramid_axis(m),
-    yaxis  = list(title = "age"),
-    legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.06),
-    annotations = list(source_note(b)),
-    font   = list(size = 13, color = "gray25")) %>%
-  animation_opts(frame = 250, transition = 200, easing = "linear", redraw = FALSE) %>%
-  animation_slider(currentvalue = list(prefix = "Year ", font = list(size = 18, color = "gray40")))
-sized(p, 640)
-```
-
-In 1960 South Korea was a true pyramid: **`r round(at("children", "South Korea", 1960))`%** of the population was under 15. By `r last_year` the bottom has shrunk to **`r round(at("children", "South Korea", last_year))`%** and the widest part has moved up to the people in their fifties — the large generations born in the 1960s and 1970s. As they grow old there will be fewer and fewer people of working age to support them.
-
-Two countries side by side in `r last_year` show both ends of the story:
-
-```{r pyramid_pair}
-pair <- pyramid_data("Nigeria", last_year) %>% bind_rows(pyramid_data("Greece", last_year))
+left <- "Nigeria"; right <- "Greece"
+pair <- pyramid_data(left, last_year) %>% bind_rows(pyramid_data(right, last_year))
 m <- max(pair$value) * 1.1
 one <- function(cty, legend) {
   dc <- pair[pair$country == cty, ]
@@ -336,17 +312,17 @@ one <- function(cty, legend) {
     plotly::layout(xaxis = pyramid_axis(m))
 }
 b <- 150
-p <- subplot(one("Nigeria", TRUE), one("Greece", FALSE), shareY = TRUE, titleX = TRUE, margin = 0.03) %>%
+p <- subplot(one(left, TRUE), one(right, FALSE), shareY = TRUE, titleX = TRUE, margin = 0.03) %>%
   plotly::layout(
-    title  = list(text = paste0("Nigeria and Greece in ", last_year, ": share of the population in each age group"),
+    title  = list(text = paste0(left, " and ", right, " in ", last_year, ": share of the population in each age group"),
                   x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
     barmode = "overlay", bargap = 0.1,
     margin = list(t = 110, b = b),
     yaxis  = list(title = "age"),
     legend = list(orientation = "h", x = 0.5, xanchor = "center", y = 1.08),
     annotations = list(
-      list(text = "<b>Nigeria</b>", x = 0.24, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
-      list(text = "<b>Greece</b>", x = 0.76, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+      list(text = paste0("<b>", left, "</b>"), x = 0.24, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
+      list(text = paste0("<b>", right, "</b>"), x = 0.76, y = 1.0, xref = "paper", yref = "paper", xanchor = "center", yanchor = "bottom", showarrow = FALSE),
       source_note(b)),
     font   = list(size = 13, color = "gray25"))
 sized(p, 560)
@@ -390,7 +366,7 @@ highlight <- "China"   # then re-run the "countries" chunk
 `R/mfi_fertility.rds` has the age groups for South Korea, Nigeria, Greece, China, Italy and Niger:
 
 ```{r custom_pyramid, eval=FALSE}
-d <- pyramid_data("Italy")   # then re-run the rest of the "pyramid" chunk
+left <- "South Korea"; right <- "Italy"   # then re-run the rest of the "pyramid_pair" chunk
 ```
 
 For every other country, install golemworldbank (see [Packages](#packages)) and use its full `mfi`; its app also has a population pyramid tab:
