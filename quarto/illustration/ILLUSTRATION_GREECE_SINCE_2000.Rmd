@@ -1,0 +1,403 @@
+---
+title: "Greece Since 2000: Boom, Crisis and Recovery"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{Greece Since 2000}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+```
+
+## What is this?
+
+If you compare Greece in 2000 with Greece in 2020, you get a confusing picture. Both years are unusual: in 2000 Greece did not yet use the euro, and 2020 was the year COVID shut the world down. In between, Greece went through a boom, a very deep crisis and a slow recovery, and two snapshots cannot show that.
+
+This data story follows Greece year by year, in plain words, through the World Bank's numbers on:
+
+- **income** — how much the country produces per person,
+- **jobs** — how many people who want work cannot find it,
+- **investment** — what the country spends on its future,
+- **people** — who moves in and out, and how old the population is,
+- **energy** — where the electricity comes from.
+
+All the data comes from [golemworldbank](https://github.com/sedzinfo/golemworldbank), an R package and Shiny app for exploring World Bank indicators. Install it and every number on this page can be reproduced, or explored in the app itself.
+
+---
+
+## Packages
+
+```{r packages}
+# golemworldbank keeps its data in Git LFS, so install it from a clone
+# (install_github() can download LFS pointer files instead of the data):
+#   git lfs install
+#   git clone https://github.com/sedzinfo/golemworldbank.git
+# then in R:
+#   devtools::install_local("golemworldbank")
+# install.packages(c("dplyr", "tidyr", "plotly"))
+
+library(golemworldbank)  # World Bank data (mfi) and indicator_change()
+library(dplyr)
+library(plotly)          # interactive charts
+```
+
+---
+
+## The data
+
+golemworldbank ships the World Bank's [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) as one long table, `mfi`: one row per country, indicator and year. We keep Greece from 2000 onwards and the indicators this story needs, each with a short name:
+
+```{r data}
+indicators <- c(
+  income             = "GDP per capita (constant 2015 US$)",
+  unemployment       = "Unemployment, total (% of total labor force) (modeled ILO estimate)",
+  youth_unemployment = "Unemployment, youth total (% of total labor force ages 15-24) (modeled ILO estimate)",
+  investment         = "Gross fixed capital formation (% of GDP)",
+  net_migration      = "Net migration",
+  population         = "Population, total",
+  aged_65            = "Population ages 65 and above (% of total population)",
+  fertility          = "Fertility rate, total (births per woman)",
+  coal               = "Electricity production from coal sources (% of total)",
+  renewables         = "Renewable electricity output (% of total electricity output)",
+  gas                = "Electricity production from natural gas sources (% of total)",
+  tourism            = "International tourism, receipts (current US$)",
+  life_expectancy    = "Life expectancy at birth, total (years)",
+  internet           = "Individuals using the Internet (% of population)",
+  exports            = "Exports of goods and services (% of GDP)",
+  poverty            = "Poverty headcount ratio at societal poverty line (% of population)"
+)
+
+df_greece <- mfi %>%
+  filter(`Country Name` == "Greece", `Indicator Name` %in% indicators) %>%
+  mutate(year    = as.numeric(as.character(Year)),
+         measure = names(indicators)[match(`Indicator Name`, indicators)]) %>%
+  filter(year >= 2000) %>%
+  select(measure, year, value) %>%
+  arrange(measure, year)
+
+head(df_greece, 12)
+```
+
+Each row is one indicator in one year:
+
+| Column | Description |
+|--------|-------------|
+| `measure` | Short name of the indicator (the names of `indicators` above) |
+| `year` | Year of observation |
+| `value` | The World Bank's value for Greece in that year |
+
+Two of these need a word of explanation:
+
+- **Income** is the value of everything Greece produces in a year, divided by the number of people who live there, in US dollars with price rises removed, so that years can be compared fairly. It is a rough measure of how well off the average person is.
+- **Investment** is the money spent on things that help a country earn more later: new buildings, factories, machines, roads and equipment, as a share of everything the economy produces.
+
+Every chart below shades the two shocks of the period — the debt crisis (2008 to 2013) and COVID (2020) — and writes the latest value at the end of each line:
+
+```{r helpers}
+# the latest value of a measure, and its value in a given year
+at <- function(m, y) df_greece$value[df_greece$measure == m & df_greece$year == y]
+last_year <- function(m) max(df_greece$year[df_greece$measure == m])
+latest <- function(m) at(m, last_year(m))
+change_pct <- function(from, to) round((to - from) / from * 100)
+big <- function(v) format(round(v), big.mark = ",")
+
+# "$21,922" for dollars, "8.5%" for percentages
+fmt <- function(v, unit) {
+  if (unit == "$") paste0("$", big(v)) else paste0(round(v, 1), unit)
+}
+
+shocks <- list(list(from = 2008,   to = 2013,   label = "Debt crisis"),
+               list(from = 2019.5, to = 2020.5, label = "COVID"))
+
+# chart height in pixels, set on the widget itself (width stays 100% of the
+# page), so the chart always fills the box it is drawn in — no scroll bars.
+# Returned inside a tagList: printed straight from a chunk, a widget's height
+# is overridden by the chunk's figure size; inside a tagList it is kept
+# The plotly toolbar goes down the right edge, so it never covers a long title
+sized <- function(p, h) {
+  p <- plotly::layout(p, modebar = list(orientation = "v"))
+  p$height <- h
+  htmltools::tagList(p)
+}
+
+# title, shaded shocks, end labels and the data source in one layout() call
+# (a second layout(annotations = ...) would replace the first one's). The
+# source sits at the bottom of the bottom margin `b`, in pixels, so it lands
+# in the same place whatever the chart's height; the x axis range is fixed,
+# because plotly would otherwise widen it to make room for the end labels
+finish <- function(p, title, ytitle, labels, unit = "", legend = TRUE, b = if (legend) 150 else 110) {
+  shapes <- lapply(shocks, function(s) {
+    list(type = "rect", xref = "x", yref = "paper", x0 = s$from, x1 = s$to, y0 = 0, y1 = 1,
+         fillcolor = "gray92", line = list(width = 0), layer = "below")
+  })
+  tags <- lapply(shocks, function(s) {
+    list(x = (s$from + s$to) / 2, y = 1, xref = "x", yref = "paper", yanchor = "bottom",
+         text = s$label, showarrow = FALSE, font = list(size = 12, color = "gray40"))
+  })
+  source_note <- list(
+    text = "Source: World Bank, World Development Indicators, via <a href='https://github.com/sedzinfo/golemworldbank'>golemworldbank</a>",
+    xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
+    xanchor = "right", yanchor = "top", showarrow = FALSE,
+    font = list(size = 11, color = "gray50"))
+  plotly::layout(p,
+    title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    margin = list(t = 90, r = 130, b = b),
+    xaxis  = list(title = "", tickangle = -90, range = c(1999.5, max(df_greece$year) + 0.5)),
+    yaxis  = list(title = ytitle, ticksuffix = if (unit == "%") "%" else "", rangemode = "tozero"),
+    legend = list(orientation = "h", y = -0.2),
+    showlegend = legend,
+    shapes = shapes,
+    annotations = c(tags, labels, list(source_note)),
+    font   = list(size = 13, color = "gray25"))
+}
+
+# one line per measure, each with its value written at the end; `nudge` lifts
+# a label (in pixels) off a line it would otherwise be written over
+story_chart <- function(measures, names, short, colors, title, ytitle, unit = "", h = 520,
+                        nudge = rep(0, length(measures))) {
+  p <- plot_ly()
+  ends <- list()
+  for (i in seq_along(measures)) {
+    d <- df_greece[df_greece$measure == measures[i], ]
+    p <- add_trace(p, data = d, x = ~year, y = ~value, name = names[i],
+                   type = "scatter", mode = "lines+markers",
+                   line = list(color = colors[i], width = 2),
+                   marker = list(color = colors[i], size = 7),
+                   text = paste0(names[i], " · ", d$year, "<br>", fmt(d$value, unit)),
+                   hoverinfo = "text")
+    ends[[i]] <- list(x = last_year(measures[i]), y = latest(measures[i]), xref = "x", yref = "y",
+                      xanchor = "left", xshift = 8, yshift = nudge[i], showarrow = FALSE,
+                      text = trimws(paste(short[i], fmt(latest(measures[i]), unit))),
+                      font = list(size = 13, color = "gray25"))
+  }
+  finish(p, title, ytitle, ends, unit, legend = length(measures) > 1) %>% sized(h)
+}
+```
+
+---
+
+## Greece at a glance
+
+```{r income}
+peak   <- df_greece %>% filter(measure == "income", year <= 2010) %>% slice_max(value)
+bottom <- df_greece %>% filter(measure == "income", year > 2008, year <= 2016) %>% slice_min(value)
+
+p <- plot_ly(df_greece[df_greece$measure == "income", ], x = ~year, y = ~value,
+             type = "scatter", mode = "lines+markers",
+             line = list(color = "#0082c8", width = 2), marker = list(color = "#0082c8", size = 7),
+             text = ~paste0("Greece · ", year, "<br>", fmt(value, "$"), " per person"), hoverinfo = "text")
+finish(p, "Greece: how much the country produces per person (US$, price rises removed)", "US$ per person",
+       labels = list(
+         list(x = peak$year, y = peak$value, yshift = 10, yanchor = "bottom", showarrow = FALSE,
+              text = paste0("Peak ", peak$year, ": ", fmt(peak$value, "$")), font = list(color = "gray25")),
+         list(x = bottom$year, y = bottom$value, yshift = -10, yanchor = "top", showarrow = FALSE,
+              text = paste0("Bottom ", bottom$year, ": ", fmt(bottom$value, "$")), font = list(color = "gray25")),
+         list(x = last_year("income"), y = latest("income"), xanchor = "left", xshift = 8, showarrow = FALSE,
+              text = fmt(latest("income"), "$"), font = list(color = "gray25"))),
+       legend = FALSE) %>%
+  sized(520)
+```
+
+The line has five chapters:
+
+1. **2000 to 2008: boom.** Joining the euro made borrowing cheap for the government and for families, and money flowed in. Income per person grew by **`r change_pct(at("income", 2000), at("income", 2008))`%**. Part of that growth was paid for with borrowed money.
+2. **2008 to 2013: crisis.** In late 2009 it came out that the government's finances were far worse than it had reported. From 2010 Greece needed rescue loans from other euro countries and the International Monetary Fund, and in return it had to cut wages, pensions and public spending and raise taxes. Income per person fell by **`r abs(change_pct(at("income", 2008), at("income", 2013)))`%** in five years.
+3. **2013 to 2019: slow recovery.** The economy grew again, slowly. The last rescue programme ended in 2018.
+4. **2020: COVID.** Tourists stopped coming and the economy fell again.
+5. **2021 onwards: rebound.** Growth returned, but in `r last_year("income")` income per person was still **`r abs(change_pct(at("income", 2008), latest("income")))`%** below 2008.
+
+---
+
+## Jobs: the deepest wound, now healing
+
+The unemployment rate counts people who want a job and are looking for one, but cannot find one.
+
+```{r jobs}
+story_chart(c("unemployment", "youth_unemployment"),
+            names  = c("Everyone", "Young people (15 to 24)"),
+            short  = c("Everyone", "Young"),
+            colors = c("#0082c8", "#E74C3C"),
+            title  = "Greece: people looking for work who cannot find it (%)",
+            ytitle = "% of people looking for work", unit = "%")
+```
+
+In 2013, **`r round(at("unemployment", 2013))`%** of people looking for work could not find a job — more than 1 in 4. Among young people it was **`r round(at("youth_unemployment", 2013))`%**, almost 6 in 10. Since then unemployment has fallen every year, and by `r last_year("unemployment")` it was back near its level before the crisis (**`r round(latest("unemployment"), 1)`%**, against `r round(at("unemployment", 2008), 1)`% in 2008).
+
+---
+
+## Investment: what has not come back
+
+```{r investment}
+story_chart("investment", names = "Investment", short = "",
+            colors = "#0082c8",
+            title  = "Greece: investment in buildings, machines and roads (% of the economy)",
+            ytitle = "% of the economy", unit = "%")
+```
+
+Before the crisis Greece invested about a quarter of what it produced. During the crisis this fell to about a tenth (**`r round(at("investment", 2013), 1)`%** in 2013) and stayed there until 2019. It is rising again (**`r round(latest("investment"), 1)`%** in `r last_year("investment")`), but it is still well below where it was. A decade of low investment is one reason incomes have not fully recovered.
+
+---
+
+## People: fewer and older
+
+Net migration is the number of people who moved into the country minus the number who moved out. Blue bars mean more people arrived than left; red bars mean more people left than arrived.
+
+```{r migration}
+d <- df_greece %>%
+  filter(measure == "net_migration") %>%
+  mutate(color = ifelse(value >= 0, "#0082c8", "#E74C3C"),
+         what  = ifelse(value >= 0, "more arrived than left", "more left than arrived"))
+
+p <- plot_ly(d, x = ~year, y = ~value, type = "bar",
+             marker = list(color = ~color),
+             text = ~paste0("Greece · ", year, "<br>", big(value), " people: ", what),
+             hoverinfo = "text", textposition = "none")
+finish(p, "Greece: people who moved in, minus people who moved out, per year", "people per year",
+       labels = list(), legend = FALSE) %>%
+  sized(520)
+```
+
+During the crisis many people, often young and well educated, moved abroad to find work: between 2011 and 2015 about **`r big(round(-sum(d$value[d$year %in% 2011:2015]), -4))`** more people left Greece than arrived. Treat the latest years with care — the World Bank's estimates for them jump sharply from one year to the next.
+
+At the same time, Greek families have few children: about **`r round(latest("fertility"), 1)`** per woman, while about 2 are needed to keep a population steady. Together these explain why there are fewer Greeks now (**`r round(latest("population") / 1e6, 1)` million** in `r last_year("population")`, down from `r round(max(df_greece$value[df_greece$measure == "population"]) / 1e6, 1)` million around 2010) and why they are older: people aged 65 and over were **`r round(at("aged_65", 2000))`%** of the population in 2000 and **`r round(latest("aged_65"))`%** in `r last_year("aged_65")`.
+
+---
+
+## Energy: much less coal
+
+Most of Greece's electricity used to come from lignite, a cheap and dirty kind of coal. Those power stations are being closed, and solar parks, wind farms and power stations that burn natural gas have taken their place.
+
+```{r energy}
+story_chart(c("coal", "renewables", "gas"),
+            names  = c("Coal", "Renewable (sun, wind, water)", "Natural gas"),
+            short  = c("Coal", "Renewable", "Gas"),
+            colors = c("#E74C3C", "#0082c8", "#999999"),
+            title  = "Greece: where the electricity comes from (% of all electricity)",
+            ytitle = "% of all electricity", unit = "%",
+            nudge  = c(0, 14, 0))   # renewables stop in 2021, above the gas line
+```
+
+In 2000 coal made **`r round(at("coal", 2000))`%** of Greece's electricity; by `r last_year("coal")` it made **`r round(latest("coal"))`%**. Renewable sources went from `r round(at("renewables", 2000))`% to **`r round(latest("renewables"))`%** (`r last_year("renewables")` is the last year the World Bank reports), and natural gas from `r round(at("gas", 2000))`% to **`r round(latest("gas"))`%**.
+
+---
+
+## Comparing two years with `indicator_change()`
+
+golemworldbank's `indicator_change()` compares every indicator a country has in two years and splits them into those that went up and those that went down, each sorted by percentage change — the same comparison as the app's **Change (%)** tab. The result depends entirely on which two years you pick. Comparing 2000 with 2020 mixes twenty years of change with one very bad year: in 2019 tourists spent **$`r round(at("tourism", 2019) / 1e9)` billion** in Greece, in 2020 **$`r round(at("tourism", 2020) / 1e9)` billion**, a fall of `r abs(change_pct(at("tourism", 2019), at("tourism", 2020)))`% in one year.
+
+These pairs each answer one clear question:
+
+| Question | From | To |
+|----------|------|----|
+| What did the boom look like? | 2000 | 2008 |
+| How bad was the crisis? | 2008 | 2013 |
+| How strong was the recovery? | 2013 | 2019 |
+| Is Greece back to where it was? | 2008 | 2024 |
+
+Avoid 2020 and 2021 as end points, because COVID makes almost everything look worse than the real trend, and use 2024 as the latest year, because the 2025 numbers are still incomplete. The crisis, for example:
+
+```{r change}
+crisis <- indicator_change(mfi, country = "Greece", year1 = 2008, year2 = 2013)
+c(increased = nrow(crisis$increased), decreased = nrow(crisis$decreased))
+
+# the indicators of this story, by their short names
+headline <- function(tab) {
+  tab <- tab[tab$Indicator %in% indicators, ]
+  tab$Indicator <- names(indicators)[match(tab$Indicator, indicators)]
+  # 3 significant digits, with thousands separators and no scientific notation
+  tab[, 2:4] <- lapply(tab[, 2:4], function(x) {
+    vapply(x, function(v) format(signif(v, 3), big.mark = ",", scientific = FALSE), "")
+  })
+  tab
+}
+headline(crisis$increased)
+headline(crisis$decreased)
+```
+
+Because it compares hundreds of indicators automatically, some odd ones end up at the top of the list. These ones do not mean what they seem to:
+
+- **Fossil fuels "fall to 0%".** From 2017 the World Bank stopped reporting this figure for Greece, and the gap shows up as 0.
+- **The exchange rate "falls 99.8%"** between 2000 and any later year. In 2000 it was counted in drachmas, and from 2001 in euros: nothing collapsed, the currency changed.
+- **"Children out of school" jumps 50 times.** This figure moves up and down from year to year because of changes in how it is measured.
+- **University enrolment above 100%.** It counts everyone enrolled, including older students and students who stay registered for many years, and divides them by the number of people of student age.
+- **Huge percentages on small numbers.** Going from a few hundred to a few thousand is a big percentage, even when the numbers themselves are small.
+
+---
+
+## What the charts show
+
+```{r facts}
+snapshot <- df_greece %>%
+  filter(year %in% c(2000, 2008, 2013, 2019, 2024),
+         measure %in% c("income", "unemployment", "youth_unemployment", "investment", "poverty",
+                        "exports", "aged_65", "life_expectancy", "coal", "internet")) %>%
+  mutate(value = round(value, 1)) %>%
+  tidyr::pivot_wider(names_from = year, values_from = value) %>%
+  as.data.frame()
+snapshot
+```
+
+- **Income:** up **`r change_pct(at("income", 2000), at("income", 2008))`%** in the boom, down **`r abs(change_pct(at("income", 2008), at("income", 2013)))`%** in the crisis, and in `r last_year("income")` still **`r abs(change_pct(at("income", 2008), latest("income")))`%** below 2008.
+- **Jobs:** unemployment peaked at **`r round(at("unemployment", 2013))`%** in 2013 (**`r round(at("youth_unemployment", 2013))`%** for young people) and is now back near pre-crisis levels.
+- **Investment:** fell from about a quarter of the economy to about a tenth, and has only partly come back.
+- **People:** fewer (**`r round(latest("population") / 1e6, 1)` million**) and older (**`r round(latest("aged_65"))`%** aged 65 and over); about `r big(round(-sum(d$value[d$year %in% 2011:2015]), -4))` more people left than arrived in 2011–2015.
+- **Things that improved the whole time:** people live longer (**`r round(latest("life_expectancy"), 1)` years**, from `r round(at("life_expectancy", 2000), 1)` in 2000), almost everyone is online (**`r round(latest("internet"))`%**, from `r round(at("internet", 2000))`%), and coal fell from `r round(at("coal", 2000))`% of the electricity to **`r round(latest("coal"))`%**.
+- **Poverty** here is the World Bank's *societal* poverty line, which moves with what is normal in each country: the share of people living well below the usual Greek standard of living. It rose during the crisis and has since come back down.
+
+---
+
+## Customising it
+
+### Another country
+
+Everything above works for any country in `mfi`: change `"Greece"` in the data chunk (the shaded shocks are Greece's, so adjust `shocks` too).
+
+```{r custom_country, eval=FALSE}
+df_greece <- mfi %>%
+  filter(`Country Name` == "Portugal", `Indicator Name` %in% indicators) %>%
+  mutate(year    = as.numeric(as.character(Year)),
+         measure = names(indicators)[match(`Indicator Name`, indicators)]) %>%
+  filter(year >= 2000) %>%
+  select(measure, year, value)
+```
+
+### Another pair of years
+
+```{r custom_years, eval=FALSE}
+recovery <- indicator_change(mfi, country = "Greece", year1 = 2013, year2 = 2019)
+head(recovery$increased)
+head(recovery$decreased)
+```
+
+### Explore it in the app
+
+The same data, with country and indicator comparisons, a population pyramid, a bar chart race, maps and the Change (%) tab:
+
+```{r custom_app, eval=FALSE}
+golemworldbank::run_app()
+```
+
+---
+
+## Further reading
+
+- [golemworldbank](https://github.com/sedzinfo/golemworldbank) — the R package and Shiny app this story's data and `indicator_change()` come from ([documentation](https://sedzinfo.github.io/golemworldbank/))
+- [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) — the World Bank's database behind `mfi`
+- [Greek Wages Race](ILLUSTRATION_GREEK_WAGES_PRICES.html) and [Greek Housing Race](ILLUSTRATION_GREEK_HOUSING.html) — Greece against the rest of Europe on salaries, prices, rents and house prices
+
+---
+
+*Rendered with R `r getRversion()` · plotly · golemworldbank*
