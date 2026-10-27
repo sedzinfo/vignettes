@@ -19,7 +19,7 @@ vignette: >
 ```{r setup, include=FALSE}
 directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
 source(paste0(directory, "R/code_options.R"))
-source(paste0(directory, "R/code_rwf.R"))
+source(paste0(directory, "R/code_golemworldbank.R"))
 ```
 
 ## What is this?
@@ -34,22 +34,23 @@ This data story follows Greece year by year, in plain words, through the World B
 - **people** — who moves in and out, and how old the population is,
 - **energy** — where the electricity comes from.
 
-All the data comes from [golemworldbank](https://github.com/sedzinfo/golemworldbank), an R package and Shiny app for exploring World Bank indicators. Install it and every number on this page can be reproduced, or explored in the app itself.
+All the data comes from [golemworldbank](https://github.com/sedzinfo/golemworldbank), an R package and Shiny app for exploring World Bank indicators. The page carries its own copy of the Greek data and of the one function it uses, so it runs without installing anything from GitHub; install golemworldbank to do the same for any other country, or to explore the data in the app.
 
 ---
 
 ## Packages
 
 ```{r packages}
-# golemworldbank keeps its data in Git LFS, so install it from a clone
+# install.packages(c("dplyr", "tidyr", "plotly"))
+# The data and indicator_change() come from golemworldbank, copied next to this page:
+# R/code_golemworldbank.R (sourced above) and R/mfi_greece.rds. For every country,
+# install golemworldbank itself; its data is in Git LFS, so install it from a clone
 # (install_github() can download LFS pointer files instead of the data):
 #   git lfs install
 #   git clone https://github.com/sedzinfo/golemworldbank.git
 # then in R:
 #   devtools::install_local("golemworldbank")
-# install.packages(c("dplyr", "tidyr", "plotly"))
 
-library(golemworldbank)  # World Bank data (mfi) and indicator_change()
 library(dplyr)
 library(plotly)          # interactive charts
 ```
@@ -58,9 +59,12 @@ library(plotly)          # interactive charts
 
 ## The data
 
-golemworldbank ships the World Bank's [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) as one long table, `mfi`: one row per country, indicator and year. We keep Greece from 2000 onwards and the indicators this story needs, each with a short name:
+golemworldbank ships the World Bank's [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) as one long table, `mfi`: one row per country, indicator and year. `R/mfi_greece.rds` holds its rows for Greece, every indicator and year. We keep the years from 2000 onwards and the indicators this story needs, each with a short name:
 
 ```{r data}
+# golemworldbank's mfi, Greece only (with the package installed, its mfi has every country)
+mfi <- readRDS(paste0(directory, "R/mfi_greece.rds"))
+
 indicators <- c(
   income             = "GDP per capita (constant 2015 US$)",
   unemployment       = "Unemployment, total (% of total labor force) (modeled ILO estimate)",
@@ -363,9 +367,10 @@ snapshot
 
 ### Another country
 
-Everything above works for any country in `mfi`: change `"Greece"` in the data chunk (the shaded shocks are Greece's, so adjust `shocks` too).
+`R/mfi_greece.rds` holds Greece only. With golemworldbank installed (see [Packages](#packages)), its `mfi` has every country: load it instead of the file and change `"Greece"` in the data chunk (the shaded shocks are Greece's, so adjust `shocks` too).
 
-```{r custom_country, eval=FALSE}
+```r
+library(golemworldbank)   # replaces mfi <- readRDS(...)
 df_greece <- mfi %>%
   filter(`Country Name` == "Portugal", `Indicator Name` %in% indicators) %>%
   mutate(year    = as.numeric(as.character(Year)),
@@ -386,7 +391,7 @@ head(recovery$decreased)
 
 The same data, with country and indicator comparisons, a population pyramid, a bar chart race, maps and the Change (%) tab:
 
-```{r custom_app, eval=FALSE}
+```r
 golemworldbank::run_app()
 ```
 
