@@ -1,0 +1,442 @@
+---
+title: "Same Crisis, Different Endings: Greece and the Euro Crisis Countries"
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: >
+  %\VignetteIndexEntry{Same Crisis, Different Endings}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_golemworldbank.R"))
+# no knitr cache: the page runs in seconds, and cached charts would not notice a
+# change to the helper functions they call
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+Between 2010 and 2013 six euro countries ran into deep trouble: Greece, Ireland, Portugal, Spain, Cyprus and Italy. Five of them needed rescue loans from the other euro countries, and all six went through years of cuts and lost jobs. They started from the same crisis, but they did not end up in the same place: in 2024 the average person in Ireland produced almost twice as much as in 2008, while in Greece it was still less than in 2008.
+
+This data story compares the six countries, in plain words, on:
+
+- **borrowing** — how much more each country bought from abroad than it sold, before the crisis,
+- **income** — how much the country produces per person,
+- **jobs** — how many people who want work cannot find it,
+- **investment** — what the country spends on its future,
+- **exports** — how much it sells to the rest of the world,
+- **people** — whether its population grew or shrank.
+
+Greece is in red throughout and the other five in gray. It follows on from [Greece Since 2000](ILLUSTRATION_GREECE_SINCE_2000.html), which tells the Greek story on its own. All the data comes from [golemworldbank](https://github.com/sedzinfo/golemworldbank), an R package and Shiny app for exploring World Bank indicators; the page carries its own copy of the data for these six countries and of the one function it uses, so it runs without installing anything from GitHub.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "tidyr", "plotly"))
+# The data and indicator_change() come from golemworldbank, copied next to this page:
+# R/code_golemworldbank.R (sourced above) and R/mfi_euro_crisis.rds. For every country,
+# install golemworldbank itself; its data is in Git LFS, so install it from a clone
+# (install_github() can download LFS pointer files instead of the data):
+#   git lfs install
+#   git clone https://github.com/sedzinfo/golemworldbank.git
+# then in R:
+#   devtools::install_local("golemworldbank")
+
+library(dplyr)
+library(plotly)          # interactive charts
+```
+
+---
+
+## The data
+
+golemworldbank ships the World Bank's [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) as one long table, `mfi`: one row per country, indicator and year. `R/mfi_euro_crisis.rds` holds its rows for the six countries from 2000 onwards, every indicator. We keep the indicators this story needs, each with a short name:
+
+```{r data}
+# golemworldbank's mfi, six countries from 2000 (with the package installed, its mfi has every country)
+mfi <- readRDS(paste0(directory, "R/mfi_euro_crisis.rds"))
+
+countries <- c("Greece", "Ireland", "Portugal", "Spain", "Cyprus", "Italy")
+last_year <- 2024   # the latest year with complete numbers: 2025 is still incomplete
+indicators <- c(
+  income             = "GDP per capita (constant 2015 US$)",
+  income_gni         = "GNI per capita (constant 2015 US$)",
+  unemployment       = "Unemployment, total (% of total labor force) (modeled ILO estimate)",
+  youth_unemployment = "Unemployment, youth total (% of total labor force ages 15-24) (modeled ILO estimate)",
+  investment         = "Gross fixed capital formation (% of GDP)",
+  current_account    = "Current account balance (% of GDP)",
+  exports            = "Exports of goods and services (% of GDP)",
+  population         = "Population, total"
+)
+
+df_peers <- mfi %>%
+  filter(`Country Name` %in% countries, `Indicator Name` %in% indicators) %>%
+  mutate(country = `Country Name`,
+         year    = as.numeric(as.character(Year)),
+         measure = names(indicators)[match(`Indicator Name`, indicators)]) %>%
+  select(country, measure, year, value) %>%
+  arrange(country, measure, year)
+
+head(df_peers, 12)
+```
+
+Each row is one country, one indicator, one year:
+
+| Column | Description |
+|--------|-------------|
+| `country` | Country name |
+| `measure` | Short name of the indicator (the names of `indicators` above) |
+| `year` | Year of observation |
+| `value` | The World Bank's value for that country and year |
+
+A few of these need a word of explanation:
+
+- **Income** (GDP per person) is the value of everything a country produces in a year, divided by the number of people who live there, in US dollars with price rises removed, so that years can be compared fairly. It is a rough measure of how well off the average person is.
+- **Borrowing from abroad** (the current account) is what a country earns from the rest of the world minus what it pays to it, as a share of everything it produces. A minus means it bought more than it sold and borrowed to pay the difference.
+- **Investment** is the money spent on things that help a country earn more later: new buildings, factories, machines, roads and equipment, as a share of everything the economy produces.
+
+Every chart shades the euro crisis (2008 to 2013) and COVID (2020), and writes each country's latest value at the end of its line; labels that would overlap are moved apart and joined to their line:
+
+```{r helpers}
+# a measure's value for one country and year, and the change between two values
+at <- function(m, cty, y) df_peers$value[df_peers$measure == m & df_peers$country == cty & df_peers$year == y]
+change_pct <- function(from, to) round((to - from) / from * 100)
+big <- function(v) format(round(v), big.mark = ",")
+
+# Greece in red, the others in gray (as in the Greek Wages and Housing races)
+highlight <- "Greece"
+colour_of <- function(cty) ifelse(cty == highlight, "#E74C3C", "#B3B3B3")
+
+shocks <- list(list(from = 2008,   to = 2013,   label = "Euro crisis"),
+               list(from = 2019.5, to = 2020.5, label = "COVID"))
+
+# chart height in pixels, set on the widget itself (width stays 100% of the
+# page), so the chart always fills the box it is drawn in — no scroll bars.
+# Returned inside a tagList: printed straight from a chunk, a widget's height
+# is overridden by the chunk's figure size; inside a tagList it is kept
+# The plotly toolbar goes down the right edge, so it never covers a long title
+sized <- function(p, h) {
+  p <- plotly::layout(p, modebar = list(orientation = "v"))
+  p$height <- h
+  htmltools::tagList(p)
+}
+
+# data source as a footnote inside each chart, at the bottom of the bottom
+# margin `b` (in pixels), so it lands in the same place whatever the height
+source_note <- function(b) {
+  list(text = "Source: World Bank, World Development Indicators, via <a href='https://github.com/sedzinfo/golemworldbank'>golemworldbank</a>",
+       xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
+       xanchor = "right", yanchor = "top", showarrow = FALSE,
+       font = list(size = 11, color = "gray50"))
+}
+
+# end labels: each sits right of its line's last point; labels closer than
+# `gap` pixels are pushed upwards and joined to their point by a leader line.
+# `per_px` is how many y units one pixel of the plot is worth
+end_labels <- function(ends, per_px, unit, gap = 17) {
+  o <- order(ends$value)
+  y <- ends$value[o]
+  for (i in seq_along(y)[-1]) y[i] <- max(y[i], y[i - 1] + gap * per_px)
+  ends$label_y[o] <- y
+  lapply(seq_len(nrow(ends)), function(i) {
+    name <- if (ends$country[i] == highlight) paste0("<b>", ends$country[i], "</b>") else ends$country[i]
+    list(x = ends$year[i], y = ends$value[i], xref = "x", yref = "y",
+         ax = 24, ay = -(ends$label_y[i] - ends$value[i]) / per_px,
+         showarrow = TRUE, arrowhead = 0, arrowwidth = 1, arrowcolor = "#B3B3B3",
+         xanchor = "left", text = paste0(name, " ", ends$text[i]),
+         font = list(size = 12, color = "gray25"))
+  })
+}
+
+# one line per country, Greece drawn last so it sits on top. `index_year`
+# turns each line into "that year = 100"; `ref` draws a dotted reference line
+peer_chart <- function(m, title, ytitle, unit = "", index_year = NULL, ref = NULL,
+                       tozero = TRUE, h = 520) {
+  d <- df_peers[df_peers$measure == m & df_peers$year >= 2000 & df_peers$year <= last_year, ]
+  if (!is.null(index_year)) {
+    d <- d %>% group_by(country) %>%
+      mutate(value = value / value[year == index_year] * 100) %>% ungroup()
+  }
+  fmt <- function(v) if (unit == "$") paste0("$", big(v)) else paste0(round(v, 1), unit)
+  p <- plot_ly()
+  for (cty in c(setdiff(countries, highlight), highlight)) {
+    dc <- d[d$country == cty, ]
+    p <- add_lines(p, data = dc, x = ~year, y = ~value, name = cty,
+                   line = list(color = colour_of(cty), width = if (cty == highlight) 3 else 2),
+                   text = paste0(cty, " · ", dc$year, "<br>", fmt(dc$value)), hoverinfo = "text")
+  }
+  ends <- d %>% filter(!is.na(value)) %>% group_by(country) %>% slice_max(year) %>% ungroup() %>%
+    mutate(text = fmt(value))
+  b <- 110
+  lo <- if (tozero) min(0, d$value, na.rm = TRUE) else min(d$value, na.rm = TRUE)
+  per_px <- (max(d$value, na.rm = TRUE) - lo) * 1.1 / (h - 90 - b)
+  shapes <- lapply(shocks, function(s) {
+    list(type = "rect", xref = "x", yref = "paper", x0 = s$from, x1 = s$to, y0 = 0, y1 = 1,
+         fillcolor = "gray92", line = list(width = 0), layer = "below")
+  })
+  if (!is.null(ref)) {
+    shapes <- c(shapes, list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = ref, y1 = ref,
+                                  line = list(dash = "dot", color = "gray"))))
+  }
+  tags <- lapply(shocks, function(s) {
+    list(x = (s$from + s$to) / 2, y = 1, xref = "x", yref = "paper", yanchor = "bottom",
+         text = s$label, showarrow = FALSE, font = list(size = 12, color = "gray40"))
+  })
+  plotly::layout(p,
+    title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    margin = list(t = 90, r = 150, b = b),
+    xaxis  = list(title = "", tickangle = -90, range = c(1999.5, max(d$year) + 0.5)),
+    yaxis  = list(title = ytitle, ticksuffix = if (unit == "%") "%" else "",
+                  rangemode = if (tozero) "tozero" else "normal"),
+    showlegend = FALSE,
+    shapes = shapes,
+    annotations = c(tags, end_labels(ends, per_px, unit), list(source_note(b))),
+    font   = list(size = 13, color = "gray25")) %>%
+    sized(h)
+}
+
+# one bar per country, largest at the top, Greece in red; a negative bar
+# carries its value inside, where it cannot run into the country names
+ranked_bars <- function(values, title, h = 380) {
+  d <- data.frame(country = names(values), value = unname(values))
+  d <- d[order(d$value), ]
+  b <- 80
+  plot_ly(d, x = ~value, y = ~factor(country, levels = country), type = "bar", orientation = "h",
+          marker = list(color = colour_of(d$country)),
+          # rounding first (+ 0 turns -0 into 0) so -0.3 reads "+0%", never "-0%"
+          text = sprintf("%+.0f%%", round(d$value) + 0),
+          textposition = ifelse(d$value < 0, "inside", "outside"),
+          textfont = list(color = ifelse(d$value < 0, "white", "gray25")), cliponaxis = FALSE,
+          hovertext = paste0(d$country, ": ", sprintf("%+.1f%%", d$value)), hoverinfo = "text") %>%
+    plotly::layout(
+      title  = list(text = title, x = 0.02, xanchor = "left", y = 0.95, yanchor = "top"),
+      margin = list(t = 70, r = 60, b = b, l = 90),
+      xaxis  = list(title = "", ticksuffix = "%", zeroline = TRUE, zerolinecolor = "gray"),
+      yaxis  = list(title = ""),
+      annotations = list(source_note(b)),
+      font   = list(size = 13, color = "gray25")) %>%
+    sized(h)
+}
+```
+
+---
+
+## Before the crisis: living on borrowed money
+
+```{r borrowing}
+peer_chart("current_account",
+           title  = "Buying more from abroad than selling (-) or less (+), % of the economy",
+           ytitle = "% of the economy", unit = "%", ref = 0, tozero = FALSE)
+```
+
+In the 2000s borrowing was cheap across the euro area, and for years Greece, Portugal, Spain and Cyprus bought far more from the rest of the world than they sold, borrowing the difference. In 2008 the gap was **`r round(at("current_account", "Greece", 2008), 1)`%** of everything Greece produced, **`r round(at("current_account", "Cyprus", 2008), 1)`%** in Cyprus and **`r round(at("current_account", "Portugal", 2008), 1)`%** in Portugal. When the 2008 financial crisis made lenders nervous, the money stopped coming, and each country had to close the gap fast. By 2013 every one of them was close to zero. Italy borrowed little from abroad and Ireland less than the others: their problems came from a government that already owed a lot (Italy) and from banks that had lent too much on houses (Ireland).
+
+Five of the six then needed rescue loans from the other euro countries, the International Monetary Fund or both, and in return had to cut spending and raise taxes:
+
+| Country | Rescue | Ended |
+|---------|--------|-------|
+| Greece | three loans, 2010, 2012 and 2015 | 2018 |
+| Ireland | 2010 | 2013 |
+| Portugal | 2011 | 2014 |
+| Spain | a loan to rescue its banks, 2012 | 2014 |
+| Cyprus | 2013, which also took money from large bank deposits | 2016 |
+| Italy | none | — |
+
+---
+
+## Income: from almost double to still below
+
+To compare countries of different sizes, each line starts at **100 in 2008**: 110 means 10% more than in 2008, 90 means 10% less.
+
+```{r income}
+peer_chart("income", index_year = 2008, ref = 100, tozero = FALSE,
+           title  = "Income per person, 2008 = 100 (price rises removed)",
+           ytitle = "2008 = 100")
+```
+
+```{r income_bars}
+income_change <- sapply(countries, function(cty) change_pct(at("income", cty, 2008), at("income", cty, 2024)))
+ranked_bars(income_change, "Income per person: change from 2008 to 2024 (%)")
+```
+
+All six fell into the crisis, but they came out of it at very different speeds. By 2024 income per person was **`r sprintf("%+d%%", income_change[["Ireland"]])`** in Ireland against 2008, **`r sprintf("%+d%%", income_change[["Cyprus"]])`** in Cyprus, **`r sprintf("%+d%%", income_change[["Portugal"]])`** in Portugal, **`r sprintf("%+d%%", income_change[["Spain"]])`** in Spain and **`r sprintf("%+d%%", income_change[["Italy"]])`** in Italy. Greece is the only one still below 2008, at **`r sprintf("%+d%%", income_change[["Greece"]])`**: its fall was the deepest and its rescue the longest.
+
+---
+
+## Ireland's numbers need a second look
+
+Ireland's line shoots up from 2015 because of how GDP is counted. GDP includes everything produced in the country, and many large international companies have made Ireland the base of their business for tax reasons, so their profits count as Irish production. Much of that money goes back to the companies' owners abroad. GNI subtracts it and counts only the income that stays with people in Ireland:
+
+```{r ireland}
+d <- df_peers %>%
+  filter(country == "Ireland", measure %in% c("income", "income_gni"), year <= last_year, !is.na(value)) %>%
+  mutate(what = ifelse(measure == "income", "GDP per person (everything produced)", "GNI per person (income that stays)"))
+
+p <- plot_ly(d, x = ~year, y = ~value, color = ~what, colors = c("#0082c8", "#E74C3C"),
+             type = "scatter", mode = "lines+markers", marker = list(size = 7),
+             text = ~paste0("Ireland · ", year, "<br>", what, ": $", big(value)), hoverinfo = "text") %>%
+  plotly::layout(title  = list(text = "Ireland: what is produced and what stays (US$ per person, price rises removed)",
+                               x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+                 margin = list(t = 80, b = 150),
+                 xaxis  = list(title = "", tickangle = -90),
+                 yaxis  = list(title = "US$ per person", rangemode = "tozero"),
+                 legend = list(orientation = "h", y = -0.2),
+                 annotations = list(source_note(150)),
+                 font   = list(size = 13, color = "gray25"))
+sized(p, 520)
+```
+
+In 2024 Ireland's GDP per person was **$`r big(at("income", "Ireland", 2024))`**, but its GNI per person **$`r big(at("income_gni", "Ireland", 2024))`**. Even GNI is lifted by these companies, which is why Ireland's own statistics office publishes a third measure that removes them; the World Bank does not carry it. The same companies explain the strange jumps in Ireland's investment and borrowing lines below, such as investment of `r round(at("investment", "Ireland", 2019))`% of the economy in 2019, the year some of them moved patents and other intangible assets to Ireland. Ireland did recover strongly — its unemployment is among the lowest of the six — but by less than its GDP suggests.
+
+---
+
+## Jobs: the deepest wound
+
+The unemployment rate counts people who want a job and are looking for one, but cannot find one.
+
+```{r jobs}
+peer_chart("unemployment", unit = "%",
+           title  = "People looking for work who cannot find it (%)",
+           ytitle = "% of people looking for work")
+```
+
+In 2013, **`r round(at("unemployment", "Greece", 2013))`%** of people looking for work in Greece and **`r round(at("unemployment", "Spain", 2013))`%** in Spain could not find a job — more than 1 in 4. Among young people (15 to 24) it was **`r round(at("youth_unemployment", "Greece", 2013))`%** in Greece and **`r round(at("youth_unemployment", "Spain", 2013))`%** in Spain, more than half. Unemployment has fallen everywhere since, but not to the same level: by 2024 it was **`r round(at("unemployment", "Ireland", 2024), 1)`%** in Ireland and **`r round(at("unemployment", "Cyprus", 2024), 1)`%** in Cyprus, against **`r round(at("unemployment", "Greece", 2024), 1)`%** in Greece and **`r round(at("unemployment", "Spain", 2024), 1)`%** in Spain.
+
+---
+
+## Investment: Greece stopped building
+
+```{r investment}
+peer_chart("investment", unit = "%",
+           title  = "Investment in buildings, machines and roads (% of the economy)",
+           ytitle = "% of the economy")
+```
+
+Investment fell in every country during the crisis. Most of them went back to around a fifth of what they produce, but Greece fell furthest — from **`r round(at("investment", "Greece", 2008))`%** in 2008 to **`r round(at("investment", "Greece", 2013))`%** in 2013 — and stayed there until 2019. In 2024 it was still **`r round(at("investment", "Greece", 2024))`%**, the lowest of the six. A country that invests little for a decade has fewer new factories, machines and roads to earn from, which is one reason Greek incomes have been slowest to recover. (Ireland's line jumps around for the reasons in the section above.)
+
+---
+
+## Exports: everyone sells more abroad
+
+```{r exports}
+peer_chart("exports", unit = "%",
+           title  = "Exports of goods and services (% of the economy)",
+           ytitle = "% of the economy")
+```
+
+```{r exports_bars}
+exports_change <- sapply(countries, function(cty) round(at("exports", cty, 2024) - at("exports", cty, 2008)))
+ranked_bars(exports_change, "Exports: change from 2008 to 2024 (percentage points of the economy)")
+```
+
+The one thing all six did after the crisis was to sell more to the rest of the world. Greek exports went from **`r round(at("exports", "Greece", 2008))`%** of the economy in 2008 to **`r round(at("exports", "Greece", 2024))`%** in 2024, Portugal's from `r round(at("exports", "Portugal", 2008))`% to `r round(at("exports", "Portugal", 2024))`%. The bar chart shows the change in percentage points: Greece's exports grew by `r exports_change[["Greece"]]` points of its economy. Ireland's exports are bigger than its whole economy, and Cyprus's almost as big, because exports count the full value of what is sold, including parts that were imported first.
+
+---
+
+## People: who stayed and who left
+
+```{r people}
+population_change <- sapply(countries, function(cty) change_pct(at("population", cty, 2008), at("population", cty, 2024)))
+ranked_bars(population_change, "Population: change from 2008 to 2024 (%)")
+```
+
+During the crisis many people, often young and well educated, left to find work elsewhere. In the countries that recovered quickly, people came back and newcomers arrived: from 2008 to 2024 the population grew by **`r population_change[["Cyprus"]]`%** in Cyprus and **`r population_change[["Ireland"]]`%** in Ireland. Greece's shrank by **`r abs(population_change[["Greece"]])`%**, also because Greek families have few children; Italy's stayed about the same.
+
+---
+
+## Comparing 2008 with 2024 with `indicator_change()`
+
+golemworldbank's `indicator_change()` compares every indicator a country has in two years — the same comparison as the app's **Change (%)** tab. Running it for each country from 2008 to 2024 and keeping the indicators of this story gives one table of percentage changes:
+
+```{r change}
+change_2008_2024 <- bind_rows(lapply(countries, function(cty) {
+  res <- indicator_change(mfi, country = cty, year1 = 2008, year2 = 2024)
+  both <- rbind(res$increased, res$decreased)
+  both <- both[both$Indicator %in% indicators[names(indicators) != "current_account"], ]
+  data.frame(measure = names(indicators)[match(both$Indicator, indicators)],
+             country = cty, change = round(both$`Change %`))
+}))
+
+change_2008_2024 %>%
+  tidyr::pivot_wider(names_from = country, values_from = change) %>%
+  arrange(match(measure, names(indicators))) %>%
+  as.data.frame()
+```
+
+Each number is the percentage change from 2008 to 2024: `income` `-10` for Greece means 10% less than in 2008. Unemployment, investment and exports are themselves percentages, so their change is relative to the 2008 level (unemployment in Ireland going from `r round(at("unemployment", "Ireland", 2008), 1)`% to `r round(at("unemployment", "Ireland", 2024), 1)`% is a change of `r change_pct(at("unemployment", "Ireland", 2008), at("unemployment", "Ireland", 2024))`%). Borrowing from abroad is left out: it is a number that can be below zero, and a percentage change of a negative number, or of one that turns from a minus into a plus, has no clear meaning.
+
+---
+
+## What the charts show
+
+```{r facts}
+snapshot <- df_peers %>%
+  filter(year %in% c(2008, 2013, 2024), measure %in% c("income", "unemployment", "investment", "exports")) %>%
+  mutate(value = round(value, 1)) %>%
+  tidyr::pivot_wider(names_from = country, values_from = value) %>%
+  arrange(match(measure, names(indicators)), year) %>%
+  as.data.frame()
+snapshot
+```
+
+- **The same start:** before 2008, Greece, Cyprus, Portugal and Spain bought far more from abroad than they sold and borrowed the difference. When the borrowing stopped, all of them had to cut back at once.
+- **Different endings:** from 2008 to 2024 income per person rose by `r income_change[["Ireland"]]`% in Ireland (less in reality, see GNI), `r income_change[["Cyprus"]]`% in Cyprus, `r income_change[["Portugal"]]`% in Portugal, `r income_change[["Spain"]]`% in Spain and `r income_change[["Italy"]]`% in Italy, and fell by **`r abs(income_change[["Greece"]])`%** in Greece.
+- **Jobs** came back everywhere, but Greece and Spain still have the highest unemployment of the six: `r round(at("unemployment", "Greece", 2024), 1)`% and `r round(at("unemployment", "Spain", 2024), 1)`% in 2024, against `r round(at("unemployment", "Ireland", 2024), 1)`% to `r round(at("unemployment", "Italy", 2024), 1)`% in the other four.
+- **Investment** is where Greece differs most: it has invested the least of the six every year since 2010.
+- **Exports** grew in all six — the one recipe every country followed.
+- **People** voted with their feet: the countries that recovered fastest gained population, Greece lost it.
+
+---
+
+## Customising it
+
+### Highlight a different country
+
+```{r custom_highlight, eval=FALSE}
+highlight <- "Portugal"
+peer_chart("income", index_year = 2008, ref = 100, tozero = FALSE,
+           title = "Income per person, 2008 = 100", ytitle = "2008 = 100")
+```
+
+### Add a country
+
+`R/mfi_euro_crisis.rds` holds these six countries only. With golemworldbank installed (see [Packages](#packages)), its `mfi` has every country: load it instead of the file and add the country to `countries`.
+
+```r
+library(golemworldbank)   # replaces mfi <- readRDS(...)
+countries <- c("Greece", "Ireland", "Portugal", "Spain", "Cyprus", "Italy", "Germany")
+```
+
+### Another pair of years
+
+```{r custom_years, eval=FALSE}
+recovery <- indicator_change(mfi, country = "Portugal", year1 = 2013, year2 = 2019)
+head(recovery$increased)
+head(recovery$decreased)
+```
+
+---
+
+## Further reading
+
+- [Greece Since 2000: Boom, Crisis and Recovery](ILLUSTRATION_GREECE_SINCE_2000.html) — the Greek story on its own, year by year
+- [golemworldbank](https://github.com/sedzinfo/golemworldbank) — the R package and Shiny app this story's data and `indicator_change()` come from ([documentation](https://sedzinfo.github.io/golemworldbank/))
+- [World Development Indicators](https://datatopics.worldbank.org/world-development-indicators/) — the World Bank's database behind `mfi`
+- [Greek Wages Race](ILLUSTRATION_GREEK_WAGES_PRICES.html) and [Greek Housing Race](ILLUSTRATION_GREEK_HOUSING.html) — Greece against the rest of Europe on salaries, prices, rents and house prices
+
+---
+
+*Rendered with R `r getRversion()` · plotly · golemworldbank*
