@@ -1,0 +1,738 @@
+---
+title: "Fewer and Older: Greece's Population, Its Economy and Its Debt"
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Greece has had fewer people every year since 2011. The official projections say that the fall will go on for the rest of the century, and that the people will be older. This story asks what that means for the economy, and for the public debt that the economy has to carry:
+
+1. **How many people will Greece have?**
+2. **Why is the population falling?**
+3. **How old will it be?**
+4. **Who will work, and how much will they produce?**
+5. **What will pensions and health care cost?**
+6. **What happens to the debt?**
+
+The data come from two places:
+
+- **Eurostat**, the statistical office of the EU: the population since 1960, births, deaths, migration, employment, productivity and the debt, and **EUROPOP2023**, its projections of the population of every EU country to 2100. They are downloaded when the document is knitted, so the charts show the latest figures.
+- **The European Commission's *2024 Ageing Report***, which projects what pensions, health care, long-term care and education will cost in each EU country until 2070, with the same population projections, and how fast each economy can grow. The report is a PDF, so its figures are typed in below, with the table they come from.
+
+**A projection is not a forecast.** EUROPOP2023 starts from the population of 2022 and shows what happens if births, deaths and migration follow the paths that Eurostat assumed in 2023. Besides this *baseline*, it has *variants*, with more or fewer migrants, none at all, fewer births or longer lives, which show how much the result depends on these assumptions.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+# one series of a dataset, in the order of the years
+by_year <- function(x, years) x$values[match(years, x$time)]
+
+# Greece since 1960: the population on 1 January, births, deaths and net migration
+# (with the statistical adjustment that makes the population of each year add up)
+balance <- eurostat_values("demo_gind", list(geo = "EL", indic_de = c("JAN", "LBIRTH", "DEATH", "CNMIGRAT")))
+history <- data.frame(year = sort(unique(balance$time)))
+history$population <- by_year(balance[balance$indic_de == "JAN", ], history$year)
+history$births <- by_year(balance[balance$indic_de == "LBIRTH", ], history$year)
+history$deaths <- by_year(balance[balance$indic_de == "DEATH", ], history$year)
+history$net_migration <- by_year(balance[balance$indic_de == "CNMIGRAT", ], history$year)
+now <- max(history$year[!is.na(history$population)])   # the latest population
+last <- max(history$year[!is.na(history$births)])      # the latest year of births and deaths
+past <- function(column, year) history[[column]][history$year == year]
+peak <- max(history$population, na.rm = TRUE)
+peak_year <- history$year[which.max(history$population)]
+
+# children per woman, every country
+fertility <- eurostat_values("demo_find", list(indic_de = "TOTFERRT"))
+
+# the age groups of this story
+groups <- c(young = "Under 20", working = "20 to 64", old = "65 to 79", oldest = "80 and over")
+# the age of a Eurostat age code: Y_LT1 is under one, Y_OPEN and Y_GE100 are the oldest,
+# and the codes of totals, such as TOTAL, give NA
+age_of <- function(code) {
+  age <- suppressWarnings(as.numeric(sub("^Y", "", code)))
+  age[code == "Y_LT1"] <- 0
+  age[code %in% c("Y_OPEN", "Y_GE100")] <- 100
+  age
+}
+# the people of each age group by year, from a dataset by single year of age
+by_age_group <- function(x) {
+  x$age <- age_of(x$age)
+  x <- x[!is.na(x$age), ]
+  x$group <- cut(x$age, c(-1, 19, 64, 79, Inf), labels = names(groups))
+  counts <- aggregate(values ~ time + group, x, sum)
+  wide <- reshape(counts, idvar = "time", timevar = "group", direction = "wide")
+  names(wide) <- sub("^values\\.", "", names(wide))
+  names(wide)[names(wide) == "time"] <- "year"
+  wide$total <- rowSums(wide[names(groups)])
+  wide[order(wide$year), ]
+}
+# Greece by age group since 1980, as earlier years lack the single years of age
+ages_past <- by_age_group(eurostat_values("demo_pjan", list(geo = "EL", sex = "T")))
+ages_past <- ages_past[ages_past$year >= 1980, ]
+ages_now <- max(ages_past$year)
+age_past <- function(column, year = ages_now) ages_past[[column]][ages_past$year == year]
+
+# EUROPOP2023: Greece by age group until 2100, in the baseline and its variants
+variants <- c(
+  BSL = "Baseline", HMIGR = "Higher migration", LMIGR = "Lower migration",
+  NMIGR = "No migration", LFRT = "Lower fertility", LMRT = "Lower mortality"
+)
+projected <- eurostat_values("proj_23np", list(geo = "EL", sex = "T"))
+future <- do.call(rbind, lapply(names(variants), function(v) {
+  cbind(projection = v, by_age_group(projected[projected$projection == v, ]))
+}))
+ahead <- function(column, year, variant = "BSL") {
+  x <- future[future$projection == variant, ]
+  x[[column]][match(year, x$year)]
+}
+
+# EUROPOP2023: the births, deaths and net migration it assumes for Greece, and for every country
+# the people aged 65 and over for every 100 aged 15 to 64, the old-age dependency ratio
+indicators <- eurostat_values("proj_23ndbi", list(projection = "BSL", indic_de = c("OLDDEP1", "LBIRTH", "DEATH", "NMIGRAT")))
+assumed <- function(item) indicators[indicators$geo == "EL" & indicators$indic_de == item, ]
+dependency <- indicators[indicators$indic_de == "OLDDEP1", ]
+dependency_past <- eurostat_values("demo_pjanind", list(geo = c("EL", "EU27_2020"), indic_de = "OLDDEP1"))
+
+# employment rates (% of the age group) and people in work (thousands), every country
+employment <- eurostat_values("lfsi_emp_a", list(
+  indic_em = "EMP_LFS", age = c("Y20-64", "Y55-64"), sex = c("T", "F", "M"), unit = c("PC_POP", "THS_PER")
+))
+job_year <- max(employment$time[employment$geo == "EL"])
+employed <- function(geo, age = "Y20-64", sex = "T", unit = "PC_POP", year = job_year) {
+  employment$values[employment$geo == geo & employment$age == age & employment$sex == sex &
+    employment$unit == unit & employment$time == year]
+}
+
+# output per person employed, after inflation, as an index of 2000 = 100
+productivity <- eurostat_values("nama_10_lp_ulc", list(geo = c("EL", "EU27_2020"), na_item = "RLPR_PER", unit = "I15"))
+productivity <- productivity[productivity$time >= 2000, ]
+base <- productivity[productivity$time == 2000, ]
+productivity$index <- 100 * productivity$values / base$values[match(productivity$geo, base$geo)]
+
+# debt and interest of the general government of Greece
+edp <- eurostat_values("gov_10dd_edpt1", list(geo = "EL", sector = "S13", na_item = c("GD", "D41PAY"), unit = c("MIO_EUR", "PC_GDP")))
+debt_year <- max(edp$time[edp$na_item == "GD"])
+debt <- function(item, unit, year = debt_year) edp$values[edp$na_item == item & edp$unit == unit & edp$time == year]
+
+eu_name <- c(setNames(eu_countries$name, eu_countries$code), EU27_2020 = "EU-27")
+```
+
+```{r ageing_report}
+# European Commission, 2024 Ageing Report (Institutional Paper 279, April 2024), baseline, % of GDP:
+# public pensions, gross (Table II.1.64), health care (II.1.107), long-term care (II.1.114),
+# education (II.1.131) and their total (II.1.135); and the benefit ratio, the average pension
+# as % of the average wage (II.1.79)
+ageing <- data.frame(
+  year = c(2022, 2025, seq(2030, 2070, 5)),
+  pensions = c(14.5, 13.2, 12.7, 13.4, 13.7, 14.0, 14.0, 13.3, 12.7, 12.4, 12.0),
+  pensions_eu = c(11.4, 11.7, 11.9, 12.2, 12.2, 12.1, 12.1, 11.9, 11.8, 11.8, 11.8),
+  health = c(5.4, 5.2, 5.4, 5.6, 5.8, 5.9, 6.0, 6.1, 6.1, 6.0, 5.9),
+  long_term_care = c(0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2, 0.1, 0.1),
+  education = c(3.4, 3.2, 3.0, 2.9, 2.9, 3.0, 3.1, 3.1, 3.0, 3.0, 2.9),
+  total = c(23.4, 21.7, 21.2, 22.0, 22.5, 23.0, 23.3, 22.6, 21.9, 21.6, 21.0),
+  total_eu = c(24.4, 24.3, 24.6, 25.0, 25.2, 25.4, 25.5, 25.6, 25.5, 25.5, 25.6),
+  benefit_ratio = c(76.4, 76.2, 73.0, 69.9, 65.3, 60.5, 57.1, 53.9, 52.3, 52.3, 53.0),
+  benefit_ratio_eu = c(43.2, 44.7, 43.6, 42.3, 40.7, 39.3, 38.0, 36.9, 36.3, 35.9, 35.8)
+)
+ar <- function(column, year) ageing[[column]][ageing$year == year]
+long_term_care_eu <- 1.7   # the EU in 2022 (Table II.1.114)
+# the Greek pension fiche of the same report (December 2023), Table 17: how much more public
+# pensions would cost, in points of GDP, if the benefit ratio stayed as in 2022
+constant_benefit <- data.frame(year = c(2022, seq(2030, 2070, 10)), extra = c(0, 0, 0.8, 2.8, 4.0, 3.5))
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+# the age groups, from light to dark
+age_colors <- c(young = "#86b6ef", working = "#3987e5", old = "#1c5cab", oldest = "#0d366b")
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    # at the top, so that a legend of two or three rows fits under it in a larger top margin
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# labels at the right end of lines
+end_labels <- function(x, y, text) {
+  lapply(seq_along(y), function(k) {
+    list(x = x, y = y[k], text = text[k], xanchor = "left", xshift = 6, showarrow = FALSE, font = list(color = dark_gray))
+  })
+}
+# a dotted line after the last year of data, where the projection starts, and its label
+projection_start <- function(year) {
+  list(type = "line", x0 = year + 0.5, x1 = year + 0.5, y0 = 0, y1 = 1, yref = "paper", line = list(color = gray, width = 1, dash = "dot"))
+}
+projection_label <- function(year) {
+  list(x = year + 0.5, y = 1, yref = "paper", text = "Projection", xanchor = "left", yanchor = "top", xshift = 4, showarrow = FALSE, font = list(color = dark_gray))
+}
+# short labels of numbers
+million <- function(x, digits = 2) paste(format(round(x / 1e6, digits), nsmall = digits), "million")
+thousands <- function(x) format(round(x, -3), big.mark = ",", scientific = FALSE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+more_or_fewer <- function(x) if (x >= 0) "more" else "fewer"
+# the place of a country counted from the lowest: 1 is the lowest
+lowest <- function(k) {
+  if (k > 8) return(paste0("the ", k, "th lowest"))
+  paste0("the ", c("", "second ", "third ", "fourth ", "fifth ", "sixth ", "seventh ", "eighth ")[k], "lowest")
+}
+```
+
+---
+
+## 1. How many people will Greece have?
+
+**Fewer every year: about `r million(ahead("total", 2050), 1)` in 2050 and `r million(ahead("total", 2075), 1)` in 2075, against `r million(past("population", now), 1)` today.**
+
+The population of Greece grew from `r million(past("population", 1960))` in 1960 to `r million(peak)` in `r peak_year`. Since then it has fallen, to `r million(past("population", now))` on 1 January `r now`. In the baseline projection of Eurostat it keeps falling: to `r million(ahead("total", 2050))` in 2050, `r million(ahead("total", 2075))` in 2075 and `r million(ahead("total", 2100))` in 2100, `r if (ahead("total", 2100) < past("population", 1960)) "fewer than in 1960" else "about as many as in 1960"`.
+
+```{r population}
+shown <- c(HMIGR = "dash", BSL = "solid", LFRT = "dot", NMIGR = "dashdot")
+p <- plot_ly(history[!is.na(history$population), ],
+  x = ~year, y = ~ population / 1e6, type = "scatter", mode = "lines", name = "Actual",
+  line = list(color = "black", width = 3), hovertemplate = "%{x}: %{y:.2f} million<extra>Actual</extra>"
+)
+for (v in names(shown)) {
+  projection <- future[future$projection == v, ]
+  p <- add_trace(p,
+    x = projection$year, y = projection$total / 1e6, type = "scatter", mode = "lines", name = variants[[v]],
+    line = list(color = if (v == "BSL") greek_red else gray, width = if (v == "BSL") 3 else 2, dash = shown[[v]]),
+    hovertemplate = paste0("%{x}: %{y:.2f} million<extra>", variants[[v]], "</extra>"), inherit = FALSE
+  )
+}
+in_2100 <- sapply(names(shown), function(v) ahead("total", 2100, v))
+p %>% chart(
+  "The population of Greece on 1 January, million", "Eurostat, demo_gind; projections: proj_23np (EUROPOP2023)", "Million",
+  # a fixed range, or plotly widens the axis to fit the labels at the end of the lines
+  x_axis = list(range = c(1958, 2102)),
+  annotations = c(
+    end_labels(2100, in_2100 / 1e6, paste0(variants[names(shown)], ": ", format(round(in_2100 / 1e6, 1), nsmall = 1))),
+    list(list(x = peak_year, y = peak / 1e6, text = paste0(peak_year, ": the peak"), showarrow = TRUE, ax = 45, ay = -25))
+  ),
+  margin = list(t = 100, b = 90, r = 170), legend = legend_top
+)
+```
+
+The variants show what the result depends on. **Migration matters most**: with a third more migrants a year than in the baseline, Greece would have `r million(ahead("total", 2100, "HMIGR"), 1)` people in 2100; with no migration at all, `r million(ahead("total", 2100, "NMIGR"), 1)`. With a fifth fewer births, `r million(ahead("total", 2100, "LFRT"), 1)`.
+
+```{r projected_and_actual}
+# the years since the start of the projection: what it assumed, and what happened
+since <- 2023:last
+assumed_over <- function(item) { x <- assumed(item); sum(x$values[x$time %in% since]) }
+actual_over <- function(column) sum(history[[column]][history$year %in% since])
+compare <- data.frame(
+  item = c(paste("Births,", min(since), "to", last), paste("Deaths,", min(since), "to", last),
+           paste("Net migration,", min(since), "to", last), paste("Population on 1 January", now)),
+  projected = c(assumed_over("LBIRTH"), assumed_over("DEATH"), assumed_over("NMIGRAT"), ahead("total", now)),
+  actual = c(actual_over("births"), actual_over("deaths"), actual_over("net_migration"), past("population", now))
+)
+compare$difference <- compare$actual - compare$projected
+knitr::kable(data.frame(
+  compare$item, format(compare$projected, big.mark = ","), format(compare$actual, big.mark = ","),
+  paste0(ifelse(compare$difference > 0, "+", ""), format(compare$difference, big.mark = ","))
+), col.names = c("", "Projected (baseline)", "Actual", "Difference"), align = "lrrr")
+```
+
+**Since 2022, the population has fallen `r if (compare$difference[4] > 0) "more slowly" else "faster"` than projected.** On 1 January `r now`, Greece had `r thousands(abs(compare$difference[4]))` `r more_or_fewer(compare$difference[4])` people than in the baseline. Births did not help: `r thousands(abs(compare$difference[1]))` `r more_or_fewer(compare$difference[1])` children were born from `r min(since)` to `r last` than the projection assumed. Migration made the difference: in these years `r thousands(compare$actual[3])` more people came to Greece than left, while the projection assumed `r if (compare$projected[3] < 0) paste(thousands(-compare$projected[3]), "more would leave than come") else paste(thousands(compare$projected[3]), "more would come than leave")`. (Eurostat's net migration of the past years includes a statistical adjustment.)
+
+---
+
+## 2. Why is the population falling?
+
+### Fewer children
+
+```{r fertility_numbers}
+tfr <- function(geo, year) fertility$values[fertility$geo == geo & fertility$time == year]
+tfr_year <- max(fertility$time[fertility$geo == "EL"])
+replacement_until <- max(fertility$time[fertility$geo == "EL" & fertility$values >= 2.1])
+eu_tfr <- fertility[fertility$time == tfr_year & fertility$geo %in% eu_countries$code, ]
+```
+
+A population keeps its size without migration when each woman has about 2.1 children. Greek women had `r tfr("EL", 1980)` children each in 1980, and fewer than 2.1 in every year since `r replacement_until + 1`. In `r tfr_year` they had `r tfr("EL", tfr_year)`, `r lowest(sum(eu_tfr$values < tfr("EL", tfr_year)) + 1)` in the EU, where the average was `r tfr("EU27_2020", tfr_year)`. Without migration, each generation would be about `r round(100 * tfr("EL", tfr_year) / 2.1)`% as large as that of its parents.
+
+```{r fertility}
+plot_ly(fertility[fertility$geo == "EL", ],
+  x = ~time, y = ~values, type = "scatter", mode = "lines", name = "Greece",
+  line = list(color = greek_red, width = 3), hovertemplate = "%{x}: %{y:.2f} children per woman<extra>Greece</extra>"
+) %>%
+  add_trace(data = fertility[fertility$geo == "EU27_2020", ],
+    x = ~time, y = ~values, type = "scatter", mode = "lines", name = "EU-27",
+    line = list(color = blue, width = 3), hovertemplate = "%{x}: %{y:.2f} children per woman<extra>EU-27</extra>", inherit = FALSE
+  ) %>%
+  chart("Children per woman", "Eurostat, demo_find", "Children per woman",
+    y_axis = list(rangemode = "tozero"),
+    shapes = list(list(type = "line", x0 = 1960, x1 = tfr_year, y0 = 2.1, y1 = 2.1, line = list(color = gray, dash = "dash"))),
+    annotations = list(list(
+      x = tfr_year, y = 2.1, text = "2.1: the population keeps its size without migration", xanchor = "right", yanchor = "bottom",
+      showarrow = FALSE, font = list(color = dark_gray)
+    )),
+    legend = legend_top
+  )
+```
+
+### More deaths than births
+
+```{r births_numbers}
+crossing <- max(history$year[!is.na(history$births) & history$births >= history$deaths]) + 1
+births_ahead <- assumed("LBIRTH")
+deaths_ahead <- assumed("DEATH")
+later <- deaths_ahead$time[deaths_ahead$time > last]
+deaths_stay_higher <- all(deaths_ahead$values[match(later, deaths_ahead$time)] > births_ahead$values[match(later, births_ahead$time)])
+```
+
+Fewer children per woman, and now fewer women of the age to have them, as the smaller generations born after 1980 reach it: in `r last`, `r thousands(past("births", last))` children were born in Greece, `r percent(100 * past("births", last) / past("births", 1980))` of the `r thousands(past("births", 1980))` of 1980. As the population grows older, more people die: `r thousands(past("deaths", last))` in `r last`, against `r thousands(past("deaths", 1980))` in 1980. Every year since `r crossing` more people have died than were born`r if (deaths_stay_higher) ", and the baseline projection expects that to go on until 2100" else ""`.
+
+```{r births_deaths}
+plot_ly(history[!is.na(history$births), ],
+  x = ~year, y = ~ births / 1000, type = "scatter", mode = "lines", name = "Births",
+  line = list(color = blue, width = 3), hovertemplate = "%{x}: %{y:.1f} thousand births<extra></extra>"
+) %>%
+  add_trace(y = ~ deaths / 1000, name = "Deaths", line = list(color = greek_red, width = 3),
+    hovertemplate = "%{x}: %{y:.1f} thousand deaths<extra></extra>") %>%
+  add_trace(data = births_ahead, x = ~time, y = ~ values / 1000, type = "scatter", mode = "lines", name = "Births, projected",
+    line = list(color = blue, width = 2, dash = "dot"), hovertemplate = "%{x}: %{y:.1f} thousand births, projected<extra></extra>",
+    inherit = FALSE) %>%
+  add_trace(data = deaths_ahead, x = ~time, y = ~ values / 1000, type = "scatter", mode = "lines", name = "Deaths, projected",
+    line = list(color = greek_red, width = 2, dash = "dot"), hovertemplate = "%{x}: %{y:.1f} thousand deaths, projected<extra></extra>",
+    inherit = FALSE) %>%
+  chart("Births and deaths in Greece, thousands a year", "Eurostat, demo_gind; projected: proj_23ndbi (EUROPOP2023, baseline)",
+    "Thousands", y_axis = list(rangemode = "tozero"), legend = legend_top)
+```
+
+### Emigration in the crisis, immigration now
+
+```{r migration_numbers}
+crisis <- history[history$year %in% 2010:2016, ]
+migration_ahead <- assumed("NMIGRAT")
+turns_positive <- min(migration_ahead$time[migration_ahead$time > last & migration_ahead$values > 0])
+migration_in <- function(year) migration_ahead$values[migration_ahead$time == year]
+```
+
+In the crisis, more people left Greece than came: `r thousands(-sum(crisis$net_migration))` more from 2010 to 2016. Since 2023 more come than leave, `r thousands(past("net_migration", last))` more in `r last`, but that does not make up for the gap between deaths and births, `r thousands(past("deaths", last) - past("births", last))` in `r last`. The baseline projection assumes that a few more people leave than come until `r turns_positive - 1`, and that from then on a few more come than leave: `r thousands(migration_in(2050))` in 2050 and `r thousands(migration_in(2070))` in 2070. In the chart, the blue bars are the years when more people came than left, the red bars the years when more left than came.
+
+```{r migration}
+moves <- history[!is.na(history$net_migration), ]
+plot_ly(moves,
+  x = ~year, y = ~ net_migration / 1000, type = "bar", name = "Actual",
+  marker = list(color = ifelse(moves$net_migration < 0, greek_red, blue)),
+  hovertemplate = "%{x}: %{y:+.1f} thousand<extra></extra>"
+) %>%
+  add_trace(data = migration_ahead[migration_ahead$time <= 2070, ], x = ~time, y = ~ values / 1000,
+    type = "scatter", mode = "lines", name = "Projected (baseline)", line = list(color = "black", width = 2, dash = "dot"),
+    hovertemplate = "%{x}: %{y:+.1f} thousand, projected<extra></extra>", inherit = FALSE) %>%
+  chart("Net migration to Greece, thousands a year",
+    "Eurostat, demo_gind (with the statistical adjustment); projected: proj_23ndbi (EUROPOP2023, baseline)",
+    "Thousands", showlegend = FALSE,
+    annotations = list(list(x = 2058, y = migration_in(2058) / 1000, text = "Projected (baseline)", yanchor = "bottom",
+      yshift = 4, showarrow = FALSE, font = list(color = dark_gray))))
+```
+
+---
+
+## 3. How old will it be?
+
+```{r age_numbers}
+aged_65 <- function(year) if (year <= ages_now) age_past("old", year) + age_past("oldest", year) else ahead("old", year) + ahead("oldest", year)
+share_now <- 100 * aged_65(ages_now) / age_past("total")
+share_2050 <- 100 * aged_65(2050) / ahead("total", 2050)
+working_fall <- 100 * (1 - ahead("working", 2050) / age_past("working"))
+```
+
+**Much older.** In `r ages_now`, `r percent(share_now)` of the people of Greece were 65 or over; in 2050, `r percent(share_2050)` will be. The number aged 80 and over grows from `r million(age_past("oldest"))` to `r million(ahead("oldest", 2050))`, while the number aged 20 to 64, the age of almost all workers, falls by `r percent(working_fall)`, from `r million(age_past("working"))` to `r million(ahead("working", 2050))`.
+
+```{r ages}
+ages <- rbind(ages_past, future[future$projection == "BSL" & future$year > ages_now, names(ages_past)])
+p <- plot_ly(ages, x = ~year)
+for (g in names(groups)) {
+  p <- add_trace(p,
+    y = ages[[g]] / 1e6, name = groups[[g]], type = "scatter", mode = "lines", stackgroup = "one",
+    fillcolor = age_colors[[g]], line = list(color = "white", width = 1),
+    hovertemplate = paste0("%{x}: %{y:.2f} million aged ", tolower(groups[[g]]), "<extra></extra>")
+  )
+}
+p %>% chart("The people of Greece by age, million",
+  paste0("Eurostat, demo_pjan; from ", ages_now + 1, ", proj_23np (EUROPOP2023, baseline)"), "Million",
+  shapes = list(projection_start(ages_now)), annotations = list(projection_label(ages_now)),
+  legend = c(legend_top, traceorder = "normal")
+)
+```
+
+For every person aged 65 or over, Greece had `r format(round(age_past("working") / aged_65(ages_now), 1), nsmall = 1)` people aged 20 to 64 in `r ages_now`; in 2050 it will have `r format(round(ahead("working", 2050) / aged_65(2050), 1), nsmall = 1)`.
+
+```{r dependency_numbers}
+dependency_now <- max(dependency_past$time)
+dependency_line <- function(geo) {
+  rbind(
+    dependency_past[dependency_past$geo == geo, c("time", "values")],
+    dependency[dependency$geo == geo & dependency$time > dependency_now, c("time", "values")]
+  )
+}
+ratio <- function(geo, year) {
+  x <- dependency_line(geo)
+  x$values[x$time == year]
+}
+ranking <- dependency[dependency$time == 2050 & dependency$geo %in% c(eu_countries$code, "EU27_2020"), ]
+ranking$name <- eu_name[ranking$geo]
+ranking <- ranking[order(ranking$values), ]
+ranking$name <- factor(ranking$name, levels = ranking$name)
+countries_2050 <- rev(as.character(ranking$geo[ranking$geo != "EU27_2020"]))   # the highest first
+```
+
+**Greece ages faster than almost any country of the EU.** Eurostat measures ageing with the *old-age dependency ratio*, the number of people aged 65 and over for every 100 aged 15 to 64. In Greece it rises from `r round(ratio("EL", dependency_now), 1)` in `r dependency_now` to `r round(ratio("EL", 2050), 1)` in 2050, `r if (countries_2050[1] == "EL") paste0("the highest in the EU, ahead of ", eu_name[[countries_2050[2]]], " and ", eu_name[[countries_2050[3]]]) else paste0("the ", match("EL", countries_2050), "th highest in the EU")`; in the EU, from `r round(ratio("EU27_2020", dependency_now), 1)` to `r round(ratio("EU27_2020", 2050), 1)`. After 2050 it falls a little, as the large generations born until about 1980 are followed by the smaller ones born after.
+
+```{r dependency}
+plot_ly(dependency_line("EL"),
+  x = ~time, y = ~values, type = "scatter", mode = "lines", name = "Greece",
+  line = list(color = greek_red, width = 3), hovertemplate = "%{x}: %{y:.1f}<extra>Greece</extra>"
+) %>%
+  add_trace(data = dependency_line("EU27_2020"), x = ~time, y = ~values, type = "scatter", mode = "lines", name = "EU-27",
+    line = list(color = blue, width = 3), hovertemplate = "%{x}: %{y:.1f}<extra>EU-27</extra>", inherit = FALSE) %>%
+  chart("People aged 65 and over for every 100 aged 15 to 64",
+    paste0("Eurostat, demo_pjanind; from ", dependency_now + 1, ", proj_23ndbi (EUROPOP2023, baseline)"), "Per 100 aged 15 to 64",
+    y_axis = list(rangemode = "tozero"),
+    shapes = list(projection_start(dependency_now)), annotations = list(projection_label(dependency_now)), legend = legend_top)
+```
+
+```{r dependency_eu, fig.height = 9}
+plot_ly(ranking,
+  x = ~values, y = ~name, type = "bar", orientation = "h",
+  marker = list(color = ifelse(ranking$geo == "EL", greek_red, ifelse(ranking$geo == "EU27_2020", blue, gray))),
+  hovertemplate = "%{y}: %{x:.1f}<extra></extra>"
+) %>%
+  chart("People aged 65 and over for every 100 aged 15 to 64, in 2050", "Eurostat, proj_23ndbi (EUROPOP2023, baseline)",
+    margin = list(l = 130, t = 70, b = 90))
+```
+
+---
+
+## 4. Who will work, and how much will they produce?
+
+What an economy produces is the number of people who work, times what each of them produces. Greece has a problem with both.
+
+### Fewer workers
+
+```{r job_numbers}
+rate_now <- employed("EL")
+rate_eu <- employed("EU27_2020")
+rate_high <- 80
+eu_rates <- employment[employment$geo %in% eu_countries$code & employment$age == "Y20-64" & employment$sex == "T" &
+  employment$unit == "PC_POP" & employment$time == job_year, ]
+jobs_now <- 1000 * employed("EL", unit = "THS_PER")
+jobs_2013 <- 1000 * employed("EL", unit = "THS_PER", year = 2013)
+women_gap <- employed("EU27_2020", sex = "F") - employed("EL", sex = "F")
+men_gap <- employed("EU27_2020", sex = "M") - employed("EL", sex = "M")
+```
+
+Since 2013, the number of people aged 20 to 64 with a job in Greece has grown by `r thousands(jobs_now - jobs_2013)`, to `r million(jobs_now)`, and the share of them who work, the *employment rate*, from `r percent(employed("EL", year = 2013), 1)` to `r percent(rate_now, 1)`. That is how the economy recovered from the crisis. The rate is still `r lowest(sum(eu_rates$values < rate_now) + 1)` in the EU, where it is `r percent(rate_eu, 1)`, `r if (women_gap > 2 * men_gap) "mainly because fewer women work" else "as fewer women and men work"`: `r percent(employed("EL", sex = "F"), 1)` of Greek women aged 20 to 64 have a job, against `r percent(employed("EU27_2020", sex = "F"), 1)` in the EU, while for men the rates are `r percent(employed("EL", sex = "M"), 1)` and `r percent(employed("EU27_2020", sex = "M"), 1)`. Fewer older people work, too: `r percent(employed("EL", "Y55-64"), 1)` of those aged 55 to 64, against `r percent(employed("EU27_2020", "Y55-64"), 1)` in the EU.
+
+With fewer people aged 20 to 64, the number of workers falls even if more of them work. The chart starts from the people with a job in `r job_year` and follows the people aged 20 to 64 of the baseline projection, at three employment rates, each reached in ten years:
+
+```{r workers}
+# the employment rate of each year, from today's to the one of a scenario in ten years
+rate_path <- function(years, to) rate_now + (to - rate_now) * pmin(1, pmax(0, (years - job_year) / 10))
+years_ahead <- job_year:2075
+workers_path <- function(to) {
+  jobs_now * ahead("working", years_ahead) / ahead("working", job_year) * rate_path(years_ahead, to) / rate_now
+}
+paths <- data.frame(
+  key = c("high", "eu", "stays"),
+  rate = c(rate_high, rate_eu, rate_now),
+  label = c(paste0("Reaches ", rate_high, "%"), paste0("Reaches the EU's ", percent(rate_eu)), paste0("Stays at ", percent(rate_now))),
+  color = c(blue, greek_red, gray)
+)
+workers <- lapply(setNames(paths$rate, paths$key), workers_path)
+jobs <- employment[employment$geo == "EL" & employment$age == "Y20-64" & employment$sex == "T" & employment$unit == "THS_PER", ]
+
+p <- plot_ly(jobs,
+  x = ~time, y = ~ values / 1000, type = "scatter", mode = "lines", name = "Actual",
+  line = list(color = "black", width = 3), hovertemplate = "%{x}: %{y:.2f} million<extra>Actual</extra>"
+)
+for (k in seq_len(nrow(paths))) {
+  p <- add_trace(p,
+    x = years_ahead, y = workers[[paths$key[k]]] / 1e6, type = "scatter", mode = "lines", name = paths$label[k],
+    line = list(color = paths$color[k], width = if (paths$key[k] == "eu") 3 else 2),
+    hovertemplate = paste0("%{x}: %{y:.2f} million<extra>", paths$label[k], "</extra>"), inherit = FALSE
+  )
+}
+p %>% chart("People aged 20 to 64 in work, million, at three employment rates",
+  "Eurostat, lfsi_emp_a and proj_23np (EUROPOP2023, baseline); own calculation", "Million",
+  shapes = list(projection_start(job_year)), annotations = c(
+    list(projection_label(job_year)),
+    end_labels(2075, sapply(workers, function(w) w[length(w)]) / 1e6, percent(paths$rate))
+  ),
+  margin = list(t = 70, b = 90, r = 60), legend = legend_top)
+fewer_in_2050 <- function(key) 100 * (1 - workers[[key]][years_ahead == 2050] / jobs_now)
+```
+
+If the employment rate stays at `r percent(rate_now)`, Greece has `r percent(fewer_in_2050("stays"))` fewer workers in 2050 than in `r job_year`; at the EU's `r percent(rate_eu)`, `r percent(fewer_in_2050("eu"))` fewer. Even at `r rate_high`%, a rate that `r sum(eu_rates$values >= rate_high)` EU countries already have, it has `r percent(fewer_in_2050("high"))` fewer.
+
+### Productivity that does not grow
+
+```{r productivity_numbers}
+productivity_year <- max(productivity$time)
+since_2000 <- function(geo) productivity$index[productivity$geo == geo & productivity$time == productivity_year] - 100
+```
+
+What each worker produces has not grown in a quarter of a century. Output per person employed, after inflation, rose fast in Greece until 2008, fell in the crisis and is recovering, but in `r productivity_year` it was `r percent(abs(since_2000("EL")))` `r if (since_2000("EL") < 0) "lower" else "higher"` than in 2000. In the EU it was `r percent(since_2000("EU27_2020"))` higher.
+
+```{r productivity}
+plot_ly(productivity[productivity$geo == "EL", ],
+  x = ~time, y = ~index, type = "scatter", mode = "lines", name = "Greece",
+  line = list(color = greek_red, width = 3), hovertemplate = "%{x}: %{y:.1f}<extra>Greece</extra>"
+) %>%
+  add_trace(data = productivity[productivity$geo == "EU27_2020", ], x = ~time, y = ~index, type = "scatter", mode = "lines",
+    name = "EU-27", line = list(color = blue, width = 3), hovertemplate = "%{x}: %{y:.1f}<extra>EU-27</extra>", inherit = FALSE) %>%
+  chart("Output per person employed, after inflation, 2000 = 100", "Eurostat, nama_10_lp_ulc (real labour productivity per person)",
+    "2000 = 100", legend = legend_top)
+```
+
+### What it means for the economy
+
+```{r scenarios}
+# GDP and the debt ratio year by year, from the last year of the debt to 2070. GDP grows with the
+# number of people aged 20 to 64 who work and with what each of them produces (the people at work
+# over 64 are left out); section 6 explains the debt.
+debt_now <- debt("GD", "PC_GDP")
+start_rate <- debt("D41PAY", "MIO_EUR") / debt("GD", "MIO_EUR", debt_year - 1)   # interest paid / debt a year earlier
+rate_to <- 0.03       # the average interest rate on the debt in ten years
+inflation <- 0.02     # a year
+surplus <- 2.5        # the primary surplus, % of GDP
+project <- function(productivity = 0.01, variant = "BSL", employment_to = rate_eu, shrink = TRUE, extra_pensions = FALSE) {
+  years <- debt_year:2070
+  people <- future[future$projection == variant, ]
+  working <- people$working[match(years, people$year)]
+  if (!shrink) working[] <- working[1]
+  in_work <- working * rate_path(years, employment_to)
+  real_growth <- in_work[-1] / in_work[-length(in_work)] * (1 + productivity) - 1
+  growth <- (1 + real_growth) * (1 + inflation) - 1
+  k <- seq_along(growth)
+  interest <- start_rate + (rate_to - start_rate) * pmin(1, k / 10)
+  primary <- rep(surplus, length(k))
+  if (extra_pensions) primary <- primary - approx(constant_benefit$year, constant_benefit$extra, years[-1])$y
+  ratio <- debt_now
+  for (j in k) ratio[j + 1] <- ratio[j] * (1 + interest[j]) / (1 + growth[j]) - primary[j]
+  gdp <- 100 * cumprod(c(1, 1 + real_growth))
+  population <- people$total[match(years, people$year)]
+  data.frame(year = years, gdp = gdp, gdp_person = gdp * population[1] / population, debt_gdp = ratio)
+}
+scenarios <- list(
+  baseline = list(),
+  no_fall = list(shrink = FALSE),
+  fast = list(productivity = 0.016),
+  flat = list(productivity = 0),
+  more_migration = list(variant = "HMIGR"),
+  no_migration = list(variant = "NMIGR"),
+  rate_stays = list(employment_to = rate_now),
+  rate_high = list(employment_to = rate_high),
+  pensions = list(extra_pensions = TRUE)
+)
+scenario_names <- c(
+  baseline = "Baseline: productivity +1% a year",
+  no_fall = "The number of people aged 20 to 64 does not fall",
+  fast = "Productivity +1.6% a year, as the Commission assumes",
+  flat = "Productivity does not grow, as since 2000",
+  more_migration = "Higher migration (EUROPOP2023 variant)",
+  no_migration = "No migration (EUROPOP2023 variant)",
+  rate_stays = paste("The employment rate stays at", percent(rate_now)),
+  rate_high = paste0("The employment rate reaches ", rate_high, "%"),
+  pensions = "Pensions keep their value against wages"
+)
+results <- lapply(scenarios, function(arguments) do.call(project, arguments))
+at <- function(name, column, year) results[[name]][[column]][results[[name]]$year == year]
+
+# the scenarios of the charts
+lines <- data.frame(
+  key = c("fast", "baseline", "flat", "no_fall"),
+  label = c("Productivity +1.6% a year", "Productivity +1% a year", "Productivity flat", "+1%, with no fall in the people aged 20 to 64"),
+  color = c(blue, greek_red, gray, dark_gray),
+  dash = c("solid", "solid", "solid", "dash")
+)
+scenario_lines <- function(p, column, hover) {
+  for (k in seq_len(nrow(lines))) {
+    r <- results[[lines$key[k]]]
+    p <- add_trace(p,
+      x = r$year, y = r[[column]], type = "scatter", mode = "lines", name = lines$label[k],
+      line = list(color = lines$color[k], width = if (lines$key[k] == "baseline") 3 else 2, dash = lines$dash[k]),
+      hovertemplate = paste0("%{x}: ", hover, "<extra>", lines$label[k], "</extra>"), inherit = FALSE
+    )
+  }
+  p
+}
+# the growth of productivity that keeps GDP as it is until 2050, at an employment rate, % a year
+needed <- function(to) {
+  ratio <- workers_path(to)[years_ahead == 2050] / jobs_now
+  100 * (ratio^(-1 / (2050 - job_year)) - 1)
+}
+```
+
+To keep the economy from shrinking, what each worker produces has to grow as fast as the number of workers falls: by `r format(round(needed(rate_eu), 1), nsmall = 1)`% a year until 2050 if the employment rate reaches the EU's, by `r format(round(needed(rate_now), 1), nsmall = 1)`% if it stays as it is. The European Commission assumes, in its Ageing Report, that productivity in Greece will grow by 1.6% a year until 2070, faster than in the EU (1.4%), while the hours worked fall by 0.6% a year, so that GDP grows by 1.1% a year, against 1.3% in the EU. All of Greece's growth would come from productivity, growing for decades at a pace that it reached only in the years before 2008.
+
+The chart follows GDP after inflation, with the employment rate reaching the EU's in ten years, at three speeds of productivity; the dashed line shows what would happen if the number of people aged 20 to 64 did not fall:
+
+```{r gdp}
+scenario_lines(plot_ly(), "gdp", "%{y:.0f}") %>%
+  chart(paste0("GDP after inflation, ", debt_year, " = 100"),
+    "Eurostat, proj_23np (EUROPOP2023, baseline) and lfsi_emp_a; own scenarios", paste0(debt_year, " = 100"),
+    legend = legend_top, margin = list(t = 100, b = 90))
+```
+
+With productivity growing by 1% a year, GDP in 2050 is `r round(at("baseline", "gdp", 2050))` (`r debt_year` = 100); if productivity does not grow, `r round(at("flat", "gdp", 2050))`; at the 1.6% of the Commission, `r round(at("fast", "gdp", 2050))`. Had the people aged 20 to 64 not been falling, the 1% would have taken it to `r round(at("no_fall", "gdp", 2050))`.
+
+A smaller economy is not necessarily a poorer one, as there are fewer people to share it: with productivity growing by 1% a year, GDP per person in 2050 is `r percent(at("baseline", "gdp_person", 2050) - 100)` higher than in `r debt_year`. But the debt does not shrink with the population, and the cost of an older population grows: both weigh more on a smaller economy.
+
+---
+
+## 5. What will pensions and health care cost?
+
+Greece spends more on pensions than almost any EU country: `r percent(ar("pensions", 2022), 1)` of GDP in 2022, against `r percent(ar("pensions_eu", 2022), 1)` in the EU. With many more older people for each person of working age, one would expect that to rise steeply. The Commission projects that it will not: `r percent(ar("pensions", 2050), 1)` of GDP in 2050 and `r percent(ar("pensions", 2070), 1)` in 2070, the largest fall in the EU.
+
+```{r pensions}
+reversed <- merge(constant_benefit, ageing[c("year", "pensions")])
+plot_ly(ageing,
+  x = ~year, y = ~pensions, type = "scatter", mode = "lines+markers", name = "Greece",
+  line = list(color = greek_red, width = 3), marker = list(color = greek_red, size = 8),
+  hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Greece</extra>"
+) %>%
+  add_trace(data = reversed, x = ~year, y = ~ pensions + extra, type = "scatter", mode = "lines+markers",
+    name = "Greece, if pensions keep their value against wages", line = list(color = greek_red, width = 2, dash = "dash"),
+    marker = list(color = greek_red, size = 8, symbol = "circle-open"),
+    hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Pensions keep their value</extra>", inherit = FALSE) %>%
+  add_trace(data = ageing, x = ~year, y = ~pensions_eu, type = "scatter", mode = "lines+markers", name = "EU",
+    line = list(color = blue, width = 3), marker = list(color = blue, size = 8),
+    hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>EU</extra>", inherit = FALSE) %>%
+  chart("Public spending on pensions, % of GDP, projected",
+    "European Commission, 2024 Ageing Report, Table II.1.64; Greek pension fiche, Table 17", "% of GDP",
+    y_axis = list(rangemode = "tozero"), legend = legend_top)
+```
+
+Why? The Greek pension fiche of the report breaks the change from 2022 to 2070 down (Table 8):
+
+- **Ageing** alone would add 7.7 points of GDP.
+- **Smaller pensions against wages** take 6.6 points off. Pensions rise with prices, while wages rise with prices and productivity, so the average pension falls from `r percent(ar("benefit_ratio", 2022), 1)` of the average wage in 2022 to `r percent(ar("benefit_ratio", 2050), 1)` in 2050 and `r percent(ar("benefit_ratio", 2070), 1)` in 2070 (in the EU, from `r percent(ar("benefit_ratio_eu", 2022), 1)` to `r percent(ar("benefit_ratio_eu", 2070), 1)`).
+- **More people in work** take 2.2 points off.
+- **Fewer people retiring early**, as the retirement age follows life expectancy, take 0.7 points off.
+
+These are the effects of the reforms of the 2010s. Their price is that each pensioner gets less against the wages of the time, and that is also their risk: if governments raise pensions with wages instead, to keep the benefit ratio of 2022, the report calculates that pensions would cost `r one(constant_benefit$extra[constant_benefit$year == 2050])` points of GDP more in 2050 and `r one(constant_benefit$extra[constant_benefit$year == 2070])` more in 2070 — more than the primary surplus assumed in the next section.
+
+Health care costs more as people grow older, but the report expects only a small rise in Greece: from `r percent(ar("health", 2022), 1)` of GDP in 2022 to `r percent(ar("health", 2050), 1)` in 2050. Long-term care, for those who can no longer look after themselves, costs the Greek state almost nothing, `r percent(ar("long_term_care", 2022), 1)` of GDP, against `r percent(long_term_care_eu, 1)` in the EU, as families give most of it. With `r million(ahead("oldest", 2050))` people aged 80 and over in 2050, against `r million(age_past("oldest"))` in `r ages_now`, and fewer children for each of them, that will be harder.
+
+Altogether, the report puts what Greece spends on pensions, health care, long-term care and education at `r percent(ar("total", 2022), 1)` of GDP in 2022 and `r percent(ar("total", 2070), 1)` in 2070, while in the EU it rises from `r percent(ar("total_eu", 2022), 1)` to `r percent(ar("total_eu", 2070), 1)`. **On paper, the cost of ageing is under control in Greece; in practice, that depends on pensions falling behind wages for decades.**
+
+---
+
+## 6. What happens to the debt?
+
+The debt ratio of next year is this year's, grown by the interest rate and shrunk by the growth of GDP in euros, minus the primary surplus, the budget before interest:
+
+$$d_{t} = d_{t-1} \times \frac{1 + i_t}{1 + g_t} - pb_t$$
+
+The growth of GDP in euros is the growth of the number of workers, plus the growth of what each of them produces, plus inflation. A shrinking workforce takes something off it every year, so the debt shrinks more slowly against GDP.
+
+The scenarios start from the debt of `r debt_year`, `r round(debt_now, 1)`% of GDP, and assume, unless stated otherwise:
+
+- the people aged 20 to 64 of the baseline projection, of whom `r percent(rate_now)` work in `r job_year`, rising to the EU's `r percent(rate_eu)` in ten years;
+- output per worker growing by 1% a year;
+- inflation of 2% a year, the target of the European Central Bank;
+- an average interest rate on the debt rising from `r percent(100 * start_rate, 1)` to 3% in ten years, as cheap loans are replaced by new borrowing at market rates;
+- a primary surplus of `r surplus`% of GDP every year, as in the steady scenario of the story on the Greek debt.
+
+**They are illustrations of how the population affects the debt, not forecasts.**
+
+```{r debt}
+actual <- edp[edp$na_item == "GD" & edp$unit == "PC_GDP" & edp$time >= 2010, ]
+plot_ly(actual,
+  x = ~time, y = ~values, type = "scatter", mode = "lines", name = "Actual",
+  line = list(color = "black", width = 3), hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Actual</extra>"
+) %>%
+  scenario_lines("debt_gdp", "%{y:.0f}% of GDP") %>%
+  chart("Greek government debt to 2070, % of GDP", "Eurostat, gov_10dd_edpt1, proj_23np and lfsi_emp_a; own scenarios",
+    "% of GDP", y_axis = list(rangemode = "tozero"), legend = legend_top, margin = list(t = 120, b = 90))
+```
+
+The same scenarios and more, each changing one assumption of the baseline:
+
+```{r scenario_table}
+knitr::kable(data.frame(
+  scenario_names[names(results)],
+  sapply(names(results), function(s) round(at(s, "gdp", 2050))),
+  sapply(names(results), function(s) percent(at(s, "debt_gdp", 2035))),
+  sapply(names(results), function(s) percent(at(s, "debt_gdp", 2050))),
+  sapply(names(results), function(s) percent(at(s, "debt_gdp", 2070)))
+), col.names = c("Scenario", paste0("GDP in 2050 (", debt_year, " = 100)"), "Debt in 2035", "Debt in 2050", "Debt in 2070"),
+row.names = FALSE, align = "lrrrr")
+```
+
+```{r debt_numbers}
+debt_in <- function(name, year = 2050) round(at(name, "debt_gdp", year))
+```
+
+- **The shrinking population slows the fall of the debt.** With productivity growing by 1% a year, the debt falls to `r debt_in("baseline")`% of GDP in 2050. If the people aged 20 to 64 did not fall, the same budget would bring it to `r debt_in("no_fall")`%: the fall in the population costs about `r debt_in("baseline") - debt_in("no_fall")` points of GDP of debt by 2050.
+- **Productivity decides.** At 1.6% a year, as the Commission assumes, the debt is `r debt_in("fast")`% of GDP in 2050. If productivity does not grow, as since 2000, it is `r debt_in("flat")`% in 2050 and `r debt_in("flat", 2070)`% in 2070: `r if (debt_in("flat", 2070) >= debt_in("flat", 2035)) "the debt stops falling, even with a primary surplus every year" else "the debt still falls, but slowly"`.
+- **Migration helps, slowly**: with the higher migration of the EUROPOP2023 variant, the debt is `r debt_in("more_migration")`% of GDP in 2050 and `r debt_in("more_migration", 2070)`% in 2070; with no migration at all, `r debt_in("no_migration")`% and `r debt_in("no_migration", 2070)`%. As the baseline assumes that a few more people leave than come until `r turns_positive - 1`, no migration at all does little harm at first.
+- **So do more people in work**: `r debt_in("rate_high")`% if the employment rate reaches `r rate_high`%, `r debt_in("rate_stays")`% if it stays at `r percent(rate_now)`.
+- **Pensions are the largest risk of policy**: if they keep their value against wages, and nothing else changes, the debt is `r debt_in("pensions", 2070)`% of GDP in 2070, instead of `r debt_in("baseline", 2070)`%.
+
+---
+
+## So, what does it mean?
+
+**Greece will still be here in 2075, smaller and older**: about `r million(ahead("total", 2075), 1)` people in the baseline projection, `r if (ahead("total", 2075) < past("population", 1960)) "fewer than in 1960" else "about as many as in 1960"`, and `r percent(100 * aged_65(2075) / ahead("total", 2075))` of them aged 65 or over. A smaller population is not by itself a disaster: what matters for the economy and for the debt is how many people work, and what they produce.
+
+1. **Productivity** matters most. Output per worker has to grow by about `r format(round(needed(rate_eu), 1), nsmall = 1)`% a year just to keep GDP from shrinking, and it has not grown since 2000. Between flat productivity and the 1.6% that the Commission assumes lie `r debt_in("flat") - debt_in("fast")` points of GDP of debt in 2050.
+2. **More people in work**: fewer Greek women and fewer people over 55 work than in the rest of the EU, which leaves room to grow.
+3. **Migration** has already given Greece `r thousands(compare$difference[4])` more people than projected, and of all the variants of the projection it is the one that changes the population most.
+4. **Pensions**: the reforms keep the cost of ageing down by letting pensions fall behind wages. Undoing that would cost up to `r one(max(constant_benefit$extra))` points of GDP a year.
+5. **Births** take the longest: a child born today starts working in about twenty years, so more births would add workers only from the late 2040s.
+
+The debt can keep falling while the population shrinks, but more slowly, and only if productivity grows: the one thing Greece has not managed since 2000.
+
+---
+
+## Sources
+
+- Eurostat: [proj_23np](https://ec.europa.eu/eurostat/databrowser/view/proj_23np/default/table?lang=en) (population projections by age, EUROPOP2023), [proj_23ndbi](https://ec.europa.eu/eurostat/databrowser/view/proj_23ndbi/default/table?lang=en) (projected births, deaths, migration and dependency), [demo_gind](https://ec.europa.eu/eurostat/databrowser/view/demo_gind/default/table?lang=en) (population, births, deaths and migration), [demo_pjan](https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en) (population by age), [demo_pjanind](https://ec.europa.eu/eurostat/databrowser/view/demo_pjanind/default/table?lang=en) (old-age dependency), [demo_find](https://ec.europa.eu/eurostat/databrowser/view/demo_find/default/table?lang=en) (fertility), [lfsi_emp_a](https://ec.europa.eu/eurostat/databrowser/view/lfsi_emp_a/default/table?lang=en) (employment), [nama_10_lp_ulc](https://ec.europa.eu/eurostat/databrowser/view/nama_10_lp_ulc/default/table?lang=en) (productivity), [gov_10dd_edpt1](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_edpt1/default/table?lang=en) (debt and interest).
+- European Commission: [2024 Ageing Report. Economic and Budgetary Projections for the EU Member States (2022-2070)](https://economy-finance.ec.europa.eu/publications/2024-ageing-report-economic-and-budgetary-projections-eu-member-states-2022-2070_en), Institutional Paper 279, April 2024 (Tables II.1.64, II.1.79, II.1.107, II.1.114, II.1.131 and II.1.135), and its [pension fiche for Greece](https://economy-finance.ec.europa.eu/document/download/2704c5dc-e3ae-485e-9244-e32978a31b7e_en?filename=2024-ageing-report-country-fiche-Greece.pdf), prepared by the National Actuarial Authority (Tables 8 and 17).
+- European Commission: [2024 Ageing Report. Underlying Assumptions and Projection Methodologies](https://economy-finance.ec.europa.eu/publications/2024-ageing-report-underlying-assumptions-and-projection-methodologies_en), Institutional Paper 257, November 2023 (Tables I.3.1 to I.3.3: growth of GDP, hours worked and productivity).
