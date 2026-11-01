@@ -1,0 +1,425 @@
+---
+title: "Greek Public Debt: How Much, to Whom, and Can Greece Repay It?"
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Greece went through one of the deepest debt crises of any modern European economy. More than fifteen years after the first bailout, this story answers four questions with official data:
+
+1. **Does Greece owe more now than in 2010?**
+2. **Whom does it owe?**
+3. **How much is that compared with the size of the economy, and with the rest of the EU?**
+4. **Will Greece be able to repay?**
+
+The data come from three places:
+
+- **Eurostat**, the statistical office of the EU: the debt, the deficit, the interest, who holds the debt and when it falls due. They are downloaded when the document is knitted, so the charts show the latest figures.
+- **The World Bank**: interest payments as a share of the government's revenue, back to 1972.
+- **The Public Debt Management Agency (PDMA)** of Greece: who the creditors are, from its *Annual Debt Bulletin 2025*. The bulletin is a PDF, so its figures are typed in below, with the page they come from.
+
+**Two measures of the same debt.** Eurostat and the EU count the debt of the whole *general government* (the State, public bodies, local government and the pension funds) and leave out what one public body owes another: that is the figure of the EU rules, and of the headlines. The PDMA also reports the debt of *the State* alone, which includes the short-term loans that other public bodies make to the State with their spare cash. At the end of 2025 the first was **€362.9 billion**, the second **€406.2 billion**. This story uses the first, except where it names the creditors of the State.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly", "jsonlite"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  as.data.frame(x[!is.na(x$values), ])
+}
+
+# debt, deficit and interest of the general government of Greece
+edp <- eurostat_values("gov_10dd_edpt1", list(
+  geo = "EL", sector = "S13",
+  na_item = c("GD", "GD_F3", "GD_F4", "B9", "D41PAY"),
+  unit = c("MIO_EUR", "PC_GDP")
+))
+# gross domestic product at current prices, million euros
+gdp <- eurostat_values("nama_10_gdp", list(geo = "EL", na_item = "B1GQ", unit = "CP_MEUR"))
+
+# one series of the deficit and debt data, by year
+series <- function(item, unit, years) {
+  s <- edp[edp$na_item == item & edp$unit == unit, ]
+  s$values[match(years, s$time)]
+}
+years <- sort(unique(edp$time[edp$na_item == "GD"]))
+greece <- data.frame(
+  year = years,
+  debt_bn = series("GD", "MIO_EUR", years) / 1000,          # debt, billion euros
+  debt_gdp = series("GD", "PC_GDP", years),                 # debt, % of GDP
+  bonds_bn = series("GD_F3", "MIO_EUR", years) / 1000,      # of which bonds and bills
+  loans_bn = series("GD_F4", "MIO_EUR", years) / 1000,      # of which loans
+  balance_gdp = series("B9", "PC_GDP", years),              # surplus (+) or deficit (-), % of GDP
+  interest_gdp = series("D41PAY", "PC_GDP", years),         # interest, % of GDP
+  interest_bn = series("D41PAY", "MIO_EUR", years) / 1000,
+  gdp_bn = gdp$values[match(years, gdp$time)] / 1000
+)
+# the balance before interest: what the State collects minus what it spends on everything else
+greece$primary_gdp <- greece$balance_gdp + greece$interest_gdp
+last <- max(greece$year)
+at <- function(column, year) greece[[column]][greece$year == year]
+
+# who holds the debt (from 2020), and when it falls due
+holders <- eurostat_values("gov_10dd_ggd", list(geo = "EL", sector = "S13", na_item = "GD", maturity = "TOTAL", unit = "MIO_EUR"))
+due <- eurostat_values("gov_10dd_rmd", list(geo = "EL", sector = "S13", na_item = "GD"))
+
+# debt of every EU country, % of GDP, and the countries with the most
+eu <- eurostat_values("gov_10dd_edpt1", list(sector = "S13", na_item = "GD", unit = "PC_GDP"))
+eu_name <- c(setNames(eu_countries$name, eu_countries$code), EU27_2020 = "EU-27")
+most <- eu[eu$time == last & eu$geo %in% eu_countries$code, ]
+most <- most[order(-most$values), ]
+
+# the average years to repayment of the debt of every EU country, the longest first
+maturities <- eurostat_values("gov_10dd_rmd", list(sector = "S13", na_item = "GD", maturity = "TOTAL", unit = "YR"))
+maturities <- maturities[maturities$time == max(maturities$time) & maturities$geo %in% eu_countries$code, ]
+maturities <- maturities[order(-maturities$values), ]
+
+# World Bank: interest payments, % of revenue
+world_bank <- jsonlite::fromJSON("https://api.worldbank.org/v2/country/GRC/indicator/GC.XPN.INTP.RV.ZS?format=json&per_page=100")[[2]]
+interest_revenue <- data.frame(year = as.integer(world_bank$date), value = world_bank$value)
+interest_revenue <- interest_revenue[!is.na(interest_revenue$value), ]
+interest_revenue <- interest_revenue[order(interest_revenue$year), ]
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+gray <- "#9e9e9e"
+blue <- "#1f77b4"
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = gray)
+  )
+  layout(p,
+    title = list(text = title, x = 0.02, xanchor = "left"),
+    yaxis = list(title = y_title),
+    xaxis = list(title = ""),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+# a short label of an amount
+billion <- function(x) paste0("€", format(round(x), big.mark = ","), " bn")
+```
+
+---
+
+## 1. Does Greece owe more now than in 2010?
+
+**In euros, yes. As a share of the economy, slightly less — and far less than at the peak.**
+
+At the end of 2010 the Greek state owed `r billion(at("debt_bn", 2010))`; at the end of `r last` it owed `r billion(at("debt_bn", last))`, that is `r billion(at("debt_bn", last) - at("debt_bn", 2010))` more. The debt fell only once, in 2012, when private holders of Greek bonds took a loss in the restructuring known as the PSI: between 2011 and 2012 the debt went down by `r billion(at("debt_bn", 2011) - at("debt_bn", 2012))`, although new bailout loans came in at the same time.
+
+```{r debt_euros}
+highlight <- ifelse(greece$year %in% c(2010, last), greek_red, gray)
+plot_ly(greece,
+  x = ~year, y = ~debt_bn, type = "bar", marker = list(color = highlight),
+  hovertemplate = "%{x}: €%{y:.1f} billion<extra></extra>"
+) %>%
+  chart(
+    "Greek government debt, billion euros", "Eurostat, gov_10dd_edpt1", "Billion euros",
+    annotations = list(list(
+      x = 2012, y = at("debt_bn", 2012), text = "2012: bondholders' haircut (PSI)",
+      showarrow = TRUE, ax = 0, ay = -60
+    ))
+  )
+```
+
+What matters for paying a debt is the size of the economy that carries it. As a share of the gross domestic product (GDP), the debt was **`r at("debt_gdp", 2010)`%** in 2010 and **`r at("debt_gdp", last)`%** in `r last`: about the same. In between it rose to `r max(greece$debt_gdp)`% in `r greece$year[which.max(greece$debt_gdp)]`, when the pandemic made the economy shrink, and it has fallen by `r round(max(greece$debt_gdp) - at("debt_gdp", last))` points since.
+
+```{r debt_gdp}
+plot_ly(greece,
+  x = ~year, y = ~debt_gdp, type = "scatter", mode = "lines+markers",
+  line = list(color = greek_red, width = 3), marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f}% of GDP<extra></extra>"
+) %>%
+  add_lines(x = range(greece$year), y = c(60, 60), line = list(color = gray, dash = "dash"), hoverinfo = "skip", inherit = FALSE) %>%
+  chart(
+    "Greek government debt, % of GDP", "Eurostat, gov_10dd_edpt1", "% of GDP",
+    showlegend = FALSE,
+    annotations = list(
+      list(x = greece$year[1], y = 60, text = "60%: the limit of the EU rules", showarrow = FALSE, xanchor = "left", yanchor = "bottom", font = list(color = gray)),
+      list(x = greece$year[which.max(greece$debt_gdp)], y = max(greece$debt_gdp), text = "Pandemic", showarrow = TRUE, ax = -50, ay = -30)
+    )
+  )
+```
+
+---
+
+## 2. Whom does Greece owe?
+
+**Mostly the rest of the euro area, through the rescue funds of the bailouts.** In 2010, `r round(100 * at("bonds_bn", 2010) / at("debt_bn", 2010))`% of the debt was bonds sold to investors; in `r last`, `r round(100 * at("loans_bn", last) / at("debt_bn", last))`% is loans. The bailouts replaced most of the bonds with long, cheap loans from the euro area and, until 2022, the IMF.
+
+```{r bonds_loans}
+plot_ly(greece, x = ~year, y = ~bonds_bn, type = "scatter", mode = "lines", name = "Bonds and bills",
+  line = list(color = gray, width = 3), hovertemplate = "%{x}: €%{y:.1f} billion in bonds<extra></extra>"
+) %>%
+  add_trace(y = ~loans_bn, name = "Loans", line = list(color = greek_red, width = 3),
+    hovertemplate = "%{x}: €%{y:.1f} billion in loans<extra></extra>") %>%
+  chart("From bonds to loans: the debt by instrument, billion euros", "Eurostat, gov_10dd_edpt1", "Billion euros",
+    legend = list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom"))
+```
+
+The PDMA names the creditors of the State. At the end of 2025:
+
+```{r creditors}
+# PDMA, Annual Debt Bulletin 2025 (June 2026), debt of the State at 31.12.2025, million euros (pages 13-14).
+# The bulletin gives 211,421 for the loans of the EFSF, the ESM and the GLF together, and says
+# that the EFSF and the ESM hold 45.58% of the debt; the GLF is the difference.
+total <- 406181
+creditors <- data.frame(
+  creditor = c(
+    "EFSF and ESM: the euro area rescue funds",
+    "Bonds held by investors and the Bank of Greece",
+    "Repos: short-term loans, mostly from public bodies",
+    "GLF: bilateral loans of euro area countries",
+    "Other EU and international loans (RRF, SURE, EIB)",
+    "Treasury bills"
+  ),
+  million = c(round(0.4558 * total), 100759, 62852, 211421 - round(0.4558 * total), 23057, 7969)
+)
+creditors$share <- 100 * creditors$million / total
+creditors <- creditors[order(creditors$million), ]
+creditors$creditor <- factor(creditors$creditor, levels = creditors$creditor)
+
+plot_ly(creditors,
+  x = ~ million / 1000, y = ~creditor, type = "bar", orientation = "h",
+  marker = list(color = c(rep(gray, nrow(creditors) - 1), greek_red)),
+  text = ~ paste0(round(share, 1), "%"), textposition = "outside", cliponaxis = FALSE,
+  hovertemplate = "%{y}: €%{x:.1f} billion<extra></extra>"
+) %>%
+  chart("Who lends to the Greek State, end of 2025, billion euros",
+    "PDMA, Annual Debt Bulletin 2025; the GLF as calculated in the code above",
+    margin = list(l = 330, r = 60, t = 70, b = 90))
+```
+
+- The **EFSF and the ESM**, the rescue funds of the euro area, hold almost half of the debt of the State. Their loans are repaid over decades: those of the EFSF from 2023 to 2070, those of the ESM from 2034 to 2060 (ESM).
+- The **GLF** loans of the first bailout come from the other euro area countries. Their interest rate floats, so Greece is paying them back early: €5.3 billion in 2025.
+- The **IMF** was repaid in full in 2022.
+- The **repos** are mostly the cash of other public bodies, lent to the State for a few days or weeks; the EU measure of the debt leaves them out.
+
+Eurostat's view of the same debt, by who holds it rather than by instrument:
+
+```{r holders}
+groups <- c(
+  S2 = "Abroad (the rescue funds, foreign investors)",
+  S121 = "Bank of Greece",
+  S122_S123 = "Greek banks",
+  `S124-S129` = "Other Greek financial companies",
+  S11 = "Greek companies",
+  S14_S15 = "Greek households"
+)
+latest_holders <- holders[holders$time == max(holders$time), ]
+held <- data.frame(holder = groups, million = latest_holders$values[match(names(groups), latest_holders$sector2)])
+held$million[is.na(held$million)] <- 0
+held$share <- 100 * held$million / latest_holders$values[latest_holders$sector2 == "S1_S2"]
+held <- held[order(held$share), ]
+held$holder <- factor(held$holder, levels = held$holder)
+
+plot_ly(held,
+  x = ~share, y = ~holder, type = "bar", orientation = "h",
+  marker = list(color = ifelse(held$holder == groups[["S2"]], greek_red, gray)),
+  text = ~ paste0(round(share), "%"), textposition = "outside", cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f}% of the debt<extra></extra>"
+) %>%
+  chart(paste0("Who holds the Greek government debt, ", max(holders$time), ", % of the debt"),
+    "Eurostat, gov_10dd_ggd", margin = list(l = 300, t = 70, b = 90))
+```
+
+---
+
+## 3. How much is it, compared with the economy and with the EU?
+
+At **`r at("debt_gdp", last)`% of GDP**, Greece `r if (most$geo[1] == "EL") paste0("still has the highest debt in the EU, ", round(most$values[1] - most$values[2], 1), " points above ", eu_name[[most$geo[2]]]) else paste0("has the ", match("EL", most$geo), "th highest debt in the EU, after ", eu_name[[most$geo[1]]])`.
+
+```{r eu, fig.height = 9}
+eu_latest <- eu[eu$time == last & eu$geo %in% c(eu_countries$code, "EU27_2020"), ]
+eu_latest$name <- eu_name[eu_latest$geo]
+eu_latest <- eu_latest[order(eu_latest$values), ]
+eu_latest$name <- factor(eu_latest$name, levels = eu_latest$name)
+
+plot_ly(eu_latest,
+  x = ~values, y = ~name, type = "bar", orientation = "h",
+  marker = list(color = ifelse(eu_latest$geo == "EL", greek_red, ifelse(eu_latest$geo == "EU27_2020", blue, gray))),
+  hovertemplate = "%{y}: %{x:.1f}% of GDP<extra></extra>"
+) %>%
+  chart(paste0("Government debt in the EU, ", last, ", % of GDP"), "Eurostat, gov_10dd_edpt1",
+    margin = list(l = 130, t = 70, b = 90))
+```
+
+---
+
+## 4. Will Greece be able to repay?
+
+Countries rarely pay their debt off; they repay old loans with new ones. The question is whether the debt stays **affordable** — whether the interest leaves enough for everything else — and whether it keeps **shrinking against the economy**. On both, the numbers now look good, for four reasons.
+
+### Interest takes far less of the budget
+
+In 2011 interest cost Greece `r at("interest_gdp", 2011)`% of GDP; in `r last`, `r at("interest_gdp", last)`%. The World Bank's series shows the same from the side of the budget: interest took `r round(interest_revenue$value[interest_revenue$year == 2011], 1)`% of the government's revenue in 2011, and `r round(interest_revenue$value[interest_revenue$year == max(interest_revenue$year)], 1)`% in `r max(interest_revenue$year)`.
+
+```{r interest, fig.height = 7}
+subplot(
+  plot_ly(greece, x = ~year, y = ~interest_gdp, type = "scatter", mode = "lines", line = list(color = greek_red, width = 3),
+    name = "% of GDP (Eurostat)", hovertemplate = "%{x}: %{y:.1f}% of GDP<extra></extra>"),
+  plot_ly(interest_revenue, x = ~year, y = ~value, type = "scatter", mode = "lines", line = list(color = blue, width = 3),
+    name = "% of revenue (World Bank)", hovertemplate = "%{x}: %{y:.1f}% of revenue<extra></extra>"),
+  nrows = 2, shareX = TRUE, titleY = TRUE
+) %>%
+  chart("Interest paid by the Greek government", "Eurostat, gov_10dd_edpt1; World Bank, GC.XPN.INTP.RV.ZS",
+    "% of GDP", yaxis2 = list(title = "% of revenue"),
+    legend = list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom"))
+```
+
+### The debt is long, fixed and in euros
+
+```{r maturity}
+years_left <- due[due$unit == "YR" & due$maturity == "TOTAL", ]
+buckets <- c(Y_LE1 = "Up to 1 year", `Y1-5` = "1 to 5 years", `Y5-10` = "5 to 10 years", `Y10-30` = "10 to 30 years", Y_GT30 = "Over 30 years")
+falling_due <- due[due$unit == "MIO_EUR" & due$time == max(due$time) & due$maturity %in% names(buckets), ]
+falling_due$label <- factor(buckets[falling_due$maturity], levels = buckets)
+falling_due$share <- 100 * falling_due$values / sum(falling_due$values)
+
+plot_ly(falling_due,
+  x = ~label, y = ~share, type = "bar", marker = list(color = greek_red),
+  text = ~ paste0(round(share), "%"), textposition = "outside", cliponaxis = FALSE,
+  hovertemplate = "%{x}: %{y:.1f}% of the debt<extra></extra>"
+) %>%
+  chart(paste0("When the debt falls due, ", max(due$time), ", % of the debt"), "Eurostat, gov_10dd_rmd", "% of the debt")
+```
+
+- On average the debt falls due in **`r years_left$values[years_left$time == max(years_left$time)]` years** (Eurostat), `r if (maturities$geo[1] == "EL") paste0("the longest in the EU: next comes ", eu_name[[maturities$geo[2]]], ", with ", maturities$values[2], " years") else paste0("against ", maturities$values[1], " years in ", eu_name[[maturities$geo[1]]], ", the longest in the EU")`.
+- After interest rate swaps, **none of it has a floating rate** and **none is in a foreign currency** (PDMA): higher interest rates reach only the debt that is renewed, a little each year.
+- In 2025 the State needed **€17.6 billion** to repay maturing debt and cover its budget, about `r round(100 * 17.649 / at("gdp_bn", last))`% of GDP, and borrowed it at **2.89%** for **14.6 years** on average (PDMA). When the euro area eased the terms of its loans in 2018, it set out to keep these needs below 15% of GDP in the medium term and below 20% after that (Eurogroup, June 2018).
+- The State keeps a cash reserve: the general government held **€39.6 billion** in cash at the end of 2025, so its debt *minus its cash* was **€323 billion** (PDMA).
+
+### Why the ratio fell so fast
+
+The change of the debt ratio each year adds up from four parts:
+
+- **Interest** adds to the debt.
+- **The primary balance** (the budget before interest) adds a deficit or takes away a surplus.
+- **Growth** of the economy in euros — real growth plus inflation — shrinks the ratio, as the same debt is divided by a bigger GDP.
+- **Other** changes: debt that changes without a deficit, such as the PSI haircut of 2012 or the cash the State borrows ahead and keeps.
+
+```{r decomposition}
+d <- greece[greece$year >= 2010 & !is.na(greece$gdp_bn), ]
+n <- nrow(d)
+ratio <- 100 * d$debt_bn / d$gdp_bn
+growth <- d$gdp_bn[-1] / d$gdp_bn[-n] - 1
+parts <- data.frame(
+  year = d$year[-1],
+  change = diff(ratio),
+  interest = 100 * d$interest_bn[-1] / d$gdp_bn[-1],
+  primary = -d$primary_gdp[-1],
+  growth = -ratio[-n] * growth / (1 + growth)
+)
+parts$other <- parts$change - parts$interest - parts$primary - parts$growth
+
+plot_ly(parts, x = ~year, y = ~interest, type = "bar", name = "Interest", marker = list(color = greek_red)) %>%
+  add_trace(y = ~primary, name = "Primary deficit (+) or surplus (-)", marker = list(color = "#ff9896")) %>%
+  add_trace(y = ~growth, name = "Growth of GDP in euros", marker = list(color = blue)) %>%
+  add_trace(y = ~other, name = "Other", marker = list(color = gray)) %>%
+  add_trace(y = ~change, type = "scatter", mode = "markers", name = "Change of the debt ratio",
+    marker = list(color = "black", size = 10, symbol = "diamond")) %>%
+  chart("What changed the debt ratio each year, points of GDP", "Eurostat, gov_10dd_edpt1 and nama_10_gdp; own calculation",
+    "Points of GDP", barmode = "relative", note_y = -0.34, margin = list(t = 70, b = 160),
+    # under the chart, as its five entries take two lines
+    legend = list(orientation = "h", x = 0, y = -0.1, yanchor = "top"))
+```
+
+From 2021 the economy grew fast in euros — partly real growth, partly inflation — while the interest rate on the debt stayed low: growth alone took `r round(-sum(parts$growth[parts$year >= 2021]))` points off the ratio between 2021 and `r last`. The budget before interest was in deficit in the pandemic and then turned to surplus: from `r min(parts$year[parts$year >= 2021 & parts$primary < 0])`, the surpluses took `r round(-sum(parts$primary[parts$year >= 2021 & parts$primary < 0]))` points more.
+
+### Where it could go: three scenarios
+
+The debt ratio of next year is this year's, grown by the interest rate and shrunk by the growth of GDP in euros, minus the primary surplus:
+
+$$d_{t} = d_{t-1} \times \frac{1 + i_t}{1 + g_t} - pb_t$$
+
+The scenarios below start from the `r last` debt and its average interest rate of `r round(100 * at("interest_bn", last) / at("debt_bn", last - 1), 1)`%, which climbs over ten years as cheap loans are replaced by new borrowing at market rates. **They are illustrations of what drives the debt, not forecasts.**
+
+```{r scenarios}
+start_rate <- at("interest_bn", last) / at("debt_bn", last - 1)
+assumptions <- data.frame(
+  scenario = c("Strong", "Steady", "Weak"),
+  growth = c(0.050, 0.040, 0.025),    # growth of GDP in euros, a year
+  rate_to = c(0.025, 0.030, 0.040),   # average interest rate on the debt after ten years
+  primary = c(3.5, 2.5, 1.0)          # primary surplus, % of GDP
+)
+project <- function(growth, rate_to, primary, years = (last + 1):2040) {
+  debt <- at("debt_gdp", last)
+  path <- numeric(length(years))
+  for (k in seq_along(years)) {
+    rate <- start_rate + (rate_to - start_rate) * min(1, k / 10)
+    debt <- debt * (1 + rate) / (1 + growth) - primary
+    path[k] <- debt
+  }
+  data.frame(year = c(last, years), debt_gdp = c(at("debt_gdp", last), path))
+}
+paths <- do.call(rbind, lapply(seq_len(nrow(assumptions)), function(k) {
+  cbind(scenario = assumptions$scenario[k], project(assumptions$growth[k], assumptions$rate_to[k], assumptions$primary[k]))
+}))
+in_2040 <- setNames(paths$debt_gdp[paths$year == 2040], paths$scenario[paths$year == 2040])
+
+knitr::kable(transform(assumptions,
+  growth = paste0(100 * growth, "%"), rate_to = paste0(100 * rate_to, "%"), primary = paste0(primary, "% of GDP"),
+  debt_2040 = paste0(round(in_2040[scenario]), "% of GDP")
+), col.names = c("Scenario", "GDP growth in euros, a year", "Interest rate after ten years", "Primary surplus", "Debt in 2040"))
+
+plot_ly(greece, x = ~year, y = ~debt_gdp, type = "scatter", mode = "lines", name = "Actual",
+  line = list(color = "black", width = 3), hovertemplate = "%{x}: %{y:.1f}% of GDP<extra></extra>"
+) %>%
+  add_trace(data = paths[paths$scenario == "Strong", ], name = "Strong", line = list(color = blue, dash = "dot")) %>%
+  add_trace(data = paths[paths$scenario == "Steady", ], name = "Steady", line = list(color = greek_red, dash = "dot")) %>%
+  add_trace(data = paths[paths$scenario == "Weak", ], name = "Weak", line = list(color = gray, dash = "dot")) %>%
+  chart("Greek government debt to 2040: three scenarios, % of GDP", "Eurostat, gov_10dd_edpt1; own scenarios", "% of GDP",
+    legend = list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom"))
+```
+
+In the steady scenario the debt falls to about **`r round(in_2040[["Steady"]])`% of GDP by 2040**. In the weak one it ends near `r round(in_2040[["Weak"]])`%, `r if (in_2040[["Weak"]] > at("debt_gdp", last)) "a little above" else "a little below"` today's level: with long, fixed and cheap loans, a bad decade would stop the fall rather than send the debt back to the heights of 2020.
+
+### So, will Greece repay?
+
+On today's numbers, **yes**: the debt is large, but it is cheap, it falls due slowly, and it is shrinking against the economy. The markets agree: Greece is back in the investment grade (Moody's raised it to Baa3 in March 2025), and at the end of 2025 its ten-year bonds paid only 0.59 percentage points more than Germany's (PDMA).
+
+What could still go wrong:
+
+- **A recession**, or years of slow growth: growth did most of the work since 2021.
+- **Higher interest rates** on the debt that is renewed each year, and more of it once the cheap rescue loans start falling due in the 2030s.
+- **Smaller surpluses**: the scenarios need primary surpluses for many years, which is a political choice, not only an economic one.
+- **An ageing population**, which raises the cost of pensions and health care.
+
+---
+
+## Sources
+
+- Eurostat: [gov_10dd_edpt1](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_edpt1/default/table?lang=en) (deficit, debt and interest), [gov_10dd_ggd](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_ggd/default/table?lang=en) (holders of the debt), [gov_10dd_rmd](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_rmd/default/table?lang=en) (remaining maturity), [nama_10_gdp](https://ec.europa.eu/eurostat/databrowser/view/nama_10_gdp/default/table?lang=en) (GDP).
+- World Bank: [Interest payments (% of revenue), GC.XPN.INTP.RV.ZS](https://data.worldbank.org/indicator/GC.XPN.INTP.RV.ZS?locations=GR).
+- PDMA, Ministry of Finance: [Annual Debt Bulletin 2025](https://minfin.gov.gr/wp-content/uploads/2026/06/Annual_Debt_Bulletin_2025GR.pdf) (in Greek, June 2026).
+- ESM: [When will Greece repay ESM and EFSF loans?](https://www.esm.europa.eu/content/when-will-greece-repay-esm-and-efsf-loans)
