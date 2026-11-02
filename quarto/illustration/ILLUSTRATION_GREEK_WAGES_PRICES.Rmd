@@ -116,7 +116,7 @@ For the races we need one indicator at a time, from 2015 (where every country st
 race_data <- function(df, which, highlight = "Greece", from = 2015) {
   d <- df[df$measure == which & df$year >= from, ]
   d$rank <- ave(-d$change, d$year, FUN = function(v) rank(v, ties.method = "first"))
-  d$color <- ifelse(d$country %in% highlight, "#E74C3C", "gray70")
+  d$color <- ifelse(d$country %in% highlight, "#E74C3C", "#B3B3B3")
   d
 }
 
@@ -155,7 +155,7 @@ add_source <- function(p, what, b) {
                     " (", what, ")"),
       xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
       xanchor = "right", yanchor = "top", showarrow = FALSE,
-      font = list(size = 11, color = "gray50"))))
+      font = list(size = 11, color = "#7F7F7F"))))
 }
 ```
 
@@ -192,7 +192,7 @@ country_plot <- function(cname, font_size = 13) {
                    xaxis = list(title = "", tickangle = -90),
                    yaxis = list(title = "% vs 2015", ticksuffix = "%"),
                    legend = list(orientation = "h", y = -0.15),
-                   font = list(size = font_size, color = "gray25"),
+                   font = list(size = font_size, color = "#404040"),
                    shapes = list(list(type = "line",
                                       x0 = min(d$year), x1 = max(d$year),
                                       y0 = 0, y1 = 0,
@@ -222,9 +222,9 @@ The `frame` argument of `plot_ly` turns a bar chart into a play/pause animation 
 ```{r bar_race}
 bar_race <- function(d, title, what) {
   plot_ly() %>%
-    add_bars(data = d[d$color == "gray70", ],
+    add_bars(data = d[d$color == "#B3B3B3", ],
              x = ~rank, y = ~change, frame = ~year, ids = ~rank,
-             marker = list(color = "gray70"),
+             marker = list(color = "#B3B3B3"),
              text = ~paste0(country, " ", sprintf("%+.0f%%", change)), hoverinfo = "text",
              textposition = "outside", textangle = 90, showlegend = FALSE) %>%
     add_bars(data = d[d$color %in% "#E74C3C", ],
@@ -236,7 +236,7 @@ bar_race <- function(d, title, what) {
            yaxis  = list(title = "% vs 2015", ticksuffix = "%"),
            title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
            margin = list(l = 50, r = 30, t = 70),
-           font   = list(size = 13, color = "gray25")) %>%
+           font   = list(size = 13, color = "#404040")) %>%
     animation_opts(frame = 1000, transition = 0, easing = "linear", redraw = TRUE) %>%
     add_source(what, b = 200) %>%
     sized(620)
