@@ -1,0 +1,570 @@
+---
+title: "Greece's Summer Economy: Who Comes, When, Where and What They Spend"
+author: ""
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Greece is one of the most visited countries of Europe, and its tourism is squeezed into a few summer months and a few groups of islands. This story follows the tourists through the statistics of Eurostat:
+
+1. **How many come?**
+2. **When do they come?**
+3. **Where do they go?**
+4. **Where do they come from?**
+5. **How much do they spend, against other holiday countries?**
+6. **How much does Greece depend on them?**
+7. **Where do they stay?**
+
+The data come from three places, all at **Eurostat**, the statistical office of the EU:
+
+- **The statistics of tourist accommodation**: the nights that guests spend in hotels, rented rooms and apartments, and campsites, each month since 1994, by region and by the country the guests live in. A *night* is one guest staying one night: a couple on a week's holiday spend 14 nights. Since 2018 Eurostat also counts the nights booked through Airbnb, Booking, Expedia and Tripadvisor.
+- **The survey of the trips of EU residents**, which asks people in every EU country where they travelled and what they spent. It tells what a holiday in Greece costs its visitors, against a holiday in Spain, Italy or Croatia.
+- **The balance of payments**, which records what foreign visitors spend in each country, so it can be set against the size of its economy.
+
+They are downloaded when the document is knitted, so the charts show the latest figures.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+# a monthly Eurostat dataset, the same way, with the year and the month of each value
+eurostat_months <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "date", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x$year <- as.integer(format(x$time, "%Y"))
+  x$month <- as.integer(format(x$time, "%m"))
+  x[order(x$time), ]
+}
+eu <- eu_countries$code
+eu_name <- c(setNames(eu_countries$name, eu_countries$code), EU27_2020 = "EU-27", TR = "Türkiye")
+
+# Greece every year: the nights at all tourist accommodation (I551-I553), in hotels (I551), in rented
+# rooms, apartments and holiday homes (I552, counted from 2009) and in campsites (I553), of all
+# guests, of guests from abroad and of Greeks
+kinds <- c(I551 = "Hotels", I552 = "Rented rooms and apartments", I553 = "Campsites")
+annual <- eurostat_values("tour_occ_ninat", list(
+  geo = "EL", unit = "NR", c_resid = c("TOTAL", "FOR", "DOM"), nace_r2 = c("I551-I553", names(kinds))
+))
+nights <- function(year, kind = "I551-I553", resid = "TOTAL") {
+  annual$values[annual$time == year & annual$nace_r2 == kind & annual$c_resid == resid]
+}
+years <- annual$time[annual$nace_r2 == "I551-I553" & annual$c_resid == "TOTAL"]
+year_now <- max(years)
+
+# the nights of each month at all tourist accommodation, every EU country
+monthly <- eurostat_months("tour_occ_nim", list(geo = c(eu, "EU27_2020"), unit = "NR", c_resid = "TOTAL", nace_r2 = "I551-I553"))
+greece <- monthly[monthly$geo == "EL", ]
+month_now <- max(greece$time)   # the latest month
+full_year <- max(as.integer(names(which(table(greece$year) == 12))))   # the latest year with all twelve months
+
+# the regions of Greece (NUTS 2): the nights of each month since 2020, also per thousand inhabitants,
+# of all guests and of guests from abroad
+regions <- c(
+  EL30 = "Attica", EL41 = "North Aegean", EL42 = "South Aegean", EL43 = "Crete",
+  EL51 = "Eastern Macedonia and Thrace", EL52 = "Central Macedonia", EL53 = "Western Macedonia",
+  EL54 = "Epirus", EL61 = "Thessaly", EL62 = "Ionian Islands", EL63 = "Western Greece",
+  EL64 = "Central Greece", EL65 = "Peloponnese"
+)
+regional <- eurostat_values("tour_occ_nin2m", list(geo = names(regions), unit = c("NR", "P_THAB"), c_resid = c("TOTAL", "FOR"), nace_r2 = "I551-I553"))
+region_year <- max(regional$time)
+
+# the nights in Greece by the country the guests live in; countries only, not groups such as EUR
+origins <- eurostat_values("tour_occ_ninraw", list(geo = "EL", unit = "NR", nace_r2 = "I551-I553"))
+origins <- origins[nchar(origins$c_resid) == 2, ]
+origin_nights <- function(country, year) origins$values[match(paste(country, year), paste(origins$c_resid, origins$time))]
+
+# the survey of trips: what EU residents spend on holidays (trips for personal purposes of one night or
+# more) in each country, by kind of spending, and the number of those trips and of their nights
+destinations <- c("EL", "ES", "IT", "PT", "HR", "CY", "MT", "FR", "AT", "BG", "TR")
+parts <- c(TRA = "Getting there and around", ACCOM = "Accommodation", OTHER = "Food, drinks and everything else")
+survey <- list(geo = c("EU27_2020", setdiff(destinations, "TR")), c_dest = c(destinations, "DOM"), purpose = "PER", duration = "N_GE1")
+# all spending (TOTXDUR, without durable goods), on transport and on accommodation; the rest is
+# "everything else", as some countries count cafés and restaurants apart and others do not
+per_trip <- eurostat_values("tour_dem_extotw", c(survey, list(statinfo = "AVG_TRP", expend = c("TOTXDUR", "TRA", "ACCOM"))))
+trips <- eurostat_values("tour_dem_ttw", survey)
+trip_nights <- eurostat_values("tour_dem_tnw", survey)
+# Eurostat gives the totals of each kind of spending only for the trips at home; for the others they
+# are the spending per trip times the trips
+spent <- merge(per_trip[c("geo", "c_dest", "time", "expend", "values")], trips[c("geo", "c_dest", "time", "values")],
+  by = c("geo", "c_dest", "time"), suffixes = c("_per_trip", "_trips"))
+spent$values <- spent$values_per_trip * spent$values_trips
+
+# consumer prices, 2015 = 100, in Greece and in the EU
+prices <- eurostat_values("prc_hicp_aind", list(geo = c("EL", "EU27_2020"), coicop = "CP00", unit = "INX_A_AVG"))
+
+# what foreign visitors spend in each country (travel, in the balance of payments) and GDP, million euros
+receipts <- eurostat_values("bop_its6_det", list(geo = c(eu, "TR"), bop_item = "SD", stk_flow = "CRE", partner = "WRL_REST", currency = "MIO_EUR"))
+gdp <- eurostat_values("nama_10_gdp", list(geo = c(eu, "TR"), na_item = "B1GQ", unit = "CP_MEUR"))
+
+# the nights booked through Airbnb, Booking, Expedia and Tripadvisor, Greece and its regions
+platforms <- eurostat_values("tour_ce_omn12", list(geo = c("EL", names(regions)), indic_to = "NGT_SP", c_resid = "TOTAL", month = "TOTAL"))
+platform_year <- max(platforms$time)
+on_platforms <- function(geo, year = platform_year) platforms$values[platforms$geo == geo & platforms$time == year]
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+amber <- "#c97b1e"
+# the three parts of a stacked bar, told apart also with colour blindness: light blue, amber, dark blue
+stack_colors <- c("#5b8fd6", amber, "#1c5cab")
+# a scale from few nights (white) to many (dark blue)
+blues <- list(c(0, "#f4f8fd"), c(0.5, "#3987e5"), c(1, "#0d366b"))
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    # at the top, so that a legend of two or three rows fits under it in a larger top margin
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+months <- factor(month.abb, levels = month.abb)   # in this order on an axis
+# a horizontal bar chart of countries or regions, from the highest at the top: by default one of
+# them in red, the EU in blue and the others in gray
+ranking_bars <- function(x, value, highlight, hover,
+                         colors = function(x) ifelse(x$geo == highlight, greek_red, ifelse(x$geo == "EU27_2020", blue, gray))) {
+  x <- x[order(x[[value]]), ]
+  plot_ly(
+    y = factor(x$name, levels = x$name), x = x[[value]], type = "bar", orientation = "h",
+    marker = list(color = colors(x)), hovertext = hover(x), hovertemplate = "%{hovertext}<extra></extra>"
+  )
+}
+
+# short labels of numbers
+million <- function(x, digits = 1) paste(format(round(x / 1e6, digits), nsmall = digits), "million")
+euros <- function(x) paste0("€", format(round(x), big.mark = ","))
+billion_euros <- function(x) paste0("€", format(round(x / 1000, 1), nsmall = 1), " billion")   # from million euros
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+# "A", "A and B", "A, B and C"
+and_list <- function(x) if (length(x) < 2) x else paste(paste(x[-length(x)], collapse = ", "), "and", x[length(x)])
+# the place of a country counted from the highest: 1 is the highest
+highest <- function(k) {
+  if (k > 8) return(paste0("the ", k, "th highest"))
+  paste0("the ", c("", "second ", "third ", "fourth ", "fifth ", "sixth ", "seventh ", "eighth ")[k], "highest")
+}
+```
+
+---
+
+## 1. How many come?
+
+```{r size_numbers}
+record <- years[which.max(sapply(years, nights))]
+foreign_share <- function(year) 100 * nights(year, resid = "FOR") / nights(year)
+hotels_growth <- 100 * (nights(year_now, "I551") / nights(min(years), "I551") - 1)
+covid_fall <- 100 * (1 - nights(2020) / nights(2019))
+recovered <- min(years[years > 2020 & sapply(years, nights) > nights(2019)])
+# this year so far, against the same months of last year
+latest_year <- as.integer(format(month_now, "%Y"))
+latest_month <- as.integer(format(month_now, "%m"))
+so_far <- function(year) sum(greece$values[greece$year == year & greece$month <= latest_month])
+```
+
+**`r million(nights(year_now))` nights in `r year_now`, `r if (record == year_now) "more than ever" else paste("fewer than in", record)`.**
+
+In `r year_now`, guests spent `r million(nights(year_now))` nights in the hotels, rented rooms and apartments, and campsites of Greece, `r percent(foreign_share(year_now))` of them guests from abroad. Hotels alone had `r million(nights(year_now, "I551"))` nights, `r percent(hotels_growth)` more than in `r min(years)`. `r if (latest_year > year_now) paste0("In the first ", latest_month, " months of ", latest_year, " there were ", percent(abs(100 * (so_far(latest_year) / so_far(latest_year - 1) - 1)), 1), " ", if (so_far(latest_year) >= so_far(latest_year - 1)) "more" else "fewer", " nights than in the same months of ", latest_year - 1, ".") else ""`
+
+Until 2008 Greece counted only the nights in hotels and campsites; from 2009 it counts those in rented rooms, apartments and holiday homes too, so the bars jump in 2009. Since then the nights fell twice: in the debt crisis, to `r million(nights(2012))` in 2012, and in 2020, when COVID closed the borders, by `r percent(covid_fall)`. By `r recovered` there were more than in 2019.
+
+```{r nights_years}
+kind_colors <- c(I551 = stack_colors[3], I552 = stack_colors[2], I553 = stack_colors[1])
+p <- plot_ly()
+for (k in names(kinds)) {
+  x <- annual[annual$nace_r2 == k & annual$c_resid == "TOTAL", ]
+  p <- add_trace(p,
+    x = x$time, y = x$values / 1e6, type = "bar", name = kinds[[k]],
+    marker = list(color = kind_colors[[k]], line = list(color = "white", width = 1)),
+    hovertemplate = paste0("%{x}: %{y:.1f} million nights<extra>", kinds[[k]], "</extra>")
+  )
+}
+p %>% chart("Nights at tourist accommodation in Greece, million", "Eurostat, tour_occ_ninat", "Million",
+  barmode = "stack", bargap = 0.15, legend = c(legend_top, traceorder = "normal"), margin = list(t = 100, b = 90),
+  annotations = list(list(x = 2009, y = nights(2009) / 1e6, text = "2009: rented rooms and<br>apartments counted too",
+    showarrow = TRUE, ax = -70, ay = -45, font = list(color = dark_gray))))
+```
+
+More and more of the guests come from abroad: `r percent(foreign_share(2010))` of the nights in 2010, `r percent(foreign_share(year_now))` in `r year_now`. In 2020, with few foreigners able to travel, the share fell to `r percent(foreign_share(2020))`.
+
+---
+
+## 2. When do they come?
+
+```{r season_numbers}
+in_month <- function(year, month) greece$values[greece$year == year & greece$month == month]
+in_months <- function(year, months) sum(greece$values[greece$year == year & greece$month %in% months])
+summer <- 6:9
+winter <- c(1:3, 11:12)
+summer_share <- 100 * in_months(full_year, summer) / in_months(full_year, 1:12)
+summer_growth <- in_months(full_year, summer) - in_months(2010, summer)
+winter_growth <- in_months(full_year, winter) - in_months(2010, winter)
+```
+
+**In August, `r round(in_month(full_year, 8) / in_month(full_year, 1))` times as many nights as in January.**
+
+In `r full_year`, guests spent `r million(in_month(full_year, 1))` nights in Greece in January and `r million(in_month(full_year, 8))` in August. `r percent(summer_share)` of the nights of the year fell in the four months from June to September. Each row of the chart is a year and each cell a month: the darker the cell, the more nights. Greece has added summer, not winter: from 2010 to `r full_year`, the nights from June to September grew by `r million(summer_growth)`, those from November to March by `r million(winter_growth)`.
+
+```{r season, fig.height = 7}
+heat <- greece[greece$year >= 2009, ]
+z <- tapply(heat$values / 1e6, list(heat$year, factor(heat$month, levels = 1:12)), sum)   # years in rows, months in columns
+plot_ly(
+  x = months, y = rownames(z), z = z, type = "heatmap", colorscale = blues, xgap = 2, ygap = 2,
+  colorbar = list(title = list(text = "Million<br>nights"), thickness = 12),
+  hovertemplate = "%{x} %{y}: %{z:.1f} million nights<extra></extra>"
+) %>%
+  chart("Nights in Greece each month, million",
+    paste0("Eurostat, tour_occ_nim, January 2009 to ", month.name[latest_month], " ", latest_year, "; blank: no data"), y_axis = list(type = "category", autorange = "reversed"), note_y = -0.08)
+```
+
+```{r season_eu_numbers}
+season <- monthly[monthly$year == full_year, ]
+complete <- names(which(table(season$geo) == 12))
+by_season <- data.frame(geo = complete, name = eu_name[complete])
+by_season$share <- sapply(complete, function(k) {
+  x <- season[season$geo == k, ]
+  100 * sum(x$values[x$month %in% summer]) / sum(x$values)
+})
+season_order <- by_season$geo[by_season$geo != "EU27_2020"][order(-by_season$share[by_season$geo != "EU27_2020"])]
+more_seasonal <- season_order[seq_len(match("EL", season_order) - 1)]
+eu_share <- by_season$share[by_season$geo == "EU27_2020"]
+```
+
+**One of the most seasonal in the EU.** In the EU as a whole, `r percent(eu_share)` of the nights at tourist accommodation fall from June to September; in Greece, `r percent(summer_share)`. `r if (length(more_seasonal) == 0) "No other EU country packs so much of its tourism into these four months." else paste0("Only ", and_list(eu_name[more_seasonal]), " ", if (length(more_seasonal) == 1) "packs" else "pack", " more of its tourism into them.")` Hotels, restaurants and the people who work in them have to earn the year's living in a few months.
+
+```{r season_eu, fig.height = 9}
+ranking_bars(by_season, "share", "EL", function(x) paste0(x$name, ": ", percent(x$share, 1), " of the year's nights")) %>%
+  chart(paste0("Share of the nights of ", full_year, " spent from June to September, %"), "Eurostat, tour_occ_nim",
+    margin = list(l = 130, t = 70, b = 90), note_y = -0.1)
+```
+
+---
+
+## 3. Where do they go?
+
+```{r region_numbers}
+year_total <- regional[regional$time == region_year & regional$month == "TOTAL", ]
+region_value <- function(unit, resid) {
+  year_total$values[match(paste(names(regions), unit, resid), paste(year_total$geo, year_total$unit, year_total$c_resid))]
+}
+by_region <- data.frame(geo = names(regions), name = regions)
+by_region$nights <- region_value("NR", "TOTAL")
+by_region$per_person <- region_value("P_THAB", "TOTAL") / 1000
+by_region$foreign <- 100 * region_value("NR", "FOR") / by_region$nights
+islands <- c("EL42", "EL43", "EL62")
+islands_foreign <- min(by_region$foreign[by_region$geo %in% islands])
+islands_share <- 100 * sum(by_region$nights[by_region$geo %in% islands]) / sum(by_region$nights)
+in_region <- function(geo, column) by_region[[column]][by_region$geo == geo]
+# the share of the nights of the year that a region has in each month
+m <- regional[regional$time == region_year & regional$unit == "NR" & regional$c_resid == "TOTAL" & regional$month != "TOTAL", ]
+m$month <- as.integer(sub("M", "", m$month))
+by_month <- function(geo) {
+  x <- m[m$geo == geo, ]
+  x <- x[order(x$month), ]
+  100 * x$values / sum(x$values)
+}
+summer_of <- function(geo) sum(by_month(geo)[summer])
+```
+
+**`r percent(islands_share)` of the nights on three groups of islands.** In `r region_year`, the South Aegean, the Cyclades and the Dodecanese with Santorini, Mykonos, Rhodes and Kos, had `r million(in_region("EL42", "nights"))` nights; Crete `r million(in_region("EL43", "nights"))`; the Ionian Islands, with Corfu, Zakynthos and Kefalonia, `r million(in_region("EL62", "nights"))`. Attica, with Athens, had `r million(in_region("EL30", "nights"))`. Against the people who live there, the islands are full: `r round(in_region("EL42", "per_person"))` nights a year for each inhabitant of the South Aegean and `r round(in_region("EL62", "per_person"))` in the Ionian Islands, against `r round(in_region("EL30", "per_person"), 1)` in Attica. On the islands, `r percent(floor(islands_foreign))` or more of the nights are those of guests from abroad.
+
+```{r regions}
+by_region$million_nights <- by_region$nights / 1e6
+ranking_bars(by_region, "million_nights", "", function(x) {
+  paste0(x$name, ": ", million(x$nights), " nights, ", round(x$per_person, 1), " per inhabitant, ", percent(x$foreign), " from abroad")
+}, colors = function(x) ifelse(x$geo %in% islands, blue, gray)) %>%
+  chart(paste0("Nights at tourist accommodation by region, ", region_year, ", million"), "Eurostat, tour_occ_nin2m",
+    margin = list(l = 200, t = 70, b = 90))
+```
+
+**Athens works all year, the islands in the summer.** `r percent(summer_of("EL62"))` of the nights of the Ionian Islands and `r percent(summer_of("EL42"))` of those of the South Aegean fall from June to September, against `r percent(summer_of("EL30"))` in Attica, where city breaks, business and conferences fill the hotels in spring and autumn too.
+
+```{r regions_months}
+shown <- c(EL62 = amber, EL42 = stack_colors[3], EL43 = stack_colors[1], EL30 = gray)
+p <- plot_ly()
+for (k in names(shown)) {
+  p <- add_trace(p,
+    x = months, y = by_month(k), type = "scatter", mode = "lines+markers", name = regions[[k]],
+    line = list(color = shown[[k]], width = if (k == "EL30") 2 else 3, dash = if (k == "EL30") "dash" else "solid"),
+    marker = list(color = shown[[k]], size = 8),
+    hovertemplate = paste0("%{x}: %{y:.1f}% of the year<extra>", regions[[k]], "</extra>")
+  )
+}
+p %>% chart(paste0("Share of the nights of ", region_year, " in each month, %"), "Eurostat, tour_occ_nin2m", "% of the year",
+  y_axis = list(rangemode = "tozero"), legend = legend_top, margin = list(t = 100, b = 90))
+```
+
+---
+
+## 4. Where do they come from?
+
+```{r origin_numbers}
+origin_year <- max(origins$time)
+latest <- origins[origins$time == origin_year, ]
+latest <- latest[order(-latest$values), ]
+latest$name <- as.character(label_eurostat(latest$c_resid, dic = "c_resid"))
+latest$name[latest$c_resid == "EL"] <- "Greece (Greeks at home)"
+abroad <- latest[latest$c_resid != "EL", ]
+# a country's name in a sentence: "the United Kingdom"
+in_text <- function(name) ifelse(name %in% c("United Kingdom", "United States", "Netherlands"), paste("the", name), name)
+share_of_foreign <- function(country) 100 * origin_nights(country, origin_year) / nights(origin_year, resid = "FOR")
+change <- function(country, from = 2019) origin_nights(country, origin_year) - origin_nights(country, from)
+```
+
+**Most come from `r in_text(abroad$name[1])` and `r in_text(abroad$name[2])`.** In `r origin_year`, guests from `r in_text(abroad$name[1])` spent `r million(abroad$values[1])` nights in Greece and those from `r in_text(abroad$name[2])` `r million(abroad$values[2])`: together `r percent(share_of_foreign(abroad$c_resid[1]) + share_of_foreign(abroad$c_resid[2]))` of the nights of guests from abroad. Greeks on holiday in their own country spent `r million(origin_nights("EL", origin_year))`.
+
+The list has changed since 2019. The Russians, who spent `r million(origin_nights("RU", 2019))` nights in Greece in 2019, have almost gone since the EU closed its skies to Russian planes in 2022: `r million(origin_nights("RU", origin_year), 2)` in `r origin_year`. The Americans came in their place: `r million(origin_nights("US", origin_year))` nights, against `r million(origin_nights("US", 2019))` in 2019. Poland and Romania grew too, by `r million(change("PL"))` and `r million(change("RO"))` nights.
+
+```{r origins}
+top <- head(latest, 12)
+top <- top[order(top$values), ]
+plot_ly(
+  y = factor(top$name, levels = top$name), x = top$values / 1e6, type = "bar", orientation = "h",
+  marker = list(color = ifelse(top$c_resid == "EL", gray, blue)),
+  hovertext = paste0(top$name, ": ", million(top$values), " nights in ", origin_year, ", ",
+    million(origin_nights(top$c_resid, 2019)), " in 2019"),
+  hovertemplate = "%{hovertext}<extra></extra>"
+) %>%
+  chart(paste0("Nights in Greece by the country of the guests, ", origin_year, ", million"),
+    "Eurostat, tour_occ_ninraw", margin = list(l = 190, t = 70, b = 90))
+```
+
+---
+
+## 5. How much do they spend, against other holiday countries?
+
+Eurostat's survey of trips asks people in every EU country where they went on holiday and what it cost them. The trips to a country include those of its own people on holiday at home, which are cheaper, as there is no long journey: so they are taken out here, and what remains are the visitors from the other EU countries. Türkiye, outside the EU, is in the comparison as Greece's nearest competitor; all its visitors in the survey come from abroad.
+
+```{r spending_numbers}
+# the value for the visitors to a country from the other EU countries: all EU residents, minus its
+# own residents on holiday at home (Türkiye has none in the survey)
+from_abroad <- function(x, country, year) {
+  everyone <- x$values[x$geo == "EU27_2020" & x$c_dest == country & x$time == year]
+  at_home <- if (country == "TR") 0 else x$values[x$geo == country & x$c_dest == "DOM" & x$time == year]
+  if (length(everyone) != 1 || length(at_home) != 1) return(NA)
+  everyone - at_home
+}
+spending <- function(year) {
+  x <- data.frame(geo = destinations, name = eu_name[destinations])
+  for (p in c("TOTXDUR", "TRA", "ACCOM")) x[[p]] <- sapply(destinations, function(d) from_abroad(spent[spent$expend == p, ], d, year))
+  x$OTHER <- x$TOTXDUR - x$TRA - x$ACCOM
+  x$trips <- sapply(destinations, function(d) from_abroad(trips, d, year))
+  x$nights <- sapply(destinations, function(d) from_abroad(trip_nights, d, year))
+  x$per_trip <- x$TOTXDUR / x$trips
+  x$per_night <- x$per_trip * x$trips / x$nights
+  x$length <- x$nights / x$trips
+  x[!is.na(x$per_trip), ]
+}
+survey_year <- max(trips$time[trips$geo == "EU27_2020" & trips$c_dest == "EL"])
+costs <- spending(survey_year)
+cost <- function(geo, column = "per_trip") costs[[column]][costs$geo == geo]
+part_cost <- function(geo, part) cost(geo, part) / cost(geo, "trips")
+by_trip <- costs$geo[order(-costs$per_trip)]
+by_night <- costs$geo[order(-costs$per_night)]
+by_length <- costs$geo[order(-costs$length)]
+# the countries ahead of Greece in a ranking
+before_greece <- function(ranking) ranking[seq_len(match("EL", ranking) - 1)]
+```
+
+**A holiday in Greece costs its visitors `r euros(cost("EL"))`, `r highest(match("EL", by_trip))` of the `r nrow(costs)` holiday countries in the chart.**
+
+In `r survey_year`, visitors from the other EU countries spent `r euros(cost("EL"))` on a holiday trip to Greece, against `r euros(cost("ES"))` in Spain, `r euros(cost("IT"))` in Italy and `r euros(cost("HR"))` in Croatia`r if (length(before_greece(by_trip))) paste0("; only ", and_list(eu_name[before_greece(by_trip)]), " cost more") else ""`. The money includes the journey: `r euros(part_cost("EL", "TRA"))` of it went on getting there and around, mostly on the flights; `r euros(part_cost("EL", "ACCOM"))` on accommodation; and `r euros(part_cost("EL", "OTHER"))` on food, drinks and everything else.
+
+```{r spending}
+costs <- costs[order(costs$per_trip), ]
+labels <- ifelse(costs$geo == "EL", "<b>Greece</b>", costs$name)
+y <- factor(labels, levels = labels)
+p <- plot_ly()
+for (k in seq_along(parts)) {
+  p <- add_trace(p,
+    y = y, x = costs[[names(parts)[k]]] / costs$trips, type = "bar", orientation = "h", name = parts[[k]],
+    marker = list(color = stack_colors[k], line = list(color = "white", width = 1)),
+    hovertemplate = paste0("%{y}: €%{x:,.0f}<extra>", parts[[k]], "</extra>")
+  )
+}
+p %>% chart(paste0("What a holiday trip costs, ", survey_year, ", euros"),
+  "Eurostat, tour_dem_extotw and tour_dem_ttw: visitors from the other EU countries; own calculation",
+  x_axis = list(range = c(0, 1.15 * max(costs$per_trip))),
+  barmode = "stack", legend = c(legend_top, traceorder = "normal"), margin = list(l = 110, t = 100, b = 90),
+  annotations = lapply(seq_len(nrow(costs)), function(k) {
+    list(x = costs$per_trip[k], y = labels[k], text = euros(costs$per_trip[k]), xanchor = "left", xshift = 4,
+      showarrow = FALSE, font = list(color = dark_gray))
+  }))
+```
+
+**`r if (match("EL", by_night) <= 3) "Per night, too, Greece is among the dearest." else if (match("EL", by_night) > match("EL", by_trip)) "Per night, Greece is less dear." else "Per night, Greece is in the middle."`** Visitors stay long in Greece, `r one(cost("EL", "length"))` nights a trip`r if (length(before_greece(by_length))) paste0(" (only in ", and_list(eu_name[before_greece(by_length)]), " do they stay longer)") else ""`, so the cost of the flight is spread over more nights. A night of holiday in Greece costs them `r euros(cost("EL", "per_night"))`, `r highest(match("EL", by_night))` of the `r nrow(costs)``r if (length(before_greece(by_night))) paste0(": ", and_list(paste0(eu_name[before_greece(by_night)], " (", euros(sapply(before_greece(by_night), cost, column = "per_night")), ")")), " cost more") else ""`.
+
+```{r spending_night}
+ranking_bars(costs, "per_night", "EL", function(x) {
+  paste0(x$name, ": ", euros(x$per_night), " a night, ", one(x$length), " nights a trip")
+}) %>%
+  chart(paste0("What a night of holiday costs, ", survey_year, ", euros"),
+    "Eurostat, tour_dem_extotw and tour_dem_tnw: visitors from the other EU countries; own calculation",
+    margin = list(l = 110, t = 70, b = 90))
+```
+
+```{r spending_change}
+trip_cost <- function(year) {
+  x <- spending(year)
+  x$per_trip[x$geo == "EL"]
+}
+price_year <- min(survey_year, max(prices$time))
+price_change <- function(geo) 100 * (prices$values[prices$geo == geo & prices$time == price_year] / prices$values[prices$geo == geo & prices$time == 2019] - 1)
+cost_change <- 100 * (trip_cost(survey_year) / trip_cost(2019) - 1)
+real_change <- c(100 * ((1 + cost_change / 100) / (1 + price_change("EL") / 100) - 1),
+                 100 * ((1 + cost_change / 100) / (1 + price_change("EU27_2020") / 100) - 1))
+# within 5% of 2019 after inflation, by the prices of Greece and of the EU, is "about the same"
+real_spending <- if (all(abs(real_change) < 5)) "about the same" else if (all(real_change > 0)) "more" else if (all(real_change < 0)) "less" else "about the same"
+```
+
+**`r if (real_spending == "about the same") "More visitors, not richer ones." else if (real_spending == "more") "Visitors spend more." else "Visitors spend less."`** In 2019, a holiday trip to Greece cost visitors from the other EU countries `r euros(trip_cost(2019))`; in `r survey_year`, `r euros(trip_cost(survey_year))`, `r percent(cost_change)` more. Consumer prices rose by `r percent(price_change("EL"))` in Greece and by `r percent(price_change("EU27_2020"))` in the EU over the same years, so after inflation `r if (real_spending == "about the same") "each visitor spends about what they spent in 2019: what has grown is the number of visitors" else paste("each visitor spends", real_spending, "than in 2019")`. The survey asks a sample of people, so the figure of a single year can jump: it is the change over several years that counts.
+
+---
+
+## 6. How much does Greece depend on them?
+
+```{r dependence_numbers}
+both <- merge(receipts[c("geo", "time", "values")], gdp[c("geo", "time", "values")], by = c("geo", "time"), suffixes = c("_receipts", "_gdp"))
+both$share <- 100 * both$values_receipts / both$values_gdp
+receipts_year <- max(both$time[both$geo == "EL"])
+share_of <- function(geo, year = receipts_year) both$share[both$geo == geo & both$time == year]
+earned <- function(geo, year = receipts_year) both$values_receipts[both$geo == geo & both$time == year]
+dependence <- both[both$time == receipts_year, ]
+dependence$name <- eu_name[dependence$geo]
+by_share <- dependence$geo[order(-dependence$share)]
+ahead_of_greece <- by_share[seq_len(match("EL", by_share) - 1)]
+```
+
+**`r billion_euros(earned("EL"))` in `r receipts_year`, `r percent(share_of("EL"), 1)` of GDP.** That is what visitors from abroad spent in Greece, on hotels, meals, transport and shopping, without the flights to get there. Of the countries in the chart, `r if (length(ahead_of_greece) == 0) "none depends more on its visitors" else paste0("only ", and_list(paste0(eu_name[ahead_of_greece], " (", percent(sapply(ahead_of_greece, share_of), 1), ")")), " depend more on them")`; in Spain they spent `r percent(share_of("ES"), 1)` of GDP, in Italy `r percent(share_of("IT"), 1)`. The figure counts only what foreigners spend: the holidays of Greeks at home, and the farms, builders and shops that sell to hotels, add to what the economy owes to tourism.
+
+```{r dependence_eu, fig.height = 9}
+ranking_bars(dependence, "share", "EL", function(x) paste0(x$name, ": ", percent(x$share, 1), " of GDP, ", billion_euros(x$values_receipts))) %>%
+  chart(paste0("What visitors from abroad spend, ", receipts_year, ", % of GDP"),
+    "Eurostat, bop_its6_det (travel, credit) and nama_10_gdp", margin = list(l = 130, t = 70, b = 90), note_y = -0.1)
+```
+
+What a country depends on, it can lose. In 2020 visitors from abroad spent `r billion_euros(earned("EL", 2020))` in Greece, `r percent(share_of("EL", 2020), 1)` of GDP, against `r billion_euros(earned("EL", 2019))` in 2019.
+
+```{r dependence_greece}
+greek <- both[both$geo == "EL", ]
+plot_ly(greek,
+  x = ~time, y = ~share, type = "scatter", mode = "lines+markers", name = "Greece",
+  line = list(color = greek_red, width = 3), marker = list(color = greek_red, size = 8),
+  hovertext = paste0(greek$time, ": ", percent(greek$share, 1), " of GDP, ", billion_euros(greek$values_receipts)),
+  hovertemplate = "%{hovertext}<extra></extra>"
+) %>%
+  chart("What visitors from abroad spend in Greece, % of GDP", "Eurostat, bop_its6_det (travel, credit) and nama_10_gdp",
+    "% of GDP", y_axis = list(rangemode = "tozero"))
+```
+
+---
+
+## 7. Where do they stay?
+
+```{r platform_numbers}
+compare_year <- min(platform_year, year_now)
+platform_growth <- 100 * (on_platforms("EL", compare_year) / on_platforms("EL", 2019) - 1)
+registered_growth <- 100 * (nights(compare_year) / nights(2019) - 1)
+platforms_grew_more <- on_platforms("EL", compare_year) - on_platforms("EL", 2019) > nights(compare_year) - nights(2019)
+stay_year <- min(platform_year, region_year)
+stays <- regional[regional$time == stay_year & regional$month == "TOTAL" & regional$unit == "NR" & regional$c_resid == "TOTAL", ]
+by_region$registered <- stays$values[match(by_region$geo, stays$geo)]
+by_region$platforms <- sapply(by_region$geo, on_platforms, year = stay_year)
+by_region$per_100 <- 100 * by_region$platforms / by_region$registered
+platforms_per_100 <- function(geo) by_region$per_100[by_region$geo == geo]
+more_than_attica <- by_region$name[by_region$per_100 > platforms_per_100("EL30")]
+```
+
+**More and more of them in flats let through Airbnb and the like.** In `r compare_year`, guests spent `r million(on_platforms("EL", compare_year))` nights in places booked through Airbnb, Booking, Expedia or Tripadvisor, `r percent(platform_growth)` more than in 2019. The nights in hotels, rented rooms and campsites grew by `r percent(registered_growth)` in the same years. Some places are listed on the platforms and also counted as tourist accommodation, so the two cannot simply be added`r if (platforms_grew_more) paste0("; but the platforms gained ", million(on_platforms("EL", compare_year) - on_platforms("EL", 2019)), " nights since 2019, the tourist accommodation ", million(nights(compare_year) - nights(2019)), ": most of the growth has gone to the platforms") else ""`.
+
+```{r platforms}
+since <- min(platforms$time)
+registered <- data.frame(time = since:year_now)
+registered$values <- sapply(registered$time, nights)
+greek_platforms <- platforms[platforms$geo == "EL", ]
+plot_ly(registered,
+  x = ~time, y = ~ values / 1e6, type = "scatter", mode = "lines+markers", name = "Hotels, rented rooms and campsites",
+  line = list(color = blue, width = 3), marker = list(color = blue, size = 8),
+  hovertemplate = "%{x}: %{y:.1f} million nights<extra>Tourist accommodation</extra>"
+) %>%
+  add_trace(data = greek_platforms, x = ~time, y = ~ values / 1e6, name = "Booked through the platforms",
+    line = list(color = amber, width = 3), marker = list(color = amber, size = 8),
+    hovertemplate = "%{x}: %{y:.1f} million nights<extra>Platforms</extra>", inherit = FALSE,
+    type = "scatter", mode = "lines+markers") %>%
+  chart("Nights in Greece, million", "Eurostat, tour_occ_ninat and tour_ce_omn12 (Airbnb, Booking, Expedia, Tripadvisor)",
+    "Million", y_axis = list(rangemode = "tozero"), legend = legend_top)
+```
+
+**In Athens, `r round(platforms_per_100("EL30"))` nights on the platforms for every 100 in tourist accommodation.** That is what Attica had in `r stay_year`, `r if (length(more_than_attica)) paste("more than any other region except", and_list(more_than_attica)) else "more than any other region"`; the South Aegean had `r round(platforms_per_100("EL42"))` and Crete `r round(platforms_per_100("EL43"))`. Many of the flats let to visitors in Athens were once let to people who live there, which is one reason given for the rise of rents in the city; the story of [Greek housing](ILLUSTRATION_GREEK_HOUSING.Rmd) follows rents and house prices against incomes.
+
+```{r platforms_regions, fig.height = 7}
+x <- by_region[order(by_region$registered), ]
+y <- factor(x$name, levels = x$name)
+plot_ly(
+  y = y, x = x$registered / 1e6, type = "bar", orientation = "h", name = "Hotels, rented rooms and campsites",
+  marker = list(color = blue), hovertemplate = "%{y}: %{x:.1f} million nights<extra>Tourist accommodation</extra>"
+) %>%
+  add_trace(y = y, x = x$platforms / 1e6, name = "Booked through the platforms", marker = list(color = amber),
+    hovertemplate = "%{y}: %{x:.1f} million nights<extra>Platforms</extra>") %>%
+  chart(paste0("Nights by region, ", stay_year, ", million"), "Eurostat, tour_occ_nin2m and tour_ce_omn12",
+    barmode = "group", legend = legend_top, margin = list(l = 200, t = 100, b = 90), note_y = -0.12)
+```
+
+---
+
+## So, what does it mean?
+
+**Tourism is one of the pillars of the Greek economy, and one of its risks.** Visitors from abroad spend `r percent(share_of("EL"), 1)` of GDP in Greece, and they spend it:
+
+1. **In the summer**: `r percent(summer_share)` of the nights fall from June to September. Greece has grown its summers, not its winters, so jobs and incomes in tourism remain seasonal.
+2. **On the islands**: `r percent(islands_share)` of the nights are spent in the South Aegean, Crete and the Ionian Islands, where there are `r round(in_region("EL42", "per_person"))` nights for each inhabitant of the South Aegean every year, with what that means for water, roads and housing in August.
+3. **On long trips**: a holiday in Greece costs its visitors from the rest of the EU `r euros(cost("EL"))`, `r highest(match("EL", by_trip))` of the `r nrow(costs)` holiday countries in the chart, and a night `r euros(cost("EL", "per_night"))`, `r highest(match("EL", by_night))`. After inflation, each visitor spends `r if (real_spending == "about the same") "about as much as before COVID: the growth comes from more visitors" else paste(real_spending, "than before COVID")`.
+4. **Through the platforms**: since 2019, nights booked through Airbnb and the like grew by `r percent(platform_growth)`, the registered tourist accommodation by `r percent(registered_growth)`.
+
+2020 showed the risk: when the visitors could not come, `r percent(covid_fall)` of the nights were lost in one year. Longer seasons, more regions and more visitors from outside Europe would spread it.
+
+---
+
+## Sources
+
+- Eurostat, tourist accommodation: [tour_occ_ninat](https://ec.europa.eu/eurostat/databrowser/view/tour_occ_ninat/default/table?lang=en) (nights per year), [tour_occ_nim](https://ec.europa.eu/eurostat/databrowser/view/tour_occ_nim/default/table?lang=en) (nights per month), [tour_occ_nin2m](https://ec.europa.eu/eurostat/databrowser/view/tour_occ_nin2m/default/table?lang=en) (nights by month and region), [tour_occ_ninraw](https://ec.europa.eu/eurostat/databrowser/view/tour_occ_ninraw/default/table?lang=en) (nights by the country of the guests), [tour_ce_omn12](https://ec.europa.eu/eurostat/databrowser/view/tour_ce_omn12/default/table?lang=en) (short-stay accommodation booked through online platforms).
+- Eurostat, trips of EU residents: [tour_dem_extotw](https://ec.europa.eu/eurostat/databrowser/view/tour_dem_extotw/default/table?lang=en) (expenditure per trip by destination), [tour_dem_ttw](https://ec.europa.eu/eurostat/databrowser/view/tour_dem_ttw/default/table?lang=en) (trips by destination), [tour_dem_tnw](https://ec.europa.eu/eurostat/databrowser/view/tour_dem_tnw/default/table?lang=en) (nights by destination).
+- Eurostat, economy: [bop_its6_det](https://ec.europa.eu/eurostat/databrowser/view/bop_its6_det/default/table?lang=en) (international trade in services: travel), [nama_10_gdp](https://ec.europa.eu/eurostat/databrowser/view/nama_10_gdp/default/table?lang=en) (GDP), [prc_hicp_aind](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_aind/default/table?lang=en) (consumer prices).
