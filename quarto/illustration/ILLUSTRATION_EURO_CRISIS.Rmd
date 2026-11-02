@@ -140,7 +140,7 @@ source_note <- function(b) {
   list(text = "Source: World Bank, World Development Indicators, via <a href='https://github.com/sedzinfo/golemworldbank'>golemworldbank</a>",
        xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
        xanchor = "right", yanchor = "top", showarrow = FALSE,
-       font = list(size = 11, color = "gray50"))
+       font = list(size = 11, color = "#7F7F7F"))
 }
 
 # end labels: each sits right of its line's last point; labels closer than
@@ -157,7 +157,7 @@ end_labels <- function(ends, per_px, unit, gap = 17) {
          ax = 24, ay = -(ends$label_y[i] - ends$value[i]) / per_px,
          showarrow = TRUE, arrowhead = 0, arrowwidth = 1, arrowcolor = "#B3B3B3",
          xanchor = "left", text = paste0(name, " ", ends$text[i]),
-         font = list(size = 12, color = "gray25"))
+         font = list(size = 12, color = "#404040"))
   })
 }
 
@@ -185,7 +185,7 @@ peer_chart <- function(m, title, ytitle, unit = "", index_year = NULL, ref = NUL
   per_px <- (max(d$value, na.rm = TRUE) - lo) * 1.1 / (h - 90 - b)
   shapes <- lapply(shocks, function(s) {
     list(type = "rect", xref = "x", yref = "paper", x0 = s$from, x1 = s$to, y0 = 0, y1 = 1,
-         fillcolor = "gray92", line = list(width = 0), layer = "below")
+         fillcolor = "#EBEBEB", line = list(width = 0), layer = "below")
   })
   if (!is.null(ref)) {
     shapes <- c(shapes, list(list(type = "line", xref = "paper", x0 = 0, x1 = 1, y0 = ref, y1 = ref,
@@ -193,7 +193,7 @@ peer_chart <- function(m, title, ytitle, unit = "", index_year = NULL, ref = NUL
   }
   tags <- lapply(shocks, function(s) {
     list(x = (s$from + s$to) / 2, y = 1, xref = "x", yref = "paper", yanchor = "bottom",
-         text = s$label, showarrow = FALSE, font = list(size = 12, color = "gray40"))
+         text = s$label, showarrow = FALSE, font = list(size = 12, color = "#666666"))
   })
   plotly::layout(p,
     title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
@@ -204,7 +204,7 @@ peer_chart <- function(m, title, ytitle, unit = "", index_year = NULL, ref = NUL
     showlegend = FALSE,
     shapes = shapes,
     annotations = c(tags, end_labels(ends, per_px, unit), list(source_note(b))),
-    font   = list(size = 13, color = "gray25")) %>%
+    font   = list(size = 13, color = "#404040")) %>%
     sized(h)
 }
 
@@ -219,7 +219,7 @@ ranked_bars <- function(values, title, h = 380) {
           # rounding first (+ 0 turns -0 into 0) so -0.3 reads "+0%", never "-0%"
           text = sprintf("%+.0f%%", round(d$value) + 0),
           textposition = ifelse(d$value < 0, "inside", "outside"),
-          textfont = list(color = ifelse(d$value < 0, "white", "gray25")), cliponaxis = FALSE,
+          textfont = list(color = ifelse(d$value < 0, "white", "#404040")), cliponaxis = FALSE,
           hovertext = paste0(d$country, ": ", sprintf("%+.1f%%", d$value)), hoverinfo = "text") %>%
     plotly::layout(
       title  = list(text = title, x = 0.02, xanchor = "left", y = 0.95, yanchor = "top"),
@@ -227,7 +227,7 @@ ranked_bars <- function(values, title, h = 380) {
       xaxis  = list(title = "", ticksuffix = "%", zeroline = TRUE, zerolinecolor = "gray"),
       yaxis  = list(title = ""),
       annotations = list(source_note(b)),
-      font   = list(size = 13, color = "gray25")) %>%
+      font   = list(size = 13, color = "#404040")) %>%
     sized(h)
 }
 ```
@@ -295,7 +295,7 @@ p <- plot_ly(d, x = ~year, y = ~value, color = ~what, colors = c("#0082c8", "#E7
                  yaxis  = list(title = "US$ per person", rangemode = "tozero"),
                  legend = list(orientation = "h", y = -0.2),
                  annotations = list(source_note(150)),
-                 font   = list(size = 13, color = "gray25"))
+                 font   = list(size = 13, color = "#404040"))
 sized(p, 520)
 ```
 
