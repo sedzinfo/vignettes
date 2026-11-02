@@ -1,0 +1,475 @@
+---
+title: "What Greece Makes, Sells and Buys, and Can It Feed Itself?"
+author: ""
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+What does the Greek economy live on? This story follows the money through the economy and across its borders, and the food through its farms, seas and ports:
+
+1. **What does Greece produce?**
+2. **Who buys it?**
+3. **How much does Greece sell abroad, and how much does it buy?**
+4. **What does it sell and buy, and with whom?**
+5. **Can Greece feed itself?**
+
+The data come from three places:
+
+- **Eurostat**, the statistical office of the EU: the national accounts, which split the economy into what each industry produces and into who spends the money, and the balance of payments, which records what Greece sells and buys abroad in services, such as tourism and shipping.
+- **Comext**, Eurostat's database of trade in goods, which records every good that crosses the borders of an EU country: what it is, where it comes from or goes to, and what it is worth.
+- **FAOSTAT**, the statistics of the Food and Agriculture Organization of the UN, whose *food balance sheets* weigh, for each food, what a country produces, imports, exports and eats.
+
+They are downloaded when the document is knitted, so the charts show the latest figures.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly", "jsonlite", "countrycode"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+
+# the industries of the national accounts (NACE); energy, water and mining are all industry (B-E)
+# without manufacturing (C)
+industries <- c(
+  A = "Agriculture, forestry and fishing", BE_C = "Energy, water and mining", C = "Manufacturing",
+  F = "Construction", "G-I" = "Trade, transport, hotels and restaurants", J = "Information and communication",
+  K = "Finance and insurance", L = "Real estate", M_N = "Professional and business services",
+  "O-Q" = "Public administration, education and health", "R-U" = "Arts, leisure and other services"
+)
+# what each industry produces (gross value added, million euros) and the people who work in it (thousands)
+gva <- eurostat_values("nama_10_a10", list(geo = c("EL", "EU27_2020"), unit = "CP_MEUR", na_item = "B1G"))
+jobs <- eurostat_values("nama_10_a10_e", list(geo = c("EL", "EU27_2020"), unit = "THS_PER", na_item = "EMP_DC"))
+# the share of each industry in the total, %
+shares <- function(x, geo, year) {
+  x <- x[x$geo == geo & x$time == year, ]
+  v <- setNames(x$values, x$nace_r2)
+  v["BE_C"] <- v["B-E"] - v["C"]
+  100 * v[names(industries)] / v["TOTAL"]
+}
+gva_year <- max(gva$time[gva$geo == "EL"])
+job_year <- max(jobs$time[jobs$geo == "EL"])
+
+# GDP by who spends it, % of GDP and million euros: households (with the non-profit institutions that
+# serve them), government, investment (gross capital formation), exports and imports, of goods and of services
+uses <- c(P31_S14_S15 = "Households", P3_S13 = "Government", P5G = "Investment", P6 = "Exports", P7 = "Imports")
+accounts <- eurostat_values("nama_10_gdp", list(
+  geo = c("EL", "EU27_2020"), unit = c("PC_GDP", "CP_MEUR"), na_item = c(names(uses), "P61", "P62", "P71", "P72")
+))
+gdp_year <- max(accounts$time[accounts$geo == "EL"])
+account <- function(item, geo = "EL", year = gdp_year, unit = "PC_GDP") {
+  accounts$values[accounts$na_item == item & accounts$geo == geo & accounts$time == year & accounts$unit == unit]
+}
+
+# services sold to (CRE) and bought from (DEB) the rest of the world, million euros: all services (S),
+# travel (SD), transport (SC), sea transport (SC1) and its freight (SC12)
+services <- eurostat_values("bop_its6_det", list(
+  geo = "EL", partner = "WRL_REST", currency = "MIO_EUR", stk_flow = c("CRE", "DEB"), bop_item = c("S", "SD", "SC", "SC1", "SC12")
+))
+service <- function(item, flow = "CRE", year) services$values[services$bop_item == item & services$stk_flow == flow & services$time == year]
+services_year <- max(services$time[services$bop_item == "S"])
+sea_year <- max(services$time[services$bop_item == "SC1"])
+
+# Comext, Eurostat's database of trade in goods, from its own API (the eurostat package does not
+# read it): a JSON-stat dataset, its values in one vector in the order of its dimensions, the last
+# changing fastest
+comext <- function(filters, id = "DS-045409") {
+  query <- paste(paste0(rep(names(filters), lengths(filters)), "=", unlist(filters)), collapse = "&")
+  x <- jsonlite::fromJSON(paste0("https://ec.europa.eu/eurostat/api/comext/dissemination/statistics/1.0/data/", id, "?", query))
+  codes <- lapply(x$id, function(d) names(sort(unlist(x$dimension[[d]]$category$index))))
+  grid <- expand.grid(rev(codes), stringsAsFactors = FALSE)   # the first dimension changes fastest
+  names(grid) <- rev(x$id)
+  grid$values <- NA
+  grid$values[as.integer(names(x$value)) + 1] <- unlist(x$value)
+  grid <- grid[!is.na(grid$values), ]
+  grid$time <- as.integer(grid$time)
+  grid
+}
+# Greece's exports (flow 2) and imports (flow 1) of goods each year since 2019, in euros; with no
+# partner, with each partner
+trade <- function(product, partner = NULL) {
+  comext(list(reporter = "GR", partner = partner, product = product, flow = c("1", "2"),
+    indicators = "VALUE_IN_EUROS", freq = "A", sinceTimePeriod = "2019"))
+}
+# the chapters of the Harmonized System, the classification of goods in trade, by short names
+chapters <- c(
+  "01" = "Live animals", "02" = "Meat", "03" = "Fish and seafood", "04" = "Dairy, eggs and honey",
+  "05" = "Other animal products", "06" = "Plants and flowers", "07" = "Vegetables", "08" = "Fruit and nuts",
+  "09" = "Coffee, tea and spices", "10" = "Cereals", "11" = "Flour", "12" = "Oil seeds", "13" = "Gums and resins",
+  "14" = "Other plant materials", "15" = "Olive oil and other fats", "16" = "Prepared meat and fish",
+  "17" = "Sugar and sweets", "18" = "Cocoa and chocolate", "19" = "Bread, pasta and pastry",
+  "20" = "Preserved fruit and vegetables", "21" = "Other food preparations", "22" = "Drinks",
+  "23" = "Animal feed", "24" = "Tobacco", "25" = "Salt, stone and cement", "26" = "Ores",
+  "27" = "Fuels and oil products", "28" = "Inorganic chemicals", "29" = "Organic chemicals", "30" = "Medicines",
+  "31" = "Fertilisers", "32" = "Paints and dyes", "33" = "Cosmetics", "34" = "Soaps and detergents",
+  "35" = "Glues and enzymes", "36" = "Explosives", "37" = "Photographic goods", "38" = "Other chemicals",
+  "39" = "Plastics", "40" = "Rubber", "41" = "Hides and leather", "42" = "Leather goods", "43" = "Furs",
+  "44" = "Wood", "45" = "Cork", "46" = "Basketwork", "47" = "Pulp", "48" = "Paper", "49" = "Printed matter",
+  "50" = "Silk", "51" = "Wool", "52" = "Cotton", "53" = "Other plant fibres", "54" = "Man-made filaments",
+  "55" = "Man-made fibres", "56" = "Wadding and ropes", "57" = "Carpets", "58" = "Special fabrics",
+  "59" = "Coated fabrics", "60" = "Knitted fabrics", "61" = "Knitted clothes", "62" = "Other clothes",
+  "63" = "Other textile articles", "64" = "Footwear", "65" = "Headwear", "66" = "Umbrellas",
+  "67" = "Feathers and artificial flowers", "68" = "Stone articles", "69" = "Ceramics", "70" = "Glass",
+  "71" = "Jewellery and gold", "72" = "Iron and steel", "73" = "Iron and steel articles", "74" = "Copper",
+  "75" = "Nickel", "76" = "Aluminium", "78" = "Lead", "79" = "Zinc", "80" = "Tin", "81" = "Other base metals",
+  "82" = "Tools", "83" = "Other metal articles", "84" = "Machinery", "85" = "Electrical equipment",
+  "86" = "Railway equipment", "87" = "Cars and other vehicles", "88" = "Aircraft", "89" = "Ships and boats",
+  "90" = "Instruments", "91" = "Clocks and watches", "92" = "Musical instruments", "93" = "Arms",
+  "94" = "Furniture", "95" = "Toys and sports goods", "96" = "Other manufactured articles",
+  "97" = "Art and antiques", "99" = "Other goods"
+)
+goods <- trade(names(chapters), "WORLD")
+trade_year <- max(goods$time)
+# exports and imports of each chapter in a year, million euros
+by_chapter <- function(codes, year = trade_year) {
+  x <- data.frame(code = codes, name = unname(chapters[codes]))
+  x$exports <- sapply(codes, function(k) sum(goods$values[goods$product == k & goods$flow == "2" & goods$time == year])) / 1e6
+  x$imports <- sapply(codes, function(k) sum(goods$values[goods$product == k & goods$flow == "1" & goods$time == year])) / 1e6
+  x
+}
+# crude oil (2709), oil products (2710) and gas (2711)
+oil <- trade(c("2709", "2710", "2711"), "WORLD")
+oil_trade <- function(code, flow, year = trade_year) sum(oil$values[oil$product == code & oil$flow == flow & oil$time == year]) / 1e6
+# the trading partners: countries only, with their names (Comext calls Serbia XS)
+partners <- trade("TOTAL")
+partners <- partners[partners$time == trade_year, ]
+partners$name <- countrycode::countrycode(partners$partner, "iso2c", "country.name", warn = FALSE,
+  custom_match = c(TR = "Türkiye", XS = "Serbia", XK = "Kosovo"))
+partners <- partners[!is.na(partners$name), ]
+
+# FAOSTAT's food balance sheets for the countries of Europe, from its bulk download, Greece only;
+# quantities in thousand tonnes, and the calories of the food each person eats a day
+fao_zip <- tempfile(fileext = ".zip")
+download.file("https://bulks-faostat.fao.org/production/FoodBalanceSheets_E_Europe.zip", fao_zip, quiet = TRUE, mode = "wb")
+fbs <- read.csv(unz(fao_zip, "FoodBalanceSheets_E_Europe_NOFLAG.csv"), check.names = FALSE)
+fbs <- fbs[fbs$Area == "Greece", ]
+fao_years <- as.integer(sub("^Y", "", grep("^Y[0-9]{4}$", names(fbs), value = TRUE)))
+fao_year <- max(fao_years[sapply(fao_years, function(y) any(!is.na(fbs[fbs$Element == "Production", paste0("Y", y)])))])
+balance <- function(code, element, year = fao_year) {
+  v <- fbs[fbs$`Item Code` == code & fbs$Element == element, paste0("Y", year)]
+  if (length(v) && !is.na(v[1])) v[1] else NA
+}
+# what Greece produces of a food, % of what it uses (production / domestic supply): its self-sufficiency
+self_sufficiency <- function(code, year = fao_year) {
+  produced <- balance(code, "Production", year)
+  100 * (if (is.na(produced)) 0 else produced) / balance(code, "Domestic supply quantity", year)
+}
+
+eu_name <- c(EL = "Greece", EU27_2020 = "EU-27")
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+amber <- "#c97b1e"       # told apart from blue also with colour blindness
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    # at the top, so that a legend of two or three rows fits under it in a larger top margin
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# horizontal bars of two series side by side for each label, the labels from the top in their order
+paired_bars <- function(labels, first, second, names, colors, hover) {
+  y <- factor(labels, levels = rev(labels))
+  plot_ly() %>%
+    # plotly draws the first series at the bottom of each pair, so the second goes in first
+    add_trace(y = y, x = second, type = "bar", orientation = "h", name = names[2], marker = list(color = colors[2]),
+      hovertemplate = paste0("%{y}: ", hover, "<extra>", names[2], "</extra>")) %>%
+    add_trace(y = y, x = first, type = "bar", orientation = "h", name = names[1], marker = list(color = colors[1]),
+      hovertemplate = paste0("%{y}: ", hover, "<extra>", names[1], "</extra>"))
+}
+
+# short labels of numbers
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+billion <- function(x) paste0("€", format(round(x / 1000, 1), nsmall = 1, trim = TRUE), " billion")   # from million euros
+one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+# a country's name in a sentence: "the United States"
+in_text <- function(name) ifelse(name %in% c("United Kingdom", "United States", "Netherlands"), paste("the", name), name)
+# "A", "A and B", "A, B and C"
+and_list <- function(x) if (length(x) < 2) x else paste(paste(x[-length(x)], collapse = ", "), "and", x[length(x)])
+```
+
+---
+
+## 1. What does Greece produce?
+
+```{r production_numbers}
+greece <- shares(gva, "EL", gva_year)
+eu <- shares(gva, "EU27_2020", gva_year)
+greek_jobs <- shares(jobs, "EL", job_year)
+eu_jobs <- shares(jobs, "EU27_2020", job_year)
+# the industries with a larger share in Greece than in the EU, the largest difference first
+larger <- names(sort((greece - eu)[greece > eu], decreasing = TRUE))
+smaller <- names(sort((greece - eu)[greece < eu]))
+```
+
+**Mostly services, and above all the ones that serve tourists.** Of everything the Greek economy produced in `r gva_year`, `r percent(greece[["G-I"]])` came from trade, transport, hotels and restaurants, against `r percent(eu[["G-I"]])` in the EU. The industries with a larger share in Greece than in the EU are, above all, `r and_list(paste0(tolower(industries[head(larger, 3)]), " (", percent(greece[head(larger, 3)], 1), " against ", percent(eu[head(larger, 3)], 1), ")"))`; those with a smaller share, above all, `r and_list(paste0(tolower(industries[head(smaller, 3)]), " (", percent(greece[head(smaller, 3)], 1), " against ", percent(eu[head(smaller, 3)], 1), ")"))`.
+
+```{r industries, fig.height = 7}
+order <- names(sort(greece, decreasing = TRUE))
+paired_bars(industries[order], greece[order], eu[order], c("Greece", "EU-27"), c(greek_red, blue), "%{x:.1f}% of the economy") %>%
+  chart(paste0("What each industry produces, ", gva_year, ", % of the economy"), "Eurostat, nama_10_a10 (gross value added)",
+    barmode = "group", legend = c(legend_top, traceorder = "reversed"), margin = list(l = 290, t = 100, b = 90), note_y = -0.1)
+```
+
+Three things stand out:
+
+- **Real estate** is `r percent(greece[["L"]])` of the Greek economy. Most of it is not buying and selling houses: the national accounts count the rent that the people who own their homes would pay if they rented them, and most Greeks own their homes.
+- **Construction** has never recovered from the crisis: `r percent(shares(gva, "EL", 2007)[["F"]], 1)` of the economy in 2007, `r percent(greece[["F"]], 1)` in `r gva_year`.
+- **Agriculture** produces `r percent(greece[["A"]], 1)` of the economy but employs `r percent(greek_jobs[["A"]], 1)` of the people who work, against `r percent(eu_jobs[["A"]], 1)` in the EU: many small farms, each producing little. Trade, transport, hotels and restaurants employ `r percent(greek_jobs[["G-I"]])` of the people who work.
+
+---
+
+## 2. Who buys it?
+
+```{r spending_numbers}
+use_shares <- data.frame(item = names(uses), name = uses)
+use_shares$greece <- sapply(names(uses), account)
+use_shares$eu <- sapply(names(uses), account, geo = "EU27_2020")
+```
+
+**Households.** GDP is also what is spent on what the economy produces: by households, by the government, on investment, and by foreigners, as exports; and as part of what is spent is produced abroad, imports are taken off. In Greece, households spend `r percent(account("P31_S14_S15"))` of GDP, against `r percent(account("P31_S14_S15", "EU27_2020"))` in the EU, while investment, in buildings, machines and software, is `r percent(account("P5G"))` of GDP, against `r percent(account("P5G", "EU27_2020"))`. Greece consumes a larger share of what it produces, and invests a smaller share, than the EU, and it buys more from abroad than it sells: imports of `r percent(account("P7"))` of GDP, exports of `r percent(account("P6"))`.
+
+```{r spending}
+x <- factor(use_shares$name, levels = use_shares$name)
+plot_ly() %>%
+  add_trace(x = x, y = use_shares$greece, type = "bar", name = "Greece", marker = list(color = greek_red),
+    hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Greece</extra>") %>%
+  add_trace(x = x, y = use_shares$eu, type = "bar", name = "EU-27", marker = list(color = blue),
+    hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>EU-27</extra>") %>%
+  chart(paste0("Who spends the money: GDP by use, ", gdp_year, ", % of GDP"), "Eurostat, nama_10_gdp", "% of GDP",
+  barmode = "group", legend = legend_top,
+  annotations = list(list(x = "Imports", y = max(use_shares$greece[5], use_shares$eu[5]), text = "taken off", yanchor = "bottom",
+    yshift = 4, showarrow = FALSE, font = list(color = dark_gray))))
+```
+
+---
+
+## 3. How much does Greece sell abroad, and how much does it buy?
+
+```{r trade_numbers}
+exports <- accounts[accounts$geo == "EL" & accounts$na_item == "P6" & accounts$unit == "PC_GDP", c("time", "values")]
+imports <- accounts[accounts$geo == "EL" & accounts$na_item == "P7" & accounts$unit == "PC_GDP", c("time", "values")]
+first <- max(min(exports$time), 1995)
+gap <- imports$values[match(exports$time, imports$time)] - exports$values   # % of GDP
+surplus_years <- exports$time[exports$time >= first & gap < 0]
+widest <- exports$time[exports$time >= first][which.max(gap[exports$time >= first])]
+gap_in <- function(year) gap[exports$time == year]
+```
+
+**Twice as open as in the 1990s.** Greece's exports of goods and services were `r percent(exports$values[exports$time == first])` of GDP in `r first` and `r percent(account("P6"))` in `r gdp_year`; its imports, `r percent(imports$values[imports$time == first])` and `r percent(account("P7"))`. `r if (length(surplus_years) == 0) paste0("In every year since ", first, " Greece has bought more from abroad than it sold.") else paste0("Greece sold more abroad than it bought only in ", and_list(surplus_years), ".")` The gap was widest in `r widest`, `r one(gap_in(widest))` points of GDP`r if (widest <= 2009) ", when Greece borrowed abroad to pay for its imports" else ""`; in 2013, in the crisis, it was `r one(gap_in(2013))` points, as Greeks could afford much less.
+
+```{r trade_history}
+plot_ly(exports[exports$time >= first, ],
+  x = ~time, y = ~values, type = "scatter", mode = "lines", name = "Exports",
+  line = list(color = blue, width = 3), hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Exports</extra>"
+) %>%
+  add_trace(data = imports[imports$time >= first, ], x = ~time, y = ~values, name = "Imports",
+    line = list(color = amber, width = 3), hovertemplate = "%{x}: %{y:.1f}% of GDP<extra>Imports</extra>",
+    type = "scatter", mode = "lines", inherit = FALSE) %>%
+  chart("Exports and imports of goods and services, % of GDP", "Eurostat, nama_10_gdp", "% of GDP",
+    y_axis = list(rangemode = "tozero"), legend = legend_top)
+```
+
+```{r goods_services_numbers}
+goods_gap <- account("P71", unit = "CP_MEUR") - account("P61", unit = "CP_MEUR")
+services_gap <- account("P62", unit = "CP_MEUR") - account("P72", unit = "CP_MEUR")
+```
+
+**Greece sells services and buys goods.** In `r gdp_year`, it bought `r billion(goods_gap)` more goods abroad than it sold, and sold `r billion(services_gap)` more services than it bought. Two services earn almost all of it:
+
+- **Tourism**: in `r services_year`, visitors from abroad spent `r billion(service("SD", year = services_year))` in Greece (see the story of [Greek tourism](ILLUSTRATION_GREEK_TOURISM.Rmd)).
+- **Shipping**: Greek shipowners have one of the largest merchant fleets of the world, and the freight their ships earn carrying goods between other countries counts as a Greek export. Sea transport brought in `r billion(service("SC1", year = sea_year))` in `r sea_year`, `r billion(service("SC12", year = sea_year))` of it freight.
+
+Together, travel and transport were `r percent(100 * (service("SD", year = services_year) + service("SC", year = services_year)) / service("S", year = services_year))` of the services Greece sold in `r services_year`.
+
+```{r goods_services}
+kinds <- c(Goods = "P61", Services = "P62")
+bought <- c(Goods = "P71", Services = "P72")
+plot_ly() %>%
+  add_trace(x = names(kinds), y = sapply(kinds, account, unit = "CP_MEUR") / 1000, type = "bar", name = "Exports",
+    marker = list(color = blue), hovertemplate = "%{x}: €%{y:.1f} billion<extra>Exports</extra>") %>%
+  add_trace(x = names(bought), y = sapply(bought, account, unit = "CP_MEUR") / 1000, type = "bar", name = "Imports",
+    marker = list(color = amber), hovertemplate = "%{x}: €%{y:.1f} billion<extra>Imports</extra>") %>%
+  chart(paste0("Exports and imports of Greece, ", gdp_year, ", € billion"), "Eurostat, nama_10_gdp", "€ billion",
+    barmode = "group", legend = legend_top)
+```
+
+---
+
+## 4. What does it sell and buy, and with whom?
+
+```{r goods_numbers}
+products <- by_chapter(names(chapters))
+products$total <- products$exports + products$imports
+top_products <- head(products[order(-products$total), ], 14)
+top_exports <- head(products[order(-products$exports), ], 5)
+fuel_share <- function(flow) 100 * products[[flow]][products$code == "27"] / sum(products[[flow]])
+```
+
+**Oil, in both directions.** In `r trade_year`, Greece exported `r billion(sum(products$exports))` of goods and imported `r billion(sum(products$imports))`. The largest exports were `r and_list(paste0(tolower(top_exports$name), " (", billion(top_exports$exports), ")"))`. Fuels are `r percent(fuel_share("exports"))` of what Greece sells and `r percent(fuel_share("imports"))` of what it buys, because its refineries import crude oil and export what they make of it: Greece bought `r billion(oil_trade("2709", "1"))` of crude oil and sold `r billion(oil_trade("2710", "2"))` of oil products, such as diesel, petrol and fuel for ships and aircraft. It also bought `r billion(oil_trade("2711", "1"))` of natural gas.
+
+Of the rest, Greece imports far more machinery, electrical equipment and cars than it exports, and sells aluminium, medicines and food: fruit, preserved fruit and vegetables, cheese, fish and olive oil.
+
+```{r products, fig.height = 7}
+paired_bars(top_products$name, top_products$exports / 1000, top_products$imports / 1000, c("Exports", "Imports"), c(blue, amber), "€%{x:.2f} billion") %>%
+  chart(paste0("The goods Greece trades most, ", trade_year, ", € billion"), "Eurostat, Comext DS-045409 (chapters of the Harmonized System)",
+    barmode = "group", legend = c(legend_top, traceorder = "reversed"), margin = list(l = 190, t = 100, b = 90), note_y = -0.12)
+```
+
+```{r partner_numbers}
+by_partner <- data.frame(code = unique(partners$partner))
+by_partner$name <- partners$name[match(by_partner$code, partners$partner)]
+by_partner$exports <- sapply(by_partner$code, function(k) sum(partners$values[partners$partner == k & partners$flow == "2"])) / 1e6
+by_partner$imports <- sapply(by_partner$code, function(k) sum(partners$values[partners$partner == k & partners$flow == "1"])) / 1e6
+top_partners <- head(by_partner[order(-(by_partner$exports + by_partner$imports)), ], 12)
+buyers <- head(by_partner[order(-by_partner$exports), ], 5)
+sellers <- head(by_partner[order(-by_partner$imports), ], 5)
+in_eu <- by_partner$code %in% eu_countries$code
+eu_share <- function(flow) 100 * sum(by_partner[[flow]][in_eu]) / sum(by_partner[[flow]])
+# countries outside the EU that sell Greece more than €1 billion a year and buy less than a quarter of that
+one_way <- by_partner$name[!in_eu & by_partner$imports > 1000 & by_partner$exports < by_partner$imports / 4]
+```
+
+**Mostly with its neighbours in the EU.** `r percent(eu_share("exports"))` of the goods Greece sells go to the EU, and `r percent(eu_share("imports"))` of those it buys come from it. Its largest customers in `r trade_year` were `r and_list(in_text(buyers$name))`; its largest suppliers `r and_list(in_text(sellers$name))`.`r if (length(one_way)) paste0(" ", and_list(one_way), " sold Greece more than four times as much as they bought from it, mostly oil, gas or manufactured goods.") else ""`
+
+```{r partners, fig.height = 7}
+paired_bars(top_partners$name, top_partners$exports / 1000, top_partners$imports / 1000, c("Exports to", "Imports from"), c(blue, amber), "€%{x:.2f} billion") %>%
+  chart(paste0("Greece's largest trading partners in goods, ", trade_year, ", € billion"), "Eurostat, Comext DS-045409",
+    barmode = "group", legend = c(legend_top, traceorder = "reversed"), margin = list(l = 150, t = 100, b = 90), note_y = -0.12)
+```
+
+---
+
+## 5. Can Greece feed itself?
+
+```{r food_numbers}
+food <- by_chapter(names(chapters)[1:24])
+food$balance <- food$exports - food$imports
+food_then <- by_chapter(names(chapters)[1:24], 2019)
+```
+
+**In money, Greece sells about as much food as it buys.** In `r trade_year`, it exported `r billion(sum(food$exports))` of food, drinks and tobacco and imported `r billion(sum(food$imports))`, against `r billion(sum(food_then$exports))` and `r billion(sum(food_then$imports))` in 2019. But it sells and buys different foods. It sells more than it buys of `r and_list(tolower(food$name[order(-food$balance)][1:5]))`; it buys far more than it sells of `r and_list(tolower(food$name[order(food$balance)][1:5]))`. Meat alone costs it `r billion(-food$balance[food$code == "02"])` more than it earns from it.
+
+```{r food_trade, fig.height = 8}
+shown <- food[abs(food$balance) >= 50, ]
+shown <- shown[order(shown$balance), ]
+plot_ly(
+  y = factor(shown$name, levels = shown$name), x = shown$balance / 1000, type = "bar", orientation = "h",
+  marker = list(color = ifelse(shown$balance > 0, blue, amber)),
+  hovertext = paste0(shown$name, ": exports ", billion(shown$exports), ", imports ", billion(shown$imports)),
+  hovertemplate = "%{hovertext}<extra></extra>"
+) %>%
+  chart(paste0("Food trade of Greece, exports minus imports, ", trade_year, ", € billion"),
+    "Eurostat, Comext DS-045409 (chapters 1 to 24 of the Harmonized System; those under €50 million left out)",
+    margin = list(l = 210, t = 70, b = 90), note_y = -0.1,
+    annotations = list(
+      # above the bars, on each side of zero
+      list(x = 0, y = 1, yref = "paper", text = "Greece sells more →", xanchor = "left", yanchor = "bottom", xshift = 4, showarrow = FALSE, font = list(color = blue)),
+      list(x = 0, y = 1, yref = "paper", text = "← Greece buys more", xanchor = "right", yanchor = "bottom", xshift = -4, showarrow = FALSE, font = list(color = amber))
+    ))
+```
+
+Money does not tell how much of its food Greece grows. The food balance sheets of FAOSTAT do: for each food, they weigh what Greece produces against what it uses, for food, for animal feed and in factories. A food of which Greece produces more than 100% of what it uses is one it could do without importing; one far below 100% is one it depends on others for.
+
+```{r self_sufficiency_numbers}
+foods <- c(
+  "2580" = "Olive oil", "2919" = "Fruit", "2918" = "Vegetables", "2732" = "Lamb and goat", "2948" = "Milk",
+  "2734" = "Poultry", "2949" = "Eggs", "2911" = "Pulses", "2511" = "Wheat", "2514" = "Maize", "2905" = "All cereals",
+  "2943" = "All meat", "2907" = "Potatoes and other roots", "2960" = "Fish and seafood", "2733" = "Pork",
+  "2731" = "Beef", "2909" = "Sugar and sweeteners", "2555" = "Soybeans"
+)
+fed <- data.frame(code = names(foods), name = foods)
+fed$ratio <- sapply(fed$code, self_sufficiency)
+ratio <- function(code) fed$ratio[fed$code == code]
+
+# the calories of the diet, by the groups that together make up all of it, and the part of each that
+# Greek production could cover if all of it stayed in Greece (up to what Greeks eat of it)
+diet <- c("2905", "2907", "2908", "2909", "2911", "2912", "2913", "2914", "2918", "2919", "2922", "2923", "2924",
+          "2943", "2945", "2946", "2948", "2949", "2960", "2961", "2928")
+calories <- data.frame(code = diet, kcal = sapply(diet, balance, element = "Food supply (kcal/capita/day)"))
+calories$ratio <- sapply(diet, self_sufficiency)
+calories <- calories[!is.na(calories$kcal), ]
+calories$covered <- calories$kcal * ifelse(is.na(calories$ratio), 0, pmin(calories$ratio, 100)) / 100
+kcal_total <- sum(calories$kcal)
+covered <- 100 * sum(calories$covered) / kcal_total
+short <- calories$ratio < 70 | is.na(calories$ratio)
+```
+
+**Plenty of olive oil, fruit and vegetables; not enough bread, meat or sugar.** In `r fao_year`, Greece produced `r percent(ratio("2580"))` of the olive oil it used, `r percent(ratio("2919"))` of its fruit, `r percent(ratio("2918"))` of its vegetables and `r percent(ratio("2732"))` of its lamb and goat meat. But it produced only `r percent(ratio("2905"))` of its cereals, `r percent(ratio("2943"))` of its meat (`r percent(ratio("2733"))` of its pork and `r percent(ratio("2731"))` of its beef), `r percent(ratio("2960"))` of its fish and seafood and `r percent(ratio("2909"))` of its sugar. It grows `r if (ratio("2555") < 1) "no" else percent(ratio("2555"))` soybeans, the protein of the feed of pigs and chickens.
+
+```{r self_sufficiency, fig.height = 7}
+fed <- fed[order(fed$ratio), ]
+plot_ly(
+  y = factor(fed$name, levels = fed$name), x = fed$ratio, type = "bar", orientation = "h",
+  marker = list(color = ifelse(fed$ratio >= 100, blue, amber)),
+  hovertemplate = "%{y}: Greece produces %{x:.0f}% of what it uses<extra></extra>"
+) %>%
+  chart(paste0("What Greece produces, % of what it uses, ", fao_year), "FAOSTAT, food balance sheets (production / domestic supply)",
+    margin = list(l = 180, t = 70, b = 90), note_y = -0.12,
+    shapes = list(list(type = "line", x0 = 100, x1 = 100, y0 = 0, y1 = 1, yref = "paper", line = list(color = dark_gray, dash = "dash"))),
+    # at the bottom, next to the shortest bars
+    annotations = list(list(x = 100, y = 0, yref = "paper", text = "100%: as much as it uses", xanchor = "left", yanchor = "bottom",
+      xshift = 4, showarrow = FALSE, font = list(color = dark_gray))))
+```
+
+Milk is the least certain of these figures. FAOSTAT counts cheese and yoghurt by the milk it takes to make them, and as Greece's sales of feta and yoghurt abroad have grown, its milk has risen, on paper, from `r percent(self_sufficiency("2948", 2010))` of what it uses in 2010 to `r percent(ratio("2948"))` in `r fao_year`, while its farms produced `r percent(100 * balance("2948", "Production") / balance("2948", "Production", 2010))` of the milk they produced in 2010.
+
+**So, would Greece go hungry without imports?** No, but it would eat differently. Greece has about `r format(round(kcal_total, -1), big.mark = ",")` calories of food a day for each person who lives there: food available, not all of it eaten. If all the food that Greece produces stayed in Greece, it could cover about `r percent(round(covered, -1))` of these calories, more than enough olive oil, fruit and vegetables but too little bread, pasta, meat and sugar: the foods of which Greece produces less than 70% of what it uses give `r percent(100 * sum(calories$kcal[short]) / kcal_total)` of the calories. And the figure flatters Greece, as its pigs and chickens eat feed made of imported soybeans and maize. For a country that sells olive oil, fruit and feta and buys meat, cereals and feed, what matters is to sell enough food to pay for the food it lacks, and in `r trade_year` Greece's food exports were worth `r percent(100 * sum(food$exports) / sum(food$imports))` of its food imports.
+
+---
+
+## So, what does it mean?
+
+**The Greek economy is one of services, consumption and imports.**
+
+1. **Services**: trade, transport, hotels and restaurants make `r percent(greece[["G-I"]])` of the economy, against `r percent(eu[["G-I"]])` in the EU; manufacturing `r percent(greece[["C"]])`, against `r percent(eu[["C"]])`.
+2. **Consumption**: households spend `r percent(account("P31_S14_S15"))` of GDP, the EU's `r percent(account("P31_S14_S15", "EU27_2020"))`; investment is `r percent(account("P5G"))`, the EU's `r percent(account("P5G", "EU27_2020"))`.
+3. **Trade**: Greece sells tourism and shipping, and buys goods: `r billion(services_gap)` more services sold than bought, `r billion(goods_gap)` more goods bought than sold in `r gdp_year`. Its largest trade in goods is oil, bought crude and sold refined.
+4. **Food**: about as much sold as bought, in money. Greece produces far more olive oil, fruit and vegetables than it eats, and depends on imports for cereals, meat, fish, sugar and animal feed.
+
+---
+
+## Sources
+
+- Eurostat: [nama_10_a10](https://ec.europa.eu/eurostat/databrowser/view/nama_10_a10/default/table?lang=en) (gross value added by industry), [nama_10_a10_e](https://ec.europa.eu/eurostat/databrowser/view/nama_10_a10_e/default/table?lang=en) (employment by industry), [nama_10_gdp](https://ec.europa.eu/eurostat/databrowser/view/nama_10_gdp/default/table?lang=en) (GDP and its uses), [bop_its6_det](https://ec.europa.eu/eurostat/databrowser/view/bop_its6_det/default/table?lang=en) (international trade in services).
+- Eurostat, Comext: [DS-045409](https://ec.europa.eu/eurostat/comext/newxtweb/) (EU trade since 1988 by HS2-4-6 and CN8), through its [API](https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started/comext-database).
+- FAOSTAT: [Food Balances](https://www.fao.org/faostat/en/#data/FBS) (2010 onwards).
