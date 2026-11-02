@@ -148,17 +148,17 @@ sized <- function(p, h) {
 finish <- function(p, title, ytitle, labels, unit = "", legend = TRUE, b = if (legend) 150 else 110) {
   shapes <- lapply(shocks, function(s) {
     list(type = "rect", xref = "x", yref = "paper", x0 = s$from, x1 = s$to, y0 = 0, y1 = 1,
-         fillcolor = "gray92", line = list(width = 0), layer = "below")
+         fillcolor = "#EBEBEB", line = list(width = 0), layer = "below")
   })
   tags <- lapply(shocks, function(s) {
     list(x = (s$from + s$to) / 2, y = 1, xref = "x", yref = "paper", yanchor = "bottom",
-         text = s$label, showarrow = FALSE, font = list(size = 12, color = "gray40"))
+         text = s$label, showarrow = FALSE, font = list(size = 12, color = "#666666"))
   })
   source_note <- list(
     text = "Source: World Bank, World Development Indicators, via <a href='https://github.com/sedzinfo/golemworldbank'>golemworldbank</a>",
     xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
     xanchor = "right", yanchor = "top", showarrow = FALSE,
-    font = list(size = 11, color = "gray50"))
+    font = list(size = 11, color = "#7F7F7F"))
   plotly::layout(p,
     title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
     margin = list(t = 90, r = 130, b = b),
@@ -168,7 +168,7 @@ finish <- function(p, title, ytitle, labels, unit = "", legend = TRUE, b = if (l
     showlegend = legend,
     shapes = shapes,
     annotations = c(tags, labels, list(source_note)),
-    font   = list(size = 13, color = "gray25"))
+    font   = list(size = 13, color = "#404040"))
 }
 
 # one line per measure, each with its value written at the end; `nudge` lifts
@@ -188,7 +188,7 @@ story_chart <- function(measures, names, short, colors, title, ytitle, unit = ""
     ends[[i]] <- list(x = last_year(measures[i]), y = latest(measures[i]), xref = "x", yref = "y",
                       xanchor = "left", xshift = 8, yshift = nudge[i], showarrow = FALSE,
                       text = trimws(paste(short[i], fmt(latest(measures[i]), unit))),
-                      font = list(size = 13, color = "gray25"))
+                      font = list(size = 13, color = "#404040"))
   }
   finish(p, title, ytitle, ends, unit, legend = length(measures) > 1) %>% sized(h)
 }
@@ -209,13 +209,14 @@ p <- plot_ly(df_greece[df_greece$measure == "income", ], x = ~year, y = ~value,
 finish(p, "Greece: how much the country produces per person (US$, price rises removed)", "US$ per person",
        labels = list(
          list(x = peak$year, y = peak$value, yshift = 10, yanchor = "bottom", showarrow = FALSE,
-              text = paste0("Peak ", peak$year, ": ", fmt(peak$value, "$")), font = list(color = "gray25")),
+              text = paste0("Peak ", peak$year, ": ", fmt(peak$value, "$")), font = list(color = "#404040")),
          list(x = bottom$year, y = bottom$value, yshift = -10, yanchor = "top", showarrow = FALSE,
-              text = paste0("Bottom ", bottom$year, ": ", fmt(bottom$value, "$")), font = list(color = "gray25")),
+              text = paste0("Bottom ", bottom$year, ": ", fmt(bottom$value, "$")), font = list(color = "#404040")),
          list(x = last_year("income"), y = latest("income"), xanchor = "left", xshift = 8, showarrow = FALSE,
-              text = fmt(latest("income"), "$"), font = list(color = "gray25"))),
+              text = fmt(latest("income"), "$"), font = list(color = "#404040"))),
        legend = FALSE) %>%
   sized(520)
+
 ```
 
 The line has five chapters:
