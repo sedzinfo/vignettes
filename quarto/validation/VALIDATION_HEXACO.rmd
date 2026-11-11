@@ -53,7 +53,7 @@ plot_loadings <- function(L, title) {
     scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d6604d",
                          midpoint = 0, limits = c(-1, 1), name = "loading") +
     facet_grid(domain ~ ., scales = "free_y", space = "free_y") +
-    theme_bw(base_size = 9) +
+    theme_bw(base_size = 10) +
     theme(strip.text.y = element_text(angle = 0, size = 8),
           axis.title = element_blank(), panel.grid = element_blank()) +
     ggtitle(title)
@@ -135,7 +135,7 @@ ggplot(item_total, aes(x = r_drop, y = facet, colour = key)) +
   scale_colour_manual(values = c(`+` = "#2166ac", `-` = "#d6604d"),
                       labels = c(`+` = "+ keyed", `-` = "- keyed (reversed)"), name = NULL) +
   labs(x = "Corrected item-total correlation", y = NULL) +
-  theme_bw(base_size = 9) +
+  theme_bw(base_size = 10) +
   theme(legend.position = "top") +
   ggtitle("Each item against the rest of its facet")
 ```
@@ -170,7 +170,7 @@ ggplot(alpha_long, aes(x = alpha, y = facet)) +
   scale_colour_manual(values = c(sample = "#d6604d", published = "#2166ac"),
                       labels = c(sample = "This sample", published = "Published (IPIP key)"), name = NULL) +
   labs(x = "Cronbach's alpha", y = NULL) +
-  theme_bw(base_size = 9) +
+  theme_bw(base_size = 10) +
   theme(legend.position = "top") +
   ggtitle("Facet reliability: this sample against the published values")
 
@@ -198,7 +198,7 @@ ggplot(cor_long, aes(x = Var1, y = Var2, fill = value)) +
                        midpoint = 0, limits = c(-1, 1), name = "r") +
   geom_hline(yintercept = seq(4.5, 20.5, 4), colour = "grey30", linewidth = 0.3) +
   geom_vline(xintercept = seq(4.5, 20.5, 4), colour = "grey30", linewidth = 0.3) +
-  theme_bw(base_size = 9) +
+  theme_bw(base_size = 10) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
         axis.title = element_blank(), panel.grid = element_blank()) +
   ggtitle("IPIP-HEXACO facet intercorrelations\nLines separate the six domains (H, E, X, A, C, O)")
@@ -252,7 +252,9 @@ found6 <- colnames(L6)[apply(abs(L6), 1, which.max)]
 cat(sprintf("\nFacets whose largest loading is on their own domain: %d of %d\n",
             sum(found6 == facet_domain[rownames(L6)]), nrow(L6)))
 
-plot_loadings(L6, "Six-factor EFA of the 24 facets (ML, oblimin)\nValues >= |0.30| shown")
+L6_plot <- L6
+colnames(L6_plot) <- dom_abbr   # short factor names on the axis, as in the five-factor plot below
+plot_loadings(L6_plot, "Six-factor EFA of the 24 facets (ML, oblimin)\nValues >= |0.30| shown")
 ```
 
 ```{r phi6}
@@ -325,7 +327,7 @@ ggplot() +
   geom_segment(data = edges, aes(x = x, y = y, xend = xend, yend = yend,
                                  linewidth = abs(r), colour = new_H)) +
   geom_label(data = edges, aes(x = (x + xend) / 2, y = (y + yend) / 2, label = sprintf("%.2f", r)),
-             size = 2.6, label.size = 0, fill = "white") +
+             size = 2.8, label.size = 0, fill = "white") +
   geom_label(data = nodes, aes(x = x, y = y, label = label),
              size = 3.6, fontface = "bold", fill = "grey95") +
   scale_linewidth(range = c(0.4, 2.5), guide = "none") +
