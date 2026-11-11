@@ -275,7 +275,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="simulating-a-cat-using-catr" class="level1">
 <h1>Simulating a CAT using catR</h1>
 <p>This document is a practical exercise illustrating a Computerized Adaptive Testing (CAT) simulation. CAT is grounded in Item Response Theory (IRT) and requires prior estimation of item parameters. Its purpose is to deliver short, tailored questionnaires by selecting items from a pool in real time based on each respondent’s estimated ability. For example, if a participant answers a difficult item correctly, the algorithm skips easier items and instead presents a harder one to narrow down the ability estimate more efficiently. As a result, participants do not need to respond to every item in the pool. This simulation uses an item pool of 200 items with a maximum of 40 items administered per respondent. The <code>catR</code> package handles the simulation, while <code>foreach</code> and <code>doSNOW</code> are used for parallel computation.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(catR)</span>
@@ -295,7 +295,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </ul>
 <p>A high <em>a</em> value means the item sharply differentiates between respondents near its difficulty level; a high <em>b</em> value means only respondents with high ability are likely to answer correctly.</p>
 <p><code>genDichoMatrix</code> also includes <em>c</em> (pseudo-guessing) and <em>d</em> (inattention) parameters. Since their values default to 0 and 1 respectively, they have no practical effect and the model reduces to a standard 2PL formulation.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>itemBank<span class="ot">&lt;-</span><span class="fu">genDichoMatrix</span>(<span class="at">items=</span><span class="dv">200</span>,<span class="at">model=</span><span class="st">"2PL"</span>,<span class="at">aPrior=</span><span class="fu">c</span>(<span class="st">"norm"</span>,<span class="dv">2</span>,.<span class="dv">1</span>),<span class="at">bPrior=</span><span class="fu">c</span>(<span class="st">"norm"</span>,<span class="dv">0</span>,<span class="dv">4</span>))</span>
@@ -328,7 +328,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="simulate-item-responses" class="level2">
 <h2 class="anchored" data-anchor-id="simulate-item-responses">Simulate item responses</h2>
 <p><code>catR</code> provides the <code>genPattern</code> function, which generates simulated item responses for a given set of ability values and an item bank. Here, 1,000 respondents with abilities uniformly spaced between −10 and +10 are simulated. Descriptive statistics are shown for the first 9 items to verify the generated response patterns.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>data<span class="ot">&lt;-</span><span class="fu">genPattern</span>(<span class="at">th=</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">10</span>,<span class="dv">10</span>,<span class="at">length=</span><span class="dv">1000</span>),<span class="at">it=</span>itemBank,<span class="at">model=</span><span class="cn">NULL</span>,<span class="at">seed=</span><span class="dv">1</span>)</span>
@@ -348,7 +348,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <section id="estimate-full-information-scores-with-mirt" class="level2">
 <h2 class="anchored" data-anchor-id="estimate-full-information-scores-with-mirt">Estimate full-information scores with mirt</h2>
 <p>Treating the simulated response matrix as real participant data (one row per respondent), the <code>mirt</code> package is used to estimate item parameters and respondent ability scores under the assumption that all items were administered. These <strong>full-information scores</strong> serve as a benchmark against the CAT estimates produced in the next step.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>mirt_model<span class="ot">&lt;-</span>mirt<span class="sc">::</span><span class="fu">mirt</span>(<span class="at">data=</span><span class="fu">data.frame</span>(data),<span class="at">model=</span><span class="dv">1</span>,<span class="at">itemtype=</span><span class="st">"2PL"</span>,<span class="at">technical=</span><span class="fu">list</span>(<span class="at">theta_lim=</span><span class="fu">c</span>(<span class="sc">-</span><span class="dv">6</span>,<span class="dv">6</span>),<span class="at">NCYCLES=</span><span class="dv">10000</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -397,12 +397,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <ul>
 <li><strong>Plot 1 — CAT vs.&nbsp;mirt scores:</strong> Scatter plot of CAT ability estimates against <code>mirt</code> EAP scores. CAT respondents answered at most 40 items, while <code>mirt</code> scores are based on all 200 responses. High agreement between the two validates the adaptive procedure.</li>
 <li><strong>Plot 2 — Items administered vs.&nbsp;CAT theta:</strong> Respondents with extreme abilities need more items, because the CAT starts at θ = 0 and the first items, with <em>b</em> near 0, carry little information about them. The estimate has to work its way outward, slowed by the N(0, 1) prior, and the pool also has fewer items in the tails (<em>b</em> ~ N(0, 4)).</li>
-<li><strong>Plot 3 — Items administered vs.&nbsp;SE:</strong> For tests that ended before 40 items the SE sits just below the 0.3 target (between 0.28 and 0.3), because these tests stopped once precision was reached. SE above 0.3 appears only at exactly 40 items: these 279 respondents hit the length cap before reaching the target, which happens for extreme abilities where the pool has few items with matching difficulty.</li>
+<li><strong>Plot 3 — Items administered vs.&nbsp;SE:</strong> For tests that ended before 40 items the SE sits just below the 0.3 target (between 0.28 and 0.3), because these tests stopped once precision was reached. SE above 0.3 appears only at exactly 40 items: these 283 respondents hit the length cap before reaching the target, which happens for extreme abilities where the pool has few items with matching difficulty.</li>
 <li><strong>Plot 4 — CAT theta vs.&nbsp;SE:</strong> Standard error stays near 0.3 over most of the scale and increases only at the extremes, where the 40-item cap is reached before enough information is collected. Recall that SE is approximately the inverse square root of the test information (for BM, the information plus the prior’s contribution).</li>
 <li><strong>Plot 5 — Distribution of CAT estimated scores.</strong></li>
 <li><strong>Plot 6 — Distribution of mirt estimated scores.</strong></li>
 </ul>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> est_theta, <span class="at">y =</span> mirt_scores)) <span class="sc">+</span></span>
@@ -412,40 +412,40 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>       <span class="at">y     =</span> <span class="st">"mirt Theta"</span>,</span>
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>       <span class="at">title =</span> <span class="fu">paste</span>(<span class="st">"Pearson r"</span>, <span class="fu">round</span>(<span class="fu">cor</span>(result<span class="sc">$</span>est_theta, result<span class="sc">$</span>mirt_scores), <span class="dv">4</span>))</span>
 <span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> questions, <span class="at">y =</span> est_theta)) <span class="sc">+</span></span>
 <span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Questions asked"</span>, <span class="at">y =</span> <span class="st">"CAT Theta"</span>) <span class="sc">+</span></span>
-<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>p3 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> questions, <span class="at">y =</span> se)) <span class="sc">+</span></span>
 <span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Questions asked"</span>, <span class="at">y =</span> <span class="st">"SE"</span>) <span class="sc">+</span></span>
-<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>p4 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> est_theta, <span class="at">y =</span> se)) <span class="sc">+</span></span>
 <span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"CAT Theta"</span>, <span class="at">y =</span> <span class="st">"SE"</span>) <span class="sc">+</span></span>
-<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>p5 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">round</span>(est_theta, <span class="dv">0</span>))) <span class="sc">+</span></span>
 <span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>() <span class="sc">+</span></span>
 <span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"CAT Theta"</span>, <span class="at">y =</span> <span class="st">"Frequency"</span>) <span class="sc">+</span></span>
-<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>p6 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">round</span>(mirt_scores, <span class="dv">0</span>))) <span class="sc">+</span></span>
 <span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>() <span class="sc">+</span></span>
 <span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"mirt Theta"</span>, <span class="at">y =</span> <span class="st">"Frequency"</span>) <span class="sc">+</span></span>
-<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a>(p1 <span class="sc">|</span> p2) <span class="sc">/</span> (p3 <span class="sc">|</span> p4) <span class="sc">/</span> (p5 <span class="sc">|</span> p6) <span class="sc">+</span></span>
 <span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_annotation</span>(<span class="at">theme =</span> <span class="fu">theme</span>(<span class="at">plot.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"white"</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="EXAMPLE_SIMULATION_catR_files/figure-html/results0-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="1000"></p>
+<p><img src="EXAMPLE_SIMULATION_catR_files/figure-html/results0-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -455,7 +455,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="conclusion">Conclusion</h2>
 <p>The CAT estimates are roughly uniform between about −6 and 6, as expected because the true abilities were evenly spaced, with pile-ups at the ends of their range (-7.3 to 7.9) where the pool runs out and the N(0, 1) prior compresses the most extreme abilities (true θ runs from −10 to 10). The <code>mirt</code> scores are mound-shaped and on a narrower scale because <code>mirt</code> standardises the latent distribution to N(0, 1) when it calibrates the items. In real applications abilities are usually roughly normal, and item banks are built so that information is highest where most respondents are.</p>
 <p><code>catR</code> also provides <code>simulateRespondents</code>, a convenience function that runs a complete CAT simulation and computes summary diagnostics — bias, RMSE, and mean SE — as a function of true ability.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>result_simulate_respondents<span class="ot">&lt;-</span><span class="fu">simulateRespondents</span>(<span class="at">thetas=</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">6</span>,<span class="dv">6</span>,.<span class="dv">01</span>),<span class="at">itemBank=</span>itemBank,<span class="at">genSeed=</span><span class="cn">NULL</span>,<span class="at">start=</span>start,<span class="at">test=</span>test,<span class="at">stop=</span>stop,<span class="at">final=</span>final)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -483,7 +483,7 @@ Simulation process:  100 %</code></pre>
  
 Random seed was not fixed 
  
-Simulation time: 10.1146 seconds 
+Simulation time: 17.8013 seconds 
  
 Number of simulees: 1201 
 Item bank size: 200 items 
@@ -497,23 +497,23 @@ Item selection criterion: bOpt
        Maximum SE value: 0.3 
  rmax: 1 
 
-Mean test length: 18.62614 items 
-Correlation(true thetas,estimated thetas): 0.9949 
-RMSE: 0.4852 
-Bias: -0.0118 
+Mean test length: 18.63614 items 
+Correlation(true thetas,estimated thetas): 0.9952 
+RMSE: 0.4725 
+Bias: -0.0057 
 Maximum exposure rate: 1 
 Number of item(s) with maximum exposure rate: 1 
 Minimum exposure rate: 0 
-Number of item(s) with minimum exposure rate: 13 
-Item overlap rate: 0.1642 
+Number of item(s) with minimum exposure rate: 12 
+Item overlap rate: 0.1636 
  
 Conditional results 
                         Measure     D1     D2     D3     D4     D5     D6     D7     D8     D9    D10
                      Mean Theta -5.405 -4.205     -3   -1.8 -0.605    0.6  1.805      3  4.195    5.4
-                           RMSE  0.635  0.546  0.457  0.344    0.3  0.294  0.344  0.439  0.547  0.732
-                      Mean bias  0.531  0.456  0.333  0.148  0.062 -0.096 -0.176 -0.302 -0.444 -0.628
-               Mean test length 28.442 21.875 16.818 13.605 11.725 12.091 14.075 17.294 22.175 28.099
-            Mean standard error  0.295  0.294  0.293  0.294  0.294  0.294  0.293  0.294  0.293  0.295
+                           RMSE  0.654  0.531  0.417  0.346  0.265  0.302  0.342  0.403  0.549  0.696
+                      Mean bias  0.535  0.447  0.277  0.202  0.066 -0.086  -0.16 -0.267 -0.458  -0.61
+               Mean test length 28.483   22.1 16.934 13.555 11.817 12.124 13.792 17.563 22.033 27.901
+            Mean standard error  0.294  0.293  0.294  0.294  0.293  0.294  0.295  0.294  0.293  0.295
  Proportion stop rule satisfied      1      1      1      1      1      1      1      1      1      1
              Number of simulees    120    120    121    119    120    121    120    119    120    121
 
@@ -525,14 +525,14 @@ These results can be saved by setting 'save.output' to TRUE
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">capture.output</span>(<span class="fu">plot</span>(result_simulate_respondents)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="EXAMPLE_SIMULATION_catR_files/figure-html/results1-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="1000"></p>
+<p><img src="EXAMPLE_SIMULATION_catR_files/figure-html/results1-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
 </div>
-<p>Overall, the simulated CATs used 18.6 items on average, with a correlation of 0.995 between true and estimated abilities and an RMSE of 0.485. The conditional bias shows the pull of the N(0, 1) prior toward 0: it is positive at the low end (0.53 at θ ≈ -5.4) and negative at the high end (-0.63 at θ ≈ 5.4).</p>
+<p>Overall, the simulated CATs used 18.6 items on average, with a correlation of 0.995 between true and estimated abilities and an RMSE of 0.472. The conditional bias shows the pull of the N(0, 1) prior toward 0: it is positive at the low end (0.54 at θ ≈ -5.4) and negative at the high end (-0.61 at θ ≈ 5.4).</p>
 
 
 <!-- -->
@@ -1496,7 +1496,7 @@ These results can be saved by setting 'save.output' to TRUE
 <span id="cb16-73"><a href="#cb16-73" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-74"><a href="#cb16-74" aria-hidden="true" tabindex="-1"></a>Treating the simulated response matrix as real participant data (one row per respondent), the <span class="in">`mirt`</span> package is used to estimate item parameters and respondent ability scores under the assumption that all items were administered. These **full-information scores** serve as a benchmark against the CAT estimates produced in the next step.</span>
 <span id="cb16-75"><a href="#cb16-75" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-76"><a href="#cb16-76" aria-hidden="true" tabindex="-1"></a><span class="in">```{r estimation,echo=TRUE,out.width=1000,results="hide"}</span></span>
+<span id="cb16-76"><a href="#cb16-76" aria-hidden="true" tabindex="-1"></a><span class="in">```{r estimation,echo=TRUE,results="hide"}</span></span>
 <span id="cb16-77"><a href="#cb16-77" aria-hidden="true" tabindex="-1"></a>mirt_model<span class="ot">&lt;-</span>mirt<span class="sc">::</span><span class="fu">mirt</span>(<span class="at">data=</span><span class="fu">data.frame</span>(data),<span class="at">model=</span><span class="dv">1</span>,<span class="at">itemtype=</span><span class="st">"2PL"</span>,<span class="at">technical=</span><span class="fu">list</span>(<span class="at">theta_lim=</span><span class="fu">c</span>(<span class="sc">-</span><span class="dv">6</span>,<span class="dv">6</span>),<span class="at">NCYCLES=</span><span class="dv">10000</span>))</span>
 <span id="cb16-78"><a href="#cb16-78" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb16-79"><a href="#cb16-79" aria-hidden="true" tabindex="-1"></a></span>
@@ -1544,7 +1544,7 @@ These results can be saved by setting 'save.output' to TRUE
 <span id="cb16-121"><a href="#cb16-121" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Plot 5 — Distribution of CAT estimated scores.**</span>
 <span id="cb16-122"><a href="#cb16-122" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**Plot 6 — Distribution of mirt estimated scores.**</span>
 <span id="cb16-123"><a href="#cb16-123" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-124"><a href="#cb16-124" aria-hidden="true" tabindex="-1"></a><span class="in">```{r results0,echo=TRUE,fig.width=20,fig.height=15,out.width=1000,fig.align="center",dev='png',fig.retina=2}</span></span>
+<span id="cb16-124"><a href="#cb16-124" aria-hidden="true" tabindex="-1"></a><span class="in">```{r results0,echo=TRUE,fig.height=8.5}</span></span>
 <span id="cb16-125"><a href="#cb16-125" aria-hidden="true" tabindex="-1"></a>p1 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> est_theta, <span class="at">y =</span> mirt_scores)) <span class="sc">+</span></span>
 <span id="cb16-126"><a href="#cb16-126" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb16-127"><a href="#cb16-127" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_smooth</span>(<span class="at">method =</span> <span class="st">"lm"</span>, <span class="at">se =</span> <span class="cn">FALSE</span>, <span class="at">linewidth =</span> <span class="fl">0.7</span>) <span class="sc">+</span></span>
@@ -1552,32 +1552,32 @@ These results can be saved by setting 'save.output' to TRUE
 <span id="cb16-129"><a href="#cb16-129" aria-hidden="true" tabindex="-1"></a>       <span class="at">y     =</span> <span class="st">"mirt Theta"</span>,</span>
 <span id="cb16-130"><a href="#cb16-130" aria-hidden="true" tabindex="-1"></a>       <span class="at">title =</span> <span class="fu">paste</span>(<span class="st">"Pearson r"</span>, <span class="fu">round</span>(<span class="fu">cor</span>(result<span class="sc">$</span>est_theta, result<span class="sc">$</span>mirt_scores), <span class="dv">4</span>))</span>
 <span id="cb16-131"><a href="#cb16-131" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb16-132"><a href="#cb16-132" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-132"><a href="#cb16-132" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-133"><a href="#cb16-133" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-134"><a href="#cb16-134" aria-hidden="true" tabindex="-1"></a>p2 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> questions, <span class="at">y =</span> est_theta)) <span class="sc">+</span></span>
 <span id="cb16-135"><a href="#cb16-135" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb16-136"><a href="#cb16-136" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Questions asked"</span>, <span class="at">y =</span> <span class="st">"CAT Theta"</span>) <span class="sc">+</span></span>
-<span id="cb16-137"><a href="#cb16-137" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-137"><a href="#cb16-137" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-138"><a href="#cb16-138" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-139"><a href="#cb16-139" aria-hidden="true" tabindex="-1"></a>p3 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> questions, <span class="at">y =</span> se)) <span class="sc">+</span></span>
 <span id="cb16-140"><a href="#cb16-140" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb16-141"><a href="#cb16-141" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Questions asked"</span>, <span class="at">y =</span> <span class="st">"SE"</span>) <span class="sc">+</span></span>
-<span id="cb16-142"><a href="#cb16-142" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-142"><a href="#cb16-142" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-143"><a href="#cb16-143" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-144"><a href="#cb16-144" aria-hidden="true" tabindex="-1"></a>p4 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> est_theta, <span class="at">y =</span> se)) <span class="sc">+</span></span>
 <span id="cb16-145"><a href="#cb16-145" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.5</span>) <span class="sc">+</span></span>
 <span id="cb16-146"><a href="#cb16-146" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"CAT Theta"</span>, <span class="at">y =</span> <span class="st">"SE"</span>) <span class="sc">+</span></span>
-<span id="cb16-147"><a href="#cb16-147" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-147"><a href="#cb16-147" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-148"><a href="#cb16-148" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-149"><a href="#cb16-149" aria-hidden="true" tabindex="-1"></a>p5 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">round</span>(est_theta, <span class="dv">0</span>))) <span class="sc">+</span></span>
 <span id="cb16-150"><a href="#cb16-150" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>() <span class="sc">+</span></span>
 <span id="cb16-151"><a href="#cb16-151" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"CAT Theta"</span>, <span class="at">y =</span> <span class="st">"Frequency"</span>) <span class="sc">+</span></span>
-<span id="cb16-152"><a href="#cb16-152" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-152"><a href="#cb16-152" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-153"><a href="#cb16-153" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-154"><a href="#cb16-154" aria-hidden="true" tabindex="-1"></a>p6 <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(result, <span class="fu">aes</span>(<span class="at">x =</span> <span class="fu">round</span>(mirt_scores, <span class="dv">0</span>))) <span class="sc">+</span></span>
 <span id="cb16-155"><a href="#cb16-155" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_bar</span>() <span class="sc">+</span></span>
 <span id="cb16-156"><a href="#cb16-156" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"mirt Theta"</span>, <span class="at">y =</span> <span class="st">"Frequency"</span>) <span class="sc">+</span></span>
-<span id="cb16-157"><a href="#cb16-157" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">20</span>)</span>
+<span id="cb16-157"><a href="#cb16-157" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">11</span>)</span>
 <span id="cb16-158"><a href="#cb16-158" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-159"><a href="#cb16-159" aria-hidden="true" tabindex="-1"></a>(p1 <span class="sc">|</span> p2) <span class="sc">/</span> (p3 <span class="sc">|</span> p4) <span class="sc">/</span> (p5 <span class="sc">|</span> p6) <span class="sc">+</span></span>
 <span id="cb16-160"><a href="#cb16-160" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_annotation</span>(<span class="at">theme =</span> <span class="fu">theme</span>(<span class="at">plot.background =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"white"</span>)))</span>
@@ -1589,7 +1589,7 @@ These results can be saved by setting 'save.output' to TRUE
 <span id="cb16-166"><a href="#cb16-166" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb16-167"><a href="#cb16-167" aria-hidden="true" tabindex="-1"></a><span class="in">`catR`</span> also provides <span class="in">`simulateRespondents`</span>, a convenience function that runs a complete CAT simulation and computes summary diagnostics — bias, RMSE, and mean SE — as a function of true ability.</span>
 <span id="cb16-168"><a href="#cb16-168" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb16-169"><a href="#cb16-169" aria-hidden="true" tabindex="-1"></a><span class="in">```{r results1,echo=TRUE,fig.width=20,fig.height=15,results="hide",out.width=1000,fig.align="center",dev='png',fig.retina=2}</span></span>
+<span id="cb16-169"><a href="#cb16-169" aria-hidden="true" tabindex="-1"></a><span class="in">```{r results1,echo=TRUE,fig.height=7,results="hide"}</span></span>
 <span id="cb16-170"><a href="#cb16-170" aria-hidden="true" tabindex="-1"></a>result_simulate_respondents<span class="ot">&lt;-</span><span class="fu">simulateRespondents</span>(<span class="at">thetas=</span><span class="fu">seq</span>(<span class="sc">-</span><span class="dv">6</span>,<span class="dv">6</span>,.<span class="dv">01</span>),<span class="at">itemBank=</span>itemBank,<span class="at">genSeed=</span><span class="cn">NULL</span>,<span class="at">start=</span>start,<span class="at">test=</span>test,<span class="at">stop=</span>stop,<span class="at">final=</span>final)</span>
 <span id="cb16-171"><a href="#cb16-171" aria-hidden="true" tabindex="-1"></a>result_simulate_respondents</span>
 <span id="cb16-172"><a href="#cb16-172" aria-hidden="true" tabindex="-1"></a><span class="fu">invisible</span>(<span class="fu">capture.output</span>(<span class="fu">plot</span>(result_simulate_respondents)))</span>
