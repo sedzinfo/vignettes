@@ -6,7 +6,7 @@
 
 Tutorials and worked examples in R, published as Quarto websites with GitHub Pages: https://sedzinfo.github.io/vignettes/
 
-Most functions used in the tutorials come from the [rwf](https://github.com/sedzinfo/rwf) package, sourced from `code_rwf.R` so the pages render without installing it.
+
 
 ![Stars](https://img.shields.io/github/stars/sedzinfo/vignettes)
 ![Watchers](https://img.shields.io/github/watchers/sedzinfo/vignettes)
