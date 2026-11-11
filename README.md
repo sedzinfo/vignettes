@@ -20,23 +20,6 @@ Most functions used in the tutorials come from the [rwf](https://github.com/sedz
 | `.github/workflows/render-quarto.yml` | Renders changed sites into `docs/<site>/` on every push |
 | `.github/scripts/build_index.py` | Builds the landing page `docs/index.html`, one card per site |
 
-## Workflow
-
-1. Edit or add a page in `quarto/<site>/`.
-2. Render it locally, so the R code runs on your machine:
-   - RStudio: open `render.R`, set `sites <- c("<site>")` and click **Source**.
-   - Terminal: `Rscript render.R <site>`; add `--preview` for a live preview that updates on save.
-3. Check the result in the browser, then commit the page together with `quarto/<site>/_freeze/` and push.
-4. The workflow renders the changed sites from `_freeze/` without running R, commits `docs/`, and GitHub Pages publishes them.
-
-Pages that need data downloads, Python (Keras/TensorFlow) or packages no longer on CRAN (`rnoaa`, `mstR`, `deepviz`) only run locally, so their `_freeze/` must always be committed.
-
-## Add a site
-
-1. Create `quarto/<name>/` with a `_quarto.yml` (copy one from another site and change `title`, `description`, `site-url` and the navbar), an `index.qmd`, `styles.css`, and the pages.
-2. Render it with `render.R`, then commit the whole folder including `_freeze/`.
-3. The site appears at `https://sedzinfo.github.io/vignettes/<name>/` with a card on the landing page.
-
 ![Stars](https://img.shields.io/github/stars/sedzinfo/vignettes)
 ![Watchers](https://img.shields.io/github/watchers/sedzinfo/vignettes)
 ![Repo Size](https://img.shields.io/github/repo-size/sedzinfo/vignettes)
