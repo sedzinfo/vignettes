@@ -1,0 +1,397 @@
+---
+title: "Is Greece a Good Place to Invest? Risk, Costs, the State and the Courts Compared with the EU"
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Is Greece a good place to invest? The answer depends on the investor, whether they buy Greek bonds, build a factory or open a business, but some questions matter to all of them, and each can be measured in the same way for every EU country:
+
+1. **Do investors invest in Greece?** What the economy invests, and what comes from abroad.
+2. **Is the country a financial risk?** The interest rate on its bonds, and its debt.
+3. **What does it cost to produce there?** Wages and electricity.
+4. **How well does the state work?** Bureaucracy, regulation, the rule of law and corruption.
+5. **Do the courts protect investors?** How long a case takes, and what companies think.
+6. **Can goods move?** Ports, roads and customs.
+
+The data come from **Eurostat**, the statistical office of the EU, and from the **World Bank**, and are downloaded when the document is knitted, so the charts show the latest figures. Two sets of figures come from the European Commission's *2026 EU Justice Scoreboard*, a report, and are typed in below with the figure they come from. The charts of countries show the 27 EU countries, with Greece in red and the EU as a whole, where there is a figure for it, in blue.
+
+Rankings of countries are a starting point, not a verdict: an investor in a Greek hotel and an investor in a Greek factory face different costs and different risks.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly", "jsonlite"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+eu_codes <- eu_countries$code
+eu_name <- c(setNames(eu_countries$name, eu_countries$code), EU27_2020 = "EU-27")
+
+# a World Bank indicator for the EU countries, with Eurostat's country codes (EL for Greece)
+iso3 <- c(BE = "BEL", BG = "BGR", CZ = "CZE", DK = "DNK", DE = "DEU", EE = "EST", IE = "IRL", EL = "GRC",
+          ES = "ESP", FR = "FRA", HR = "HRV", IT = "ITA", CY = "CYP", LV = "LVA", LT = "LTU", LU = "LUX",
+          HU = "HUN", MT = "MLT", NL = "NLD", AT = "AUT", PL = "POL", PT = "PRT", RO = "ROU", SI = "SVN",
+          SK = "SVK", FI = "FIN", SE = "SWE")
+world_bank <- function(indicator, years = "2000:2025") {
+  url <- paste0("https://api.worldbank.org/v2/country/", paste(iso3, collapse = ";"), "/indicator/", indicator,
+                "?format=json&per_page=5000&date=", years)
+  x <- jsonlite::fromJSON(url)[[2]]
+  x <- data.frame(geo = names(iso3)[match(x$countryiso3code, iso3)], time = as.numeric(x$date), values = x$value)
+  x[!is.na(x$values), ]
+}
+
+# investment: gross fixed capital formation (buildings, machines, equipment, software), % of GDP
+investment_all <- eurostat_values("nama_10_gdp", list(na_item = "P51G", unit = "PC_GDP"))
+# foreign direct investment, net inflows, % of GDP
+fdi_all <- world_bank("BX.KLT.DINV.WD.GD.ZS")
+# yield of 10-year government bonds, % a year
+yields_all <- eurostat_values("irt_lt_mcby_a", list(int_rt = "MCBY"))
+# government debt, % of GDP
+debt_all <- eurostat_values("gov_10dd_edpt1", list(na_item = "GD", sector = "S13", unit = "PC_GDP"))
+# GDP growth after inflation, %
+growth_all <- eurostat_values("tec00115", list(unit = "CLV_PCH_PRE", na_item = "B1GQ"))
+# labour cost per hour, euro, in the business economy
+labour_all <- eurostat_values("lc_lci_lev", list(lcstruct = "D1_D4_MD5", nace_r2 = "B-S_X_O", unit = "EUR"))
+# electricity for businesses using 2 to 20 GWh a year, euro per kWh without VAT, every six months
+electricity_all <- eurostat_values("nrg_pc_205", list(nrg_cons = "MWH2000-19999", tax = "X_VAT", currency = "EUR", unit = "KWH"))
+# renewable energy, % of the energy used
+renewables_all <- eurostat_values("nrg_ind_ren", list(nrg_bal = "REN", unit = "PC"))
+# World Bank Worldwide Governance Indicators, from about -2.5 (worst) to +2.5 (best)
+governance_names <- c(GOV_WGI_GE.EST = "Government effectiveness", GOV_WGI_RQ.EST = "Regulatory quality",
+                      GOV_WGI_RL.EST = "Rule of law", GOV_WGI_CC.EST = "Control of corruption")
+governance_all <- do.call(rbind, lapply(names(governance_names), function(code) {
+  cbind(world_bank(code, "2010:2025"), indicator = governance_names[[code]])
+}))
+# World Bank Logistics Performance Index, from 1 (worst) to 5 (best)
+logistics_all <- world_bank("LP.LPI.OVRL.XQ", "2010:2025")
+```
+
+```{r justice_scoreboard}
+# European Commission, The 2026 EU Justice Scoreboard (June 2026), Figure 52: how companies perceive
+# the effectiveness of investment protection by the law and courts (Eurobarometer, 2026), % of companies
+protection <- data.frame(
+  geo = c("SE", "IE", "FI", "LU", "DK", "AT", "NL", "MT", "SI", "CZ", "FR", "HR", "IT", "DE",
+          "BE", "LT", "RO", "ES", "HU", "EE", "BG", "LV", "PT", "SK", "CY", "PL", "EL"),
+  very_confident     = c(39, 26, 26, 25, 41, 21, 18, 18,  8, 14, 14,  8,  4, 19, 13,  4,  5, 10, 11,  5,  4,  2,  6,  1,  1,  8,  5),
+  fairly_confident   = c(49, 55, 55, 54, 37, 53, 53, 50, 59, 50, 47, 49, 53, 37, 43, 52, 48, 42, 38, 42, 43, 43, 37, 34, 34, 24, 20),
+  fairly_unconfident = c(10, 13, 15, 10, 10, 11, 18, 11, 20, 18, 23, 28, 33, 27, 27, 31, 34, 29, 35, 36, 35, 38, 40, 43, 35, 42, 34),
+  very_unconfident   = c( 0,  3,  3,  3,  9, 13,  7, 10, 12, 14, 15, 13,  9, 10, 14, 10, 12, 17, 12,  9, 13, 14, 11, 18, 29, 22, 36),
+  dont_know          = c( 2,  3,  1,  8,  3,  2,  4, 11,  1,  4,  1,  2,  1,  7,  3,  3,  1,  2,  4,  8,  5,  3,  6,  4,  1,  4,  5)
+)
+protection$time <- 2026
+protection$values <- protection$very_confident + protection$fairly_confident
+# Figure 5: estimated time needed to resolve litigious civil and commercial cases at first instance,
+# 2024, in days (CEPEJ study), read from the chart: Greece, and the next two slowest countries
+court_days <- c(EL = 740, CY = 680, IT = 590)
+```
+
+```{r latest}
+# the EU countries and the EU in the latest year with data for Greece and for most EU countries
+latest <- function(x, at_least = 20) {
+  x <- x[x$geo %in% c(eu_codes, "EU27_2020"), ]
+  for (y in sort(unique(x$time[x$geo == "EL"]), decreasing = TRUE)) {
+    if (sum(x$geo %in% eu_codes & x$time == y) >= at_least) return(x[x$time == y, ])
+  }
+  stop("No year with data for Greece and for most EU countries")
+}
+greece <- function(x) x$values[x$geo == "EL"]
+median_eu <- function(x) median(x$values[x$geo %in% eu_codes])
+# the EU: its own figure where there is one, otherwise the median of the countries
+eu <- function(x) if (any(x$geo == "EU27_2020")) x$values[x$geo == "EU27_2020"] else median_eu(x)
+countries <- function(x) sum(x$geo %in% eu_codes)
+ordinal <- function(k) {
+  paste0(k, if (k %% 100 %in% 11:13) "th" else c("th", "st", "nd", "rd", rep("th", 6))[k %% 10 + 1])
+}
+# the place of Greece among the EU countries, counted from the nearer end: "the highest",
+# "the 3rd highest", "the 2nd lowest", ...
+place <- function(x) {
+  v <- x$values[x$geo %in% eu_codes]
+  from_top <- sum(v > greece(x)) + 1
+  from_bottom <- sum(v < greece(x)) + 1
+  k <- min(from_top, from_bottom)
+  end <- if (from_top <= from_bottom) "highest" else "lowest"
+  paste("the", if (k == 1) end else paste(ordinal(k), end))
+}
+# one series of a dataset, for Greece or the EU
+series <- function(x, geo) x[x$geo == geo, c("time", "values")]
+at <- function(x, geo, year) x$values[x$geo == geo & x$time == year]
+
+investment <- latest(investment_all)
+fdi <- latest(fdi_all)
+yields <- latest(yields_all)
+debt <- latest(debt_all)
+growth <- latest(growth_all)
+labour <- latest(labour_all)
+electricity <- latest(electricity_all)
+renewables <- latest(renewables_all)
+logistics <- latest(logistics_all)
+governance <- lapply(split(governance_all, governance_all$indicator), latest)[governance_names]
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = modifyList(list(title = y_title), y_axis),
+    xaxis = modifyList(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+
+# the EU countries from the highest to the lowest, Greece in red and the EU in blue; where there is
+# no figure for the EU, a dotted line marks the median country
+ranking <- function(x, title, source, suffix = "%", digits = 1) {
+  x <- x[x$geo %in% c(eu_codes, "EU27_2020"), ]
+  x$name <- eu_name[x$geo]
+  x <- x[order(x$values), ]
+  x$name <- factor(x$name, levels = x$name)
+  lines <- list()
+  notes <- list()
+  if (!any(x$geo == "EU27_2020")) {
+    m <- median(x$values[x$geo %in% eu_codes])
+    lines <- list(list(type = "line", x0 = m, x1 = m, y0 = 0, y1 = 1, yref = "paper", line = list(color = blue, width = 2, dash = "dot")))
+    notes <- list(list(x = m, y = 1, yref = "paper", text = "Median EU country", xanchor = "left", yanchor = "bottom",
+                       xshift = 4, showarrow = FALSE, font = list(color = blue)))
+  }
+  # the source 45 px under the plot, below the numbers of the axis
+  height <- knitr::opts_current$get("out.height.px")
+  if (!is.numeric(height)) height <- 864
+  plot_ly(x,
+    x = ~values, y = ~name, type = "bar", orientation = "h",
+    marker = list(color = ifelse(x$geo == "EL", greek_red, ifelse(x$geo == "EU27_2020", blue, gray))),
+    hovertemplate = paste0("%{y}: %{x:.", digits, "f}", suffix, "<extra></extra>")
+  ) %>%
+    chart(paste0(title, ", ", floor(x$time[1])), source, x_axis = list(ticksuffix = suffix), shapes = lines,
+          annotations = notes, margin = list(l = 130, t = 70, b = 90), note_y = -45 / (height - 70 - 90))
+}
+
+# Greece and a second line (the EU, or another country) over time
+two_lines <- function(a, b, name_b, title, source, y_title, suffix = "%", digits = 1, y_axis = list(), ...) {
+  plot_ly(a, x = ~time, y = ~values, type = "scatter", mode = "lines", name = "Greece",
+    line = list(color = greek_red, width = 3),
+    hovertemplate = paste0("%{x}: %{y:.", digits, "f}", suffix, "<extra>Greece</extra>")) %>%
+    add_trace(data = b, x = ~time, y = ~values, type = "scatter", mode = "lines", name = name_b,
+      line = list(color = blue, width = 3), inherit = FALSE,
+      hovertemplate = paste0("%{x}: %{y:.", digits, "f}", suffix, "<extra>", name_b, "</extra>")) %>%
+    chart(title, source, y_title, y_axis = modifyList(list(ticksuffix = suffix), y_axis), legend = legend_top, ...)
+}
+
+# short labels of numbers
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+two <- function(x) format(round(x, 2), nsmall = 2)
+```
+
+---
+
+## 1. Do investors invest in Greece?
+
+```{r investment_numbers}
+investment_line <- series(investment_all, "EL")
+peak_year <- investment_line$time[which.max(investment_line$values)]
+low_year <- investment_line$time[which.min(investment_line$values)]
+```
+
+**Less than in almost all the EU, though more than at the bottom of the crisis.** In `r investment$time[1]`, Greece invested `r percent(greece(investment), 1)` of its GDP in buildings, machines, equipment and software, against `r percent(eu(investment), 1)` in the EU: `r place(investment)` share of the `r countries(investment)` countries. Before the crisis it invested more than the EU, `r percent(max(investment_line$values), 1)` of GDP in `r peak_year`; by `r low_year` it had fallen to `r percent(min(investment_line$values), 1)`. An economy that invests less than it did, and less than its neighbours, adds little to what it can produce.
+
+```{r investment}
+two_lines(investment_line, series(investment_all, "EU27_2020"), "EU-27",
+          "Investment, % of GDP", "Eurostat, nama_10_gdp (gross fixed capital formation)", "% of GDP",
+          y_axis = list(ticksuffix = "%", rangemode = "tozero"))
+```
+
+```{r fdi_numbers}
+fdi_median <- aggregate(values ~ time, fdi_all[fdi_all$geo %in% eu_codes, ], median)
+fdi_years <- fdi_median$time[fdi_median$time >= max(fdi_median$time) - 4]
+fdi_recent <- mean(at(fdi_all, "EL", fdi_years))
+fdi_recent_eu <- mean(fdi_median$values[fdi_median$time %in% fdi_years])
+fdi_before <- series(fdi_all, "EL")
+fdi_before <- fdi_before[fdi_before$time < min(fdi_years), ]
+```
+
+Foreign investors have come back. *Foreign direct investment*, money from abroad that buys or builds a lasting share in Greek companies, averaged `r percent(fdi_recent, 1)` of GDP a year in `r min(fdi_years)`-`r max(fdi_years)`, against `r percent(fdi_recent_eu, 1)` in the median EU country; in `r min(fdi_before$time)`-`r max(fdi_before$time)` it had averaged `r percent(mean(fdi_before$values), 1)`. The chart compares Greece with the median EU country, because the figures of a few countries, such as Luxembourg, the Netherlands and Ireland, swing by tens of percent of GDP with money that only passes through them.
+
+```{r fdi}
+two_lines(series(fdi_all, "EL"), fdi_median, "Median EU country",
+          "Foreign direct investment, net inflows, % of GDP", "World Bank, BX.KLT.DINV.WD.GD.ZS", "% of GDP")
+```
+
+---
+
+## 2. Is the country a financial risk?
+
+```{r risk_numbers}
+# since 2001, when Greece joined the euro: before, its bonds were in drachmas
+greek_yields <- series(yields_all[yields_all$time >= 2001, ], "EL")
+german_yields <- series(yields_all[yields_all$time >= 2001, ], "DE")
+spread <- merge(greek_yields, german_yields, by = "time", suffixes = c("_el", "_de"))
+spread$values <- spread$values_el - spread$values_de
+worst <- spread[which.max(spread$values), ]
+now <- spread[nrow(spread), ]
+debt_line <- series(debt_all, "EL")
+debt_peak <- debt_line[which.max(debt_line$values), ]
+```
+
+**The markets no longer see Greece as a high risk, but its debt is the highest in the EU.**
+
+The interest rate that a country pays on its bonds is what the markets think of its risk. In `r worst$time`, in the debt crisis, Greece's 10-year bonds paid `r one(worst$values_el)`% a year, `r one(worst$values)` points more than Germany's. In `r now$time` they paid `r one(now$values_el)`%, only `r one(now$values)` points more than Germany's and `r if (greece(yields) <= eu(yields)) "no more than" else "a little more than"` the EU average of `r one(eu(yields))`%. The credit rating agencies agree. They cut Greece to *junk* in the crisis, but S&P, Fitch, DBRS and Scope have rated it *investment grade* again since 2023, and Moody's since 2025, so the large funds that may hold only such bonds can buy Greek debt again.
+
+```{r yields}
+two_lines(greek_yields, german_yields, "Germany",
+          "Yield of 10-year government bonds, % a year", "Eurostat, irt_lt_mcby_a", "% a year",
+          y_axis = list(ticksuffix = "%", rangemode = "tozero"))
+```
+
+The debt that worried the markets is still there: `r percent(greece(debt), 1)` of GDP in `r debt$time[1]`, `r place(debt)` in the EU, where it is `r percent(eu(debt), 1)`, though down from `r percent(debt_peak$values, 1)` in `r debt_peak$time`. Much of it is owed to other euro countries on long terms and low interest rates, which is why the markets accept it. The economy grew by `r percent(greece(growth), 1)` in `r growth$time[1]`, against `r percent(eu(growth), 1)` in the EU.
+
+```{r debt}
+two_lines(debt_line, series(debt_all, "EU27_2020"), "EU-27",
+          "Government debt, % of GDP", "Eurostat, gov_10dd_edpt1", "% of GDP",
+          y_axis = list(ticksuffix = "%", rangemode = "tozero"))
+```
+
+---
+
+## 3. What does it cost to produce there?
+
+**Cheap labour, electricity at about the EU's price.**
+
+An hour of work cost employers in Greece €`r one(greece(labour))` in `r labour$time[1]`, wages and the employers' contributions together, against €`r one(eu(labour))` in the EU: `r place(labour)` of `r countries(labour)` countries. Labour is cheap partly because it produces little: an hour of work in Greece produces about half of what it produces on average in the EU (see [Greece at Work](ILLUSTRATION_GREEK_WORKFORCE.Rmd)).
+
+```{r labour, fig.height = 9}
+ranking(labour, "Labour cost per hour, euro", "Eurostat, lc_lci_lev (business economy)", suffix = "", digits = 1)
+```
+
+```{r electricity_numbers}
+half <- function(t) paste0(if (t %% 1 == 0) "first" else "second", " half of ", floor(t))
+greek_power <- series(electricity_all, "EL")
+eu_power <- series(electricity_all, "EU27_2020")
+power_peak <- greek_power[which.max(greek_power$values), ]
+```
+
+Electricity matters most for factories, data centres and cold storage. In the `r half(electricity$time[1])`, a business that uses 2 to 20 GWh a year, a medium-sized factory, paid `r one(100 * greece(electricity))` cents per kWh in Greece before VAT, against `r one(100 * eu(electricity))` cents in the EU: `r place(electricity)` of `r countries(electricity)` countries. In the energy crisis the price rose to `r one(100 * power_peak$values)` cents, in the `r half(power_peak$time)`. Renewables, which keep the price of electricity from following the price of gas, gave `r percent(greece(renewables), 1)` of the energy used in Greece in `r renewables$time[1]`, against `r percent(eu(renewables), 1)` in the EU.
+
+```{r electricity}
+power <- function(x) transform(x, values = 100 * values)
+two_lines(power(greek_power[greek_power$time >= 2015, ]), power(eu_power[eu_power$time >= 2015, ]), "EU-27",
+          "Electricity for medium-sized businesses, cents per kWh, without VAT",
+          "Eurostat, nrg_pc_205 (2 to 20 GWh a year, every six months)", "Cents per kWh", suffix = "", digits = 1,
+          y_axis = list(rangemode = "tozero"))
+```
+
+---
+
+## 4. How well does the state work?
+
+```{r governance_numbers}
+gov_table <- data.frame(
+  indicator = factor(governance_names, levels = rev(governance_names)),
+  greece = sapply(governance, greece),
+  median = sapply(governance, median_eu),
+  low = sapply(governance, function(x) min(x$values[x$geo %in% eu_codes])),
+  high = sapply(governance, function(x) max(x$values[x$geo %in% eu_codes])),
+  place = sapply(governance, place),
+  year = sapply(governance, function(x) x$time[1])
+)
+g <- function(name, column) gov_table[[column]][gov_table$indicator == name]
+```
+
+**Bureaucracy and law and order: in the bottom third of the EU.** The World Bank combines surveys of companies, households and experts into four measures of how well the state works: how good the public administration is (*government effectiveness*), how well regulation lets private business work (*regulatory quality*), how far contracts, property rights, the police and the courts can be relied on (*rule of law*), and how little public power is used for private gain (*control of corruption*). Each runs from about -2.5 to +2.5. In `r gov_table$year[1]`, Greece had `r g("Government effectiveness", "place")` score of the EU for government effectiveness, `r g("Regulatory quality", "place")` for regulatory quality, `r g("Rule of law", "place")` for the rule of law and `r g("Control of corruption", "place")` for control of corruption. All four are better than those of most countries in the world, but they are below the EU's middle.
+
+```{r governance}
+plot_ly(gov_table) %>%
+  add_segments(x = ~low, xend = ~high, y = ~indicator, yend = ~indicator, name = "EU countries, lowest to highest",
+               line = list(color = "#d9d9d9", width = 10), hoverinfo = "skip") %>%
+  add_markers(x = ~median, y = ~indicator, name = "Median EU country", marker = list(color = blue, size = 13, symbol = "line-ns-open", line = list(width = 3, color = blue)),
+              hovertemplate = "%{y}: %{x:.2f}<extra>Median EU country</extra>") %>%
+  add_markers(x = ~greece, y = ~indicator, name = "Greece", marker = list(color = greek_red, size = 13),
+              hovertemplate = "%{y}: %{x:.2f}<extra>Greece</extra>") %>%
+  chart(paste0("Worldwide Governance Indicators, ", gov_table$year[1], " (-2.5 worst, +2.5 best)"),
+        "World Bank, Worldwide Governance Indicators", legend = legend_top, margin = list(l = 170, t = 90, b = 90))
+```
+
+---
+
+## 5. Do the courts protect investors?
+
+**Greek courts are the slowest in the EU, and Greek companies trust them the least.**
+
+An investor needs to know that a contract will be enforced. In 2024, a civil or commercial dispute took about `r court_days[["EL"]]` days to be resolved at first instance in Greece, more than two years before any appeal: the longest of the EU countries with data. Cyprus and Italy, the next slowest, needed about `r court_days[["CY"]]` and `r court_days[["IT"]]` days, and most EU countries fewer than 300 (*2026 EU Justice Scoreboard*, Figure 5, from the CEPEJ study of the Council of Europe).
+
+```{r protection_numbers}
+protection_eu <- protection[protection$geo %in% eu_codes, ]
+unconfident <- function(code) {
+  row <- protection[protection$geo == code, ]
+  row$fairly_unconfident + row$very_unconfident
+}
+```
+
+Companies see it. Asked in 2026 how well the law and the courts protect their investments, `r percent(greece(protection))` of Greek companies said that they were confident, `r place(protection)` share in the EU, where it is `r percent(median_eu(protection))` in the median country; `r percent(unconfident("EL"))` were not confident, and `r percent(protection$very_unconfident[protection$geo == "EL"])` *very* unconfident, more than in any other country.
+
+```{r protection, fig.height = 9}
+ranking(protection, "Companies confident that the law and courts protect their investments, %",
+        "European Commission, 2026 EU Justice Scoreboard, Figure 52 (Eurobarometer)", digits = 0)
+```
+
+---
+
+## 6. Can goods move?
+
+**Ports, roads and customs: close to the EU's middle.** The World Bank's *Logistics Performance Index* scores, from 1 to 5, how well a country's customs, ports, roads and railways, shipping and tracking work, from a survey of the companies that move goods. In `r logistics$time[1]`, Greece scored `r two(greece(logistics))`, against `r two(median_eu(logistics))` in the median EU country: `r place(logistics)` of `r countries(logistics)` countries. Its ports, Piraeus first among them, are among the busiest of the Mediterranean.
+
+```{r logistics, fig.height = 9}
+ranking(logistics, "Logistics Performance Index (1 worst, 5 best)", "World Bank, LP.LPI.OVRL.XQ", suffix = "", digits = 2)
+```
+
+---
+
+## So, is Greece a good place to invest?
+
+It depends on what an investor needs, and the data show which needs Greece meets:
+
+1. **Financial risk is low again**: the bonds pay about what the EU's pay, and the rating agencies call them investment grade, though the debt, `r percent(greece(debt))` of GDP, is the EU's highest.
+2. **Costs are low**: labour costs €`r one(greece(labour))` an hour against €`r one(eu(labour))` in the EU, and electricity is at about the EU's price.
+3. **Investors are coming back, but not enough**: foreign investment has risen, yet the economy invests `r percent(greece(investment))` of its GDP, `r place(investment)` share in the EU.
+4. **The state is the weak point**: the public administration, regulation, the rule of law and the control of corruption are all in the bottom part of the EU.
+5. **And the courts most of all**: about `r court_days[["EL"]]` days for a first judgment, the longest in the EU, and `r percent(greece(protection))` of Greek companies confident that the law protects their investments, `r place(protection)` share.
+
+For an investor who needs cheap labour and a growing market, and seldom goes to court, Greece has become a reasonable bet. For one whose investment depends on contracts and permits, the slow courts and the bureaucracy are the risk to price in.
+
+---
+
+## Sources
+
+- Eurostat: [nama_10_gdp](https://ec.europa.eu/eurostat/databrowser/view/nama_10_gdp/default/table?lang=en) (investment), [irt_lt_mcby_a](https://ec.europa.eu/eurostat/databrowser/view/irt_lt_mcby_a/default/table?lang=en) (government bond yields), [gov_10dd_edpt1](https://ec.europa.eu/eurostat/databrowser/view/gov_10dd_edpt1/default/table?lang=en) (government debt), [tec00115](https://ec.europa.eu/eurostat/databrowser/view/tec00115/default/table?lang=en) (GDP growth), [lc_lci_lev](https://ec.europa.eu/eurostat/databrowser/view/lc_lci_lev/default/table?lang=en) (labour cost), [nrg_pc_205](https://ec.europa.eu/eurostat/databrowser/view/nrg_pc_205/default/table?lang=en) (electricity prices for non-household consumers), [nrg_ind_ren](https://ec.europa.eu/eurostat/databrowser/view/nrg_ind_ren/default/table?lang=en) (renewable energy).
+- World Bank: [foreign direct investment, net inflows](https://data.worldbank.org/indicator/BX.KLT.DINV.WD.GD.ZS), [Worldwide Governance Indicators](https://www.worldbank.org/en/publication/worldwide-governance-indicators), [Logistics Performance Index](https://lpi.worldbank.org/).
+- European Commission: [The 2026 EU Justice Scoreboard](https://commission.europa.eu/document/d1367f58-9eed-4ebd-8eb3-68646b7c7ddc_en), June 2026 (Figure 5, from the CEPEJ study of the Council of Europe, and Figure 52, from the Eurobarometer survey of companies), © European Union, CC BY 4.0.
