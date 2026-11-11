@@ -1,9 +1,5 @@
 # vignettes
 
----
-
-## Overview
-
 Tutorials and worked examples in R, published as Quarto websites with GitHub Pages: https://sedzinfo.github.io/vignettes/
 
 
