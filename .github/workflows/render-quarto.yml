@@ -71,19 +71,29 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@v2
         if: steps.sites.outputs.list != ''
 
-      # The runners fetch Ubuntu packages from Azure's mirror, which at times stops answering: apt
-      # then waits on every file and setup-r hangs until the job times out. Use the main Ubuntu
-      # archive instead, and let apt give up on a stalled download after 30 s (3 tries)
+      # The runners fetch Ubuntu packages from Azure's mirror first, which at times stops answering:
+      # apt then waits on every file and setup-r hangs until it times out. Their sources point to a
+      # list of mirrors, /etc/apt/apt-mirrors.txt (Azure, then the main archive, then security), so
+      # the list is replaced by the main Ubuntu archive alone, over https; sources that name the Azure
+      # mirror directly are changed too. apt gives up on a stalled download after 30 s (3 tries)
       - name: Use the main Ubuntu package archive
         if: steps.sites.outputs.list != ''
+        timeout-minutes: 5
         run: |
-          for f in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+          echo "Before:"; cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          grep -h "^URIs:\|^deb " /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null | sort -u || true
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf 'https://archive.ubuntu.com/ubuntu/\tpriority:1\nhttps://security.ubuntu.com/ubuntu/\tpriority:2\n' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          fi
+          for f in /etc/apt/sources.list.d/*.sources /etc/apt/sources.list; do
             if [ -f "$f" ]; then
-              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$f"
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$f"
             fi
           done
-          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99-timeouts
-          grep -rh "^URIs:\|^deb " /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null | sort -u || true
+          printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null
+          echo "After:"; cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          grep -h "^URIs:\|^deb " /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null | sort -u || true
+          sudo apt-get update -q || echo "::warning::apt-get update failed; setup-r may not install its system packages"
 
       - uses: r-lib/actions/setup-r@v2
         if: steps.sites.outputs.list != ''
