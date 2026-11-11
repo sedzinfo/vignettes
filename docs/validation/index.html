@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.10.19">
+<meta name="generator" content="quarto-1.11.9">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -73,14 +73,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <meta name="quarto:offset" content="./">
 <script src="site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/scrollable-regions/scrollable-regions.js" type="module"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="site_libs/quarto-html/anchor.min.js"></script>
 <link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-11098932bb39e8ccbcedcb139d3d0c2d.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-85f7a32731ed2b609fa7be27e34d4366.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-cfce8eca8143384c48eba79a61cefc03.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-8ae396d4416811ff27bcf6c71ba7480a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -112,19 +113,18 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 </head>
 
-<body class="nav-fixed quarto-light">
+<body class="nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
 
 <div id="quarto-search-results"></div>
   <header id="quarto-header" class="headroom fixed-top">
-    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark" aria-label="Site">
       <div class="navbar-container container-fluid">
       <div class="navbar-brand-container mx-auto">
     <a class="navbar-brand" href="./index.html">
     <span class="navbar-title">Scale Validation in R</span>
     </a>
   </div>
-            <div id="quarto-search" class="" title="Search"></div>
-          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
   <span class="navbar-toggler-icon"></span>
 </button>
           <div class="collapse navbar-collapse" id="navbarCollapse">
@@ -194,6 +194,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           </div> <!-- /navcollapse -->
             <div class="quarto-navbar-tools">
 </div>
+            <div id="quarto-search" class="" title="Search"></div>
       </div> <!-- /container-fluid -->
     </nav>
 </header>
@@ -205,7 +206,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         
     </div>
 <!-- main -->
-<main class="content" id="quarto-document-content">
+<main class="content" id="quarto-document-content" tabindex="-1">
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
@@ -287,6 +288,322 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
      before consent.js, so consent.js finds its "Cookie settings" link and adds none of its own. -->
 <script src="https://sedzinfo.github.io/footer.js" defer=""></script>
 <script src="https://sedzinfo.github.io/consent.js" defer=""></script>
+<!-- Small screens (phones), for every Quarto site (include-after-body in each _quarto.yml).
+     The rules that need no script are in styles.scss (equations, images, inline code, plotly's toolbar).
+     - A table wider than the page scrolls sideways in its own box instead of widening the page, and
+       so does a formula in running text that is wider than its paragraph.
+     - Touch screens: a finger dragging over a plotly chart scrolls the page instead of zooming into the
+       chart (tapping still shows the values; 3D charts and maps keep their drag).
+     - Plotly charts narrower than 600px: the title is wrapped to the width; long category names beside
+       horizontal bars take two or three lines (and a fixed wide left margin is given up); axis titles
+       and notes (source lines) that run past the sides are wrapped; a legend at the right goes under
+       the chart. Then the parts are measured and pulled apart where they cover each other: the legend
+       and notes over the plot stack upwards under the title, those below the plot stack downwards
+       under the axis labels, and the chart grows by the height this needs (the plot keeps its size).
+     - Highcharts polar charts: a smaller circle, so the month names at the sides are not cut.
+     Wide screens are not changed. -->
+<script>
+(function () {
+  'use strict';
+  var NARROW = 600;   // px: a chart narrower than this (a phone) gets the small-screen layout
+  var touch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+
+  /* ---- tables: a table wider than the page scrolls sideways in its own box ---- */
+  function wrapTables() {
+    var tables = document.querySelectorAll('main table');
+    for (var i = 0; i < tables.length; i++) {
+      var t = tables[i], scrolls = false;
+      if (t.closest('.html-widget, .table-scroll')) continue;
+      for (var a = t.parentElement; a && a.tagName !== 'MAIN'; a = a.parentElement) {
+        var ox = getComputedStyle(a).overflowX;
+        if (ox === 'auto' || ox === 'scroll') { scrolls = true; break; }
+      }
+      if (scrolls) continue;
+      var box = document.createElement('div');
+      box.className = 'table-scroll';
+      t.parentNode.insertBefore(box, t);
+      box.appendChild(t);
+    }
+  }
+
+  /* ---- text helpers for plotly labels (which may hold <b>, <a href="..">, <br>) ---- */
+  var canvas;
+  function textWidth(text, font) {
+    canvas = canvas || document.createElement('canvas');
+    var ctx = canvas.getContext('2d');
+    ctx.font = font.weight + ' ' + font.size + 'px ' + font.family;
+    return ctx.measureText(String(text).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')).width;
+  }
+  function fontOf(f, text) {
+    return { size: (f && f.size) || 12, family: (f && f.family) || 'sans-serif',
+             weight: /<b>/i.test(text || '') ? 'bold' : 'normal' };
+  }
+  function words(line) {             // split at spaces outside tags
+    var out = [], cur = '', inTag = false;
+    for (var i = 0; i < line.length; i++) {
+      var ch = line.charAt(i);
+      if (ch === '<') inTag = true; else if (ch === '>') inTag = false;
+      if (ch === ' ' && !inTag) { if (cur) out.push(cur); cur = ''; } else cur += ch;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  function wrapText(text, maxPx, font) {
+    var out = [];
+    String(text).split(/<br\s*\/?>/i).forEach(function (line) {
+      var cur = '';
+      words(line).forEach(function (w) {
+        var cand = cur ? cur + ' ' + w : w;
+        if (cur && textWidth(cand, font) > maxPx) { out.push(cur); cur = w; } else cur = cand;
+      });
+      out.push(cur);
+    });
+    return out.join('<br>');
+  }
+  function box(el, gd) {             // an element's box in the chart's pixels
+    var r = el.getBoundingClientRect(), g = gd.getBoundingClientRect();
+    return { l: r.left - g.left, r: r.right - g.left, t: r.top - g.top, b: r.bottom - g.top,
+             w: r.width, h: r.height };
+  }
+
+  /* ---- plotly, first pass: what can be decided from the layout ---- */
+  function firstPass(gd, narrow) {
+    var full = gd._fullLayout, W = full.width, u = {}, subs = full._subplots || {};
+    var turns = ['gl3d', 'geo', 'mapbox', 'map'].some(function (k) { return subs[k] && subs[k].length; });
+    // a finger dragging over a chart scrolls the page instead of zooming (tapping still shows values)
+    if (touch && !turns && full.dragmode !== false) u.dragmode = false;
+    if (!narrow) return u;
+
+    // title: wrapped to the width and held at the top
+    var t = full.title;
+    if (t && t.text) {
+      if (gd.__origTitle === undefined) gd.__origTitle = t.text;
+      var wrapped = wrapText(gd.__origTitle, W - 24, fontOf(t.font, gd.__origTitle));
+      if (wrapped !== t.text) u['title.text'] = wrapped;
+      if (t.yref !== 'container' || t.y !== 1 || t.yanchor !== 'top') {
+        u['title.yref'] = 'container'; u['title.y'] = 1; u['title.yanchor'] = 'top'; u['title.pad.t'] = 10;
+      }
+    }
+
+    var s = full._size, wrappedLabels = false;
+
+    // long category names beside horizontal bars take two or three lines instead of half the width
+    (subs.yaxis || []).forEach(function (id) {
+      var name = 'yaxis' + id.slice(1), ax = full[name];
+      if (!ax || !ax.showticklabels) return;
+      var font = fontOf(ax.tickfont), labels, vals;
+      if (ax.tickmode === 'array' && ax.ticktext && ax.ticktext.length) {
+        labels = ax.ticktext; vals = ax.tickvals;
+      } else if (ax.type === 'category' && ax._categories && ax._categories.length) {
+        labels = ax._categories; vals = ax._categories;
+      } else return;
+      var widest = Math.max.apply(null, labels.map(function (t) { return textWidth(t, font); }));
+      if (widest <= Math.max(W * 0.34, 90)) return;
+      // as many lines as the height of one bar holds
+      var lines = Math.max(1, Math.floor((s.h * ((ax.domain || [0, 1])[1] - (ax.domain || [0, 1])[0]) /
+        labels.length - 2) / (font.size * 1.25)));
+      var limit = Math.min(W * 0.5, Math.max(W * 0.34, 90, widest / lines + 6));
+      u[name + '.tickmode'] = 'array';
+      u[name + '.tickvals'] = vals.slice();
+      u[name + '.ticktext'] = labels.map(function (t) { return wrapText(String(t), limit, font); });
+      u[name + '.automargin'] = true;
+      wrappedLabels = true;
+    });
+    // the fixed left margin that held the long names on a wide screen would leave no room for the bars
+    if (wrappedLabels && (gd.layout.margin || {}).l > W * 0.3) u['margin.l'] = 10;
+
+    // axis titles longer than their axis (two charts side by side) are wrapped
+    (subs.xaxis || []).forEach(function (id) {
+      var name = 'xaxis' + id.slice(1), ax = full[name], title = ax && ax.title && ax.title.text;
+      if (!title) return;
+      var key = '__origX' + name;
+      if (gd[key] === undefined) gd[key] = title;
+      var room = s.w * (ax.domain[1] - ax.domain[0]) - 10, font = fontOf(ax.title.font, gd[key]);
+      if (textWidth(gd[key], font) > room && room > 60) u[name + '.title.text'] = wrapText(gd[key], room, font);
+    });
+
+    // a legend at the right side goes under the chart, in rows
+    var lg = full.legend;
+    if (full.showlegend && lg) {
+      var big = lg.font && lg.font.size > 14;
+      if (lg.orientation === 'v' && lg.x >= 0.98) {
+        u['legend.orientation'] = 'h'; u['legend.x'] = 0; u['legend.xanchor'] = 'left';
+        u['legend.y'] = -0.12; u['legend.yanchor'] = 'top';
+        if (lg.font && lg.font.size > 12) u['legend.font.size'] = 12;   // two or three names a row
+      } else if (big) u['legend.font.size'] = 14;
+    }
+
+    // notes that run past the sides (a source line) are wrapped
+    var anns = gd.layout.annotations || [];
+    gd.__origAnn = gd.__origAnn || {};
+    // plotly fits notes tied to an axis into its range when the chart is drawn again, which would
+    // change the scale: that range stays as it was first drawn
+    (full.annotations || []).forEach(function (a) {
+      [a.xref, a.yref].forEach(function (ref) {
+        if (!ref || ref === 'paper' || /domain$/.test(ref)) return;
+        var axName = ref.charAt(0) + 'axis' + ref.slice(1), ax = full[axName];
+        if (ax && ax.autorange === true && ax.range) {
+          u[axName + '.range'] = ax.range.slice(); u[axName + '.autorange'] = false;
+        }
+      });
+    });
+    gd.querySelectorAll('.annotation').forEach(function (el) {
+      var i = +el.getAttribute('data-index'), a = full.annotations[i];
+      if (!a || !a.text || !anns[i]) return;
+      var b = box(el.querySelector('.annotation-text-g') || el, gd);
+      if (b.l >= -1 && b.r <= W + 1) return;
+      var anchor = a.xanchor;
+      if (anchor === 'auto') anchor = a.xref === 'paper' ? (a.x <= 1 / 3 ? 'left' : a.x >= 2 / 3 ? 'right' : 'center') : 'center';
+      var room = anchor === 'left' ? W - b.l - 8 : anchor === 'right' ? b.r - 8
+        : 2 * Math.min(b.l + b.w / 2, W - b.l - b.w / 2) - 16;
+      if (room < 40) return;
+      if (gd.__origAnn[i] === undefined) gd.__origAnn[i] = anns[i].text;
+      var w = wrapText(gd.__origAnn[i], room, fontOf(a.font, gd.__origAnn[i]));
+      if (w !== a.text) u['annotations[' + i + '].text'] = w;
+    });
+    return u;
+  }
+
+  /* ---- plotly, later passes: measure what is drawn and pull overlapping parts apart ---- */
+  function layoutPass(gd) {
+    var full = gd._fullLayout, s = full._size, W = full.width, H = full.height, u = {};
+    var plotTop = s.t, plotBottom = s.t + s.h, items = [];
+    var lgEl = gd.querySelector('.legend');
+    if (full.showlegend && lgEl) items.push({ kind: 'legend', b: box(lgEl, gd) });
+    gd.querySelectorAll('.annotation').forEach(function (el) {
+      var i = +el.getAttribute('data-index'), a = full.annotations[i];
+      if (a && a.yref === 'paper' && a.visible !== false) items.push({ kind: 'ann', i: i, b: box(el, gd) });
+    });
+    var sl = gd.querySelectorAll('.slider-container'), um = gd.querySelectorAll('.updatemenu-container');
+    if ((full.sliders || []).length === 1 && sl.length === 1) items.push({ kind: 'slider', b: box(sl[0], gd) });
+    if ((full.updatemenus || []).length === 1 && um.length === 1) items.push({ kind: 'menu', b: box(um[0], gd) });
+    items = items.filter(function (it) { return it.b.h > 0 && it.b.w > 0; });
+
+    function move(it, dyPx) {        // dyPx > 0 moves down
+      var dy = dyPx / s.h;
+      if (it.kind === 'legend') u['legend.y'] = full.legend.y - dy;
+      else if (it.kind === 'ann') u['annotations[' + it.i + '].y'] = full.annotations[it.i].y - dy;
+      else if (it.kind === 'slider') u['sliders[0].y'] = full.sliders[0].y - dy;
+      else if (it.kind === 'menu') u['updatemenus[0].y'] = full.updatemenus[0].y - dy;
+      it.b = { l: it.b.l, r: it.b.r, t: it.b.t + dyPx, b: it.b.b + dyPx };
+    }
+    function across(a, b) { return a.b.l < b.b.r && a.b.r > b.b.l; }
+
+    // over the plot: parts that cover each other are stacked upwards; notes (subplot titles) stay
+    // next to the plot and a legend moves above them
+    var above = items.filter(function (it) { return it.b.t < plotTop - 2 && (it.b.t + it.b.b) / 2 < plotTop; })
+      .sort(function (a, b) { return (a.kind === 'ann' ? 0 : 1) - (b.kind === 'ann' ? 0 : 1) || b.b.b - a.b.b; });
+    var minTop = plotTop, done = [];
+    above.forEach(function (it) {
+      var need = Math.max(0, it.b.b - plotTop - 1);
+      done.forEach(function (p) {
+        if (across(it, p) && it.b.b > p.b.t - 3 && it.b.t < p.b.b) need = Math.max(need, it.b.b - (p.b.t - 3));
+      });
+      if (need > 0) move(it, -need);
+      done.push(it);
+      minTop = Math.min(minTop, it.b.t);
+    });
+
+    // the title starts inside the chart and ends above all that
+    var dTop = 0, titleEl = gd.querySelector('.gtitle');
+    if (titleEl && titleEl.textContent) {
+      var tb = box(titleEl, gd), shift = Math.max(0, Math.ceil(8 - tb.t));
+      if (shift) u['title.pad.t'] = ((full.title.pad || {}).t || 0) + shift;
+      dTop = Math.max(0, Math.ceil(tb.b + shift + 6 - minTop));
+    }
+    if (minTop + dTop < 4) dTop = Math.ceil(4 - minTop);
+
+    // bottom: under the axis labels, each part goes below the ones it would cover
+    var axisBottom = plotBottom;
+    gd.querySelectorAll('.xtick text, .g-xtitle text').forEach(function (el) {
+      var b = box(el, gd);
+      if (b.h && b.t >= plotBottom - 5) axisBottom = Math.max(axisBottom, b.b);
+    });
+    var below = items.filter(function (it) { return it.b.b > plotBottom + 2 && (it.b.t + it.b.b) / 2 > plotBottom; })
+      .sort(function (a, b) { return a.b.t - b.b.t; });
+    var placed = [{ b: { l: -1e6, r: 1e6, t: plotBottom, b: axisBottom } }], lowest = axisBottom;
+    below.forEach(function (it) {
+      var need = 0;
+      placed.forEach(function (p) {
+        if (across(it, p) && it.b.t < p.b.b + 4) need = Math.max(need, p.b.b + 4 - it.b.t);
+      });
+      if (need > 0) move(it, need);
+      placed.push(it);
+      lowest = Math.max(lowest, it.b.b);
+    });
+    var dBottom = Math.max(0, Math.ceil(lowest + 8 - H));
+
+    // the plot keeps its size: the chart grows by what the title and the parts below need
+    if (dTop || dBottom) {
+      u['margin.t'] = s.t + dTop;
+      u['margin.b'] = s.b + dBottom;
+      u.height = H + dTop + dBottom;
+      gd.style.height = u.height + 'px';
+    }
+    return u;
+  }
+
+  function fix(gd) {
+    if (gd.__mobileBusy || !window.Plotly || !gd._fullLayout || !gd.offsetWidth) return;
+    var W = gd._fullLayout.width, narrow = W < NARROW;
+    if ((!narrow && !touch) || gd.__mobileDone === W) return;
+    gd.__mobileBusy = true;
+    var steps = [function () { return firstPass(gd, narrow); }];
+    if (narrow) steps.push(function () { return layoutPass(gd); }, function () { return layoutPass(gd); });
+    (function run(k) {
+      if (k >= steps.length) { gd.__mobileBusy = false; gd.__mobileDone = gd._fullLayout.width; return; }
+      var u;
+      try { u = steps[k](); } catch (e) {          // leave the chart as it is
+        gd.__mobileBusy = false; gd.__mobileDone = W;
+        if (window.console) console.warn('small-screen layout of a chart failed:', e);
+        return;
+      }
+      if (u && Object.keys(u).length) {
+        Plotly.relayout(gd, u).then(function () { run(k + 1); }, function () { gd.__mobileBusy = false; });
+      } else run(k + 1);
+    })(0);
+  }
+
+  function hook() {
+    fitInlineMath();              // again: MathJax may draw a formula anew when more of its font arrives
+    document.querySelectorAll('.js-plotly-plot').forEach(function (gd) {
+      if (!gd.__mobileHooked && typeof gd.on === 'function') {
+        gd.__mobileHooked = true;
+        gd.on('plotly_afterplot', function () { setTimeout(function () { fix(gd); }, 30); });
+      }
+      fix(gd);
+    });
+    // Highcharts polar charts: a smaller circle leaves room for the month names at the sides
+    if (window.Highcharts) Highcharts.charts.forEach(function (c) {
+      if (c && c.polar && !c.__mobileDone && c.chartWidth < NARROW) {
+        c.__mobileDone = true;
+        c.update({ pane: { size: '66%' }, xAxis: { labels: { style: { fontSize: '11px' } } } }, true, false, false);
+      }
+    });
+  }
+
+  /* ---- a formula in running text wider than its paragraph scrolls sideways (most break by themselves) ---- */
+  function fitInlineMath() {
+    document.querySelectorAll('main mjx-container:not([display="true"])').forEach(function (m) {
+      var p = m.parentElement && m.parentElement.closest('p, li, td');
+      if (p && m.getBoundingClientRect().width > p.clientWidth) {
+        m.style.display = 'inline-block'; m.style.maxWidth = '100%'; m.style.verticalAlign = 'middle';
+        m.style.overflowX = 'auto'; m.style.overflowY = 'hidden';
+      }
+    });
+  }
+
+  function start() {
+    wrapTables();
+    if (window.MathJax && MathJax.startup && MathJax.startup.promise) MathJax.startup.promise.then(fitInlineMath);
+    hook();
+    [500, 1500, 3000].forEach(function (ms) { setTimeout(hook, ms); });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+  window.addEventListener('load', hook);
+})();
+</script>
 <script id="quarto-html-after-body" type="application/javascript">
   window.document.addEventListener("DOMContentLoaded", function (event) {
     const icon = "";
@@ -416,7 +733,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
       }
       // Inspect non-navigation links and adorn them if external
-     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      window.quartoDecorateExternalLinks = function (root) {
+     var links = (root || window.document).querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
       for (var i=0; i<links.length; i++) {
         const link = links[i];
         if (!isInternal(link.href)) {
@@ -425,8 +743,69 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           if (link.dataset.originalHref !== undefined) {
             link.href = link.dataset.originalHref;
           }
+          if (!link.classList.contains('no-external-icon')) {
+          }
         }
       }
+      };
+      window.quartoDecorateExternalLinks(window.document);
+    // Esc closes the popup (WCAG 1.4.13) and focus leaving both trigger and
+    // popup closes it (WCAG 2.4.11); tippy handles neither for interactive popups.
+    const hideOnEscAndFocusOut = {
+      name: 'hideOnEscAndFocusOut',
+      defaultValue: true,
+      fn(instance) {
+        const dismiss = () => {
+          // A show scheduled by the trigger delay would otherwise reopen it
+          instance.clearDelayTimeouts();
+          instance.hide();
+        };
+        const onKeyDown = (event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          // Keep Esc from also reaching page handlers (e.g. reveal.js overview),
+          // except an open reveal.js slide menu, which Esc should close too.
+          // The menu handles keys only when its keyboard option is on.
+          const menuHandlesEsc = window.Reveal?.getPlugin?.('menu')?.isOpen() &&
+            window.Reveal.getConfig().menu?.keyboard !== false;
+          if (!menuHandlesEsc) {
+            event.stopPropagation();
+          }
+          if (instance.popper.contains(window.document.activeElement)) {
+            // Disabled while refocusing so the focus trigger does not reopen it
+            instance.disable();
+            instance.reference.focus();
+            instance.enable();
+          }
+          dismiss();
+        };
+        const onFocusOut = (event) => {
+          const target = event.relatedTarget;
+          if (target && !instance.reference.contains(target) &&
+              !instance.popper.contains(target)) {
+            dismiss();
+          }
+        };
+        // On the trigger too: a click trigger (code-annotations: select) has no
+        // blur handling. Attached for the instance's lifetime so leaving the
+        // trigger also cancels a show still pending on the trigger delay.
+        instance.reference.addEventListener('focusout', onFocusOut);
+        return {
+          onShow() {
+            window.document.addEventListener('keydown', onKeyDown, true);
+            instance.popper.addEventListener('focusout', onFocusOut);
+          },
+          onHide() {
+            window.document.removeEventListener('keydown', onKeyDown, true);
+            instance.popper.removeEventListener('focusout', onFocusOut);
+          },
+          onDestroy() {
+            instance.reference.removeEventListener('focusout', onFocusOut);
+          },
+        };
+      },
+    };
     function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
       const config = {
         allowHTML: true,
@@ -440,6 +819,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
         interactiveBorder: 10,
         theme: 'quarto',
         placement: 'bottom-start',
+        plugins: [hideOnEscAndFocusOut],
       };
       if (contentFn) {
         config.content = contentFn;
@@ -602,44 +982,54 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
           const lineIds = lines.map((line) => {
             return targetCell + "-" + line;
           })
-          let top = null;
-          let height = null;
-          let parent = null;
+          // Each band is positioned against its own containing block, which is
+          // not the offsetParent of the lines, so place it from client rects.
+          const placeBand = (band, firstEl, lastEl, codeBlock) => {
+            const container = band.offsetParent;
+            if (container === null) {
+              return;
+            }
+            const containerRect = container.getBoundingClientRect();
+            // Reveal.js scales slides with a transform, so convert client
+            // pixels back to the CSS pixels of the container.
+            const scale = containerRect.height / container.offsetHeight || 1;
+            const firstRect = firstEl.getBoundingClientRect();
+            const lastRect = lastEl.getBoundingClientRect();
+            const top = (firstRect.top - containerRect.top) / scale - container.clientTop + container.scrollTop;
+            const height = (lastRect.bottom - firstRect.top) / scale;
+            band.style.top = top - 2 + "px";
+            band.style.height = height + 4 + "px";
+            if (codeBlock) {
+              // Without the copy button wrapper, the containing block is wider
+              // than the code block, so span the code block explicitly.
+              const blockRect = codeBlock.getBoundingClientRect();
+              band.style.left = (blockRect.left - containerRect.left) / scale - container.clientLeft + container.scrollLeft + "px";
+              band.style.width = blockRect.width / scale + "px";
+            }
+          };
           if (lineIds.length > 0) {
-              //compute the position of the single el (top and bottom and make a div)
-              const el = window.document.getElementById(lineIds[0]);
-              top = el.offsetTop;
-              height = el.offsetHeight;
-              parent = el.parentElement.parentElement;
-            if (lineIds.length > 1) {
-              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
-              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
-              height = bottom - top;
+            const el = window.document.getElementById(lineIds[0]);
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const parent = el.parentElement.parentElement;
+            // cook up a div (if necessary) and position it
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
             }
-            if (top !== null && height !== null && parent !== null) {
-              // cook up a div (if necessary) and position it 
-              let div = window.document.getElementById("code-annotation-line-highlight");
-              if (div === null) {
-                div = window.document.createElement("div");
-                div.setAttribute("id", "code-annotation-line-highlight");
-                div.style.position = 'absolute';
-                parent.appendChild(div);
-              }
-              div.style.top = top - 2 + "px";
-              div.style.height = height + 4 + "px";
-              div.style.left = 0;
-              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
-              if (gutterDiv === null) {
-                gutterDiv = window.document.createElement("div");
-                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
-                gutterDiv.style.position = 'absolute';
-                const codeCell = window.document.getElementById(targetCell);
-                const gutter = codeCell.querySelector('.code-annotation-gutter');
-                gutter.appendChild(gutterDiv);
-              }
-              gutterDiv.style.top = top - 2 + "px";
-              gutterDiv.style.height = height + 4 + "px";
+            placeBand(div, el, lastEl, parent.closest("div.sourceCode") || parent);
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
             }
+            placeBand(gutterDiv, el, lastEl);
             selectedAnnoteEl = annoteEl;
           }
         };
@@ -737,6 +1127,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       }
     }
   });
+  </script>
+  <script type="application/javascript">
+  window.quartoScrollableRegionsLabels = {"code":"Scrollable code","output":"Scrollable output"};
   </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb1" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Scale Validation in R"</span></span>
