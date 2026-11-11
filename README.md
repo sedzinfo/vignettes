@@ -14,6 +14,7 @@ Most functions used in the tutorials come from the [rwf](https://github.com/sedz
 |---|---|
 | `quarto/<site>/` | One Quarto website per folder: pages (`.Rmd`), `_quarto.yml`, `index.qmd`, `styles.css` |
 | `quarto/<site>/_freeze/` | Saved results of each page. GitHub reuses them instead of running the R code (commit it) |
+| `quarto/_shared/` | Used by every site: `styles.scss` (styles), `_ga_consent.html` (cookie banner and analytics) and `_mobile.html` (phones: wide tables scroll, plotly charts fit the screen) |
 | `docs/` | Published sites, written by the GitHub workflow (do not edit) |
 | `render.R` | Renders the sites locally into `_preview/` |
 | `.github/workflows/render-quarto.yml` | Renders changed sites into `docs/<site>/` on every push |
