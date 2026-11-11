@@ -92,7 +92,7 @@ knitr::kable(cleaning, col.names = c("Rule", "Excluded", "Remaining"),
              format.args = list(big.mark = ","), row.names = FALSE)
 ```
 
-```{r evenodd, fig.width=7, fig.height=3.5, dev='png', fig.retina=2}
+```{r evenodd, fig.height=3.5}
 ggplot(df_hexaco, aes(x = even_odd)) +
   geom_histogram(binwidth = 0.02, fill = "grey40", colour = "white") +
   geom_vline(xintercept = 0.30, colour = "#d6604d", linetype = "dashed") +
@@ -118,7 +118,7 @@ knitr::kable(key[, c("item", "domain", "facet", "key", "text")],
 
 If an item is keyed in the wrong direction, its correlation with the rest of its facet is negative. After reverse-keying, every one of the 240 items should correlate positively with the other nine items of its facet, whatever its keying.
 
-```{r keycheck, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+```{r keycheck, fig.height=7}
 item_total <- do.call(rbind, lapply(facets, function(f) {
   a <- psych::alpha(df[, key$facet == f], check.keys = FALSE, warnings = FALSE)
   data.frame(item = key$item[key$facet == f], facet = f, key = key$key[key$facet == f],
@@ -151,7 +151,7 @@ knitr::kable(weak[, c("item", "facet", "key", "r_drop", "text")], digits = 2, ro
 
 Cronbach's alpha of the 24 facets in this sample, against the alpha published with the IPIP-HEXACO key, and the alpha of the six domains (40 items each).
 
-```{r reliability, fig.width=7, fig.height=7, dev='png', fig.retina=2}
+```{r reliability, fig.height=7}
 facet_alpha <- data.frame(
   facet     = facets,
   domain    = facet_domain[facets],
@@ -186,7 +186,7 @@ knitr::kable(data.frame(domain = domains, alpha = domain_alpha), digits = 2, row
 
 The factor analyses below work with the 24 facet scores, the usual level for testing the structure of a hierarchical inventory: each facet score averages 10 items, so it is far more reliable than a single item.
 
-```{r facetcor, fig.width=9, fig.height=8, dev='png', fig.retina=2}
+```{r facetcor, fig.height=7.5}
 facet_cor <- cor(facet_scores)
 cor_long  <- melt(facet_cor)
 cor_long$Var1 <- factor(cor_long$Var1, levels = facets)
@@ -206,7 +206,7 @@ ggplot(cor_long, aes(x = Var1, y = Var2, fill = value)) +
 
 ## How Many Factors?
 
-```{r nfactors, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+```{r nfactors, fig.height=5}
 eig <- eigen(facet_cor, only.values = TRUE)$values
 cat("Eigenvalues 1-8:", sprintf("%.2f", eig[1:8]), "\n")
 cat("Eigenvalues above 1:", sum(eig > 1), "\n")
@@ -240,7 +240,7 @@ The seventh factor collects risk-taking across three domains: low Fearfulness, h
 
 ## Six Factors
 
-```{r efa6, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+```{r efa6, fig.height=8}
 efa6 <- fits[[3]]
 L6 <- unclass(efa6$loadings)
 colnames(L6) <- factor_label(L6)
@@ -269,7 +269,7 @@ Every facet loads on its own factor: a clean recovery of the HEXACO structure. M
 
 The decisive test for HEXACO is to force a Big Five solution on the same facets.
 
-```{r efa5, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+```{r efa5, fig.height=8}
 L5 <- unclass(fits[[2]]$loadings)
 colnames(L5) <- factor_label(L5)
 L5 <- L5[, order(match(substr(colnames(L5), 1, 1), dom_abbr))]
@@ -286,7 +286,7 @@ The 50 IPIP items in the [IPIP-50 / OCEAN tutorial](VALIDATION_OCEAN.rmd) have n
 
 Goldberg's (2006) "bass-ackwards" method shows how the factors emerge as more are extracted. Solutions with 1, 2, ..., 6 factors are computed, factor scores are saved at each level, and the scores of each level are correlated with the scores of the next. Each line below links a factor to a factor one level down when they correlate at least .30; the line is thicker the stronger the correlation. Each box is named after the domains whose facets load on it at least .30 on average.
 
-```{r bassackwards, fig.width=10, fig.height=7.5, dev='png', fig.retina=2}
+```{r bassackwards, fig.height=7.5}
 Z <- scale(facet_scores)
 levels_k <- 1:6
 solutions <- lapply(levels_k, function(k) {

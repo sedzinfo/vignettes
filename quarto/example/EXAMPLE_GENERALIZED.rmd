@@ -77,14 +77,14 @@ The model is estimated via **maximum likelihood**, and inference relies on asymp
 
 Medical insurance charges are right-skewed and strictly positive. A log transformation induces approximate normality, making a Gaussian GLM with identity link on $\log(\text{charges})$ appropriate. Alternatively, a Gamma GLM with log link directly models the original scale without requiring a transformation.
 
-```{r insurance_eda, fig.width=10, fig.height=4, dev='png', fig.retina=2}
+```{r insurance_eda, fig.height=3.5}
 p1 <- ggplot(df_insurance, aes(x=charges)) +
   geom_histogram(bins=50, fill="#2166ac", colour="white") +
-  theme_bw() + labs(title="Raw charges (right-skewed)", x="Charges (USD)")
+  theme_bw() + labs(title="Raw charges\n(right-skewed)", x="Charges (USD)")
 
 p2 <- ggplot(df_insurance, aes(x=log_charges)) +
   geom_histogram(bins=50, fill="#4dac26", colour="white") +
-  theme_bw() + labs(title="Log-transformed charges (approx. normal)", x="log(Charges)")
+  theme_bw() + labs(title="Log-transformed charges\n(approx. normal)", x="log(Charges)")
 
 plot_multiplot(p1, p2, cols=2)
 ```
@@ -146,15 +146,15 @@ vif(m_gauss_full)
 
 ### 2.7 Diagnostics
 
-```{r gaussian_diagnostics, fig.width=12, fig.height=8, dev='png', fig.retina=2}
-par(mfrow=c(2,3))
+```{r gaussian_diagnostics, fig.height=9}
+par(mfrow=c(3,2))
 plot(m_gauss_full, which=1:6)
 par(mfrow=c(1,1))
 ```
 
 ### 2.8 Marginal Effects of Smoking by BMI
 
-```{r gaussian_interaction, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r gaussian_interaction, fig.height=4}
 nd <- expand.grid(
   age=mean(df_insurance$age),
   sex="female",
@@ -186,7 +186,7 @@ $$\log\frac{P(\text{admit}=1|\mathbf{x})}{1-P(\text{admit}=1|\mathbf{x})} = \bet
 
 ### 3.2 Descriptive Overview
 
-```{r logistic_desc, fig.width=10, fig.height=4, dev='png', fig.retina=2}
+```{r logistic_desc, fig.height=3.5}
 p1 <- ggplot(df_admission, aes(x=gre, fill=factor(admit))) +
   geom_density(alpha=0.5) +
   scale_fill_manual(values=c("#2166ac","#d6604d"), labels=c("Rejected","Admitted")) +
@@ -253,7 +253,7 @@ cat("BIC                 :", round(BIC(m_admit_main), 2), "\n")
 
 ### 3.7 Discrimination — ROC Curve and AUC
 
-```{r logistic_roc, fig.width=6, fig.height=5, dev='png', fig.retina=2}
+```{r logistic_roc, fig.height=5}
 pred_prob <- predict(m_admit_main, type="response")
 roc_obj   <- roc(df_admission$admit, pred_prob, quiet=TRUE)
 
@@ -275,7 +275,7 @@ cat(sprintf("Specificity: %.3f\n",  conf_mat[1,1]/sum(conf_mat[,1])))
 
 ### 3.9 Predicted Probability Curves
 
-```{r logistic_curves, fig.width=10, fig.height=4, dev='png', fig.retina=2}
+```{r logistic_curves, fig.height=4}
 nd2 <- expand.grid(
   gre  = seq(220, 800, length.out=200),
   gpa  = c(2.5, 3.0, 3.5, 4.0),
@@ -308,7 +308,7 @@ cat("Var  of children:", round(var(df_insurance$children),  4), "\n")
 cat("Dispersion ratio :", round(var(df_insurance$children)/mean(df_insurance$children), 4), "\n")
 ```
 
-```{r poisson_hist, fig.width=6, fig.height=4, dev='png', fig.retina=2}
+```{r poisson_hist, fig.height=4}
 ggplot(df_insurance, aes(x=children)) +
   geom_bar(fill="#2166ac", colour="white") +
   theme_bw() +
@@ -365,7 +365,7 @@ round(irr_table, 3)
 
 ### 4.7 Predicted Counts by Age and Smoking Status
 
-```{r nb_plot, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r nb_plot, fig.height=4}
 nd3 <- expand.grid(
   age    = seq(18, 64, length.out=100),
   sex    = "female",
@@ -420,7 +420,7 @@ round(cbind(OR=exp(coef(m_titanic_int)), exp(confint(m_titanic_int))), 3)
 
 ### 5.3 Estimated Marginal Means (Survival Probability)
 
-```{r titanic_emm, results='show', fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r titanic_emm, results='show', fig.height=4}
 emm <- emmeans(m_titanic_int, ~ sex * pclass, type="response")
 emm_df <- as.data.frame(emm)
 
@@ -437,7 +437,7 @@ ggplot(emm_df, aes(x=pclass, y=prob, colour=sex, group=sex)) +
 
 ### 5.4 ROC and AUC
 
-```{r titanic_roc, fig.width=6, fig.height=5, dev='png', fig.retina=2}
+```{r titanic_roc, fig.height=5}
 pred_titanic <- predict(m_titanic_int, type="response")
 roc_titanic  <- roc(df_titanic$survived, pred_titanic, quiet=TRUE)
 plot(roc_titanic, col="#d6604d", lwd=2,
@@ -488,8 +488,8 @@ knitr::kable(aic_df, row.names=FALSE)
 | No multicollinearity | VIF < 5 | VIF < 5 | VIF < 5 |
 | Equidispersion | — | — | Deviance / df ≈ 1 |
 
-```{r diagnostics_combined, fig.width=12, fig.height=5, dev='png', fig.retina=2}
-par(mfrow=c(1,3))
+```{r diagnostics_combined, fig.height=9}
+par(mfrow=c(3,1))
 plot(m_gauss_full,   which=1, main="Gaussian GLM — residuals vs fitted")
 plot(m_admit_main,   which=1, main="Logistic GLM — residuals vs fitted")
 plot(m_nb,           which=1, main="Neg. Binom — residuals vs fitted")

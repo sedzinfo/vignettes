@@ -108,7 +108,7 @@ knitr::kable(key[, c("item", "words", "code", "answer")],
 
 ### Score distribution
 
-```{r scores, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r scores, fig.height=4}
 ggplot(data.frame(total), aes(x = total)) +
   geom_histogram(binwidth = 1, fill = "#2166ac", colour = "white") +
   geom_vline(xintercept = mean(total), colour = "#d6604d", linetype = "dashed") +
@@ -166,7 +166,7 @@ The lowest item-total correlations belong to the easiest items. The `r length(ve
 
 IRT models with one latent trait assume that one ability explains the correlations between the items. Pearson correlations between 0/1 items depend on the item difficulties, so dimensionality is checked on **tetrachoric correlations**, which estimate the correlation between the continuous tendencies assumed to underlie each pair of right/wrong answers.
 
-```{r tetrachoric, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r tetrachoric, fig.height=4.5}
 tet <- psych::tetrachoric(resp)
 eig <- eigen(tet$rho, only.values = TRUE)$values
 
@@ -193,7 +193,7 @@ ggplot(scree, aes(factor, eigenvalue, colour = source)) +
 
 One factor dominates: the first eigenvalue is `r fmt(eig[1], 1)`, `r fmt(eig[1] / eig[2], 1)` times the second. Parallel analysis still keeps `r n_pa` factors, because with `r big(n_resp)` respondents the eigenvalues of shuffled data are close to 1 and even trivial factors pass. The question is what the second factor is.
 
-```{r efa2, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r efa2, fig.height=4.5}
 efa2 <- fa(tet$rho, nfactors = 2, n.obs = n_resp, fm = "minres", rotate = "oblimin")
 L2 <- unclass(efa2$loadings)
 easy_f <- which.max(cor(L2, p_item))             # the factor whose loadings rise with p
@@ -286,7 +286,7 @@ With `r big(n_resp)` respondents the $M_2$ test rejects both models, as any exac
 
 If one ability explains the items, the residuals of any two items (observed minus expected score) should be uncorrelated once ability is taken into account. Yen's (1984) **Q3** is that residual correlation. Its average is slightly negative by construction, so Christensen, Makransky and Horton (2017) suggest judging each Q3 against the average and flagging values more than 0.2 above it.
 
-```{r q3, fig.width=7, fig.height=3.5, dev='png', fig.retina=2}
+```{r q3, fig.height=3.5}
 q3 <- residuals(fit_2pl, type = "Q3", verbose = FALSE)
 q3_pairs <- q3[lower.tri(q3)]
 cat(sprintf("Q3: mean %.3f, min %.2f, max %.2f; pairs more than 0.2 above the mean: %d of %d\n",
@@ -334,7 +334,7 @@ The discrimination $a$ is the slope of the curve at its steepest point, on the l
 
 Six items with contrasting properties. The curves are the 2PL predictions; the points are the observed proportions correct in 20 equal-sized groups of respondents ordered by their estimated ability, a visual check of fit.
 
-```{r icc, fig.width=9, fig.height=6, dev='png', fig.retina=2}
+```{r icc, fig.height=6}
 pick <- c("Easiest"                = items[which.max(p_item)],
           "Hardest"                = items[which.min(p_item)],
           "Most discriminating"    = rownames(pars)[which.max(pars[, "a"])],
@@ -371,7 +371,7 @@ The easiest item is right for almost everyone, so its curve only rises at the fa
 
 Each item contributes **information** $I_j(\theta) = a_j^2 P_j(\theta)[1 - P_j(\theta)]$, which peaks at $\theta = b_j$ with height $a_j^2/4$. Test information is the sum over items, and the standard error of an ability estimate is $SE(\theta) = 1/\sqrt{I(\theta)}$. Because ability has variance 1 in this sample, a standard error of 0.30 corresponds to a reliability of about $1 - 0.30^2 = .91$.
 
-```{r iteminfo, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r iteminfo, fig.height=4.5}
 grid_info <- seq(-4, 4, by = 0.01)
 item_info <- do.call(rbind, lapply(items, function(j)
   data.frame(item = j, theta = grid_info, info = iteminfo(extract.item(fit_2pl, j), grid_info))))
@@ -390,7 +390,7 @@ ggplot(item_info, aes(theta, info, group = item)) +
           subtitle = "Blue: the six items of the previous figure; grey: the other 39")
 ```
 
-```{r testinfo, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r testinfo, fig.height=4.5}
 test_info <- testinfo(fit_2pl, matrix(grid_info))
 se_curve  <- 1 / sqrt(test_info)
 precise   <- range(grid_info[se_curve <= 0.30])
@@ -420,7 +420,7 @@ ggplot(data.frame(theta = grid_info, info = test_info, se = se_curve), aes(theta
           subtitle = "Shaded: SE at or below 0.30 (dotted line)")
 ```
 
-```{r wright, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+```{r wright, fig.height=5}
 wright <- rbind(data.frame(panel = "Respondents (EAP ability)", value = theta),
                 data.frame(panel = "Items (2PL difficulty b)", value = pars[, "b"]))
 wright$panel <- factor(wright$panel, levels = c("Respondents (EAP ability)", "Items (2PL difficulty b)"))
@@ -491,7 +491,7 @@ The ability estimates (EAP scores from the 2PL) should differ between groups in 
 
 ### Education
 
-```{r education, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r education, fig.height=4.5}
 d_val <- data.frame(theta, df_viqt[, c("age", "gender", "engnat", "education")])
 summ <- function(d, by) {
   out <- do.call(data.frame, aggregate(theta ~ ., data = d[, c("theta", by)],
@@ -521,7 +521,7 @@ Mean ability rises with every step of education, from `r fmt(edu_all$mean[1])` (
 
 ### Native language
 
-```{r engnat, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r engnat, fig.height=4}
 has_lang <- !is.na(d_val$engnat)
 d_lang <- cohen_d(d_val$theta[has_lang], droplevels(d_val$engnat[has_lang]))
 cat(sprintf("Native speakers: %s, mean %.2f; non-native: %s, mean %.2f; d = %.2f\n",
@@ -542,7 +542,7 @@ Native English speakers score much higher than non-native speakers (*d* = `r fmt
 
 ### Age
 
-```{r age, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r age, fig.height=4.5}
 age_breaks <- c(12, 17, 21, 25, 30, 40, 50, 60, 70, 90)
 age_labels <- c("13-17", "18-21", "22-25", "26-30", "31-40", "41-50", "51-60", "61-70", "71-90")
 d_val$age_band <- cut(d_val$age, age_breaks, labels = age_labels)
@@ -573,7 +573,7 @@ Ability rises steadily with age (r = `r fmt(r_age)`). Among native speakers it c
 
 An item shows **differential item functioning (DIF)** when people of equal ability but from different groups have different chances of answering it correctly. The Mantel-Haenszel procedure (Holland & Thayer, 1988) compares native and non-native speakers within each number-right score group and expresses the common odds ratio $\alpha_{MH}$ on the ETS delta scale, $D = -2.35 \ln \alpha_{MH}$. Negative values mean the item is harder for non-native speakers than their total score predicts. ETS classifies items as A (negligible: |D| < 1 or not significant), C (large: |D| ≥ 1.5 and significantly above 1) or B (moderate, everything in between) (Dorans & Holland, 1993).
 
-```{r dif_mh, fig.width=8, fig.height=9, dev='png', fig.retina=2}
+```{r dif_mh, fig.height=9}
 focal <- df_viqt$engnat[has_lang] == "No"
 score <- total[has_lang]
 mh <- t(sapply(items, function(j) {
@@ -628,7 +628,7 @@ DIF of this size does not mean these items are faulty. It means a vocabulary sco
 
 The same question in IRT terms: a two-group 2PL in `mirt` in which the `r sum(mh$ets == "A")` A items are anchors (equal parameters in both groups), the B and C items are free in each group, and the non-native group gets its own mean and variance on the native speakers' scale.
 
-```{r dif_mirt, fig.width=8, fig.height=4, dev='png', fig.retina=2}
+```{r dif_mirt, fig.height=4}
 anchors <- mh$item[mh$ets == "A"]
 lang <- factor(as.character(df_viqt$engnat[has_lang]), levels = c("Yes", "No"))  # natives = reference
 fit_mg <- multipleGroup(resp[has_lang, ], 1, group = lang, itemtype = "2PL",
@@ -702,7 +702,7 @@ knitr::kable(data.frame(band = rownames(cat_tab), cat_tab), digits = c(0, 0, 0, 
                            "Median items", "Mean |CAT - full|"))
 ```
 
-```{r cat_plot, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r cat_plot, fig.height=4.5}
 ggplot(cat_res, aes(x = full_mirt, y = items, colour = reached)) +
   geom_vline(xintercept = precise[2], linetype = "dashed", colour = "grey50") +
   geom_point(alpha = 0.7, size = 1.8, position = position_jitter(height = 0.3, width = 0, seed = 1)) +

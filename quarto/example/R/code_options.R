@@ -9,12 +9,7 @@ knitr::opts_chunk$set(
   echo       = TRUE,
   message    = FALSE,
   warning    = FALSE,
-  cache      = TRUE,
-  fig.width  = 7,
-  fig.height = 6,
-  fig.align  = "center",
-  dpi        = 300,
-  fig.retina = 2,
-  dev        = "ragg_png"
+  cache      = TRUE
 )
+# the size, resolution and device of the plots are set for every site in quarto/_shared/_figures.yml
 

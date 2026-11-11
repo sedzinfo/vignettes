@@ -3,10 +3,6 @@ title: "EAP Dichotomous Ability Estimation in base R"
 description: "4PL model for right/wrong items: response probabilities, item information, EAP scoring and an adaptive test, validated against catR."
 ---
 
-```{r options,include=FALSE}
-knitr::opts_chunk$set(out.width = "60%")
-```
-
 # Background
 
 ## Acknowledgement
@@ -230,7 +226,7 @@ v <- seq(-3, 3, by = 0.1)
 comparison <- data.frame(x = v, density_function = density_function(v), dnorm = dnorm(v))
 ```
 
-```{r density_plot,dev='png'}
+```{r density_plot}
 ggplot(comparison, aes(x = x)) +
   geom_line(aes(y = density_function, color = "density_function()"), linewidth = 1) +
   geom_point(aes(y = dnorm, color = "dnorm()"), shape = 1) +
@@ -259,7 +255,7 @@ data.frame(catR=catR::Pi(th = 0, bank),
            compute_pi_dichotomous(theta = 0, bank))
 ```
 
-```{r pi_plot,dev='png'}
+```{r pi_plot}
 theta_grid <- seq(-6, 6, by = 0.01)
 prob_curves <- t(sapply(theta_grid, function(th) compute_pi_dichotomous(theta = th, bank)$Pi))
 df_curves <- data.frame(theta = theta_grid, prob_curves)
@@ -286,7 +282,7 @@ Each curve rises from the guessing floor of 0.1 to the slipping ceiling of 0.9, 
 data.frame(catR=catR::Ii(th = 0, bank),compute_ii_dichotomous(theta = 0, bank))
 ```
 
-```{r ii_plot,dev='png'}
+```{r ii_plot}
 info_grid <- seq(-5, 5, by = 0.02)
 info <- t(sapply(info_grid, function(th) compute_ii_dichotomous(th, bank)$Ii))
 df_info <- data.frame(theta = info_grid, info)
@@ -302,7 +298,7 @@ ggplot(df_info_long, aes(x = theta, y = information, color = item)) +
   theme_bw(base_size = 12)
 ```
 
-```{r test_info_plot,dev='png'}
+```{r test_info_plot}
 df_test <- data.frame(theta = info_grid, information = rowSums(info))
 
 ggplot(df_test, aes(x = theta, y = information)) +
@@ -353,7 +349,7 @@ c(compute_likelihood_dichotomous = compute_likelihood_dichotomous(theta = 0.3, b
   from_catR_Pi                   = prod(P_catR^response * (1 - P_catR)^(1 - response)))
 ```
 
-```{r likelihood_plot,dev='png'}
+```{r likelihood_plot}
 lik_grid <- seq(-6, 6, by = 0.05)
 df_lik <- data.frame(theta = lik_grid,
                      "1 1 1 0 0" = sapply(lik_grid, function(th)
@@ -433,7 +429,7 @@ results$SE <- mapply(function(x, th) compute_eap_se_dichotomous(th, bank_2pl, x)
 results
 ```
 
-```{r worked_example_plot,dev='png'}
+```{r worked_example_plot}
 ggplot(results, aes(x = n_correct, y = theta_EAP)) +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE), alpha = 0.2, fill = "steelblue") +
   geom_line(color = "steelblue", linewidth = 1) +
@@ -474,7 +470,7 @@ eap_points <- do.call(rbind, lapply(names(se_patterns), function(nm) {
 eap_points
 ```
 
-```{r se_curves_plot,dev='png'}
+```{r se_curves_plot}
 ggplot(se_df, aes(x = theta, y = SE, color = pattern)) +
   geom_line(linewidth = 1) +
   geom_point(data = eap_points, size = 3) +
@@ -520,7 +516,7 @@ gs_long <- reshape2::melt(gs_curves, id.vars = c("theta", "version"),
                           variable.name = "curve", value.name = "value")
 ```
 
-```{r guess_slip_plot,dev='png'}
+```{r guess_slip_plot}
 ggplot(gs_long, aes(x = theta, y = value, color = version)) +
   geom_vline(xintercept = 0.5, linetype = "dashed", color = "grey50") +
   geom_line(linewidth = 1) +
@@ -697,7 +693,7 @@ c(final_mine = theta,
   se_catR    = catR::eapSem(theta, bank_cat[administered, ], responses))
 ```
 
-```{r adaptive_plot,dev='png'}
+```{r adaptive_plot}
 ggplot(trace, aes(x = step, y = theta_EAP)) +
   geom_hline(yintercept = true_theta, linetype = "dashed", color = "grey40") +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),

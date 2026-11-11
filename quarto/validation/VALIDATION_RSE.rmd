@@ -90,7 +90,7 @@ knitr::kable(data.frame(item = items, wording = wording, text = text),
 
 ## Responses
 
-```{r responses, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r responses, fig.height=4.5}
 resp <- melt(df_rse[, items], measure.vars = items, variable.name = "item", value.name = "answer")
 resp$item    <- factor(paste0(resp$item, " (", substr(wording[as.character(resp$item)], 1, 3), ")"),
                        levels = rev(paste0(items, " (", substr(wording, 1, 3), ")")))
@@ -121,7 +121,7 @@ knitr::kable(data.frame(item = items, wording = wording, r_drop = a$item.stats$r
 
 ## Item Correlations
 
-```{r corrmatrix, fig.width=6.5, fig.height=5.5, dev='png', fig.retina=2}
+```{r corrmatrix, fig.height=5.5}
 order_items <- c(positive, negative)
 pc <- polychoric(df)$rho
 cor_long <- melt(pc[order_items, order_items])
@@ -147,7 +147,7 @@ Every correlation is large, but items correlate more with items worded the same 
 
 ## Exploratory Analysis
 
-```{r efa, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+```{r efa, fig.height=5}
 set.seed(42)
 pa <- fa.parallel(df, cor = "poly", fm = "ml", fa = "fa", n.iter = 10,
                   main = "Parallel analysis scree plot (RSE, polychoric)")
@@ -198,7 +198,7 @@ The two-factor model fits better than the one-factor model, but its two factors 
 
 ### Loadings of the method-factor model
 
-```{r methodloadings, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r methodloadings, fig.height=4.5}
 std <- standardizedSolution(fits[["Negative method + residuals"]])
 lam <- std[std$op == "=~", c("lhs", "rhs", "est.std")]
 lam$factor <- factor(ifelse(lam$lhs == "SE", "Self-esteem", "Negative wording"),
@@ -261,7 +261,7 @@ cat(sprintf("Cohen's d (men minus women): %.2f\n", d_gender))
 
 Men score higher than women (*d* = `r sprintf("%.2f", d_gender)`). Kling, Hyde, Showers and Buswell's (1999) meta-analysis found a small difference in the same direction (*d* = 0.21).
 
-```{r age, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r age, fig.height=4.5}
 age_tab <- aggregate(total[mf], by = list(age = df_rse$age[mf], gender = g), FUN = mean)
 age_n   <- aggregate(total[mf], by = list(age = df_rse$age[mf], gender = g), FUN = length)
 age_tab <- age_tab[age_n$x >= 30, ]

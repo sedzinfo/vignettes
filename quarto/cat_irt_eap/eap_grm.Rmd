@@ -3,10 +3,6 @@ title: "EAP GRM Ability Estimation in base R"
 description: "Samejima's Graded Response Model: ordered categories with item-specific discriminations."
 ---
 
-```{r options,include=FALSE}
-knitr::opts_chunk$set(out.width = "60%")
-```
-
 # Background
 
 ## Acknowledgement
@@ -255,7 +251,7 @@ head(comparison)
 all.equal(comparison$density_function, comparison$dnorm)
 ```
 
-```{r density_plot,dev='png'}
+```{r density_plot}
 ggplot(comparison, aes(x = x)) +
   geom_line(aes(y = density_function, color = "density_function()"), linewidth = 1) +
   geom_point(aes(y = dnorm, color = "dnorm()"), shape = 1) +
@@ -325,7 +321,7 @@ c(eap_mine = th_mixed,
 
 Item 5's `cat4` is `NA` — the category does not exist — its four remaining probabilities still sum to 1, and `catR` handles the shortened item in exactly the same way.
 
-```{r pi_plot,dev='png'}
+```{r pi_plot}
 theta_grid <- seq(-5, 5, by = 0.05)
 curves <- t(sapply(theta_grid, function(th) compute_pi_grm(theta = th, bank)$Pi[1, ]))
 df_curves <- data.frame(theta = theta_grid, curves)
@@ -361,7 +357,7 @@ ii_diff
 
 Again the agreement with `catR` is exact (largest difference `r max(ii_diff[1:2, ])`), and `dIi` and `d2Ii` match central finite differences of `Ii` and `dIi` to within `r sprintf("%.1e", max(ii_diff[3:4, ], na.rm = TRUE))`.
 
-```{r ii_plot,dev='png'}
+```{r ii_plot}
 info_grid <- seq(-4, 4, by = 0.02)
 info <- t(sapply(info_grid, function(th) compute_ii_grm(th, bank)$Ii))
 df_info <- data.frame(theta = info_grid, info)
@@ -377,7 +373,7 @@ ggplot(df_info_long, aes(x = theta, y = information, color = item)) +
   theme_bw(base_size = 12)
 ```
 
-```{r test_info_plot,dev='png'}
+```{r test_info_plot}
 df_test <- data.frame(theta = info_grid, information = rowSums(info))
 
 ggplot(df_test, aes(x = theta, y = information)) +
@@ -437,7 +433,7 @@ lik_check$relative_difference <- lik_check$compute_likelihood_grm / lik_check$fr
 lik_check
 ```
 
-```{r likelihood_plot,dev='png'}
+```{r likelihood_plot}
 lik_grid <- seq(-4, 4, by = 0.05)
 df_lik <- data.frame(theta = lik_grid,
                      likelihood = sapply(lik_grid, function(th)
@@ -496,7 +492,7 @@ two_pl <- sapply(item1[1, -1], function(b) plogis(item1[1, "alphaj"] * (g - b)))
 all.equal(unname(at_or_above), unname(two_pl))
 ```
 
-```{r two_steps_plot,dev='png',fig.height=5}
+```{r two_steps_plot,fig.height=5}
 steps_long <- rbind(
   data.frame(theta = g, curve = rep(paste0("P(X ≥ ", 1:4, ")"), each = length(g)),
              P = as.vector(two_pl), step = "step 1: cumulative 2PL curves"),
@@ -541,7 +537,7 @@ colnames(slope) <- paste0("k = ", 1:4)
 slope
 ```
 
-```{r logits_plot,dev='png',fig.height=5}
+```{r logits_plot,fig.height=5}
 g3 <- seq(-4, 4, by = 0.05)
 P_grm3 <- t(sapply(g3, function(th) compute_pi_grm(th, item1)$Pi[1, ]))
 P_pcm3 <- t(sapply(g3, function(th) compute_pi_pcm(th, item1[, -1, drop = FALSE])$Pi[1, ]))
@@ -661,7 +657,7 @@ data.frame(alpha = bump_alphas,
            bumps_at = sapply(bumps, paste, collapse = ", "))
 ```
 
-```{r bumps_plot,dev='png',fig.height=5}
+```{r bumps_plot,fig.height=5}
 bump_long <- data.frame(theta = bump_grid,
                         alpha = factor(rep(paste0("α = ", bump_alphas), each = length(bump_grid)),
                                        levels = paste0("α = ", bump_alphas)),
@@ -952,7 +948,7 @@ for (step in 1:5) {
 trace
 ```
 
-```{r adaptive_plot,dev='png'}
+```{r adaptive_plot}
 ggplot(trace, aes(x = step, y = theta_EAP)) +
   geom_hline(yintercept = true_theta, linetype = "dashed", color = "grey40") +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),

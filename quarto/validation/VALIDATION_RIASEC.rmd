@@ -167,7 +167,7 @@ All six scales are highly reliable, which is typical of interest scales: liking 
 
 ## Inter-Item Correlation Matrix
 
-```{r corrmatrix, fig.width=10, fig.height=9, dev='png', fig.retina=2}
+```{r corrmatrix, fig.height=7.5}
 cor_mat  <- cor(df)
 cor_long <- melt(cor_mat)
 cor_long$Var1 <- factor(cor_long$Var1, levels = item_cols)
@@ -195,7 +195,7 @@ cat(sprintf("Correlations between items of different types: %.0f%% positive, mea
 
 ## Parallel Analysis
 
-```{r parallel, fig.width=8, fig.height=5, dev='png', fig.retina=2}
+```{r parallel, fig.height=5}
 eig <- eigen(cor_mat, only.values = TRUE)$values
 cat(sprintf("First eigenvalue: %.2f (%.0f%% of the variance); second: %.2f\n",
             eig[1], 100 * eig[1] / length(eig), eig[2]))
@@ -211,7 +211,7 @@ With `r format(nrow(df), big.mark = ",")` respondents, the random eigenvalues of
 
 ## Exploratory Factor Analysis (6 Factors)
 
-```{r efa, fig.width=7, fig.height=10, dev='png', fig.retina=2}
+```{r efa, fig.height=10}
 efa <- fa(df, nfactors = 6, rotate = "oblimin", fm = "ml")
 
 # Name each factor after the type whose items load highest on it
@@ -268,7 +268,7 @@ knitr::kable(data.frame(index = c("Chi-square (scaled)", "df", "CFI (robust)", "
              col.names = c("Fit index", "Value"), row.names = FALSE)
 ```
 
-```{r cfa_loadings, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r cfa_loadings, fig.height=4.5}
 std <- standardizedSolution(cfa_fit)
 lam <- std[std$op == "=~", c("lhs", "rhs", "est.std")]
 lam$lhs <- factor(type_names[lam$lhs], levels = type_names)
@@ -339,7 +339,7 @@ Every one of the 72 predictions holds, so the correspondence index is the maximu
 
 Multidimensional scaling of the six scale correlations, using no information about the theory, places the types in two dimensions. If Holland is right, they should fall around a circle in R-I-A-S-E-C order.
 
-```{r mds, fig.width=6.5, fig.height=6.5, dev='png', fig.retina=2}
+```{r mds, fig.height=6.5}
 mds <- cmdscale(as.dist(1 - scale_cor), k = 2)
 
 # Rotate (and reflect if needed) so that Realistic is at the top and the order runs clockwise,
@@ -387,7 +387,7 @@ df_riasec$things_people <- as.vector(as.matrix(scores_z) %*% w_y)
 
 The 16 major groups come from the free-text answers of the respondents who had attended university. If the scales are valid, each group should sit near the type its field calls for: engineering near Realistic, accounting near Conventional, business near Enterprising, art near Artistic, psychology and education near Social.
 
-```{r majors_plane, fig.width=9, fig.height=8, dev='png', fig.retina=2}
+```{r majors_plane, fig.height=7}
 has_major <- !is.na(df_riasec$major_group)
 majors <- aggregate(cbind(ideas_data, things_people) ~ major_group,
                     data = df_riasec[has_major, ], FUN = mean)
@@ -418,7 +418,7 @@ ggplot() +
           subtitle = "Group means of the two dimension scores; hexagon drawn for orientation")
 ```
 
-```{r majors_heatmap, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+```{r majors_heatmap, fig.height=7}
 profile <- aggregate(scores_z[has_major, ], by = list(major = df_riasec$major_group[has_major]), FUN = mean)
 profile_long <- melt(profile, id.vars = "major", variable.name = "type", value.name = "z")
 profile_long$type <- factor(profile_long$type, levels = type_names)
@@ -450,7 +450,7 @@ Medicine, biology and the physical sciences are Investigative, as expected. The 
 
 Su, Rounds and Armstrong (2009) meta-analysed vocational interests in over 500,000 people and found large differences on the People-Things dimension: men score higher on Realistic (*d* ≈ 0.84) and women higher on Social (*d* ≈ −0.68), with *d* ≈ 0.93 on Things vs People. Positive *d* means higher scores for men.
 
-```{r gender, fig.width=7, fig.height=4.5, dev='png', fig.retina=2}
+```{r gender, fig.height=4.5}
 mf <- df_riasec$gender %in% c("Male", "Female")
 cohen_d <- function(x, g) {
   m <- tapply(x, g, mean); s <- tapply(x, g, var); n <- tapply(x, g, length)
@@ -482,7 +482,7 @@ The pattern is the one in the meta-analysis: the largest differences are on Real
 
 Interests and personality are related but distinct. In the meta-analysis by Barrick, Mount and Gupta (2003), the two strongest links were Extraversion with Enterprising (ρ ≈ .41) and Openness with Artistic (ρ ≈ .39). The TIPI measures each Big Five trait with two items (one reverse-keyed, recoded 8 − *x*), so its correlations are attenuated by low reliability.
 
-```{r tipi, fig.width=7, fig.height=4.5, dev='png', fig.retina=2}
+```{r tipi, fig.height=4.5}
 tipi <- df_riasec[, paste0("TIPI", 1:10)]
 rev7 <- function(x) 8 - x
 big5 <- data.frame(

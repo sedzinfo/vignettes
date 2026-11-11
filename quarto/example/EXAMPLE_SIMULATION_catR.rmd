@@ -73,7 +73,7 @@ summary(data[,1:9])
 
 Treating the simulated response matrix as real participant data (one row per respondent), the `mirt` package is used to estimate item parameters and respondent ability scores under the assumption that all items were administered. These **full-information scores** serve as a benchmark against the CAT estimates produced in the next step.
 
-```{r estimation,echo=TRUE,out.width=1000,results="hide"}
+```{r estimation,echo=TRUE,results="hide"}
 mirt_model<-mirt::mirt(data=data.frame(data),model=1,itemtype="2PL",technical=list(theta_lim=c(-6,6),NCYCLES=10000))
 ```
 
@@ -121,7 +121,7 @@ The results are summarised graphically across six panels:
 - **Plot 5 — Distribution of CAT estimated scores.**
 - **Plot 6 — Distribution of mirt estimated scores.**
 
-```{r results0,echo=TRUE,fig.width=20,fig.height=15,out.width=1000,fig.align="center",dev='png',fig.retina=2}
+```{r results0,echo=TRUE,fig.height=8.5}
 p1 <- ggplot(result, aes(x = est_theta, y = mirt_scores)) +
   geom_point(alpha = 0.5) +
   geom_smooth(method = "lm", se = FALSE, linewidth = 0.7) +
@@ -129,32 +129,32 @@ p1 <- ggplot(result, aes(x = est_theta, y = mirt_scores)) +
        y     = "mirt Theta",
        title = paste("Pearson r", round(cor(result$est_theta, result$mirt_scores), 4))
   ) +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 p2 <- ggplot(result, aes(x = questions, y = est_theta)) +
   geom_point(alpha = 0.5) +
   labs(x = "Questions asked", y = "CAT Theta") +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 p3 <- ggplot(result, aes(x = questions, y = se)) +
   geom_point(alpha = 0.5) +
   labs(x = "Questions asked", y = "SE") +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 p4 <- ggplot(result, aes(x = est_theta, y = se)) +
   geom_point(alpha = 0.5) +
   labs(x = "CAT Theta", y = "SE") +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 p5 <- ggplot(result, aes(x = round(est_theta, 0))) +
   geom_bar() +
   labs(x = "CAT Theta", y = "Frequency") +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 p6 <- ggplot(result, aes(x = round(mirt_scores, 0))) +
   geom_bar() +
   labs(x = "mirt Theta", y = "Frequency") +
-  theme_bw(base_size=20)
+  theme_bw(base_size=11)
 
 (p1 | p2) / (p3 | p4) / (p5 | p6) +
   plot_annotation(theme = theme(plot.background = element_rect(fill = "white")))
@@ -166,7 +166,7 @@ The CAT estimates are roughly uniform between about −6 and 6, as expected beca
 
 `catR` also provides `simulateRespondents`, a convenience function that runs a complete CAT simulation and computes summary diagnostics — bias, RMSE, and mean SE — as a function of true ability.
 
-```{r results1,echo=TRUE,fig.width=20,fig.height=15,results="hide",out.width=1000,fig.align="center",dev='png',fig.retina=2}
+```{r results1,echo=TRUE,fig.height=7,results="hide"}
 result_simulate_respondents<-simulateRespondents(thetas=seq(-6,6,.01),itemBank=itemBank,genSeed=NULL,start=start,test=test,stop=stop,final=final)
 result_simulate_respondents
 invisible(capture.output(plot(result_simulate_respondents)))

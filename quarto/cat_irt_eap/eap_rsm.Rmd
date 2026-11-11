@@ -3,10 +3,6 @@ title: "EAP RSM Ability Estimation in base R"
 description: "Andrich's Rating Scale Model: one shared set of thresholds for every Likert item."
 ---
 
-```{r options,include=FALSE}
-knitr::opts_chunk$set(out.width = "60%")
-```
-
 # Background
 
 ## Acknowledgement
@@ -283,7 +279,7 @@ all.equal(comparison$density_function, comparison$dnorm)
 max(abs(comparison$density_function - comparison$dnorm))
 ```
 
-```{r density_plot,dev='png'}
+```{r density_plot}
 ggplot(comparison, aes(x = x)) +
   geom_line(aes(y = density_function, color = "density_function()"), linewidth = 1) +
   geom_point(aes(y = dnorm, color = "dnorm()"), shape = 1) +
@@ -329,7 +325,7 @@ pi_check
 
 `r sum(pi_check$all_equal)` of `r nrow(pi_check)` comparisons agree, and the largest absolute difference in any element of any of the four matrices is `r max(pi_check[, grep("max_diff", names(pi_check))])`.
 
-```{r pi_plot,dev='png'}
+```{r pi_plot}
 theta_grid <- seq(-6, 6, by = 0.1)
 curves <- t(sapply(theta_grid, function(th) compute_pi_rsm(theta = th, bank)$Pi[1, ]))
 df_curves <- data.frame(theta = theta_grid, curves)
@@ -429,7 +425,7 @@ info_check
 
 At $D = 1$ the returned values are the information and its first two derivatives. At $D = 1.702$ they are too small by `r sprintf("%.4f", info_check$true_I_over_Ii[2])` $= D^2$, `r sprintf("%.4f", info_check$true_dI_over_dIi[2])` $= D^3$ and `r sprintf("%.4f", info_check$true_d2I_over_d2Ii[2])` $= D^4$, and the $\theta$-derivative of the returned `Ii` is `r sprintf("%.4f", info_check$theta_derivative_of_Ii_over_dIi[2])` $= D$ times `dIi`, because every returned value is a derivative with respect to $D\theta$. Item selection is untouched, since every item's information is divided by the same $D^2$, and so is the EAP estimate, which uses only the probabilities; but the `info` that `compute_next_item_rsm()` reports, or a standard error computed as $1/\sqrt{\sum_j I_j}$ from `Ii`, would be wrong by a factor $D^2$ and $D$ respectively.
 
-```{r ii_plot,dev='png'}
+```{r ii_plot}
 info_grid <- seq(-4, 4, by = 0.05)
 info <- t(sapply(info_grid, function(th) compute_ii_rsm(th, bank)$Ii))
 df_info <- data.frame(theta = info_grid, info)
@@ -445,7 +441,7 @@ ggplot(df_info_long, aes(x = theta, y = information, color = item)) +
   theme_bw(base_size = 12)
 ```
 
-```{r test_info_plot,dev='png'}
+```{r test_info_plot}
 df_test <- data.frame(theta = info_grid, information = rowSums(info))
 
 ggplot(df_test, aes(x = theta, y = information)) +
@@ -512,7 +508,7 @@ c(comparisons = nrow(lik_check),
   max_relative_difference = max(abs(lik_check$compute_likelihood_rsm / lik_check$from_catR_Pi - 1)))
 ```
 
-```{r likelihood_plot,dev='png'}
+```{r likelihood_plot}
 response <- c(4, 3, 2, 1, 0)
 lik_grid <- seq(-4, 4, by = 0.05)
 df_lik <- data.frame(theta = lik_grid,
@@ -617,7 +613,7 @@ c(increasing_in_raw_score = all(diff(results$theta_EAP) > 0),
   raw_score_with_largest_SE  = results$raw_score[which.max(results$SE)])
 ```
 
-```{r score_range_plot,dev='png'}
+```{r score_range_plot}
 ggplot(results, aes(x = raw_score, y = theta_EAP)) +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),
               alpha = 0.2, fill = "steelblue") +
@@ -656,7 +652,7 @@ eap_points <- do.call(rbind, lapply(names(se_patterns), function(nm) {
 eap_points
 ```
 
-```{r se_curves_plot,dev='png'}
+```{r se_curves_plot}
 ggplot(se_df, aes(x = theta, y = SE, color = pattern)) +
   geom_line(linewidth = 1) +
   geom_point(data = eap_points, size = 3) +
@@ -730,7 +726,7 @@ list(disordered = modal_category(bank),
 
 With the thresholds as given, only categories `r paste(modal_category(bank), collapse = " and ")` are ever modal: the model says the middle three responses are never the single most likely answer for anybody. Sorting the thresholds into increasing order makes every category modal over some stretch of the scale:
 
-```{r ordering_plot,dev='png'}
+```{r ordering_plot}
 curves_for <- function(b, label) {
   g <- seq(-6, 6, by = 0.05)
   m <- t(sapply(g, function(th) compute_pi_rsm(th, b)$Pi[1, ]))
@@ -933,7 +929,7 @@ for (step in 1:5) {
 trace
 ```
 
-```{r adaptive_plot,dev='png'}
+```{r adaptive_plot}
 ggplot(trace, aes(x = step, y = theta_EAP)) +
   geom_hline(yintercept = true_theta, linetype = "dashed", color = "grey40") +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),

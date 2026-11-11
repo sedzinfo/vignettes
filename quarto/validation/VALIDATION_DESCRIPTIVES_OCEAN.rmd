@@ -17,6 +17,7 @@ vignette: "%\\VignetteIndexEntry{OCEAN} %\\VignetteEngine{knitr::rmarkdown} %\\V
 directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
 source(paste0(directory, "R/code_options.R"))
 source(paste0(directory, "R/code_rwf.R"))
+library(ggplot2)
 ```
 
 ```{r load,include=FALSE}
@@ -158,14 +159,14 @@ source	How the participant came to the test. Based on HTTP Referer. 1=from anoth
 
 
 ## Descriprion of reponse data
-```{r description,fig.width=10,fig.height=10,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r description,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 load("data/df_ocean.rda")
 df_ocean[df_ocean==0]<-NA
 cdf(df_ocean)
 ```
 
 ## Reverse data
-```{r reverse,fig.width=10,fig.height=10,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r reverse,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 key<-list(O=grep("O",names(df_ocean),value=TRUE),
           C=grep("C",names(df_ocean),value=TRUE),
           E=grep("E",names(df_ocean),value=TRUE),
@@ -186,7 +187,7 @@ df_ocean_reversed<-data.frame(df_ocean_reversed)
 ```
 
 ## Correlations
-```{r correlations,fig.width=8,fig.height=8,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r correlations,fig.height=7,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 plot_corrplot(mydata=stats::cor(df_ocean_reversed[,grep("O",names(df_ocean_reversed))],use="pairwise"),base_size=20,title="Openness")
 plot_corrplot(mydata=stats::cor(df_ocean_reversed[,grep("C",names(df_ocean_reversed))],use="pairwise"),base_size=20,title="Conscientiousness")
 plot_corrplot(mydata=stats::cor(df_ocean_reversed[,grep("E",names(df_ocean_reversed))],use="pairwise"),base_size=20,title="Extraversion")
@@ -196,7 +197,7 @@ plot_corrplot(mydata=stats::cor(df_ocean_reversed[,grep("N",names(df_ocean_rever
 ```
 
 ## Alpha
-```{r alpha,fig.width=15,fig.height=10,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r alpha,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 key_reversed<-list(O=grep("O",names(df_ocean_reversed),value=TRUE),
                    C=grep("C",names(df_ocean_reversed),value=TRUE),
                    E=grep("E",names(df_ocean_reversed),value=TRUE),
@@ -207,7 +208,7 @@ report_alpha(df=df_ocean_reversed,key=key_reversed,n.iter=10,check.keys=TRUE,fil
 ```
 
 ## Omega
-```{r omega,fig.width=15,fig.height=10,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r omega,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 omega_O<-psych::omega(df_ocean_reversed[,grep("O",names(df_ocean_reversed),value=TRUE)],niter=10,nfactors=3)
 omega_C<-psych::omega(df_ocean_reversed[,grep("C",names(df_ocean_reversed),value=TRUE)],niter=10,nfactors=3)
 omega_E<-psych::omega(df_ocean_reversed[,grep("E",names(df_ocean_reversed),value=TRUE)],niter=10,nfactors=3)
@@ -223,7 +224,7 @@ omega_N
 ```
 
 ## Scree
-```{r scree,fig.width=10,fig.height=5,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r scree,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 plot_scree(df_ocean_reversed[,grep("O",names(df_ocean_reversed),value=TRUE)],title="Openness")
 plot_scree(df_ocean_reversed[,grep("C",names(df_ocean_reversed),value=TRUE)],title="Conscientiousness")
 plot_scree(df_ocean_reversed[,grep("E",names(df_ocean_reversed),value=TRUE)],title="Extraversion")
@@ -232,7 +233,7 @@ plot_scree(df_ocean_reversed[,grep("N",names(df_ocean_reversed),value=TRUE)],tit
 ```
 
 ## Structure
-```{r structure,fig.width=15,fig.height=10,echo=TRUE,message=FALSE,warning=FALSE,results='show',dev='png',fig.retina=2}
+```{r structure,echo=TRUE,message=FALSE,warning=FALSE,results='show'}
 model_O<-psych::fa(df_ocean_reversed[,grep("O",names(df_ocean_reversed),value=TRUE)],
                    nfactors=3,rotate="oblimin",fm="pa",oblique.scores=TRUE)
 model_C<-psych::fa(df_ocean_reversed[,grep("C",names(df_ocean_reversed),value=TRUE)],
@@ -264,15 +265,32 @@ mln
 ```
 
 ## Response Frequencies
-```{r responsefrequencies,fig.width=30,fig.height=40,echo=TRUE,message=FALSE,warning=FALSE,results='hide',dev='png',fig.retina=2}
-response_frequencies<-plot_response_frequencies(df_ocean[,as.character(unlist(key))],reorder=FALSE)
+```{r responsefrequencies,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='hide'}
+# share of each answer to each item, one panel per trait (answers as given, before reversing)
+traits<-c(O="Openness",C="Conscientiousness",E="Extraversion",A="Agreeableness",N="Neuroticism")
+answers<-c("1 Disagree","2","3 Neutral","4","5 Agree")
+items<-as.character(unlist(key))
+responses<-do.call(rbind,lapply(items,function(i)
+  data.frame(item=i,trait=traits[[substr(i,1,1)]],answer=answers,
+             p=as.vector(prop.table(table(factor(df_ocean[[i]],levels=1:5)))))))
+responses$item<-factor(responses$item,levels=rev(items))
+responses$trait<-factor(responses$trait,levels=traits)
+responses$answer<-factor(responses$answer,levels=answers)
 
-plot_multiplot(plotlist=response_frequencies,cols=5)
+ggplot(responses,aes(x=p,y=item,fill=answer)) +
+  geom_col(width=0.85,position=position_stack(reverse=TRUE)) +
+  facet_wrap(~trait,nrow=1,scales="free_y") +
+  scale_fill_manual(values=c("#b2182b","#ef8a62","#e0e0e0","#67a9cf","#2166ac"),name=NULL) +
+  scale_x_continuous(breaks=c(0,0.5,1),labels=c("0%","50%","100%"),expand=c(0,0)) +
+  labs(x=paste0("Respondents (",nrow(df_ocean),")"),y=NULL,title="Distribution of the answers to each item") +
+  theme_bw(base_size=10) +
+  theme(legend.position="top",panel.grid=element_blank(),panel.spacing.x=unit(1,"lines"),
+        plot.margin=margin(5.5,12,5.5,5.5))
 
 ```
 
 ## Histogram of Scores
-```{r scores,fig.width=30,fig.height=5,echo=TRUE,message=FALSE,warning=FALSE,results='hide',dev='png',fig.retina=2}
+```{r scores,fig.height=6,fig.keep="last",echo=TRUE,message=FALSE,warning=FALSE,results='hide'}
 df_ocean_reversed$score_O<-rowMeans(df_ocean_reversed[,grep("O",names(df_ocean_reversed),value=TRUE)],na.rm=TRUE)
 df_ocean_reversed$score_C<-rowMeans(df_ocean_reversed[,grep("C",names(df_ocean_reversed),value=TRUE)],na.rm=TRUE)
 df_ocean_reversed$score_E<-rowMeans(df_ocean_reversed[,grep("E",names(df_ocean_reversed),value=TRUE)],na.rm=TRUE)
@@ -287,7 +305,7 @@ scores_ocean<-data.frame(Openness=df_ocean_reversed$score_O,
 
 scores<-plot_histogram(scores_ocean,bins=40)
 
-plot_multiplot(plotlist=scores,cols=5)
+plot_multiplot(plotlist=scores,cols=3)
 
 ```
 

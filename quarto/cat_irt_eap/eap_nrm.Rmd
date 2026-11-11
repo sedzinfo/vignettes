@@ -3,10 +3,6 @@ title: "EAP NRM Ability Estimation in base R"
 description: "Bock's Nominal Response Model: unordered categories, each with its own slope and intercept."
 ---
 
-```{r options,include=FALSE}
-knitr::opts_chunk$set(out.width = "60%")
-```
-
 # Background
 
 ## Acknowledgement
@@ -251,7 +247,7 @@ comparison <- data.frame(x = v, density_function = density_function(v), dnorm = 
 max(abs(comparison$density_function - comparison$dnorm))
 ```
 
-```{r density_plot,dev='png'}
+```{r density_plot}
 ggplot(comparison, aes(x = x)) +
   geom_line(aes(y = density_function, color = "density_function()"), linewidth = 1) +
   geom_point(aes(y = dnorm, color = "dnorm()"), shape = 1) +
@@ -320,7 +316,7 @@ c(Pi = all(sapply(theta_check, function(th)
     identical(compute_ii_nrm(th, bank_mixed)[1:3], catR::Ii(th, bank_mixed, model = "NRM")))))
 ```
 
-```{r pi_plot,dev='png'}
+```{r pi_plot}
 theta_grid <- seq(-6, 6, by = 0.1)
 curves <- t(sapply(theta_grid, function(th) compute_pi_nrm(theta = th, bank)$Pi[1, ]))
 range(rowSums(curves))
@@ -384,7 +380,7 @@ id_ii
 
 The finite difference agrees to about $10^{-8}$, the size of its own error, and the cumulant identity holds to rounding error for the information and all three of its derivatives, including the one `catR` does not compute.
 
-```{r ii_plot,dev='png'}
+```{r ii_plot}
 info_grid <- seq(-4, 4, by = 0.05)
 info <- t(sapply(info_grid, function(th) compute_ii_nrm(th, bank)$Ii))
 df_info <- data.frame(theta = info_grid, info)
@@ -400,7 +396,7 @@ ggplot(df_info_long, aes(x = theta, y = information, color = item)) +
   theme_bw(base_size = 12)
 ```
 
-```{r test_info_plot,dev='png'}
+```{r test_info_plot}
 df_test <- data.frame(theta = info_grid, information = rowSums(info))
 
 ggplot(df_test, aes(x = theta, y = information)) +
@@ -441,7 +437,7 @@ names(lik_gap) <- sapply(lik_patterns, paste, collapse = " ")
 lik_gap
 ```
 
-```{r likelihood_plot,dev='png'}
+```{r likelihood_plot}
 lik_grid <- seq(-4, 4, by = 0.05)
 df_lik <- data.frame(theta = lik_grid,
                      sapply(lik_patterns[1:3], function(x)
@@ -557,7 +553,7 @@ peak_prob <- function(j, k) {
 rbind(peak_prob(4, 1), peak_prob(5, 3))
 ```
 
-```{r nominal_plot,dev='png'}
+```{r nominal_plot}
 curves_for <- function(j) {
   g <- seq(-5, 5, by = 0.02)
   m <- t(sapply(g, function(th) compute_pi_nrm(th, bank[j, , drop = FALSE])$Pi[1, ]))
@@ -767,7 +763,7 @@ c(patterns                          = nrow(all_eap),
   raw_score_with_that_spread        = as.numeric(names(which.max(spread_by_raw))))
 ```
 
-```{r all_patterns_plot,dev='png'}
+```{r all_patterns_plot}
 all_long <- reshape2::melt(all_eap, id.vars = "theta_EAP",
                            variable.name = "statistic", value.name = "value")
 all_long$statistic <- factor(all_long$statistic, levels = c("slope_sum", "raw_score"),
@@ -856,7 +852,7 @@ trace
 c(se_decreases_every_step = all(diff(trace$SE) < 0))
 ```
 
-```{r adaptive_plot,dev='png'}
+```{r adaptive_plot}
 ggplot(trace, aes(x = step, y = theta_EAP)) +
   geom_hline(yintercept = true_theta, linetype = "dashed", color = "grey40") +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),

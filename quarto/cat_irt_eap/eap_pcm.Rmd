@@ -3,10 +3,6 @@ title: "EAP PCM Ability Estimation in base R"
 description: "Masters' Partial Credit Model: ordered categories with item-specific step parameters."
 ---
 
-```{r options,include=FALSE}
-knitr::opts_chunk$set(out.width = "60%")
-```
-
 # Background
 
 ## Acknowledgement
@@ -258,7 +254,7 @@ c(standard_normal = all.equal(comparison$density_function, comparison$dnorm),
   mean_0.5_sd_2   = all.equal(density_function(v, mean = 0.5, sd = 2), dnorm(v, mean = 0.5, sd = 2)))
 ```
 
-```{r density_plot,dev='png'}
+```{r density_plot}
 ggplot(comparison, aes(x = x)) +
   geom_line(aes(y = density_function, color = "density_function()"), linewidth = 1) +
   geom_point(aes(y = dnorm, color = "dnorm()"), shape = 1) +
@@ -298,7 +294,7 @@ cbind(settings, pi_diff)
 
 The largest difference over every element, ability and metric constant is `r if (max(pi_diff) == 0) "exactly zero" else format(signif(max(pi_diff), 3))`: the two functions perform the same arithmetic in the same order.
 
-```{r pi_plot,dev='png',fig.height=8}
+```{r pi_plot,fig.height=8}
 theta_grid <- seq(-5, 5, by = 0.05)
 df_curves <- do.call(rbind, lapply(1:5, function(j) {
   p <- t(sapply(theta_grid, function(th) compute_pi_pcm(th, bank[j, , drop = FALSE])$Pi[1, ]))
@@ -397,7 +393,7 @@ cbind(settings, ii_diff)
 
 The largest difference is `r if (max(ii_diff) == 0) "exactly zero" else format(signif(max(ii_diff), 3))`.
 
-```{r ii_plot,dev='png'}
+```{r ii_plot}
 info_grid <- seq(-4, 4, by = 0.05)
 info <- t(sapply(info_grid, function(th) compute_ii_pcm(th, bank)$Ii))
 df_info <- data.frame(theta = info_grid, info)
@@ -413,7 +409,7 @@ ggplot(df_info_long, aes(x = theta, y = information, color = item)) +
   theme_bw(base_size = 12)
 ```
 
-```{r test_info_plot,dev='png'}
+```{r test_info_plot}
 df_test <- data.frame(theta = info_grid, information = rowSums(info))
 
 ggplot(df_test, aes(x = theta, y = information)) +
@@ -504,7 +500,7 @@ sapply(c(1, 1.702), function(d) {
 })
 ```
 
-```{r likelihood_plot,dev='png'}
+```{r likelihood_plot}
 lik_grid <- seq(-4, 4, by = 0.05)
 df_lik <- data.frame(theta = lik_grid,
                      likelihood = sapply(lik_grid, function(th)
@@ -679,7 +675,7 @@ shifted <- sapply(shape_grid, function(th)
 c(max_abs_difference_after_undoing_the_shift = max(abs(shifted - shape_info[, "moderate (-1.5 ... 1.5)"])))
 ```
 
-```{r info_shapes_plot,dev='png'}
+```{r info_shapes_plot}
 df_shapes <- data.frame(theta = shape_grid, shape_info, check.names = FALSE)
 df_shapes_long <- reshape2::melt(df_shapes, id.vars = "theta",
                                  variable.name = "steps", value.name = "information")
@@ -751,7 +747,7 @@ score_table$SE        <- mapply(function(s, th) compute_eap_se_pcm(th, bank, pat
 score_table
 ```
 
-```{r score_table_plot,dev='png'}
+```{r score_table_plot}
 ggplot(score_table, aes(x = raw_score, y = theta_EAP)) +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),
               alpha = 0.2, fill = "steelblue") +
@@ -799,7 +795,7 @@ rbind(as_given = bank[3, ], sorted = item3_sorted)
 list(as_given = modal_categories(bank[3, ]), sorted = modal_categories(item3_sorted))
 ```
 
-```{r ordering_plot,dev='png'}
+```{r ordering_plot}
 curves_for <- function(b, label) {
   g <- seq(-5, 5, by = 0.05)
   m <- t(sapply(g, function(th) compute_pi_pcm(th, b)$Pi[1, ]))
@@ -891,7 +887,7 @@ trace <- run_cat(true_theta, big_bank)
 trace
 ```
 
-```{r adaptive_plot,dev='png'}
+```{r adaptive_plot}
 ggplot(trace, aes(x = step, y = theta_EAP)) +
   geom_hline(yintercept = true_theta, linetype = "dashed", color = "grey40") +
   geom_ribbon(aes(ymin = theta_EAP - SE, ymax = theta_EAP + SE),

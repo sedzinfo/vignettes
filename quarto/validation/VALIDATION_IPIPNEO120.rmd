@@ -201,7 +201,7 @@ With four items each, the facet scales are short, and their alphas (`r sprintf("
 
 Before testing whether the structure is the same across groups, check that it is there: an exploratory factor analysis of the 30 facets in the US sample.
 
-```{r efa, fig.width=8, fig.height=9, dev='png', fig.retina=2}
+```{r efa, fig.height=9}
 efa <- fa(us[, facet_codes], nfactors = 5, rotate = "oblimin", fm = "ml")
 L <- unclass(efa$loadings)
 colnames(L) <- sapply(seq_len(ncol(L)), function(j)
@@ -276,7 +276,7 @@ Metric invariance holds in `r 5 - length(metric_fails(inv_sex))` of the 5 domain
 
 The latent mean difference uses only the invariant facets; the observed difference is the plain difference in the 24-item domain score. Positive values mean higher scores for women.
 
-```{r sexdiff, fig.width=7, fig.height=4, dev='png', fig.retina=2}
+```{r sexdiff, fig.height=4}
 domain_score <- sapply(names(domains), function(dom) rowMeans(us[, key$item[substr(key$facet_code, 1, 1) == dom]]))
 sex_diff <- data.frame(
   domain   = factor(unname(domains), levels = rev(domains)),
@@ -295,7 +295,7 @@ ggplot(melt(sex_diff, id.vars = "domain"), aes(x = value, y = domain, colour = v
   ggtitle("Sex differences in the five domains (US sample)")
 ```
 
-```{r sexfacets, fig.width=8, fig.height=7, dev='png', fig.retina=2}
+```{r sexfacets, fig.height=7}
 facet_d$domain <- factor(domains[substr(facet_d$facet, 1, 1)], levels = domains)
 facet_d$freed  <- facet_d$facet %in% unlist(lapply(inv_sex, `[[`, "freed"))
 facet_d$label  <- factor(facet_label[facet_d$facet], levels = rev(facet_label))
@@ -334,7 +334,7 @@ freed_table(inv_age)
 
 `r if (length(metric_fails(inv_age))) paste0("Across age groups, metric invariance fails for ", paste(metric_fails(inv_age), collapse = " and "), ": its facets do not relate to the domain in the same way at every age, so its latent age trend below should be read with caution. ") else ""`For the other domains, partial scalar invariance allows latent means to be compared across age groups. The first plot shows them relative to the 14-17 group; the second shows the observed domain scores by single year of age for men and women, smoothed.
 
-```{r agemeans, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}
+```{r agemeans, fig.height=4.5}
 age_lm <- do.call(rbind, lapply(names(domains), function(dom)
   cbind(domain = domains[[dom]], latent_means(inv_age[[dom]], dom))))
 age_lm$domain <- factor(age_lm$domain, levels = domains)
@@ -348,7 +348,7 @@ ggplot(age_lm, aes(x = group, y = mean, colour = domain, group = domain)) +
   ggtitle("Latent domain means by age group (US sample, partial scalar models)")
 ```
 
-```{r agecurves, fig.width=10, fig.height=4.5, dev='png', fig.retina=2}
+```{r agecurves, fig.height=4.5}
 age_obs <- data.frame(age = us$age, sex = us$sex, scale(domain_score))
 names(age_obs)[-(1:2)] <- unname(domains)
 age_long <- melt(age_obs, id.vars = c("age", "sex"), variable.name = "domain", value.name = "z")
@@ -370,7 +370,7 @@ The age trends agree with the **maturity principle** (Roberts, Walton & Viechtba
 
 The domain models above use facet scores. The same tests can be run inside each facet, with its four items as indicators, which is a much stricter look at the items themselves.
 
-```{r facetmap, fig.width=8, fig.height=8, dev='png', fig.retina=2}
+```{r facetmap, fig.height=8}
 facet_step <- function(f, data, group) {
   model <- paste0("F =~ ", paste(key$item[key$facet_code == f], collapse = " + "))
   groups <- levels(droplevels(data[[group]]))
