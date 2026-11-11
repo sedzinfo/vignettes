@@ -304,7 +304,7 @@ window.Quarto = {
 <p>The data come from the <a href="https://openpsychometrics.org/_rawdata/">Open-Source Psychometrics Project</a> (<code>VIQT_data.zip</code>, 12,173 records collected online between July 2017 and March 2018). The file holds only the people who also completed an optional survey after the test (30 personality statements and five demographic questions), so it is a self-selected group of test takers.</p>
 <p><strong>Answer key.</strong> The codebook (<code>codebook.txt</code> in the zip) gives the correct answer of every item as a number. An answer is stored as a sum over the selected words: 1 for the first word, 2 for the second, 4, 8 and 16 for the fifth, so 3 means words 1 and 2 and 24 means words 4 and 5. Decoded this way, the codebook key gives a synonym pair for every item (see the item list below). Scoring the data with it reproduces the number of right answers that the test site computed (<code>score_right</code> in the data) for all 12,173 records; <a href="https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/prepare_viqt.R"><code>data/prepare_viqt.R</code></a> checks this before it saves the data. The key comes from the codebook, not from the data.</p>
 <p><strong>Scoring.</strong> An item scores 1 when both correct words were chosen and 0 otherwise: a wrong pair, one or three words, <em>don’t know</em> or no answer at all. This is the number-right score the site reported. <em>Don’t know</em> counts as wrong, not as missing, because it is the answer the instructions asked for when a respondent did not know the pair. People answer <em>don’t know</em> to the items they find hard, so ignoring these answers would reward skipping hard items. The 0.35-point penalty of the site’s formula score is not used. In IRT a wrong answer and a <em>don’t know</em> both mean the respondent did not find the pair, and the model, not a fixed penalty, decides how much a lucky guess is worth (the three-parameter model below tests whether guessing needs its own parameter). The section <a href="#dont-know"><em>Don’t know</em>: wrong or missing?</a> shows how much this choice matters.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a>type <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(resp <span class="sc">==</span> <span class="dv">1</span>, <span class="st">"Correct pair"</span>,</span>
@@ -357,7 +357,7 @@ window.Quarto = {
 </div>
 </div>
 <p>The test has no built-in validity check: there are no bogus items, and the data have no flag for repeat visits from the same network. <a href="https://github.com/sedzinfo/vignettes/blob/main/quarto/validation/data/prepare_viqt.R"><code>data/prepare_viqt.R</code></a> therefore removes protocols that did not follow the response format, were too fast to have read the items, gave an impossible age, or repeat an earlier record exactly. A few respondents chose a single word on almost every item: they misread the task, so their zeros say nothing about their vocabulary.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
 <colgroup>
@@ -415,7 +415,7 @@ window.Quarto = {
 <summary>
 Show the 45 items with their answer code and correct pair
 </summary>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
 <colgroup>
@@ -713,7 +713,7 @@ Show the 45 items with their answer code and correct pair
 <h2 class="anchored" data-anchor-id="classical-item-analysis">Classical Item Analysis</h2>
 <section id="score-distribution" class="level3">
 <h3 class="anchored" data-anchor-id="score-distribution">Score distribution</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(<span class="fu">data.frame</span>(total), <span class="fu">aes</span>(<span class="at">x =</span> total)) <span class="sc">+</span></span>
@@ -725,9 +725,9 @@ Show the 45 items with their answer code and correct pair
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Dashed line: mean"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/scores-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/scores-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -737,7 +737,7 @@ Show the 45 items with their answer code and correct pair
 <section id="item-statistics" class="level3">
 <h3 class="anchored" data-anchor-id="item-statistics">Item statistics</h3>
 <p>The proportion correct is the classical item difficulty. The point-biserial correlation relates the item to the total score; the corrected correlation relates it to the total of the other 44 items, so the item does not correlate with itself. For 0/1 items, Cronbach’s alpha is the Kuder-Richardson formula 20 (KR-20; Kuder &amp; Richardson, 1937): <span class="math inline">\(\text{KR-20} = \frac{k}{k-1}\left(1 - \frac{\sum p_j q_j}{\sigma^2_X}\right)\)</span>.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>p_item <span class="ot">&lt;-</span> <span class="fu">colMeans</span>(resp)</span>
@@ -1208,7 +1208,7 @@ Show the 45 items with their answer code and correct pair
 <section id="dimensionality" class="level2">
 <h2 class="anchored" data-anchor-id="dimensionality">Dimensionality</h2>
 <p>IRT models with one latent trait assume that one ability explains the correlations between the items. Pearson correlations between 0/1 items depend on the item difficulties, so dimensionality is checked on <strong>tetrachoric correlations</strong>, which estimate the correlation between the continuous tendencies assumed to underlie each pair of right/wrong answers.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>tet <span class="ot">&lt;-</span> psych<span class="sc">::</span><span class="fu">tetrachoric</span>(resp)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -1247,15 +1247,15 @@ Factors above the shuffled-data reference: 3</code></pre>
 <span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Scree plot of the tetrachoric correlations"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/tetrachoric-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/tetrachoric-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
 </div>
 <p>One factor dominates: the first eigenvalue is 19.3, 5.6 times the second. Parallel analysis still keeps 3 factors, because with 11,961 respondents the eigenvalues of shuffled data are close to 1 and even trivial factors pass. The question is what the second factor is.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>efa2 <span class="ot">&lt;-</span> <span class="fu">fa</span>(tet<span class="sc">$</span>rho, <span class="at">nfactors =</span> <span class="dv">2</span>, <span class="at">n.obs =</span> n_resp, <span class="at">fm =</span> <span class="st">"minres"</span>, <span class="at">rotate =</span> <span class="st">"oblimin"</span>)</span>
@@ -1270,7 +1270,7 @@ Factors above the shuffled-data reference: 3</code></pre>
 <span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(load2, <span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">100</span> <span class="sc">*</span> p, <span class="at">y =</span> loading)) <span class="sc">+</span></span>
 <span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">colour =</span> <span class="st">"grey60"</span>) <span class="sc">+</span></span>
 <span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">colour =</span> <span class="st">"#2166ac"</span>, <span class="at">size =</span> <span class="dv">2</span>) <span class="sc">+</span></span>
-<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text_repel</span>(<span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">sub</span>(<span class="st">"Q"</span>, <span class="st">""</span>, item)), <span class="at">size =</span> <span class="fl">2.6</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">max.overlaps =</span> <span class="dv">30</span>) <span class="sc">+</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text_repel</span>(<span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">sub</span>(<span class="st">"Q"</span>, <span class="st">""</span>, item)), <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">max.overlaps =</span> <span class="dv">30</span>) <span class="sc">+</span></span>
 <span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> factor) <span class="sc">+</span></span>
 <span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"% correct"</span>, <span class="at">y =</span> <span class="st">"Loading (oblimin)"</span>) <span class="sc">+</span></span>
 <span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
@@ -1278,9 +1278,9 @@ Factors above the shuffled-data reference: 3</code></pre>
 <span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Each point is an item (labelled by number)"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/efa2-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/efa2-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -1318,7 +1318,7 @@ Native speakers only: first eigenvalue 17.48, second 4.12</code></pre>
 <li><strong>3PL</strong>: adds a <strong>lower asymptote</strong> <span class="math inline">\(c_j\)</span>, the chance that someone with very low ability gets the item right. Picking one of the ten possible pairs at random is right 1 time in 10, but the test discouraged guessing. The lower asymptote is notoriously hard to estimate, so it gets a weak prior, a beta(2, 17) distribution with mean 2/19 ≈ .11, close to that chance rate (the <code>expbeta</code> prior in <code>mirt</code>).</li>
 </ul>
 <p>Ability follows a normal distribution with mean 0; its SD is fixed to 1 in the 2PL and 3PL, while the Rasch model estimates it in place of the common slope. The models are fitted by marginal maximum likelihood with the EM algorithm (for the 3PL, maximum a posteriori because of the prior).</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>fit_rasch <span class="ot">&lt;-</span> <span class="fu">mirt</span>(resp, <span class="dv">1</span>, <span class="at">itemtype =</span> <span class="st">"Rasch"</span>, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
@@ -1401,7 +1401,7 @@ Native speakers only: first eigenvalue 17.48, second 4.12</code></pre>
 <section id="overall-fit" class="level3">
 <h3 class="anchored" data-anchor-id="overall-fit">Overall fit</h3>
 <p>The likelihood-ratio test compares models with each other; whether a model fits the data at all is tested with the limited-information statistic <span class="math inline">\(M_2\)</span> (Maydeu-Olivares &amp; Joe, 2006), which compares the observed proportions correct of every item and every pair of items with the model’s predictions.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>m2_tab <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="at">Rasch =</span> <span class="fu">M2</span>(fit_rasch), <span class="st">`</span><span class="at">2PL</span><span class="st">`</span> <span class="ot">=</span> <span class="fu">M2</span>(fit_2pl))</span>
@@ -1450,7 +1450,7 @@ Native speakers only: first eigenvalue 17.48, second 4.12</code></pre>
 <section id="local-independence" class="level3">
 <h3 class="anchored" data-anchor-id="local-independence">Local independence</h3>
 <p>If one ability explains the items, the residuals of any two items (observed minus expected score) should be uncorrelated once ability is taken into account. Yen’s (1984) <strong>Q3</strong> is that residual correlation. Its average is slightly negative by construction, so Christensen, Makransky and Horton (2017) suggest judging each Q3 against the average and flagging values more than 0.2 above it.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>q3 <span class="ot">&lt;-</span> <span class="fu">residuals</span>(fit_2pl, <span class="at">type =</span> <span class="st">"Q3"</span>, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
@@ -1475,9 +1475,9 @@ Native speakers only: first eigenvalue 17.48, second 4.12</code></pre>
 <span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Dashed line: mean + 0.2"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/q3-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/q3-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -1485,7 +1485,7 @@ Native speakers only: first eigenvalue 17.48, second 4.12</code></pre>
 </section>
 <section id="is-one-dimension-enough" class="level3">
 <h3 class="anchored" data-anchor-id="is-one-dimension-enough">Is one dimension enough?</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a>fit_hard <span class="ot">&lt;-</span> <span class="fu">mirt</span>(resp[, <span class="fu">setdiff</span>(items, easy_items)], <span class="dv">1</span>, <span class="at">itemtype =</span> <span class="st">"2PL"</span>, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
@@ -1504,7 +1504,7 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 </section>
 <section id="item-parameters" class="level3">
 <h3 class="anchored" data-anchor-id="item-parameters">Item parameters</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a>itf <span class="ot">&lt;-</span> <span class="fu">itemfit</span>(fit_2pl, <span class="at">fit_stats =</span> <span class="st">"S_X2"</span>)</span>
@@ -2046,7 +2046,7 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 <section id="item-characteristic-curves" class="level3">
 <h3 class="anchored" data-anchor-id="item-characteristic-curves">Item characteristic curves</h3>
 <p>Six items with contrasting properties. The curves are the 2PL predictions; the points are the observed proportions correct in 20 equal-sized groups of respondents ordered by their estimated ability, a visual check of fit.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb25-1"><a href="#cb25-1" aria-hidden="true" tabindex="-1"></a>pick <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Easiest"</span>                <span class="ot">=</span> items[<span class="fu">which.max</span>(p_item)],</span>
@@ -2075,13 +2075,13 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 <span id="cb25-24"><a href="#cb25-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> panel, <span class="at">ncol =</span> <span class="dv">3</span>, <span class="at">labeller =</span> <span class="fu">label_wrap_gen</span>(<span class="at">width =</span> <span class="dv">32</span>)) <span class="sc">+</span></span>
 <span id="cb25-25"><a href="#cb25-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">limits =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>)) <span class="sc">+</span></span>
 <span id="cb25-26"><a href="#cb25-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="st">"Ability "</span> <span class="sc">*</span> theta), <span class="at">y =</span> <span class="st">"P(correct)"</span>) <span class="sc">+</span></span>
-<span id="cb25-27"><a href="#cb25-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">9</span>) <span class="sc">+</span></span>
+<span id="cb25-27"><a href="#cb25-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
 <span id="cb25-28"><a href="#cb25-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Item characteristic curves (2PL) with observed proportions"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/icc-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2700"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/icc-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2091,7 +2091,7 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 <section id="information-and-precision" class="level3">
 <h3 class="anchored" data-anchor-id="information-and-precision">Information and precision</h3>
 <p>Each item contributes <strong>information</strong> <span class="math inline">\(I_j(\theta) = a_j^2 P_j(\theta)[1 - P_j(\theta)]\)</span>, which peaks at <span class="math inline">\(\theta = b_j\)</span> with height <span class="math inline">\(a_j^2/4\)</span>. Test information is the sum over items, and the standard error of an ability estimate is <span class="math inline">\(SE(\theta) = 1/\sqrt{I(\theta)}\)</span>. Because ability has variance 1 in this sample, a standard error of 0.30 corresponds to a reliability of about <span class="math inline">\(1 - 0.30^2 = .91\)</span>.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb26-1"><a href="#cb26-1" aria-hidden="true" tabindex="-1"></a>grid_info <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">4</span>, <span class="dv">4</span>, <span class="at">by =</span> <span class="fl">0.01</span>)</span>
@@ -2104,7 +2104,7 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 <span id="cb26-8"><a href="#cb26-8" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(item_info, <span class="fu">aes</span>(theta, info, <span class="at">group =</span> item)) <span class="sc">+</span></span>
 <span id="cb26-9"><a href="#cb26-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> item_info[<span class="sc">!</span>item_info<span class="sc">$</span>highlight, ], <span class="at">colour =</span> <span class="st">"grey75"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
 <span id="cb26-10"><a href="#cb26-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> item_info[item_info<span class="sc">$</span>highlight, ], <span class="at">colour =</span> <span class="st">"#2166ac"</span>, <span class="at">linewidth =</span> <span class="fl">0.9</span>) <span class="sc">+</span></span>
-<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_label_repel</span>(<span class="at">data =</span> peaks, <span class="fu">aes</span>(<span class="at">label =</span> item_lab[item]), <span class="at">size =</span> <span class="fl">2.7</span>, <span class="at">seed =</span> <span class="dv">3</span>,</span>
+<span id="cb26-11"><a href="#cb26-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_label_repel</span>(<span class="at">data =</span> peaks, <span class="fu">aes</span>(<span class="at">label =</span> item_lab[item]), <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">seed =</span> <span class="dv">3</span>,</span>
 <span id="cb26-12"><a href="#cb26-12" aria-hidden="true" tabindex="-1"></a>                   <span class="at">min.segment.length =</span> <span class="dv">0</span>, <span class="at">box.padding =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
 <span id="cb26-13"><a href="#cb26-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="st">"Ability "</span> <span class="sc">*</span> theta), <span class="at">y =</span> <span class="st">"Item information"</span>) <span class="sc">+</span></span>
 <span id="cb26-14"><a href="#cb26-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
@@ -2112,14 +2112,14 @@ Correlation of 2PL and 3PL abilities: 0.997</code></pre>
 <span id="cb26-16"><a href="#cb26-16" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Blue: the six items of the previous figure; grey: the other 39"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/iteminfo-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/iteminfo-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
 </div>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>test_info <span class="ot">&lt;-</span> <span class="fu">testinfo</span>(fit_2pl, <span class="fu">matrix</span>(grid_info))</span>
@@ -2158,14 +2158,14 @@ Empirical reliability 0.914, marginal reliability 0.909</code></pre>
 <span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Shaded: SE at or below 0.30 (dotted line)"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/testinfo-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/testinfo-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
 </div>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a>wright <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">data.frame</span>(<span class="at">panel =</span> <span class="st">"Respondents (EAP ability)"</span>, <span class="at">value =</span> theta),</span>
@@ -2180,9 +2180,9 @@ Empirical reliability 0.914, marginal reliability 0.909</code></pre>
 <span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Person-item map: where the respondents and the items are"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/wright-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/wright-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2192,7 +2192,7 @@ Empirical reliability 0.914, marginal reliability 0.909</code></pre>
 <section id="item-fit" class="level3">
 <h3 class="anchored" data-anchor-id="item-fit">Item fit</h3>
 <p>The S-X2 statistic (Orlando &amp; Thissen, 2000) compares, for each number-right score group, the observed proportion correct on an item with the proportion the model predicts.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb31-1"><a href="#cb31-1" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Items with p &lt; .05: %d of %d; p &lt; .001: %d</span><span class="sc">\n</span><span class="st">RMSEA of S-X2: median %.3f, max %.3f</span><span class="sc">\n</span><span class="st">"</span>,</span>
@@ -2345,7 +2345,7 @@ RMSEA of S-X2: median 0.007, max 0.023</code></pre>
 </section>
 <section id="dont-know" class="level3">
 <h3 class="anchored" data-anchor-id="dont-know"><em>Don’t know</em>: wrong or missing?</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a>omitted <span class="ot">&lt;-</span> <span class="fu">rowSums</span>(codes <span class="sc">&lt;=</span> <span class="dv">0</span>)                      <span class="co"># don't know or no response</span></span>
@@ -2423,7 +2423,7 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 <p>The ability estimates (EAP scores from the 2PL) should differ between groups in the ways vocabulary is known to differ: more education, English as a native language and greater age (vocabulary keeps growing through most of adulthood) should all go with higher scores.</p>
 <section id="education" class="level3">
 <h3 class="anchored" data-anchor-id="education">Education</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb39-1"><a href="#cb39-1" aria-hidden="true" tabindex="-1"></a>d_val <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(theta, df_viqt[, <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"gender"</span>, <span class="st">"engnat"</span>, <span class="st">"education"</span>)])</span>
@@ -2515,9 +2515,9 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 <span id="cb40-9"><a href="#cb40-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Vocabulary ability by completed education"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/education-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/education-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2526,7 +2526,7 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 </section>
 <section id="native-language" class="level3">
 <h3 class="anchored" data-anchor-id="native-language">Native language</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb41-1"><a href="#cb41-1" aria-hidden="true" tabindex="-1"></a>has_lang <span class="ot">&lt;-</span> <span class="sc">!</span><span class="fu">is.na</span>(d_val<span class="sc">$</span>engnat)</span>
@@ -2550,9 +2550,9 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 <span id="cb43-8"><a href="#cb43-8" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Vocabulary ability by native language"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/engnat-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/engnat-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2561,7 +2561,7 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 </section>
 <section id="age" class="level3">
 <h3 class="anchored" data-anchor-id="age">Age</h3>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a>age_breaks <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">12</span>, <span class="dv">17</span>, <span class="dv">21</span>, <span class="dv">25</span>, <span class="dv">30</span>, <span class="dv">40</span>, <span class="dv">50</span>, <span class="dv">60</span>, <span class="dv">70</span>, <span class="dv">90</span>)</span>
@@ -2588,9 +2588,9 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 <span id="cb46-9"><a href="#cb46-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Vocabulary ability by age"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/age-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/age-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2600,7 +2600,7 @@ Across items, correlation of % don't know with % correct: -0.89</code></pre>
 <section id="differential-item-functioning-by-native-language" class="level3">
 <h3 class="anchored" data-anchor-id="differential-item-functioning-by-native-language">Differential item functioning by native language</h3>
 <p>An item shows <strong>differential item functioning (DIF)</strong> when people of equal ability but from different groups have different chances of answering it correctly. The Mantel-Haenszel procedure (Holland &amp; Thayer, 1988) compares native and non-native speakers within each number-right score group and expresses the common odds ratio <span class="math inline">\(\alpha_{MH}\)</span> on the ETS delta scale, <span class="math inline">\(D = -2.35 \ln \alpha_{MH}\)</span>. Negative values mean the item is harder for non-native speakers than their total score predicts. ETS classifies items as A (negligible: |D| &lt; 1 or not significant), C (large: |D| ≥ 1.5 and significantly above 1) or B (moderate, everything in between) (Dorans &amp; Holland, 1993).</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb47"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb47-1"><a href="#cb47-1" aria-hidden="true" tabindex="-1"></a>focal <span class="ot">&lt;-</span> df_viqt<span class="sc">$</span>engnat[has_lang] <span class="sc">==</span> <span class="st">"No"</span></span>
@@ -2642,15 +2642,15 @@ ETS Easier for native speakers Easier for non-native speakers Negligible (A)
 <span id="cb49-9"><a href="#cb49-9" aria-hidden="true" tabindex="-1"></a>                                 <span class="st">`</span><span class="at">Easier for non-native speakers</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"#d6604d"</span>,</span>
 <span id="cb49-10"><a href="#cb49-10" aria-hidden="true" tabindex="-1"></a>                                 <span class="st">`</span><span class="at">Negligible (A)</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"grey55"</span>), <span class="at">name =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
 <span id="cb49-11"><a href="#cb49-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"MH D-DIF (95% CI)"</span>, <span class="at">y =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb49-12"><a href="#cb49-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">9</span>) <span class="sc">+</span></span>
+<span id="cb49-12"><a href="#cb49-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
 <span id="cb49-13"><a href="#cb49-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"top"</span>) <span class="sc">+</span></span>
 <span id="cb49-14"><a href="#cb49-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Mantel-Haenszel DIF, native against non-native English speakers"</span>,</span>
 <span id="cb49-15"><a href="#cb49-15" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Grey band: |D| &lt; 1 (A); dashed: |D| = 1.5 (C threshold)"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/dif_mh-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/dif_mh-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2667,7 +2667,7 @@ ETS Easier for native speakers Easier for non-native speakers Negligible (A)
 <p>16 items show large (C) DIF and 3 moderate (B) DIF, in both directions: of the C items, 8 are harder for non-native speakers than their total score predicts and 8 are easier. The non-native group is diverse; the most common countries are the United States, India, the Philippines and Germany. The pattern is still clear. Items that favour native speakers mostly turn on everyday or informal English words (<em>soar</em>, <em>drab</em>, <em>hanker</em>, <em>crimp</em>, <em>spade</em>, <em>hightail</em>): <em>fly = soar</em>, <em>lackluster = drab</em>, <em>yearn = hanker</em>, <em>crimp = pleat</em>, <em>depression = despondency</em>, <em>shovel = spade</em>, <em>rob = steal</em>, <em>hightail = abscond</em>. Items that favour non-native speakers mostly turn on words of Latin origin that learners meet in school and in formal writing, and that have close relatives in many European languages: <em>incipient = nascent</em>, <em>house = domicile</em>, <em>epistle = letter</em>, <em>bifurcate = fork</em>, <em>partner = companion</em>, <em>memorandum = note</em>, <em>solo = alone</em>, <em>noted = illustrious</em> (compare French <em>domicile</em>, <em>épître</em>, <em>naissant</em> or Spanish <em>domicilio</em>, <em>epístola</em>, <em>naciente</em>). Not every item fits the pattern (<em>despondency</em> is Latinate but favours native speakers), but the split between learned and everyday vocabulary is plain.</p>
 <p>DIF of this size does not mean these items are faulty. It means a vocabulary score carries a different mix of word knowledge for native and non-native speakers, and comparisons across the two groups should keep that in mind. Because the DIF runs both ways, it largely cancels in the total score. The matching score contains the DIF items themselves, so the classification is approximate.</p>
 <p>The same question in IRT terms: a two-group 2PL in <code>mirt</code> in which the 26 A items are anchors (equal parameters in both groups), the B and C items are free in each group, and the non-native group gets its own mean and variance on the native speakers’ scale.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" aria-hidden="true" tabindex="-1"></a>anchors <span class="ot">&lt;-</span> mh<span class="sc">$</span>item[mh<span class="sc">$</span>ets <span class="sc">==</span> <span class="st">"A"</span>]</span>
@@ -2702,9 +2702,9 @@ ETS Easier for native speakers Easier for non-native speakers Negligible (A)
 <span id="cb54-17"><a href="#cb54-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"The two items with the largest DIF, by group (multiple-group 2PL)"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/dif_mirt-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/dif_mirt-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2716,7 +2716,7 @@ ETS Easier for native speakers Easier for non-native speakers Negligible (A)
 <h2 class="anchored" data-anchor-id="adaptive-testing-a-simulation">Adaptive Testing: A Simulation</h2>
 <p>A calibrated item bank can be given <strong>adaptively</strong>. A computerised adaptive test (CAT) chooses each next item to be as informative as possible at the current ability estimate and stops once the estimate is precise enough. The <a href="https://sedzinfo.github.io/vignettes/cat_irt_eap/">CAT with IRT and EAP</a> section of this site builds the adaptive-testing functions in base R, adapted from the <code>catR</code> package (Magis &amp; Raîche, 2012). Here the <a href="https://sedzinfo.github.io/vignettes/cat_irt_eap/eap_dichotomous.html">dichotomous versions</a> run on the VIQT bank, with the 2PL parameters as a 4PL bank with <span class="math inline">\(c = 0\)</span> and <span class="math inline">\(d = 1\)</span>. Each CAT starts at θ = 0, selects items by maximum Fisher information, estimates ability by EAP (normal prior, 33 quadrature points from -4 to 4; Bock &amp; Mislevy, 1982), and stops when the standard error reaches 0.30 or the 45 items run out.</p>
 <p>This is a <strong>post-hoc (real-data) simulation</strong>: the CAT gives each of 300 randomly chosen respondents the items it selects, and uses the answers that person actually gave to those items. The same respondents calibrated the items, which makes the results somewhat optimistic.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/cat_eap_common.R"</span>))</span>
@@ -2818,7 +2818,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 </table>
 </div>
 </div>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb60-1"><a href="#cb60-1" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cat_res, <span class="fu">aes</span>(<span class="at">x =</span> full_mirt, <span class="at">y =</span> items, <span class="at">colour =</span> reached)) <span class="sc">+</span></span>
@@ -2834,9 +2834,9 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb60-11"><a href="#cb60-11" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Dashed line: upper end of the range where the full test has SE &lt;= 0.30"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="VALIDATION_VIQT_files/figure-html/cat_plot-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="VALIDATION_VIQT_files/figure-html/cat_plot-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -2845,7 +2845,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 </section>
 <section id="summary" class="level2">
 <h2 class="anchored" data-anchor-id="summary">Summary</h2>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
 <colgroup>
@@ -3926,7 +3926,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-108"><a href="#cb61-108" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-109"><a href="#cb61-109" aria-hidden="true" tabindex="-1"></a><span class="fu">### Score distribution</span></span>
 <span id="cb61-110"><a href="#cb61-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-111"><a href="#cb61-111" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scores, fig.width=7, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb61-111"><a href="#cb61-111" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scores, fig.height=4}</span></span>
 <span id="cb61-112"><a href="#cb61-112" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(<span class="fu">data.frame</span>(total), <span class="fu">aes</span>(<span class="at">x =</span> total)) <span class="sc">+</span></span>
 <span id="cb61-113"><a href="#cb61-113" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_histogram</span>(<span class="at">binwidth =</span> <span class="dv">1</span>, <span class="at">fill =</span> <span class="st">"#2166ac"</span>, <span class="at">colour =</span> <span class="st">"white"</span>) <span class="sc">+</span></span>
 <span id="cb61-114"><a href="#cb61-114" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="fu">mean</span>(total), <span class="at">colour =</span> <span class="st">"#d6604d"</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
@@ -3984,7 +3984,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-166"><a href="#cb61-166" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-167"><a href="#cb61-167" aria-hidden="true" tabindex="-1"></a>IRT models with one latent trait assume that one ability explains the correlations between the items. Pearson correlations between 0/1 items depend on the item difficulties, so dimensionality is checked on **tetrachoric correlations**, which estimate the correlation between the continuous tendencies assumed to underlie each pair of right/wrong answers.</span>
 <span id="cb61-168"><a href="#cb61-168" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-169"><a href="#cb61-169" aria-hidden="true" tabindex="-1"></a><span class="in">```{r tetrachoric, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-169"><a href="#cb61-169" aria-hidden="true" tabindex="-1"></a><span class="in">```{r tetrachoric, fig.height=4.5}</span></span>
 <span id="cb61-170"><a href="#cb61-170" aria-hidden="true" tabindex="-1"></a>tet <span class="ot">&lt;-</span> psych<span class="sc">::</span><span class="fu">tetrachoric</span>(resp)</span>
 <span id="cb61-171"><a href="#cb61-171" aria-hidden="true" tabindex="-1"></a>eig <span class="ot">&lt;-</span> <span class="fu">eigen</span>(tet<span class="sc">$</span>rho, <span class="at">only.values =</span> <span class="cn">TRUE</span>)<span class="sc">$</span>values</span>
 <span id="cb61-172"><a href="#cb61-172" aria-hidden="true" tabindex="-1"></a></span>
@@ -4011,7 +4011,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-193"><a href="#cb61-193" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-194"><a href="#cb61-194" aria-hidden="true" tabindex="-1"></a>One factor dominates: the first eigenvalue is <span class="in">`r fmt(eig[1], 1)`</span>, <span class="in">`r fmt(eig[1] / eig[2], 1)`</span> times the second. Parallel analysis still keeps <span class="in">`r n_pa`</span> factors, because with <span class="in">`r big(n_resp)`</span> respondents the eigenvalues of shuffled data are close to 1 and even trivial factors pass. The question is what the second factor is.</span>
 <span id="cb61-195"><a href="#cb61-195" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-196"><a href="#cb61-196" aria-hidden="true" tabindex="-1"></a><span class="in">```{r efa2, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-196"><a href="#cb61-196" aria-hidden="true" tabindex="-1"></a><span class="in">```{r efa2, fig.height=4.5}</span></span>
 <span id="cb61-197"><a href="#cb61-197" aria-hidden="true" tabindex="-1"></a>efa2 <span class="ot">&lt;-</span> <span class="fu">fa</span>(tet<span class="sc">$</span>rho, <span class="at">nfactors =</span> <span class="dv">2</span>, <span class="at">n.obs =</span> n_resp, <span class="at">fm =</span> <span class="st">"minres"</span>, <span class="at">rotate =</span> <span class="st">"oblimin"</span>)</span>
 <span id="cb61-198"><a href="#cb61-198" aria-hidden="true" tabindex="-1"></a>L2 <span class="ot">&lt;-</span> <span class="fu">unclass</span>(efa2<span class="sc">$</span>loadings)</span>
 <span id="cb61-199"><a href="#cb61-199" aria-hidden="true" tabindex="-1"></a>easy_f <span class="ot">&lt;-</span> <span class="fu">which.max</span>(<span class="fu">cor</span>(L2, p_item))             <span class="co"># the factor whose loadings rise with p</span></span>
@@ -4024,7 +4024,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-206"><a href="#cb61-206" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(load2, <span class="fu">aes</span>(<span class="at">x =</span> <span class="dv">100</span> <span class="sc">*</span> p, <span class="at">y =</span> loading)) <span class="sc">+</span></span>
 <span id="cb61-207"><a href="#cb61-207" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">colour =</span> <span class="st">"grey60"</span>) <span class="sc">+</span></span>
 <span id="cb61-208"><a href="#cb61-208" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">colour =</span> <span class="st">"#2166ac"</span>, <span class="at">size =</span> <span class="dv">2</span>) <span class="sc">+</span></span>
-<span id="cb61-209"><a href="#cb61-209" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text_repel</span>(<span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">sub</span>(<span class="st">"Q"</span>, <span class="st">""</span>, item)), <span class="at">size =</span> <span class="fl">2.6</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">max.overlaps =</span> <span class="dv">30</span>) <span class="sc">+</span></span>
+<span id="cb61-209"><a href="#cb61-209" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text_repel</span>(<span class="fu">aes</span>(<span class="at">label =</span> <span class="fu">sub</span>(<span class="st">"Q"</span>, <span class="st">""</span>, item)), <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">seed =</span> <span class="dv">1</span>, <span class="at">max.overlaps =</span> <span class="dv">30</span>) <span class="sc">+</span></span>
 <span id="cb61-210"><a href="#cb61-210" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> factor) <span class="sc">+</span></span>
 <span id="cb61-211"><a href="#cb61-211" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"% correct"</span>, <span class="at">y =</span> <span class="st">"Loading (oblimin)"</span>) <span class="sc">+</span></span>
 <span id="cb61-212"><a href="#cb61-212" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
@@ -4104,7 +4104,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-286"><a href="#cb61-286" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-287"><a href="#cb61-287" aria-hidden="true" tabindex="-1"></a>If one ability explains the items, the residuals of any two items (observed minus expected score) should be uncorrelated once ability is taken into account. Yen's (1984) **Q3** is that residual correlation. Its average is slightly negative by construction, so Christensen, Makransky and Horton (2017) suggest judging each Q3 against the average and flagging values more than 0.2 above it.</span>
 <span id="cb61-288"><a href="#cb61-288" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-289"><a href="#cb61-289" aria-hidden="true" tabindex="-1"></a><span class="in">```{r q3, fig.width=7, fig.height=3.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-289"><a href="#cb61-289" aria-hidden="true" tabindex="-1"></a><span class="in">```{r q3, fig.height=3.5}</span></span>
 <span id="cb61-290"><a href="#cb61-290" aria-hidden="true" tabindex="-1"></a>q3 <span class="ot">&lt;-</span> <span class="fu">residuals</span>(fit_2pl, <span class="at">type =</span> <span class="st">"Q3"</span>, <span class="at">verbose =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb61-291"><a href="#cb61-291" aria-hidden="true" tabindex="-1"></a>q3_pairs <span class="ot">&lt;-</span> q3[<span class="fu">lower.tri</span>(q3)]</span>
 <span id="cb61-292"><a href="#cb61-292" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Q3: mean %.3f, min %.2f, max %.2f; pairs more than 0.2 above the mean: %d of %d</span><span class="sc">\n</span><span class="st">"</span>,</span>
@@ -4152,7 +4152,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-334"><a href="#cb61-334" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-335"><a href="#cb61-335" aria-hidden="true" tabindex="-1"></a>Six items with contrasting properties. The curves are the 2PL predictions; the points are the observed proportions correct in 20 equal-sized groups of respondents ordered by their estimated ability, a visual check of fit.</span>
 <span id="cb61-336"><a href="#cb61-336" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-337"><a href="#cb61-337" aria-hidden="true" tabindex="-1"></a><span class="in">```{r icc, fig.width=9, fig.height=6, dev='png', fig.retina=2}</span></span>
+<span id="cb61-337"><a href="#cb61-337" aria-hidden="true" tabindex="-1"></a><span class="in">```{r icc, fig.height=6}</span></span>
 <span id="cb61-338"><a href="#cb61-338" aria-hidden="true" tabindex="-1"></a>pick <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Easiest"</span>                <span class="ot">=</span> items[<span class="fu">which.max</span>(p_item)],</span>
 <span id="cb61-339"><a href="#cb61-339" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Hardest"</span>                <span class="ot">=</span> items[<span class="fu">which.min</span>(p_item)],</span>
 <span id="cb61-340"><a href="#cb61-340" aria-hidden="true" tabindex="-1"></a>          <span class="st">"Most discriminating"</span>    <span class="ot">=</span> <span class="fu">rownames</span>(pars)[<span class="fu">which.max</span>(pars[, <span class="st">"a"</span>])],</span>
@@ -4179,7 +4179,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-361"><a href="#cb61-361" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span> panel, <span class="at">ncol =</span> <span class="dv">3</span>, <span class="at">labeller =</span> <span class="fu">label_wrap_gen</span>(<span class="at">width =</span> <span class="dv">32</span>)) <span class="sc">+</span></span>
 <span id="cb61-362"><a href="#cb61-362" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_y_continuous</span>(<span class="at">limits =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>)) <span class="sc">+</span></span>
 <span id="cb61-363"><a href="#cb61-363" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="st">"Ability "</span> <span class="sc">*</span> theta), <span class="at">y =</span> <span class="st">"P(correct)"</span>) <span class="sc">+</span></span>
-<span id="cb61-364"><a href="#cb61-364" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">9</span>) <span class="sc">+</span></span>
+<span id="cb61-364"><a href="#cb61-364" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
 <span id="cb61-365"><a href="#cb61-365" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Item characteristic curves (2PL) with observed proportions"</span>)</span>
 <span id="cb61-366"><a href="#cb61-366" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb61-367"><a href="#cb61-367" aria-hidden="true" tabindex="-1"></a></span>
@@ -4189,7 +4189,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-371"><a href="#cb61-371" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-372"><a href="#cb61-372" aria-hidden="true" tabindex="-1"></a>Each item contributes **information** $I_j(\theta) = a_j^2 P_j(\theta)<span class="co">[</span><span class="ot">1 - P_j(\theta)</span><span class="co">]</span>$, which peaks at $\theta = b_j$ with height $a_j^2/4$. Test information is the sum over items, and the standard error of an ability estimate is $SE(\theta) = 1/\sqrt{I(\theta)}$. Because ability has variance 1 in this sample, a standard error of 0.30 corresponds to a reliability of about $1 - 0.30^2 = .91$.</span>
 <span id="cb61-373"><a href="#cb61-373" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-374"><a href="#cb61-374" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iteminfo, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-374"><a href="#cb61-374" aria-hidden="true" tabindex="-1"></a><span class="in">```{r iteminfo, fig.height=4.5}</span></span>
 <span id="cb61-375"><a href="#cb61-375" aria-hidden="true" tabindex="-1"></a>grid_info <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">4</span>, <span class="dv">4</span>, <span class="at">by =</span> <span class="fl">0.01</span>)</span>
 <span id="cb61-376"><a href="#cb61-376" aria-hidden="true" tabindex="-1"></a>item_info <span class="ot">&lt;-</span> <span class="fu">do.call</span>(rbind, <span class="fu">lapply</span>(items, <span class="cf">function</span>(j)</span>
 <span id="cb61-377"><a href="#cb61-377" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">item =</span> j, <span class="at">theta =</span> grid_info, <span class="at">info =</span> <span class="fu">iteminfo</span>(<span class="fu">extract.item</span>(fit_2pl, j), grid_info))))</span>
@@ -4200,7 +4200,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-382"><a href="#cb61-382" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(item_info, <span class="fu">aes</span>(theta, info, <span class="at">group =</span> item)) <span class="sc">+</span></span>
 <span id="cb61-383"><a href="#cb61-383" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> item_info[<span class="sc">!</span>item_info<span class="sc">$</span>highlight, ], <span class="at">colour =</span> <span class="st">"grey75"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
 <span id="cb61-384"><a href="#cb61-384" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>(<span class="at">data =</span> item_info[item_info<span class="sc">$</span>highlight, ], <span class="at">colour =</span> <span class="st">"#2166ac"</span>, <span class="at">linewidth =</span> <span class="fl">0.9</span>) <span class="sc">+</span></span>
-<span id="cb61-385"><a href="#cb61-385" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_label_repel</span>(<span class="at">data =</span> peaks, <span class="fu">aes</span>(<span class="at">label =</span> item_lab[item]), <span class="at">size =</span> <span class="fl">2.7</span>, <span class="at">seed =</span> <span class="dv">3</span>,</span>
+<span id="cb61-385"><a href="#cb61-385" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_label_repel</span>(<span class="at">data =</span> peaks, <span class="fu">aes</span>(<span class="at">label =</span> item_lab[item]), <span class="at">size =</span> <span class="fl">2.8</span>, <span class="at">seed =</span> <span class="dv">3</span>,</span>
 <span id="cb61-386"><a href="#cb61-386" aria-hidden="true" tabindex="-1"></a>                   <span class="at">min.segment.length =</span> <span class="dv">0</span>, <span class="at">box.padding =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
 <span id="cb61-387"><a href="#cb61-387" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="fu">expression</span>(<span class="st">"Ability "</span> <span class="sc">*</span> theta), <span class="at">y =</span> <span class="st">"Item information"</span>) <span class="sc">+</span></span>
 <span id="cb61-388"><a href="#cb61-388" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
@@ -4208,7 +4208,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-390"><a href="#cb61-390" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Blue: the six items of the previous figure; grey: the other 39"</span>)</span>
 <span id="cb61-391"><a href="#cb61-391" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb61-392"><a href="#cb61-392" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-393"><a href="#cb61-393" aria-hidden="true" tabindex="-1"></a><span class="in">```{r testinfo, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-393"><a href="#cb61-393" aria-hidden="true" tabindex="-1"></a><span class="in">```{r testinfo, fig.height=4.5}</span></span>
 <span id="cb61-394"><a href="#cb61-394" aria-hidden="true" tabindex="-1"></a>test_info <span class="ot">&lt;-</span> <span class="fu">testinfo</span>(fit_2pl, <span class="fu">matrix</span>(grid_info))</span>
 <span id="cb61-395"><a href="#cb61-395" aria-hidden="true" tabindex="-1"></a>se_curve  <span class="ot">&lt;-</span> <span class="dv">1</span> <span class="sc">/</span> <span class="fu">sqrt</span>(test_info)</span>
 <span id="cb61-396"><a href="#cb61-396" aria-hidden="true" tabindex="-1"></a>precise   <span class="ot">&lt;-</span> <span class="fu">range</span>(grid_info[se_curve <span class="sc">&lt;=</span> <span class="fl">0.30</span>])</span>
@@ -4238,7 +4238,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-420"><a href="#cb61-420" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Shaded: SE at or below 0.30 (dotted line)"</span>)</span>
 <span id="cb61-421"><a href="#cb61-421" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb61-422"><a href="#cb61-422" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-423"><a href="#cb61-423" aria-hidden="true" tabindex="-1"></a><span class="in">```{r wright, fig.width=8, fig.height=5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-423"><a href="#cb61-423" aria-hidden="true" tabindex="-1"></a><span class="in">```{r wright, fig.height=5}</span></span>
 <span id="cb61-424"><a href="#cb61-424" aria-hidden="true" tabindex="-1"></a>wright <span class="ot">&lt;-</span> <span class="fu">rbind</span>(<span class="fu">data.frame</span>(<span class="at">panel =</span> <span class="st">"Respondents (EAP ability)"</span>, <span class="at">value =</span> theta),</span>
 <span id="cb61-425"><a href="#cb61-425" aria-hidden="true" tabindex="-1"></a>                <span class="fu">data.frame</span>(<span class="at">panel =</span> <span class="st">"Items (2PL difficulty b)"</span>, <span class="at">value =</span> pars[, <span class="st">"b"</span>]))</span>
 <span id="cb61-426"><a href="#cb61-426" aria-hidden="true" tabindex="-1"></a>wright<span class="sc">$</span>panel <span class="ot">&lt;-</span> <span class="fu">factor</span>(wright<span class="sc">$</span>panel, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Respondents (EAP ability)"</span>, <span class="st">"Items (2PL difficulty b)"</span>))</span>
@@ -4309,7 +4309,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-491"><a href="#cb61-491" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-492"><a href="#cb61-492" aria-hidden="true" tabindex="-1"></a><span class="fu">### Education</span></span>
 <span id="cb61-493"><a href="#cb61-493" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-494"><a href="#cb61-494" aria-hidden="true" tabindex="-1"></a><span class="in">```{r education, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-494"><a href="#cb61-494" aria-hidden="true" tabindex="-1"></a><span class="in">```{r education, fig.height=4.5}</span></span>
 <span id="cb61-495"><a href="#cb61-495" aria-hidden="true" tabindex="-1"></a>d_val <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(theta, df_viqt[, <span class="fu">c</span>(<span class="st">"age"</span>, <span class="st">"gender"</span>, <span class="st">"engnat"</span>, <span class="st">"education"</span>)])</span>
 <span id="cb61-496"><a href="#cb61-496" aria-hidden="true" tabindex="-1"></a>summ <span class="ot">&lt;-</span> <span class="cf">function</span>(d, by) {</span>
 <span id="cb61-497"><a href="#cb61-497" aria-hidden="true" tabindex="-1"></a>  out <span class="ot">&lt;-</span> <span class="fu">do.call</span>(data.frame, <span class="fu">aggregate</span>(theta <span class="sc">~</span> ., <span class="at">data =</span> d[, <span class="fu">c</span>(<span class="st">"theta"</span>, by)],</span>
@@ -4339,7 +4339,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-521"><a href="#cb61-521" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-522"><a href="#cb61-522" aria-hidden="true" tabindex="-1"></a><span class="fu">### Native language</span></span>
 <span id="cb61-523"><a href="#cb61-523" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-524"><a href="#cb61-524" aria-hidden="true" tabindex="-1"></a><span class="in">```{r engnat, fig.width=7, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb61-524"><a href="#cb61-524" aria-hidden="true" tabindex="-1"></a><span class="in">```{r engnat, fig.height=4}</span></span>
 <span id="cb61-525"><a href="#cb61-525" aria-hidden="true" tabindex="-1"></a>has_lang <span class="ot">&lt;-</span> <span class="sc">!</span><span class="fu">is.na</span>(d_val<span class="sc">$</span>engnat)</span>
 <span id="cb61-526"><a href="#cb61-526" aria-hidden="true" tabindex="-1"></a>d_lang <span class="ot">&lt;-</span> <span class="fu">cohen_d</span>(d_val<span class="sc">$</span>theta[has_lang], <span class="fu">droplevels</span>(d_val<span class="sc">$</span>engnat[has_lang]))</span>
 <span id="cb61-527"><a href="#cb61-527" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="fu">sprintf</span>(<span class="st">"Native speakers: %s, mean %.2f; non-native: %s, mean %.2f; d = %.2f</span><span class="sc">\n</span><span class="st">"</span>,</span>
@@ -4360,7 +4360,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-542"><a href="#cb61-542" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-543"><a href="#cb61-543" aria-hidden="true" tabindex="-1"></a><span class="fu">### Age</span></span>
 <span id="cb61-544"><a href="#cb61-544" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-545"><a href="#cb61-545" aria-hidden="true" tabindex="-1"></a><span class="in">```{r age, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-545"><a href="#cb61-545" aria-hidden="true" tabindex="-1"></a><span class="in">```{r age, fig.height=4.5}</span></span>
 <span id="cb61-546"><a href="#cb61-546" aria-hidden="true" tabindex="-1"></a>age_breaks <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="dv">12</span>, <span class="dv">17</span>, <span class="dv">21</span>, <span class="dv">25</span>, <span class="dv">30</span>, <span class="dv">40</span>, <span class="dv">50</span>, <span class="dv">60</span>, <span class="dv">70</span>, <span class="dv">90</span>)</span>
 <span id="cb61-547"><a href="#cb61-547" aria-hidden="true" tabindex="-1"></a>age_labels <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"13-17"</span>, <span class="st">"18-21"</span>, <span class="st">"22-25"</span>, <span class="st">"26-30"</span>, <span class="st">"31-40"</span>, <span class="st">"41-50"</span>, <span class="st">"51-60"</span>, <span class="st">"61-70"</span>, <span class="st">"71-90"</span>)</span>
 <span id="cb61-548"><a href="#cb61-548" aria-hidden="true" tabindex="-1"></a>d_val<span class="sc">$</span>age_band <span class="ot">&lt;-</span> <span class="fu">cut</span>(d_val<span class="sc">$</span>age, age_breaks, <span class="at">labels =</span> age_labels)</span>
@@ -4391,7 +4391,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-573"><a href="#cb61-573" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-574"><a href="#cb61-574" aria-hidden="true" tabindex="-1"></a>An item shows **differential item functioning (DIF)** when people of equal ability but from different groups have different chances of answering it correctly. The Mantel-Haenszel procedure (Holland &amp; Thayer, 1988) compares native and non-native speakers within each number-right score group and expresses the common odds ratio $\alpha_{MH}$ on the ETS delta scale, $D = -2.35 \ln \alpha_{MH}$. Negative values mean the item is harder for non-native speakers than their total score predicts. ETS classifies items as A (negligible: |D| &lt; 1 or not significant), C (large: |D| ≥ 1.5 and significantly above 1) or B (moderate, everything in between) (Dorans &amp; Holland, 1993).</span>
 <span id="cb61-575"><a href="#cb61-575" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-576"><a href="#cb61-576" aria-hidden="true" tabindex="-1"></a><span class="in">```{r dif_mh, fig.width=8, fig.height=9, dev='png', fig.retina=2}</span></span>
+<span id="cb61-576"><a href="#cb61-576" aria-hidden="true" tabindex="-1"></a><span class="in">```{r dif_mh, fig.height=9}</span></span>
 <span id="cb61-577"><a href="#cb61-577" aria-hidden="true" tabindex="-1"></a>focal <span class="ot">&lt;-</span> df_viqt<span class="sc">$</span>engnat[has_lang] <span class="sc">==</span> <span class="st">"No"</span></span>
 <span id="cb61-578"><a href="#cb61-578" aria-hidden="true" tabindex="-1"></a>score <span class="ot">&lt;-</span> total[has_lang]</span>
 <span id="cb61-579"><a href="#cb61-579" aria-hidden="true" tabindex="-1"></a>mh <span class="ot">&lt;-</span> <span class="fu">t</span>(<span class="fu">sapply</span>(items, <span class="cf">function</span>(j) {</span>
@@ -4422,7 +4422,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-604"><a href="#cb61-604" aria-hidden="true" tabindex="-1"></a>                                 <span class="st">`</span><span class="at">Easier for non-native speakers</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"#d6604d"</span>,</span>
 <span id="cb61-605"><a href="#cb61-605" aria-hidden="true" tabindex="-1"></a>                                 <span class="st">`</span><span class="at">Negligible (A)</span><span class="st">`</span> <span class="ot">=</span> <span class="st">"grey55"</span>), <span class="at">name =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
 <span id="cb61-606"><a href="#cb61-606" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"MH D-DIF (95% CI)"</span>, <span class="at">y =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb61-607"><a href="#cb61-607" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">9</span>) <span class="sc">+</span></span>
+<span id="cb61-607"><a href="#cb61-607" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
 <span id="cb61-608"><a href="#cb61-608" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position =</span> <span class="st">"top"</span>) <span class="sc">+</span></span>
 <span id="cb61-609"><a href="#cb61-609" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggtitle</span>(<span class="st">"Mantel-Haenszel DIF, native against non-native English speakers"</span>,</span>
 <span id="cb61-610"><a href="#cb61-610" aria-hidden="true" tabindex="-1"></a>          <span class="at">subtitle =</span> <span class="st">"Grey band: |D| &lt; 1 (A); dashed: |D| = 1.5 (C threshold)"</span>)</span>
@@ -4446,7 +4446,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-628"><a href="#cb61-628" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb61-629"><a href="#cb61-629" aria-hidden="true" tabindex="-1"></a>The same question in IRT terms: a two-group 2PL in <span class="in">`mirt`</span> in which the <span class="in">`r sum(mh$ets == "A")`</span> A items are anchors (equal parameters in both groups), the B and C items are free in each group, and the non-native group gets its own mean and variance on the native speakers' scale.</span>
 <span id="cb61-630"><a href="#cb61-630" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-631"><a href="#cb61-631" aria-hidden="true" tabindex="-1"></a><span class="in">```{r dif_mirt, fig.width=8, fig.height=4, dev='png', fig.retina=2}</span></span>
+<span id="cb61-631"><a href="#cb61-631" aria-hidden="true" tabindex="-1"></a><span class="in">```{r dif_mirt, fig.height=4}</span></span>
 <span id="cb61-632"><a href="#cb61-632" aria-hidden="true" tabindex="-1"></a>anchors <span class="ot">&lt;-</span> mh<span class="sc">$</span>item[mh<span class="sc">$</span>ets <span class="sc">==</span> <span class="st">"A"</span>]</span>
 <span id="cb61-633"><a href="#cb61-633" aria-hidden="true" tabindex="-1"></a>lang <span class="ot">&lt;-</span> <span class="fu">factor</span>(<span class="fu">as.character</span>(df_viqt<span class="sc">$</span>engnat[has_lang]), <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"Yes"</span>, <span class="st">"No"</span>))  <span class="co"># natives = reference</span></span>
 <span id="cb61-634"><a href="#cb61-634" aria-hidden="true" tabindex="-1"></a>fit_mg <span class="ot">&lt;-</span> <span class="fu">multipleGroup</span>(resp[has_lang, ], <span class="dv">1</span>, <span class="at">group =</span> lang, <span class="at">itemtype =</span> <span class="st">"2PL"</span>,</span>
@@ -4520,7 +4520,7 @@ Correlation of CAT and full-test abilities: 0.985</code></pre>
 <span id="cb61-702"><a href="#cb61-702" aria-hidden="true" tabindex="-1"></a>                           <span class="st">"Median items"</span>, <span class="st">"Mean |CAT - full|"</span>))</span>
 <span id="cb61-703"><a href="#cb61-703" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb61-704"><a href="#cb61-704" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb61-705"><a href="#cb61-705" aria-hidden="true" tabindex="-1"></a><span class="in">```{r cat_plot, fig.width=8, fig.height=4.5, dev='png', fig.retina=2}</span></span>
+<span id="cb61-705"><a href="#cb61-705" aria-hidden="true" tabindex="-1"></a><span class="in">```{r cat_plot, fig.height=4.5}</span></span>
 <span id="cb61-706"><a href="#cb61-706" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cat_res, <span class="fu">aes</span>(<span class="at">x =</span> full_mirt, <span class="at">y =</span> items, <span class="at">colour =</span> reached)) <span class="sc">+</span></span>
 <span id="cb61-707"><a href="#cb61-707" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> precise[<span class="dv">2</span>], <span class="at">linetype =</span> <span class="st">"dashed"</span>, <span class="at">colour =</span> <span class="st">"grey50"</span>) <span class="sc">+</span></span>
 <span id="cb61-708"><a href="#cb61-708" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">alpha =</span> <span class="fl">0.7</span>, <span class="at">size =</span> <span class="fl">1.8</span>, <span class="at">position =</span> <span class="fu">position_jitter</span>(<span class="at">height =</span> <span class="fl">0.3</span>, <span class="at">width =</span> <span class="dv">0</span>, <span class="at">seed =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>

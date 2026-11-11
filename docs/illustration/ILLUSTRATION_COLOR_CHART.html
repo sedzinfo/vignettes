@@ -203,6 +203,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  <span class="dropdown-text">What Greece Makes, Sells and Buys, and Can It Feed Itself?</span></a>
   </li>  
         <li>
+    <a class="dropdown-item" href="./ILLUSTRATION_GREEK_WORKFORCE.html">
+ <span class="dropdown-text">Greece at Work: Education, Skills, Jobs and Crime Compared with the EU</span></a>
+  </li>  
+        <li>
     <a class="dropdown-item" href="./ILLUSTRATION_FERTILITY.html">
  <span class="dropdown-text">The World Is Having Fewer Babies: Fertility and Ageing Since 1960</span></a>
   </li>  
@@ -291,7 +295,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h1>Background</h1>
 <p>R ships with a built-in palette of named colors, returned by <code>colors()</code>. As of this writing (and for a long time now) it holds <strong>657</strong> names — things like <code>"steelblue"</code>, <code>"tomato3"</code>, or <code>"gray42"</code>. This document walks through a classic script by efg (Stowers Institute) that turns that list into a printable reference chart, and along the way explains the underlying R color machinery: how names map to RGB, how RGB maps to HSV, and how to pick readable text/background combinations automatically.</p>
 <p>The original script writes everything to a file called <code>COLOR_CHART.pdf</code>. Here we reproduce each piece as an inline, explained chunk so it renders directly in this document; the full original (PDF-producing) script is included as an appendix at the end for reference.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># The chart layout below hard-codes 25 columns x 27 rows = 675 slots for 657 colors.</span></span>
@@ -312,7 +316,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <li><strong>By numeric index</strong> — a legacy palette (<code>palette()</code>), rarely used now.</li>
 </ol>
 <p><code>col2rgb()</code> converts any of the first two into the underlying 0–255 RGB triplet:</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="fu">col2rgb</span>(<span class="st">"yellow"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -335,7 +339,7 @@ blue   180</code></pre>
 </div>
 </div>
 <p>RGB is how the color is stored, but it is not how humans reason about color. For that, R (via <code>rgb2hsv()</code>) can convert to <strong>HSV</strong> — Hue, Saturation, Value — which separates <em>what color</em> (hue, as an angle 0–1 representing 0–360°) from <em>how vivid</em> (saturation) and <em>how bright</em> (value):</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">rgb2hsv</span>(<span class="fu">col2rgb</span>(<span class="st">"steelblue"</span>))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
@@ -352,7 +356,7 @@ v 0.7058824</code></pre>
 <section id="choosing-readable-text-color-a-contrast-heuristic" class="level1">
 <h1>Choosing readable text color: a contrast heuristic</h1>
 <p>Rectangles need a label (the color’s name and index) drawn <em>on top of</em> them. White text on <code>"yellow"</code> is unreadable; black text on <code>"navy"</code> is unreadable. The script uses a cheap luminance heuristic: average the R, G, and B channels, and if that average is above the midpoint (127.5), the background is “light” so use black text; otherwise use white text.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a>SetTextContrastColor <span class="ot">&lt;-</span> <span class="cf">function</span>(color) {</span>
@@ -388,7 +392,7 @@ v 0.7058824</code></pre>
 </div>
 <p>This is a simplification — perceptual luminance weights green much more heavily than blue (roughly <code>0.299*R + 0.587*G + 0.114*B</code>), so a plain channel average can misjudge some saturated blues or reds. It’s good enough for a quick reference chart, though, which is the point here.</p>
 <p>We precompute the contrast color for every entry in <code>colors()</code> once, so the plotting loops below can just look it up instead of recomputing it per rectangle:</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a>TextContrastColor <span class="ot">&lt;-</span> <span class="fu">unlist</span>(<span class="fu">lapply</span>(<span class="fu">colors</span>(), SetTextContrastColor))</span>
@@ -404,7 +408,7 @@ black white
 <section id="chart-1a-colors-in-index-order" class="level1">
 <h1>Chart 1a: colors in index order</h1>
 <p>The simplest chart just walks <code>colors()</code> in the order R returns it, laying out 25 colors per row. Each rectangle is drawn with <code>rect()</code>, positioned by its row/column, filled with the color itself, and labeled with its numeric index (<code>SetTextContrastColor</code> decides whether that label is black or white).</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a>colCount <span class="ot">&lt;-</span> <span class="dv">25</span>  <span class="co"># number of rectangles per row</span></span>
@@ -427,9 +431,9 @@ black white
 <span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-index-order-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-index-order-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -443,7 +447,7 @@ black white
 <section id="chart-1b-colors-sorted-by-hue-saturation-value" class="level1">
 <h1>Chart 1b: colors sorted by hue, saturation, value</h1>
 <p>To get a chart that actually reads as a gradient, we convert every color to HSV and sort by hue first, then saturation, then value. <code>order()</code> gives us the permutation of indices that achieves that sort, and we index into <code>colors()</code> with it.</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a>RGBColors <span class="ot">&lt;-</span> <span class="fu">col2rgb</span>(<span class="fu">colors</span>())</span>
@@ -469,9 +473,9 @@ black white
 <span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-hue-order-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2100"></p>
+<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-hue-order-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -485,7 +489,7 @@ black white
 <section id="getting-a-colors-hex-and-decimal-rgb" class="level1">
 <h1>Getting a color’s hex and decimal RGB</h1>
 <p>For a reference sheet you usually want the exact hex code (for CSS/HTML/design tools) alongside the decimal RGB triplet (for R/plotting code). <code>sprintf()</code> builds both from <code>col2rgb()</code>’s output in one line:</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a>GetColorHexAndDecimal <span class="ot">&lt;-</span> <span class="cf">function</span>(color) {</span>
@@ -510,7 +514,7 @@ black white
 <section id="chart-2-paginated-detail-sheet-name-hex-decimal" class="level1">
 <h1>Chart 2: paginated detail sheet (name + hex + decimal)</h1>
 <p>The final part of the original script produces a multi-page listing: two columns of 50 colors each per page, each row showing a filled swatch, the color’s index, its name, and its hex/decimal RGB (in a monospace font so the numbers align). Below is a single representative page reproduced inline; the appendix has the full paging loop that generates every page (this is what the original script writes across the multi-page PDF).</p>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a>index <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(<span class="fu">colors</span>()))</span>
@@ -562,9 +566,9 @@ black white
 <span id="cb27-47"><a href="#cb27-47" aria-hidden="true" tabindex="-1"></a>}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output-display">
-<div class="quarto-figure quarto-figure-center">
+<div>
 <figure class="figure">
-<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-detail-page-1.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="2400"></p>
+<p><img src="ILLUSTRATION_COLOR_CHART_files/figure-html/chart-detail-page-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
 </figure>
 </div>
 </div>
@@ -586,7 +590,7 @@ black white
 </section>
 <section id="appendix-original-script-writes-color_chart.pdf" class="level1">
 <h1>Appendix: original script (writes <code>COLOR_CHART.pdf</code>)</h1>
-<div class="cell" data-layout-align="center">
+<div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co"># efg, Stowers Institute for Medical Research</span></span>
@@ -1751,7 +1755,7 @@ black white
 <span id="cb30-194"><a href="#cb30-194" aria-hidden="true" tabindex="-1"></a>full paging loop that generates every page (this is what the original script</span>
 <span id="cb30-195"><a href="#cb30-195" aria-hidden="true" tabindex="-1"></a>writes across the multi-page PDF).</span>
 <span id="cb30-196"><a href="#cb30-196" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb30-197"><a href="#cb30-197" aria-hidden="true" tabindex="-1"></a><span class="in">```{r chart-detail-page, fig.height=11, fig.width=8}</span></span>
+<span id="cb30-197"><a href="#cb30-197" aria-hidden="true" tabindex="-1"></a><span class="in">```{r chart-detail-page, fig.height=11}</span></span>
 <span id="cb30-198"><a href="#cb30-198" aria-hidden="true" tabindex="-1"></a>index <span class="ot">&lt;-</span> <span class="fu">paste</span>(<span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(<span class="fu">colors</span>()))</span>
 <span id="cb30-199"><a href="#cb30-199" aria-hidden="true" tabindex="-1"></a>HexAndDec <span class="ot">&lt;-</span> <span class="fu">unlist</span>(<span class="fu">lapply</span>(<span class="fu">colors</span>(), GetColorHexAndDecimal))</span>
 <span id="cb30-200"><a href="#cb30-200" aria-hidden="true" tabindex="-1"></a>PerColumn <span class="ot">&lt;-</span> <span class="dv">50</span></span>
