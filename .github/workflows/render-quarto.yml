@@ -78,7 +78,9 @@ jobs:
         if: steps.sites.outputs.list != ''
         run: |
           for f in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
-            [ -f "$f" ] && sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$f"
+            if [ -f "$f" ]; then
+              sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|http://archive.ubuntu.com/ubuntu|g' "$f"
+            fi
           done
           printf 'Acquire::Retries "3";\nAcquire::http::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99-timeouts
           grep -rh "^URIs:\|^deb " /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2>/dev/null | sort -u || true

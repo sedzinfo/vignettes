@@ -1,0 +1,443 @@
+---
+title: "Greece at Work: Education, Skills, Jobs and Crime Compared with the EU"
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Are Greeks good workers? How much schooling do they have, do they know maths, can they use a computer, do they find work, and is there much crime? None of these questions has a single number for an answer, but each has measures that every EU country collects in the same way, so Greece can be compared with the rest of the EU:
+
+1. **How much schooling do Greeks have?**
+2. **What do they know?** Maths, reading and science at 15, computer skills, and learning as adults.
+3. **Do they find work?**
+4. **How hard do they work, and how much do they produce?**
+5. **Do their jobs use their education?**
+6. **Is there much crime?**
+
+The data come from **Eurostat**, the statistical office of the EU. They are downloaded when the document is knitted, so the charts show the latest figures. The charts of countries show the 27 EU countries, with Greece in red and the EU as a whole in blue.
+
+**What these numbers can and cannot say.** They describe what the schools, the firms and the courts of Greece produce, not what Greeks are born with: no statistic measures how intelligent or how hard-working a people is. A test at 15 measures what a school system has taught by then. Output per hour measures the firms, the machines and the way the economy is organised as much as the people who work in it. And recorded crime depends on how often people go to the police, and on how each country counts offences.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+eu_codes <- eu_countries$code
+eu_name <- c(setNames(eu_countries$name, eu_countries$code), EU27_2020 = "EU-27")
+
+# education, % of the age group: tertiary education (a university degree or similar, ISCED 5-8) at 25
+# to 34, and at most lower secondary education (ISCED 0-2) at 25 to 64
+education <- eurostat_values("edat_lfse_03", list(sex = "T", age = c("Y25-34", "Y25-64"), isced11 = c("ED5-8", "ED0-2")))
+# early leavers: people aged 18 to 24 with at most lower secondary education who are not in education
+# or training, % of the age group
+early_all <- eurostat_values("edat_lfse_14", list(sex = "T", wstatus = "POP"))
+# PISA: 15-year-olds below the basic level (level 2) in mathematics, reading and science, %
+pisa_all <- eurostat_values("sdg_04_40", list(sex = "T"))
+subjects <- c(EF461 = "Mathematics", READ = "Reading", SCI = "Science")
+# people aged 16 to 74 with at least basic, and with above basic, overall digital skills, %
+digital_all <- eurostat_values("isoc_sk_dskl_i21", list(ind_type = "IND_TOTAL", unit = "PC_IND", indic_is = c("I_DSK2_BAB", "I_DSK2_AB")))
+# people aged 25 to 64 in education or training in the four weeks before the survey, %
+learning_all <- eurostat_values("trng_lfse_01", list(sex = "T", age = "Y25-64"))
+# ICT specialists, % of the people in work
+ict_all <- eurostat_values("isoc_sks_itspt", list(unit = "PC_EMP"))
+# unemployment, % of the labour force, at 15 to 74 and at 15 to 24
+unemployment_all <- eurostat_values("une_rt_a", list(sex = "T", unit = "PC_ACT", age = c("Y15-74", "Y15-24")))
+# people unemployed for a year or longer, % of the labour force and % of the unemployed
+long_term_all <- eurostat_values("une_ltu_a", list(sex = "T", age = "Y15-74", indic_em = "LTU", unit = c("PC_ACT", "PC_UNE")))
+# people aged 15 to 29 neither in work nor in education or training, %
+neet_all <- eurostat_values("edat_lfse_20", list(sex = "T", age = "Y15-29", training = "NO_FE_NO_NFE", wstatus = "NEMP"))
+# people aged 20 to 64 in work, % of the age group, everyone, women and men
+employment_all <- eurostat_values("lfsi_emp_a", list(indic_em = "EMP_LFS", age = "Y20-64", sex = c("T", "F", "M"), unit = "PC_POP"))
+# usual weekly hours of work in the main job, everyone in work aged 15 to 64
+hours_all <- eurostat_values("lfsa_ewhun2", list(sex = "T", age = "Y15-64", nace_r2 = "TOTAL", wstatus = "EMP", worktime = "TOTAL"))
+# GDP per hour worked and per person in work, in purchasing power standards, EU = 100
+productivity_all <- eurostat_values("tesem160", list(na_item = c("NLPR_HW", "NLPR_PER")))
+# the self-employed, % of the people in work aged 15 to 64
+status <- eurostat_values("lfsa_egaps", list(sex = "T", age = "Y15-64", wstatus = c("EMP", "SELF")))
+self_all <- merge(status[status$wstatus == "SELF", c("geo", "time", "values")],
+                  status[status$wstatus == "EMP", c("geo", "time", "values")],
+                  by = c("geo", "time"), suffixes = c("_self", "_all"))
+self_all$values <- 100 * self_all$values_self / self_all$values_all
+# over-qualification: people aged 20 to 64 with tertiary education in jobs that do not need it,
+# % of the people in work with tertiary education
+overqualified_all <- eurostat_values("lfsa_eoqgan", list(sex = "T", age = "Y20-64", citizen = "TOTAL"))
+# offences recorded by the police, per 100,000 inhabitants
+offence_names <- c(ICCS0101 = "Intentional homicide", ICCS020111 = "Serious assault", ICCS0401 = "Robbery",
+                   ICCS05012 = "Burglary of homes", ICCS0502 = "Theft")
+offences_all <- eurostat_values("crim_off_cat", list(unit = "P_HTHAB", iccs = names(offence_names)))
+# people held in prison, per 100,000 inhabitants
+prisoners_all <- eurostat_values("crim_pris_cap", list(unit = "P_HTHAB", indic_cr = "PRIS_ACT_CAP"))
+# people held in prison in Greece, by citizenship, and the Greek citizens living in Greece on 1 January
+prisoners_ctz <- eurostat_values("crim_pris_ctz", list(geo = "EL", unit = "NR"))
+citizens <- eurostat_values("migr_pop1ctz", list(geo = "EL", citizen = "NAT", age = "TOTAL", sex = "T", unit = "NR"))
+# people who say that there is crime, violence or vandalism in their area, %
+area_all <- eurostat_values("ilc_mddw03", list(hhcomp = "TOTAL", rskpovth = "TOTAL", unit = "PC"))
+```
+
+```{r latest}
+# the EU countries and the EU in the latest year with data for Greece and for most EU countries
+latest <- function(x) {
+  x <- x[x$geo %in% c(eu_codes, "EU27_2020"), ]
+  for (y in sort(unique(x$time[x$geo == "EL"]), decreasing = TRUE)) {
+    if (sum(x$geo %in% eu_codes & x$time == y) >= 20) return(x[x$time == y, ])
+  }
+  stop("No year with data for Greece and for most EU countries")
+}
+greece <- function(x) x$values[x$geo == "EL"]
+# the EU: its own figure where Eurostat publishes one, otherwise the median of the countries
+eu <- function(x) if (any(x$geo == "EU27_2020")) x$values[x$geo == "EU27_2020"] else median(x$values[x$geo %in% eu_codes])
+countries <- function(x) sum(x$geo %in% eu_codes)
+ordinal <- function(k) {
+  paste0(k, if (k %% 100 %in% 11:13) "th" else c("th", "st", "nd", "rd", rep("th", 6))[k %% 10 + 1])
+}
+# the place of Greece among the EU countries, counted from the nearer end: "the highest",
+# "the 3rd highest", "the 2nd lowest", ...
+place <- function(x) {
+  v <- x$values[x$geo %in% eu_codes]
+  from_top <- sum(v > greece(x)) + 1
+  from_bottom <- sum(v < greece(x)) + 1
+  k <- min(from_top, from_bottom)
+  end <- if (from_top <= from_bottom) "highest" else "lowest"
+  paste("the", if (k == 1) end else paste(ordinal(k), end))
+}
+
+tertiary <- latest(education[education$age == "Y25-34" & education$isced11 == "ED5-8", ])
+lower <- latest(education[education$age == "Y25-64" & education$isced11 == "ED0-2", ])
+early <- latest(early_all)
+pisa <- lapply(setNames(names(subjects), names(subjects)), function(f) latest(pisa_all[pisa_all$field == f, ]))
+digital <- latest(digital_all[digital_all$indic_is == "I_DSK2_BAB", ])
+digital_above <- latest(digital_all[digital_all$indic_is == "I_DSK2_AB", ])
+learning <- latest(learning_all)
+ict <- latest(ict_all)
+unemployment <- latest(unemployment_all[unemployment_all$age == "Y15-74", ])
+youth <- latest(unemployment_all[unemployment_all$age == "Y15-24", ])
+long_term <- latest(long_term_all[long_term_all$unit == "PC_ACT", ])
+long_share <- latest(long_term_all[long_term_all$unit == "PC_UNE", ])
+neet <- latest(neet_all)
+employment <- latest(employment_all[employment_all$sex == "T", ])
+women <- latest(employment_all[employment_all$sex == "F", ])
+men <- latest(employment_all[employment_all$sex == "M", ])
+hours <- latest(hours_all)
+per_hour <- latest(productivity_all[productivity_all$na_item == "NLPR_HW", ])
+per_person <- latest(productivity_all[productivity_all$na_item == "NLPR_PER", ])
+self_employed <- latest(self_all)
+overqualified <- latest(overqualified_all)
+offences <- lapply(setNames(names(offence_names), names(offence_names)), function(i) latest(offences_all[offences_all$iccs == i, ]))
+prisoners <- latest(prisoners_all)
+area <- latest(area_all)
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(), margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = modifyList(list(title = y_title), y_axis),
+    xaxis = modifyList(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+
+# the EU countries from the highest to the lowest, Greece in red and the EU in blue; where Eurostat
+# publishes no figure for the EU, a dotted line marks the median country
+ranking <- function(x, title, source, suffix = "%", digits = 1) {
+  x$name <- eu_name[x$geo]
+  x <- x[order(x$values), ]
+  x$name <- factor(x$name, levels = x$name)
+  lines <- list()
+  notes <- list()
+  if (!any(x$geo == "EU27_2020")) {
+    m <- median(x$values[x$geo %in% eu_codes])
+    lines <- list(list(type = "line", x0 = m, x1 = m, y0 = 0, y1 = 1, yref = "paper", line = list(color = blue, width = 2, dash = "dot")))
+    notes <- list(list(x = m, y = 1, yref = "paper", text = "Median EU country", xanchor = "left", yanchor = "bottom",
+                       xshift = 4, showarrow = FALSE, font = list(color = blue)))
+  }
+  # the source 45 px under the plot, below the numbers of the axis: in a chart this tall a fixed
+  # fraction of the plot would put it below the bottom of the chart
+  height <- knitr::opts_current$get("out.height.px")
+  if (!is.numeric(height)) height <- 864
+  plot_ly(x,
+    x = ~values, y = ~name, type = "bar", orientation = "h",
+    marker = list(color = ifelse(x$geo == "EL", greek_red, ifelse(x$geo == "EU27_2020", blue, gray))),
+    hovertemplate = paste0("%{y}: %{x:.", digits, "f}", suffix, "<extra></extra>")
+  ) %>%
+    chart(paste0(title, ", ", x$time[1]), source, x_axis = list(ticksuffix = suffix), shapes = lines,
+          annotations = notes, margin = list(l = 130, t = 70, b = 90), note_y = -45 / (height - 70 - 90))
+}
+
+# short labels of numbers
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+two <- function(x) format(round(x, 2), nsmall = 2)
+thousands <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
+```
+
+---
+
+## 1. How much schooling do Greeks have?
+
+**About as many university graduates as the rest of the EU, and almost no one leaves school early.**
+
+In `r tertiary$time[1]`, `r percent(greece(tertiary), 1)` of Greeks aged 25 to 34 had a university degree or another tertiary qualification, against `r percent(eu(tertiary), 1)` in the EU: `r place(tertiary)` share of the `r countries(tertiary)` countries.
+
+```{r tertiary, fig.height = 9}
+ranking(tertiary, "People aged 25 to 34 with tertiary education, %", "Eurostat, edat_lfse_03")
+```
+
+Almost every young Greek finishes secondary school. Only `r percent(greece(early), 1)` of Greeks aged 18 to 24 left education with at most lower secondary school and are not in any education or training, `r place(early)` share in the EU, where it is `r percent(eu(early), 1)`. The older generations had less schooling: `r percent(greece(lower), 1)` of Greeks aged 25 to 64 have no more than lower secondary education, against `r percent(eu(lower), 1)` in the EU.
+
+```{r early, fig.height = 9}
+ranking(early, "Early leavers from education and training, % of people aged 18 to 24", "Eurostat, edat_lfse_14")
+```
+
+---
+
+## 2. What do they know?
+
+### Maths, reading and science at 15
+
+```{r pisa_numbers}
+pisa_year <- pisa$EF461$time[1]
+maths <- pisa_all[pisa_all$field == "EF461" & pisa_all$geo %in% c("EL", "EU27_2020"), ]
+first_year <- min(intersect(maths$time[maths$geo == "EL"], maths$time[maths$geo == "EU27_2020"]))
+maths_then <- function(geo) maths$values[maths$geo == geo & maths$time == first_year]
+```
+
+**`r percent(greece(pisa$EF461))` of Greek 15-year-olds are below the basic level in maths, against `r percent(eu(pisa$EF461))` in the EU.**
+
+PISA, the OECD's test of 15-year-olds, measures whether students can use what they have learned. Below level 2, its *basic* level, a student can at most answer questions about a familiar, clearly stated situation with all the information given: in maths, for example, apply a simple formula when told which one. In `r pisa_year`, `r percent(greece(pisa$EF461))` of Greek 15-year-olds were below that level in maths, against `r percent(eu(pisa$EF461))` in the EU, `r place(pisa$EF461)` share of the `r countries(pisa$EF461)` countries. In reading the shares are `r percent(greece(pisa$READ))` and `r percent(eu(pisa$READ))`, and in science `r percent(greece(pisa$SCI))` and `r percent(eu(pisa$SCI))`. The EU's target for 2030 is fewer than 15% in each.
+
+```{r pisa}
+pisa_table <- data.frame(
+  subject = factor(subjects, levels = subjects),
+  greece = sapply(pisa, greece),
+  eu = sapply(pisa, eu)
+)
+plot_ly(pisa_table,
+  x = ~subject, y = ~greece, type = "bar", name = "Greece", marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f}%<extra>Greece</extra>"
+) %>%
+  add_trace(y = ~eu, name = "EU-27", marker = list(color = blue), hovertemplate = "%{x}: %{y:.1f}%<extra>EU-27</extra>") %>%
+  chart(paste0("15-year-olds below the basic level of PISA, ", pisa_year, ", %"), "Eurostat, sdg_04_40 (OECD PISA)", "%",
+        y_axis = list(ticksuffix = "%"), legend = legend_top, barmode = "group")
+```
+
+It was not always as far behind: in `r first_year`, `r percent(maths_then("EL"))` of Greek 15-year-olds were below the basic level in maths, against `r percent(maths_then("EU27_2020"))` in the EU. These are results of schooling, not of ability: PISA tests what students have been taught, and how well, by the age of 15.
+
+```{r maths, fig.height = 9}
+ranking(pisa$EF461, "15-year-olds below the basic level of PISA in mathematics, %", "Eurostat, sdg_04_40 (OECD PISA)")
+```
+
+### Computer skills
+
+**`r percent(greece(digital))` of Greek adults have at least basic computer skills, against `r percent(eu(digital))` in the EU.**
+
+Eurostat counts people as having at least basic *digital skills* when they can do at least one basic task in each of five areas: finding and judging information, communicating online, making digital content, using a device safely, and solving problems with it. In `r digital$time[1]`, `r percent(greece(digital))` of Greeks aged 16 to 74 could, against `r percent(eu(digital))` in the EU, `r place(digital)` share of the `r countries(digital)` countries; `r percent(greece(digital_above))` had *above* basic skills, against `r percent(eu(digital_above))`. Few Greeks work with computers for a living: ICT specialists are `r percent(greece(ict), 1)` of the people in work, `r place(ict)` share in the EU, where they are `r percent(eu(ict), 1)`.
+
+```{r digital, fig.height = 9}
+ranking(digital, "People aged 16 to 74 with at least basic digital skills, %", "Eurostat, isoc_sk_dskl_i21")
+```
+
+### Learning as adults
+
+**Greeks rarely go back to learning once they work.** In `r learning$time[1]`, `r percent(greece(learning), 1)` of Greeks aged 25 to 64 had taken part in a course or other training in the four weeks before the survey, against `r percent(eu(learning), 1)` in the EU: `r place(learning)` share.
+
+```{r learning, fig.height = 9}
+ranking(learning, "People aged 25 to 64 in education or training in the last four weeks, %", "Eurostat, trng_lfse_01")
+```
+
+---
+
+## 3. Do they find work?
+
+```{r unemployment_numbers}
+greek_rates <- unemployment_all[unemployment_all$geo == "EL" & unemployment_all$age == "Y15-74", ]
+peak_year <- greek_rates$time[which.max(greek_rates$values)]
+```
+
+**More of them are out of work than in most of the EU, and for longer.** Unemployment in Greece rose to `r percent(max(greek_rates$values), 1)` of the labour force in `r peak_year`, in the debt crisis, and has fallen to `r percent(greece(unemployment), 1)` in `r unemployment$time[1]`. That is still `r place(unemployment)` rate in the EU, where it is `r percent(eu(unemployment), 1)`. Among the young, aged 15 to 24, it is `r percent(greece(youth), 1)`, against `r percent(eu(youth), 1)`.
+
+```{r unemployment}
+line <- function(geo, age) unemployment_all[unemployment_all$geo == geo & unemployment_all$age == age, ]
+series <- data.frame(
+  geo = c("EL", "EU27_2020", "EL", "EU27_2020"),
+  age = c("Y15-74", "Y15-74", "Y15-24", "Y15-24"),
+  name = c("Greece, 15 to 74", "EU-27, 15 to 74", "Greece, 15 to 24", "EU-27, 15 to 24"),
+  color = c(greek_red, blue, greek_red, blue),
+  dash = c("solid", "solid", "dot", "dot")
+)
+p <- plot_ly()
+for (k in seq_len(nrow(series))) {
+  p <- add_trace(p,
+    data = line(series$geo[k], series$age[k]), x = ~time, y = ~values, type = "scatter", mode = "lines",
+    name = series$name[k], line = list(color = series$color[k], width = 3, dash = series$dash[k]),
+    hovertemplate = paste0("%{x}: %{y:.1f}%<extra>", series$name[k], "</extra>")
+  )
+}
+p %>% chart("Unemployment, % of the labour force", "Eurostat, une_rt_a", "%",
+            y_axis = list(ticksuffix = "%", rangemode = "tozero"), legend = legend_top)
+```
+
+Unemployment in Greece lasts: `r percent(greece(long_share))` of the unemployed have been looking for work for a year or longer, against `r percent(eu(long_share))` in the EU, which makes the long-term unemployed `r percent(greece(long_term), 1)` of the labour force, `r place(long_term)` share in the EU. `r percent(greece(neet), 1)` of Greeks aged 15 to 29 are neither in work nor in education or training, against `r percent(eu(neet), 1)` in the EU.
+
+Of the Greeks aged 20 to 64, `r percent(greece(employment), 1)` have a job, against `r percent(eu(employment), 1)` in the EU. The gap is mostly among women: `r percent(greece(women), 1)` of Greek women have a job, against `r percent(eu(women), 1)` of women in the EU, while for men the rates are `r percent(greece(men), 1)` and `r percent(eu(men), 1)`.
+
+---
+
+## 4. How hard do they work, and how much do they produce?
+
+**Hours of work: `r place(hours)` in the EU. Output per hour: `r place(per_hour)`.**
+
+Greeks in work usually work `r one(greece(hours))` hours a week, `r place(hours)` in the EU, where the average is `r one(eu(hours))`. Yet an hour of work in Greece produces `r round(greece(per_hour))`% of what an hour produces on average in the EU, `r place(per_hour)` in the EU, and a person in work, with the longer hours, `r round(greece(per_person))`%. These figures count output in *purchasing power standards*, which allow for the lower prices of Greece.
+
+```{r hours_output}
+both <- merge(hours[hours$geo %in% eu_codes, c("geo", "values")],
+              per_hour[per_hour$geo %in% eu_codes, c("geo", "values")],
+              by = "geo", suffixes = c("_hours", "_output"))
+both$label <- ifelse(both$geo == "EL", "Greece", both$geo)
+both$name <- eu_name[both$geo]
+plot_ly(both,
+  x = ~values_hours, y = ~values_output, type = "scatter", mode = "markers+text",
+  text = ~label, textposition = "top center", customdata = ~name,
+  marker = list(size = ifelse(both$geo == "EL", 14, 9), color = ifelse(both$geo == "EL", greek_red, gray)),
+  textfont = list(color = ifelse(both$geo == "EL", greek_red, dark_gray)),
+  hovertemplate = "%{customdata}: %{x:.1f} hours a week, %{y:.0f}% of the EU's output per hour<extra></extra>"
+) %>%
+  chart(paste0("Hours of work and output per hour, ", hours$time[1]), "Eurostat, lfsa_ewhun2 and tesem160",
+        "Output per hour worked, EU = 100", x_axis = list(title = "Usual hours of work a week"),
+        margin = list(t = 70, b = 110), note_y = -0.2)
+```
+
+Output per hour depends less on how hard people work than on what they work with, and where. A large share of Greeks work for themselves or in very small firms: `r percent(greece(self_employed), 1)` of Greeks in work are self-employed, `r place(self_employed)` share in the EU, where it is `r percent(eu(self_employed), 1)`. They run farms, shops, taxis, cafés and workshops, often with no employees. Small businesses like these have less machinery and technology behind each hour of work than large firms, and long opening hours add hours more than they add output.
+
+```{r self_employed, fig.height = 9}
+ranking(self_employed, "The self-employed, % of the people in work aged 15 to 64", "Eurostat, lfsa_egaps")
+```
+
+---
+
+## 5. Do their jobs use their education?
+
+**Often not.** `r percent(greece(overqualified), 1)` of the Greeks with tertiary education who work have jobs that do not need it, such as clerical, sales or manual jobs, `r place(overqualified)` share in the EU, where it is `r percent(eu(overqualified), 1)`. The schools and universities produce graduates; the economy has too few jobs that need them.
+
+```{r overqualified, fig.height = 9}
+ranking(overqualified, "People in work with tertiary education in jobs that do not need it, %", "Eurostat, lfsa_eoqgan")
+```
+
+---
+
+## 6. Is there much crime?
+
+**Recorded crime is around the middle of the EU, but the share of Greeks who see crime around them is `r place(area)` in the EU.**
+
+Crime is hard to compare between countries. The police can only count the offences that people report, and people report more where they trust the police or need a report for their insurance; and each country defines and counts offences in its own way. Eurostat therefore warns against comparing the levels of most offences between countries. The exception is **intentional homicide**, which is almost always recorded, and recorded in the same way.
+
+```{r crime_numbers}
+homicide <- offences$ICCS0101
+median_eu <- function(x) median(x$values[x$geo %in% eu_codes])
+```
+
+In `r homicide$time[1]`, the police in Greece recorded `r two(greece(homicide))` intentional homicides for every 100,000 inhabitants, against `r two(median_eu(homicide))` in the median EU country: `r place(homicide)` rate of `r countries(homicide)` countries.
+
+```{r homicide, fig.height = 9}
+ranking(homicide, "Intentional homicides recorded by the police, per 100,000 inhabitants", "Eurostat, crim_off_cat",
+        suffix = "", digits = 2)
+```
+
+For the other offences, with the warning above, Greece is near the middle or below it:
+
+```{r offences}
+# homicides with two decimals, as there are few of them
+decimals <- function(i, v) if (i == "ICCS0101") two(v) else one(v)
+offence_table <- data.frame(
+  Offence = offence_names,
+  Year = sapply(offences, function(x) x$time[1]),
+  Greece = sapply(names(offences), function(i) decimals(i, greece(offences[[i]]))),
+  `Median EU country` = sapply(names(offences), function(i) decimals(i, median_eu(offences[[i]]))),
+  `Place of Greece` = sapply(offences, function(x) paste(sum(x$values[x$geo %in% eu_codes] > greece(x)) + 1, "of", countries(x))),
+  check.names = FALSE, row.names = NULL
+)
+knitr::kable(offence_table, align = "lrrrr",
+             caption = "Offences recorded by the police per 100,000 inhabitants; place 1 is the country with the most")
+```
+
+### How many are in prison?
+
+```{r prison_numbers}
+prison_year <- max(prisoners_ctz$time)
+held <- function(citizen) prisoners_ctz$values[prisoners_ctz$citizen == citizen & prisoners_ctz$time == prison_year]
+# the Greek citizens living in Greece on 1 January of the next year, or of the same year
+greek_citizens <- citizens$values[match(prison_year + 1, citizens$time)]
+if (is.na(greek_citizens)) greek_citizens <- citizens$values[match(prison_year, citizens$time)]
+greek_rate <- 1e5 * held("NAT") / greek_citizens
+```
+
+Greece holds `r round(greece(prisoners))` people in prison for every 100,000 inhabitants, against `r round(median_eu(prisoners))` in the median EU country (`r place(prisoners)` rate of `r countries(prisoners)`). Of the `r thousands(held("TOTAL"))` people held in Greek prisons in `r prison_year`, `r thousands(held("NAT"))` were Greek citizens: `r round(greek_rate)` for every 100,000 Greek citizens living in Greece, or one in `r thousands(1e5 / greek_rate)`. The other `r percent(100 * held("FOR") / held("TOTAL"))` were foreign citizens, a group that also includes people who did not live in Greece, so it cannot be turned into a rate in the same way.
+
+A prison count is not a count of criminals: it includes people waiting for their trial, and most people who commit an offence are never caught, or are fined or given a suspended sentence instead of prison.
+
+```{r prisoners, fig.height = 9}
+ranking(prisoners, "People held in prison, per 100,000 inhabitants", "Eurostat, crim_pris_cap", suffix = "", digits = 0)
+```
+
+### How safe do Greeks feel?
+
+**`r if (place(area) == "the highest") "Less safe than anyone else in the EU." else "Less safe than most of the EU."`** In `r area$time[1]`, `r percent(greece(area), 1)` of Greeks said that there is crime, violence or vandalism in the area where they live, against `r percent(eu(area), 1)` of people in the EU: `r place(area)` share. The gap between the crime that is recorded and the crime that people see around them can have many causes, among them petty crime and vandalism that are never reported, and trust in the police.
+
+```{r area, fig.height = 9}
+ranking(area, "People who say that their area has crime, violence or vandalism, %", "Eurostat, ilc_mddw03 (EU-SILC)")
+```
+
+---
+
+## So, are they good workers?
+
+The data cannot say whether Greeks are good workers, but they can say what Greek workers bring and what the economy does with it:
+
+1. **They work long hours**: `r one(greece(hours))` hours a week, `r place(hours)` in the EU.
+2. **They stay in education**: `r place(early)` share of early school leavers in the EU, and about as many graduates as the EU, `r percent(greece(tertiary))` of people aged 25 to 34.
+3. **But what they learn at school is weak**: `r percent(greece(pisa$EF461))` of 15-year-olds are below the basic level in maths, against `r percent(eu(pisa$EF461))` in the EU; fewer adults have basic computer skills (`r percent(greece(digital))`, against `r percent(eu(digital))`), and almost none go back to learning (`r percent(greece(learning), 1)`, `r place(learning)` share in the EU).
+4. **And the economy does not use what they have**: an hour of work produces `r round(greece(per_hour))`% of the EU average, `r place(per_hour)`; `r percent(greece(self_employed))` of the people in work are self-employed, mostly in very small businesses; `r percent(greece(overqualified))` of the graduates in work have jobs that do not need a degree; and `r percent(greece(unemployment))` of the labour force cannot find work.
+5. **Crime is not the problem it is felt to be**: the homicide rate and the prison population are around the middle of the EU, and `r round(greek_rate)` in every 100,000 Greek citizens are in prison, yet `r percent(greece(area))` of Greeks say that there is crime where they live, `r place(area)` share in the EU.
+
+The picture is of people who work hard and stay in school, in an economy of small businesses that turns their hours into little output and leaves much of their education unused, and with schools that teach less than those of most of the EU.
+
+---
+
+## Sources
+
+- Eurostat, education and skills: [edat_lfse_03](https://ec.europa.eu/eurostat/databrowser/view/edat_lfse_03/default/table?lang=en) (educational attainment), [edat_lfse_14](https://ec.europa.eu/eurostat/databrowser/view/edat_lfse_14/default/table?lang=en) (early leavers from education and training), [sdg_04_40](https://ec.europa.eu/eurostat/databrowser/view/sdg_04_40/default/table?lang=en) (low achieving 15-year-olds, from the OECD's PISA), [isoc_sk_dskl_i21](https://ec.europa.eu/eurostat/databrowser/view/isoc_sk_dskl_i21/default/table?lang=en) (digital skills), [trng_lfse_01](https://ec.europa.eu/eurostat/databrowser/view/trng_lfse_01/default/table?lang=en) (adult learning), [isoc_sks_itspt](https://ec.europa.eu/eurostat/databrowser/view/isoc_sks_itspt/default/table?lang=en) (ICT specialists).
+- Eurostat, work: [une_rt_a](https://ec.europa.eu/eurostat/databrowser/view/une_rt_a/default/table?lang=en) (unemployment), [une_ltu_a](https://ec.europa.eu/eurostat/databrowser/view/une_ltu_a/default/table?lang=en) (long-term unemployment), [edat_lfse_20](https://ec.europa.eu/eurostat/databrowser/view/edat_lfse_20/default/table?lang=en) (young people neither in employment nor in education or training), [lfsi_emp_a](https://ec.europa.eu/eurostat/databrowser/view/lfsi_emp_a/default/table?lang=en) (employment), [lfsa_ewhun2](https://ec.europa.eu/eurostat/databrowser/view/lfsa_ewhun2/default/table?lang=en) (hours of work), [tesem160](https://ec.europa.eu/eurostat/databrowser/view/tesem160/default/table?lang=en) (labour productivity), [lfsa_egaps](https://ec.europa.eu/eurostat/databrowser/view/lfsa_egaps/default/table?lang=en) (employment by professional status), [lfsa_eoqgan](https://ec.europa.eu/eurostat/databrowser/view/lfsa_eoqgan/default/table?lang=en) (over-qualification).
+- Eurostat, crime: [crim_off_cat](https://ec.europa.eu/eurostat/databrowser/view/crim_off_cat/default/table?lang=en) (recorded offences), [crim_pris_cap](https://ec.europa.eu/eurostat/databrowser/view/crim_pris_cap/default/table?lang=en) (prison population), [crim_pris_ctz](https://ec.europa.eu/eurostat/databrowser/view/crim_pris_ctz/default/table?lang=en) (prisoners by citizenship), [migr_pop1ctz](https://ec.europa.eu/eurostat/databrowser/view/migr_pop1ctz/default/table?lang=en) (population by citizenship), [ilc_mddw03](https://ec.europa.eu/eurostat/databrowser/view/ilc_mddw03/default/table?lang=en) (crime, violence or vandalism in the area).
