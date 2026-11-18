@@ -1,4 +1,4 @@
-"""Build docs/index.html: a landing page linking every rendered site in docs/<name>/.
+"""Build docs/index.html: a landing page that links every rendered site in docs/<name>/ and the RSS feed.
 
 Title and description come from the `website:` block of quarto/<name>/_quarto.yml.
 Styled with the same Bootswatch theme (flatly) the Quarto sites use.
@@ -69,6 +69,7 @@ page = f"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>vignettes</title>
   <meta name="description" content="Tutorials and worked examples in R.">
+  <link rel="alternate" type="application/rss+xml" title="sedzinfo · R tutorials" href="feed.xml">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/flatly/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <style>
@@ -99,7 +100,10 @@ page = f"""<!doctype html>
 
   <main class="container py-5">
     <h1 class="mb-2">vignettes</h1>
-    <p class="lead text-muted mb-4">Tutorials and worked examples in R.</p>
+    <p class="lead text-muted mb-2">Tutorials and worked examples in R.</p>
+    <!-- the link to R-bloggers is a condition of its listing (feed.xml, built by build_feed.py) -->
+    <p class="small text-muted mb-4"><i class="bi bi-rss"></i> <a href="feed.xml" class="link-secondary">RSS feed</a> of new tutorials ·
+      R news and tutorials from many authors: <a href="https://www.r-bloggers.com/" class="link-secondary">R-bloggers</a></p>
     <div class="row row-cols-1 row-cols-md-2 g-4">
 {cards}
     </div>

@@ -146,13 +146,15 @@ if (preview) {
     if (publish) copy_site(site_dir, docs_root)
   }
   ##########################################################################################
-  # LANDING PAGE
+  # LANDING PAGE AND RSS FEED
   ##########################################################################################
   if (!is.na(python)) {
-    run_python("build_index.py", c(DOCS_DIR = out_root))
-    if (publish) run_python("build_index.py", c(DOCS_DIR = docs_root))
+    for (script in c("build_index.py", "build_feed.py")) {
+      run_python(script, c(DOCS_DIR = out_root))
+      if (publish) run_python(script, c(DOCS_DIR = docs_root))
+    }
   } else {
-    message("Python not found: skipped the landing page (index.html) and the check of _freeze/.")
+    message("Python not found: skipped the landing page (index.html), the feed (feed.xml) and the check of _freeze/.")
   }
   ##########################################################################################
   # CHECK OF _freeze/
