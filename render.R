@@ -118,6 +118,10 @@ if (preview) {
     file.copy(list.files(file.path(site_dir, "_site"), full.names = TRUE, all.files = TRUE, no.. = TRUE), dest, recursive = TRUE)
   }
 
+  # A page whose title or description alone changed gets them in its _freeze/, instead of running
+  # its R code again (.github/scripts/refreeze_front_matter.py)
+  if (!is.na(python)) run_python("refreeze_front_matter.py", c(SITES = paste(sites, collapse = " ")))
+
   failed <- character(0)
   for (site in sites) {
     cat("==== Rendering", site, "====\n")

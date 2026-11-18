@@ -3,7 +3,7 @@
 ##########################################################################################
 # Draws quarto/<site>/social-card.png for every site: 1200 x 630 px, the size that LinkedIn,
 # Mastodon, Slack and X show in full when a link to the site is posted. Each _quarto.yml points
-# to it with website: image, and open-graph / twitter-card put it in every page's <head>.
+# to it with open-graph: image and twitter-card: image, which put it in every page's <head>.
 # The title comes from website: title in _quarto.yml; the line under it from taglines below.
 # Re-run after changing either, from the repo root:
 #   Rscript quarto/_shared/social_card.R

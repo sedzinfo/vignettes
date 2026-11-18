@@ -71,6 +71,14 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@v2
         if: steps.sites.outputs.list != ''
 
+      # A page whose title or description alone changed (for example, edited on GitHub) gets them in
+      # its _freeze, instead of running its R code again; the updated _freeze is committed below
+      - name: Update _freeze of pages whose front matter alone changed
+        if: steps.sites.outputs.list != ''
+        env:
+          SITES: ${{ steps.sites.outputs.list }}
+        run: python3 .github/scripts/refreeze_front_matter.py
+
       # Pages whose _freeze matches their source are rendered from it, without running their code;
       # only a page that changed since its code last ran (locally, by render.R) needs R with all the
       # packages of the site
