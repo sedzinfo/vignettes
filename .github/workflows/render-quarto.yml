@@ -29,7 +29,9 @@ concurrency:
 
 jobs:
   render:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04 in November 2026; the steps for pages that run their R code
+    # (the mirror switch, setup-r with Posit's binary packages) were made and tested on 24.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 60          # stop a page that hangs instead of running for hours
     steps:
       - uses: actions/checkout@v5
@@ -90,13 +92,16 @@ jobs:
         run: python3 .github/scripts/stale_pages.py
 
       # Even a page rendered from _freeze needs R once more, for knitr's postprocessing, but only R
-      # with rmarkdown. They come from conda-forge, with the Miniconda of the runner: no Ubuntu
-      # packages, so this does not depend on the Ubuntu mirrors, which at times slow to a crawl
+      # with rmarkdown. They come from conda-forge, with micromamba: no Ubuntu packages, so this does
+      # not depend on the Ubuntu mirrors, which at times slow to a crawl. micromamba is one file,
+      # fetched here: the runner images no longer ship Miniconda ($CONDA is empty on Ubuntu 26.04)
       - name: Install R and rmarkdown from conda-forge
         if: steps.sites.outputs.list != '' && steps.stale.outputs.needs_r == 'false'
         timeout-minutes: 15
         run: |
-          "$CONDA/bin/conda" create --yes --quiet --prefix "$RUNNER_TEMP/r" --override-channels -c conda-forge r-base r-rmarkdown r-knitr
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/micromamba" https://github.com/mamba-org/micromamba-releases/releases/latest/download/micromamba-linux-64
+          chmod +x "$RUNNER_TEMP/micromamba"
+          "$RUNNER_TEMP/micromamba" create --yes --quiet --root-prefix "$RUNNER_TEMP/mamba" --prefix "$RUNNER_TEMP/r" --override-channels --channel conda-forge r-base r-rmarkdown r-knitr
           echo "$RUNNER_TEMP/r/bin" >> "$GITHUB_PATH"
           echo "QUARTO_R=$RUNNER_TEMP/r/bin" >> "$GITHUB_ENV"
           "$RUNNER_TEMP/r/bin/Rscript" -e 'cat(R.version.string, "| rmarkdown", format(packageVersion("rmarkdown")), "| knitr", format(packageVersion("knitr")), "\n")'
