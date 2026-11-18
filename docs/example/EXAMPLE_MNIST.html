@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="">
+<meta name="description" content="Handwritten digit recognition on MNIST with keras in R: a dense neural network with three hidden layers, about 98% accuracy and a confusion matrix of errors.">
 
 <title>MNIST in Keras – Worked Examples in R</title>
 <style>
@@ -82,7 +83,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-85f7a32731ed2b609fa7be27e34d4366.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-8ae396d4416811ff27bcf6c71ba7480a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-a2b61889bee915fd6c366a0336e5d321.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -117,6 +118,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="site_libs/grViz-binding-1.0.12/grViz.js"></script>
 
 
+<meta property="og:title" content="MNIST in Keras – Worked Examples in R">
+<meta property="og:description" content="Handwritten digit recognition on MNIST with keras in R: a dense neural network with three hidden layers, about 98% accuracy and a confusion matrix of errors.">
+<meta property="og:image" content="https://sedzinfo.github.io/vignettes/example/social-card.png">
+<meta property="og:site_name" content="Worked Examples in R">
+<meta property="og:image:height" content="630">
+<meta property="og:image:width" content="1200">
+<meta name="twitter:title" content="MNIST in Keras – Worked Examples in R">
+<meta name="twitter:description" content="Handwritten digit recognition on MNIST with keras in R: a dense neural network with three hidden layers, about 98% accuracy and a confusion matrix of errors.">
+<meta name="twitter:image" content="https://sedzinfo.github.io/vignettes/example/social-card.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 
 <body class="nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
@@ -269,6 +280,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="quarto-title-block"><div><h1 class="title">MNIST in Keras</h1><button type="button" class="btn code-tools-button dropdown-toggle" id="quarto-code-tools-menu" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi"></i> Code</button><ul class="dropdown-menu dropdown-menu-end" aria-labelelledby="quarto-code-tools-menu"><li><a id="quarto-show-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Show All Code</a></li><li><a id="quarto-hide-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Hide All Code</a></li><li><hr class="dropdown-divider"></li><li><a id="quarto-view-source" class="dropdown-item" href="javascript:void(0)" role="button">View Source</a></li></ul></div></div>
 </div>
 
+<div>
+  <div class="description">
+    Handwritten digit recognition on MNIST with keras in R: a dense neural network with three hidden layers, about 98% accuracy and a confusion matrix of errors.
+  </div>
+</div>
 
 
 <div class="quarto-title-meta">
@@ -1520,185 +1536,186 @@ p     0.99    0.99    0.97    0.98   0.98   0.98   0.98    0.97   0.98    0.97  
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb29" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
 <span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "MNIST in Keras"</span></span>
-<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
-<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
-<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
-<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
-<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
-<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
-<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
-<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
-<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
-<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
-<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
-<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{MNIST in Keras}</span></span>
-<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
-<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
-<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
-<span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a>directory <span class="ot">&lt;-</span> <span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
-<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
-<span id="cb29-22"><a href="#cb29-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
-<span id="cb29-23"><a href="#cb29-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-24"><a href="#cb29-24" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-25"><a href="#cb29-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a><span class="an">description:</span><span class="co"> "Handwritten digit recognition on MNIST with keras in R: a dense neural network with three hidden layers, about 98% accuracy and a confusion matrix of errors."</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
+<span id="cb29-12"><a href="#cb29-12" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
+<span id="cb29-13"><a href="#cb29-13" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
+<span id="cb29-14"><a href="#cb29-14" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
+<span id="cb29-15"><a href="#cb29-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{MNIST in Keras}</span></span>
+<span id="cb29-16"><a href="#cb29-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
+<span id="cb29-17"><a href="#cb29-17" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
+<span id="cb29-18"><a href="#cb29-18" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb29-19"><a href="#cb29-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-20"><a href="#cb29-20" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb29-21"><a href="#cb29-21" aria-hidden="true" tabindex="-1"></a>directory <span class="ot">&lt;-</span> <span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb29-22"><a href="#cb29-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
+<span id="cb29-23"><a href="#cb29-23" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
+<span id="cb29-24"><a href="#cb29-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-25"><a href="#cb29-25" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb29-26"><a href="#cb29-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-27"><a href="#cb29-27" aria-hidden="true" tabindex="-1"></a><span class="in">```{r install_keras_tensorflow,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
-<span id="cb29-28"><a href="#cb29-28" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("remotes")</span></span>
-<span id="cb29-29"><a href="#cb29-29" aria-hidden="true" tabindex="-1"></a><span class="co"># remotes::install_github("rstudio/tensorflow")</span></span>
-<span id="cb29-30"><a href="#cb29-30" aria-hidden="true" tabindex="-1"></a><span class="co"># reticulate::install_python()</span></span>
-<span id="cb29-31"><a href="#cb29-31" aria-hidden="true" tabindex="-1"></a><span class="co"># library(tensorflow)</span></span>
-<span id="cb29-32"><a href="#cb29-32" aria-hidden="true" tabindex="-1"></a><span class="co"># tensorflow::install_tensorflow(envname = "r-tensorflow")</span></span>
-<span id="cb29-33"><a href="#cb29-33" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("keras")</span></span>
-<span id="cb29-34"><a href="#cb29-34" aria-hidden="true" tabindex="-1"></a><span class="co"># library(keras)</span></span>
-<span id="cb29-35"><a href="#cb29-35" aria-hidden="true" tabindex="-1"></a><span class="co"># install_keras()</span></span>
-<span id="cb29-36"><a href="#cb29-36" aria-hidden="true" tabindex="-1"></a><span class="co"># reticulate::virtualenv_create("r-tensorflow")</span></span>
-<span id="cb29-37"><a href="#cb29-37" aria-hidden="true" tabindex="-1"></a>reticulate<span class="sc">::</span><span class="fu">use_virtualenv</span>(<span class="st">"r-tensorflow"</span>)</span>
-<span id="cb29-38"><a href="#cb29-38" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-39"><a href="#cb29-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-27"><a href="#cb29-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-28"><a href="#cb29-28" aria-hidden="true" tabindex="-1"></a><span class="in">```{r install_keras_tensorflow,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb29-29"><a href="#cb29-29" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("remotes")</span></span>
+<span id="cb29-30"><a href="#cb29-30" aria-hidden="true" tabindex="-1"></a><span class="co"># remotes::install_github("rstudio/tensorflow")</span></span>
+<span id="cb29-31"><a href="#cb29-31" aria-hidden="true" tabindex="-1"></a><span class="co"># reticulate::install_python()</span></span>
+<span id="cb29-32"><a href="#cb29-32" aria-hidden="true" tabindex="-1"></a><span class="co"># library(tensorflow)</span></span>
+<span id="cb29-33"><a href="#cb29-33" aria-hidden="true" tabindex="-1"></a><span class="co"># tensorflow::install_tensorflow(envname = "r-tensorflow")</span></span>
+<span id="cb29-34"><a href="#cb29-34" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages("keras")</span></span>
+<span id="cb29-35"><a href="#cb29-35" aria-hidden="true" tabindex="-1"></a><span class="co"># library(keras)</span></span>
+<span id="cb29-36"><a href="#cb29-36" aria-hidden="true" tabindex="-1"></a><span class="co"># install_keras()</span></span>
+<span id="cb29-37"><a href="#cb29-37" aria-hidden="true" tabindex="-1"></a><span class="co"># reticulate::virtualenv_create("r-tensorflow")</span></span>
+<span id="cb29-38"><a href="#cb29-38" aria-hidden="true" tabindex="-1"></a>reticulate<span class="sc">::</span><span class="fu">use_virtualenv</span>(<span class="st">"r-tensorflow"</span>)</span>
+<span id="cb29-39"><a href="#cb29-39" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb29-40"><a href="#cb29-40" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-41"><a href="#cb29-41" aria-hidden="true" tabindex="-1"></a><span class="fu"># Keras on the MNIST dataset</span></span>
-<span id="cb29-42"><a href="#cb29-42" aria-hidden="true" tabindex="-1"></a>The code below uses the keras library, plus helper functions from rwf for the confusion matrix and scatterplot. Much of the code follows the MNIST example in Chollet and Allaire (2018), Deep Learning with R (see Acknowledgments).</span>
-<span id="cb29-43"><a href="#cb29-43" aria-hidden="true" tabindex="-1"></a><span class="in">```{r set-options}</span></span>
-<span id="cb29-44"><a href="#cb29-44" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tensorflow)</span>
-<span id="cb29-45"><a href="#cb29-45" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(keras)</span>
-<span id="cb29-46"><a href="#cb29-46" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
-<span id="cb29-47"><a href="#cb29-47" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">width=</span><span class="dv">1000</span>)</span>
-<span id="cb29-48"><a href="#cb29-48" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">digits=</span><span class="dv">3</span>)</span>
-<span id="cb29-49"><a href="#cb29-49" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">scipen=</span><span class="dv">999</span>)</span>
-<span id="cb29-50"><a href="#cb29-50" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mai=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>),<span class="at">mar=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>),<span class="at">oma=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>))</span>
-<span id="cb29-51"><a href="#cb29-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-52"><a href="#cb29-52" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-53"><a href="#cb29-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-54"><a href="#cb29-54" aria-hidden="true" tabindex="-1"></a><span class="fu"># Obtaining and preparing the data</span></span>
-<span id="cb29-55"><a href="#cb29-55" aria-hidden="true" tabindex="-1"></a>The dataset is obtained from keras::dataset_mnist() function then usually we have to  </span>
-<span id="cb29-56"><a href="#cb29-56" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Split the dataset in train and test datasets.  </span>
-<span id="cb29-57"><a href="#cb29-57" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Scale the dataset (values in dataset should be -1 to 1 or 0 to 1).  </span>
-<span id="cb29-58"><a href="#cb29-58" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Scaling on the test dataset should be done using the mean and sd of the training dataset.  </span>
-<span id="cb29-59"><a href="#cb29-59" aria-hidden="true" tabindex="-1"></a>In this case the train/test split is already done: dataset_mnist() returns separate train and test sets, each with inputs (x) and labels (y); scaling is done further below. What is done below is simply to rename some variables to make our life a bit easier. The dataset consists of 60000 representations of train images and 10000 representations of test images and their corresponding labels.</span>
-<span id="cb29-60"><a href="#cb29-60" aria-hidden="true" tabindex="-1"></a><span class="in">```{r train_test}</span></span>
-<span id="cb29-61"><a href="#cb29-61" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-62"><a href="#cb29-62" aria-hidden="true" tabindex="-1"></a>mnist<span class="ot">&lt;-</span><span class="fu">dataset_mnist</span>()</span>
-<span id="cb29-63"><a href="#cb29-63" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span>mnist<span class="sc">$</span>train<span class="sc">$</span>x</span>
-<span id="cb29-64"><a href="#cb29-64" aria-hidden="true" tabindex="-1"></a>train_labels<span class="ot">&lt;-</span>mnist<span class="sc">$</span>train<span class="sc">$</span>y</span>
-<span id="cb29-65"><a href="#cb29-65" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span>mnist<span class="sc">$</span>test<span class="sc">$</span>x</span>
-<span id="cb29-66"><a href="#cb29-66" aria-hidden="true" tabindex="-1"></a>test_labels<span class="ot">&lt;-</span>mnist<span class="sc">$</span>test<span class="sc">$</span>y</span>
-<span id="cb29-67"><a href="#cb29-67" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-68"><a href="#cb29-68" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-69"><a href="#cb29-69" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-70"><a href="#cb29-70" aria-hidden="true" tabindex="-1"></a><span class="fu">## How the data look like</span></span>
-<span id="cb29-71"><a href="#cb29-71" aria-hidden="true" tabindex="-1"></a>Each image is a 28*28 pixel grayscale of handwritten numbers, and their respective number values are stored in the labels datasets. Let's see the first image in the test dataset:</span>
-<span id="cb29-72"><a href="#cb29-72" aria-hidden="true" tabindex="-1"></a><span class="in">```{r shape,out.width="100%"}</span></span>
-<span id="cb29-73"><a href="#cb29-73" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-74"><a href="#cb29-74" aria-hidden="true" tabindex="-1"></a>test_images[<span class="dv">1</span>,,] <span class="co"># this is how the image looks as a matrix representation</span></span>
-<span id="cb29-75"><a href="#cb29-75" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="fu">as.raster</span>(test_images[<span class="dv">1</span>,,],<span class="at">max=</span><span class="dv">255</span>)) <span class="co"># this is how the image looks like as a raster representation</span></span>
-<span id="cb29-76"><a href="#cb29-76" aria-hidden="true" tabindex="-1"></a>test_labels[<span class="dv">1</span>] <span class="co"># and this is its corresponding value</span></span>
-<span id="cb29-77"><a href="#cb29-77" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-78"><a href="#cb29-78" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-79"><a href="#cb29-79" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-80"><a href="#cb29-80" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data Wrangling</span></span>
-<span id="cb29-81"><a href="#cb29-81" aria-hidden="true" tabindex="-1"></a>Each image is a  28 by 28 matrix with values ranging from 0 to 255, thus the input of the network has to be 28*28=784 units. Inputs should be reshaped in a format acceptable by the network input layer. Input data should also be scaled by dividing by 255. This scaling results in a 0 - 1 range.</span>
-<span id="cb29-82"><a href="#cb29-82" aria-hidden="true" tabindex="-1"></a><span class="in">```{r wrangling}</span></span>
-<span id="cb29-83"><a href="#cb29-83" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-84"><a href="#cb29-84" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span><span class="fu">array_reshape</span>(train_images,<span class="fu">c</span>(<span class="dv">60000</span>,<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>))</span>
-<span id="cb29-85"><a href="#cb29-85" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span>train_images<span class="sc">/</span><span class="dv">255</span></span>
-<span id="cb29-86"><a href="#cb29-86" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span><span class="fu">array_reshape</span>(test_images,<span class="fu">c</span>(<span class="dv">10000</span>,<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>))</span>
-<span id="cb29-87"><a href="#cb29-87" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span>test_images<span class="sc">/</span><span class="dv">255</span></span>
-<span id="cb29-88"><a href="#cb29-88" aria-hidden="true" tabindex="-1"></a>train_labels<span class="ot">&lt;-</span><span class="fu">to_categorical</span>(train_labels)</span>
-<span id="cb29-89"><a href="#cb29-89" aria-hidden="true" tabindex="-1"></a>test_labels<span class="ot">&lt;-</span><span class="fu">to_categorical</span>(test_labels)</span>
-<span id="cb29-90"><a href="#cb29-90" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-91"><a href="#cb29-91" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-92"><a href="#cb29-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-93"><a href="#cb29-93" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network specification</span></span>
-<span id="cb29-94"><a href="#cb29-94" aria-hidden="true" tabindex="-1"></a>The specified network for our task is a simple sequential network that takes 784 inputs, passes them through three fully connected hidden layers (100, 1000 and 1000 units, ReLU activation), and ends in an output layer of 10 units with softmax activation. Each unit in each layer connects with all units in the neighboring layers. Each of the 10 output units represents one digit, in the order 0, 1, 2, ..., 9. The network is trained by minimising categorical cross-entropy (the loss) and is evaluated with accuracy, the proportion of images whose highest-scoring output unit matches the true digit. The choice of these measures partly depends on the nature of the output. In our case the labels are one-hot encoded (a 1 for the true digit, 0 elsewhere), and the softmax output layer returns 10 probabilities that sum to 1; the predicted digit is the unit with the highest probability.</span>
-<span id="cb29-95"><a href="#cb29-95" aria-hidden="true" tabindex="-1"></a><span class="in">```{r spesification}</span></span>
-<span id="cb29-96"><a href="#cb29-96" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-97"><a href="#cb29-97" aria-hidden="true" tabindex="-1"></a>network<span class="ot">&lt;-</span><span class="fu">keras_model_sequential</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb29-98"><a href="#cb29-98" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">100</span>,<span class="at">activation=</span><span class="st">"relu"</span>,<span class="at">input_shape=</span><span class="fu">c</span>(<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb29-99"><a href="#cb29-99" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">1000</span>,<span class="at">activation=</span><span class="st">"relu"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb29-41"><a href="#cb29-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-42"><a href="#cb29-42" aria-hidden="true" tabindex="-1"></a><span class="fu"># Keras on the MNIST dataset</span></span>
+<span id="cb29-43"><a href="#cb29-43" aria-hidden="true" tabindex="-1"></a>The code below uses the keras library, plus helper functions from rwf for the confusion matrix and scatterplot. Much of the code follows the MNIST example in Chollet and Allaire (2018), Deep Learning with R (see Acknowledgments).</span>
+<span id="cb29-44"><a href="#cb29-44" aria-hidden="true" tabindex="-1"></a><span class="in">```{r set-options}</span></span>
+<span id="cb29-45"><a href="#cb29-45" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tensorflow)</span>
+<span id="cb29-46"><a href="#cb29-46" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(keras)</span>
+<span id="cb29-47"><a href="#cb29-47" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb29-48"><a href="#cb29-48" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">width=</span><span class="dv">1000</span>)</span>
+<span id="cb29-49"><a href="#cb29-49" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">digits=</span><span class="dv">3</span>)</span>
+<span id="cb29-50"><a href="#cb29-50" aria-hidden="true" tabindex="-1"></a><span class="fu">options</span>(<span class="at">scipen=</span><span class="dv">999</span>)</span>
+<span id="cb29-51"><a href="#cb29-51" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mai=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>),<span class="at">mar=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>),<span class="at">oma=</span><span class="fu">c</span>(.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>,.<span class="dv">001</span>))</span>
+<span id="cb29-52"><a href="#cb29-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-53"><a href="#cb29-53" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-54"><a href="#cb29-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-55"><a href="#cb29-55" aria-hidden="true" tabindex="-1"></a><span class="fu"># Obtaining and preparing the data</span></span>
+<span id="cb29-56"><a href="#cb29-56" aria-hidden="true" tabindex="-1"></a>The dataset is obtained from keras::dataset_mnist() function then usually we have to  </span>
+<span id="cb29-57"><a href="#cb29-57" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Split the dataset in train and test datasets.  </span>
+<span id="cb29-58"><a href="#cb29-58" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Scale the dataset (values in dataset should be -1 to 1 or 0 to 1).  </span>
+<span id="cb29-59"><a href="#cb29-59" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Scaling on the test dataset should be done using the mean and sd of the training dataset.  </span>
+<span id="cb29-60"><a href="#cb29-60" aria-hidden="true" tabindex="-1"></a>In this case the train/test split is already done: dataset_mnist() returns separate train and test sets, each with inputs (x) and labels (y); scaling is done further below. What is done below is simply to rename some variables to make our life a bit easier. The dataset consists of 60000 representations of train images and 10000 representations of test images and their corresponding labels.</span>
+<span id="cb29-61"><a href="#cb29-61" aria-hidden="true" tabindex="-1"></a><span class="in">```{r train_test}</span></span>
+<span id="cb29-62"><a href="#cb29-62" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-63"><a href="#cb29-63" aria-hidden="true" tabindex="-1"></a>mnist<span class="ot">&lt;-</span><span class="fu">dataset_mnist</span>()</span>
+<span id="cb29-64"><a href="#cb29-64" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span>mnist<span class="sc">$</span>train<span class="sc">$</span>x</span>
+<span id="cb29-65"><a href="#cb29-65" aria-hidden="true" tabindex="-1"></a>train_labels<span class="ot">&lt;-</span>mnist<span class="sc">$</span>train<span class="sc">$</span>y</span>
+<span id="cb29-66"><a href="#cb29-66" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span>mnist<span class="sc">$</span>test<span class="sc">$</span>x</span>
+<span id="cb29-67"><a href="#cb29-67" aria-hidden="true" tabindex="-1"></a>test_labels<span class="ot">&lt;-</span>mnist<span class="sc">$</span>test<span class="sc">$</span>y</span>
+<span id="cb29-68"><a href="#cb29-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-69"><a href="#cb29-69" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-70"><a href="#cb29-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-71"><a href="#cb29-71" aria-hidden="true" tabindex="-1"></a><span class="fu">## How the data look like</span></span>
+<span id="cb29-72"><a href="#cb29-72" aria-hidden="true" tabindex="-1"></a>Each image is a 28*28 pixel grayscale of handwritten numbers, and their respective number values are stored in the labels datasets. Let's see the first image in the test dataset:</span>
+<span id="cb29-73"><a href="#cb29-73" aria-hidden="true" tabindex="-1"></a><span class="in">```{r shape,out.width="100%"}</span></span>
+<span id="cb29-74"><a href="#cb29-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-75"><a href="#cb29-75" aria-hidden="true" tabindex="-1"></a>test_images[<span class="dv">1</span>,,] <span class="co"># this is how the image looks as a matrix representation</span></span>
+<span id="cb29-76"><a href="#cb29-76" aria-hidden="true" tabindex="-1"></a><span class="fu">plot</span>(<span class="fu">as.raster</span>(test_images[<span class="dv">1</span>,,],<span class="at">max=</span><span class="dv">255</span>)) <span class="co"># this is how the image looks like as a raster representation</span></span>
+<span id="cb29-77"><a href="#cb29-77" aria-hidden="true" tabindex="-1"></a>test_labels[<span class="dv">1</span>] <span class="co"># and this is its corresponding value</span></span>
+<span id="cb29-78"><a href="#cb29-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-79"><a href="#cb29-79" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-80"><a href="#cb29-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-81"><a href="#cb29-81" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data Wrangling</span></span>
+<span id="cb29-82"><a href="#cb29-82" aria-hidden="true" tabindex="-1"></a>Each image is a  28 by 28 matrix with values ranging from 0 to 255, thus the input of the network has to be 28*28=784 units. Inputs should be reshaped in a format acceptable by the network input layer. Input data should also be scaled by dividing by 255. This scaling results in a 0 - 1 range.</span>
+<span id="cb29-83"><a href="#cb29-83" aria-hidden="true" tabindex="-1"></a><span class="in">```{r wrangling}</span></span>
+<span id="cb29-84"><a href="#cb29-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-85"><a href="#cb29-85" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span><span class="fu">array_reshape</span>(train_images,<span class="fu">c</span>(<span class="dv">60000</span>,<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>))</span>
+<span id="cb29-86"><a href="#cb29-86" aria-hidden="true" tabindex="-1"></a>train_images<span class="ot">&lt;-</span>train_images<span class="sc">/</span><span class="dv">255</span></span>
+<span id="cb29-87"><a href="#cb29-87" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span><span class="fu">array_reshape</span>(test_images,<span class="fu">c</span>(<span class="dv">10000</span>,<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>))</span>
+<span id="cb29-88"><a href="#cb29-88" aria-hidden="true" tabindex="-1"></a>test_images<span class="ot">&lt;-</span>test_images<span class="sc">/</span><span class="dv">255</span></span>
+<span id="cb29-89"><a href="#cb29-89" aria-hidden="true" tabindex="-1"></a>train_labels<span class="ot">&lt;-</span><span class="fu">to_categorical</span>(train_labels)</span>
+<span id="cb29-90"><a href="#cb29-90" aria-hidden="true" tabindex="-1"></a>test_labels<span class="ot">&lt;-</span><span class="fu">to_categorical</span>(test_labels)</span>
+<span id="cb29-91"><a href="#cb29-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-92"><a href="#cb29-92" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-93"><a href="#cb29-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-94"><a href="#cb29-94" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network specification</span></span>
+<span id="cb29-95"><a href="#cb29-95" aria-hidden="true" tabindex="-1"></a>The specified network for our task is a simple sequential network that takes 784 inputs, passes them through three fully connected hidden layers (100, 1000 and 1000 units, ReLU activation), and ends in an output layer of 10 units with softmax activation. Each unit in each layer connects with all units in the neighboring layers. Each of the 10 output units represents one digit, in the order 0, 1, 2, ..., 9. The network is trained by minimising categorical cross-entropy (the loss) and is evaluated with accuracy, the proportion of images whose highest-scoring output unit matches the true digit. The choice of these measures partly depends on the nature of the output. In our case the labels are one-hot encoded (a 1 for the true digit, 0 elsewhere), and the softmax output layer returns 10 probabilities that sum to 1; the predicted digit is the unit with the highest probability.</span>
+<span id="cb29-96"><a href="#cb29-96" aria-hidden="true" tabindex="-1"></a><span class="in">```{r spesification}</span></span>
+<span id="cb29-97"><a href="#cb29-97" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-98"><a href="#cb29-98" aria-hidden="true" tabindex="-1"></a>network<span class="ot">&lt;-</span><span class="fu">keras_model_sequential</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb29-99"><a href="#cb29-99" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">100</span>,<span class="at">activation=</span><span class="st">"relu"</span>,<span class="at">input_shape=</span><span class="fu">c</span>(<span class="dv">28</span><span class="sc">*</span><span class="dv">28</span>)) <span class="sc">%&gt;%</span></span>
 <span id="cb29-100"><a href="#cb29-100" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">1000</span>,<span class="at">activation=</span><span class="st">"relu"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb29-101"><a href="#cb29-101" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">10</span>,<span class="at">activation=</span><span class="st">"softmax"</span>)</span>
-<span id="cb29-102"><a href="#cb29-102" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">compile</span>(<span class="at">optimizer=</span><span class="st">"rmsprop"</span>,</span>
-<span id="cb29-103"><a href="#cb29-103" aria-hidden="true" tabindex="-1"></a>                    <span class="at">loss=</span><span class="st">"categorical_crossentropy"</span>,</span>
-<span id="cb29-104"><a href="#cb29-104" aria-hidden="true" tabindex="-1"></a>                    <span class="at">metrics=</span><span class="fu">c</span>(<span class="st">"accuracy"</span>))</span>
-<span id="cb29-105"><a href="#cb29-105" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-106"><a href="#cb29-106" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-107"><a href="#cb29-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-108"><a href="#cb29-108" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network training</span></span>
-<span id="cb29-109"><a href="#cb29-109" aria-hidden="true" tabindex="-1"></a><span class="in">```{r training}</span></span>
-<span id="cb29-110"><a href="#cb29-110" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-111"><a href="#cb29-111" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">fit</span>(train_images,train_labels,<span class="at">epochs=</span><span class="dv">30</span>,<span class="at">batch_size=</span><span class="dv">784</span>)</span>
-<span id="cb29-112"><a href="#cb29-112" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">evaluate</span>(test_images,test_labels)</span>
-<span id="cb29-113"><a href="#cb29-113" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-114"><a href="#cb29-114" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-115"><a href="#cb29-115" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-116"><a href="#cb29-116" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network evaluation</span></span>
-<span id="cb29-117"><a href="#cb29-117" aria-hidden="true" tabindex="-1"></a>In order to see how well the network performs, we use the test dataset. The test labels are stored in one-hot form as a 10000 x 10 matrix (one row per image, one column per digit). However, after a short transformation it is possible to obtain a vector of integers from 0 to 9.</span>
-<span id="cb29-118"><a href="#cb29-118" aria-hidden="true" tabindex="-1"></a><span class="in">```{r output_transformation}</span></span>
-<span id="cb29-119"><a href="#cb29-119" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-120"><a href="#cb29-120" aria-hidden="true" tabindex="-1"></a>rtl<span class="ot">&lt;-</span><span class="fu">c</span>()</span>
-<span id="cb29-121"><a href="#cb29-121" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(test_labels))</span>
-<span id="cb29-122"><a href="#cb29-122" aria-hidden="true" tabindex="-1"></a>  rtl<span class="ot">&lt;-</span><span class="fu">c</span>(rtl,<span class="fu">which</span>(test_labels[i,]<span class="sc">==</span><span class="dv">1</span>)<span class="sc">-</span><span class="dv">1</span>)</span>
-<span id="cb29-123"><a href="#cb29-123" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(rtl)</span>
-<span id="cb29-124"><a href="#cb29-124" aria-hidden="true" tabindex="-1"></a>deepviz<span class="sc">::</span><span class="fu">plot_model</span>(network)</span>
-<span id="cb29-125"><a href="#cb29-125" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-126"><a href="#cb29-126" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-127"><a href="#cb29-127" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-128"><a href="#cb29-128" aria-hidden="true" tabindex="-1"></a><span class="fu">## Confusion matrix</span></span>
-<span id="cb29-129"><a href="#cb29-129" aria-hidden="true" tabindex="-1"></a>An ideal model should produce a confusion matrix where every predicted digit matches the observed digit. This is represented by having all high frequencies in the diagonal whilst all off diagonal values should ideally be 0. In the table below, rows are predicted digits and columns are observed digits; the "p" column gives the precision for each predicted digit, the "p" row the recall for each observed digit, and the bottom-right cell the overall accuracy. In the heatmap, observed digits are on the vertical axis and predicted digits on the horizontal axis. The confusion matrix indicates around 98% prediction accuracy from 10000 images.</span>
-<span id="cb29-130"><a href="#cb29-130" aria-hidden="true" tabindex="-1"></a><span class="in">```{r confusion_matrix}</span></span>
-<span id="cb29-131"><a href="#cb29-131" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-132"><a href="#cb29-132" aria-hidden="true" tabindex="-1"></a>predicted <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(<span class="fu">predict</span>(network, test_images) <span class="sc">%&gt;%</span> <span class="fu">k_argmax</span>())</span>
-<span id="cb29-133"><a href="#cb29-133" aria-hidden="true" tabindex="-1"></a>observed  <span class="ot">&lt;-</span> <span class="fu">apply</span>(test_labels, <span class="dv">1</span>, which.max) <span class="sc">-</span> <span class="dv">1</span></span>
-<span id="cb29-134"><a href="#cb29-134" aria-hidden="true" tabindex="-1"></a>op <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">predict=</span>predicted, <span class="at">observe=</span>observed)</span>
-<span id="cb29-135"><a href="#cb29-135" aria-hidden="true" tabindex="-1"></a><span class="fu">confusion_matrix_percent</span>(<span class="at">observed=</span>op<span class="sc">$</span>observe,<span class="at">predicted=</span>op<span class="sc">$</span>predict)</span>
-<span id="cb29-136"><a href="#cb29-136" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-137"><a href="#cb29-137" aria-hidden="true" tabindex="-1"></a>cm <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">table</span>(<span class="at">observe=</span>observed, <span class="at">predict=</span>predicted))</span>
-<span id="cb29-138"><a href="#cb29-138" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
-<span id="cb29-139"><a href="#cb29-139" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cm, <span class="fu">aes</span>(<span class="at">x=</span>predict, <span class="at">y=</span>observe, <span class="at">fill=</span>Freq)) <span class="sc">+</span></span>
-<span id="cb29-140"><a href="#cb29-140" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_tile</span>() <span class="sc">+</span></span>
-<span id="cb29-141"><a href="#cb29-141" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">label=</span>Freq), <span class="at">size=</span><span class="dv">3</span>) <span class="sc">+</span></span>
-<span id="cb29-142"><a href="#cb29-142" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_gradient</span>(<span class="at">low=</span><span class="st">"white"</span>, <span class="at">high=</span><span class="st">"steelblue"</span>) <span class="sc">+</span></span>
-<span id="cb29-143"><a href="#cb29-143" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x=</span><span class="st">"Predicted"</span>, <span class="at">y=</span><span class="st">"Observed"</span>, <span class="at">fill=</span><span class="st">"Count"</span>) <span class="sc">+</span></span>
-<span id="cb29-144"><a href="#cb29-144" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span>
-<span id="cb29-145"><a href="#cb29-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-146"><a href="#cb29-146" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-147"><a href="#cb29-147" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-148"><a href="#cb29-148" aria-hidden="true" tabindex="-1"></a><span class="fu">## Scatterplot</span></span>
-<span id="cb29-149"><a href="#cb29-149" aria-hidden="true" tabindex="-1"></a>Another descriptive view is a scatterplot of observed against predicted digits. If every prediction were correct, all points would lie on the diagonal (observed = predicted); the small off-diagonal points are the misclassified images. Because digits are categories, the fitted line and correlation are only a rough summary.</span>
-<span id="cb29-150"><a href="#cb29-150" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,out.width="100%",results="hide"}</span></span>
-<span id="cb29-151"><a href="#cb29-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-152"><a href="#cb29-152" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scatterplot</span>(op)</span>
-<span id="cb29-153"><a href="#cb29-153" aria-hidden="true" tabindex="-1"></a>differences<span class="ot">&lt;-</span><span class="fu">setdiff</span>(<span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(op<span class="sc">$</span>predict),<span class="fu">which</span>(op<span class="sc">$</span>predict<span class="sc">==</span>op<span class="sc">$</span>observe))</span>
-<span id="cb29-154"><a href="#cb29-154" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-155"><a href="#cb29-155" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-156"><a href="#cb29-156" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-157"><a href="#cb29-157" aria-hidden="true" tabindex="-1"></a><span class="fu">## Errors</span></span>
-<span id="cb29-158"><a href="#cb29-158" aria-hidden="true" tabindex="-1"></a>From the 10000 image test dataset, the network was unable to classify correctly <span class="in">`r length(differences)`</span> images. It may be interesting to visualize these misclassified images.</span>
-<span id="cb29-159"><a href="#cb29-159" aria-hidden="true" tabindex="-1"></a>Each image is labelled predicted/observed.</span>
-<span id="cb29-160"><a href="#cb29-160" aria-hidden="true" tabindex="-1"></a><span class="in">```{r errors,fig.width=10,fig.height=ceiling(length(differences)/20)*0.6,out.width="100%"}</span></span>
-<span id="cb29-161"><a href="#cb29-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-162"><a href="#cb29-162" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(differences)</span>
-<span id="cb29-163"><a href="#cb29-163" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="fu">ceiling</span>(<span class="fu">length</span>(differences)<span class="sc">/</span><span class="dv">20</span>),<span class="dv">20</span>),<span class="at">mar=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">0</span>,<span class="dv">1</span>,<span class="dv">0</span>))</span>
-<span id="cb29-164"><a href="#cb29-164" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span>(i <span class="cf">in</span> differences) {</span>
-<span id="cb29-165"><a href="#cb29-165" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot</span>(<span class="fu">as.raster</span>(mnist<span class="sc">$</span>test<span class="sc">$</span>x[i,,],<span class="at">max=</span><span class="dv">255</span>))</span>
-<span id="cb29-166"><a href="#cb29-166" aria-hidden="true" tabindex="-1"></a>  <span class="fu">title</span>(<span class="fu">paste0</span>(op<span class="sc">$</span>predict[i],<span class="st">"/"</span>,op<span class="sc">$</span>observe[i]),<span class="at">cex.main=</span><span class="fl">0.8</span>,<span class="at">font.main=</span><span class="dv">1</span>)</span>
-<span id="cb29-167"><a href="#cb29-167" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb29-168"><a href="#cb29-168" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-169"><a href="#cb29-169" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb29-170"><a href="#cb29-170" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-101"><a href="#cb29-101" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">1000</span>,<span class="at">activation=</span><span class="st">"relu"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb29-102"><a href="#cb29-102" aria-hidden="true" tabindex="-1"></a>  <span class="fu">layer_dense</span>(<span class="at">units=</span><span class="dv">10</span>,<span class="at">activation=</span><span class="st">"softmax"</span>)</span>
+<span id="cb29-103"><a href="#cb29-103" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">compile</span>(<span class="at">optimizer=</span><span class="st">"rmsprop"</span>,</span>
+<span id="cb29-104"><a href="#cb29-104" aria-hidden="true" tabindex="-1"></a>                    <span class="at">loss=</span><span class="st">"categorical_crossentropy"</span>,</span>
+<span id="cb29-105"><a href="#cb29-105" aria-hidden="true" tabindex="-1"></a>                    <span class="at">metrics=</span><span class="fu">c</span>(<span class="st">"accuracy"</span>))</span>
+<span id="cb29-106"><a href="#cb29-106" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-107"><a href="#cb29-107" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-108"><a href="#cb29-108" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-109"><a href="#cb29-109" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network training</span></span>
+<span id="cb29-110"><a href="#cb29-110" aria-hidden="true" tabindex="-1"></a><span class="in">```{r training}</span></span>
+<span id="cb29-111"><a href="#cb29-111" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-112"><a href="#cb29-112" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">fit</span>(train_images,train_labels,<span class="at">epochs=</span><span class="dv">30</span>,<span class="at">batch_size=</span><span class="dv">784</span>)</span>
+<span id="cb29-113"><a href="#cb29-113" aria-hidden="true" tabindex="-1"></a>network <span class="sc">%&gt;%</span> <span class="fu">evaluate</span>(test_images,test_labels)</span>
+<span id="cb29-114"><a href="#cb29-114" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-115"><a href="#cb29-115" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-116"><a href="#cb29-116" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-117"><a href="#cb29-117" aria-hidden="true" tabindex="-1"></a><span class="fu"># Network evaluation</span></span>
+<span id="cb29-118"><a href="#cb29-118" aria-hidden="true" tabindex="-1"></a>In order to see how well the network performs, we use the test dataset. The test labels are stored in one-hot form as a 10000 x 10 matrix (one row per image, one column per digit). However, after a short transformation it is possible to obtain a vector of integers from 0 to 9.</span>
+<span id="cb29-119"><a href="#cb29-119" aria-hidden="true" tabindex="-1"></a><span class="in">```{r output_transformation}</span></span>
+<span id="cb29-120"><a href="#cb29-120" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-121"><a href="#cb29-121" aria-hidden="true" tabindex="-1"></a>rtl<span class="ot">&lt;-</span><span class="fu">c</span>()</span>
+<span id="cb29-122"><a href="#cb29-122" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span>(i <span class="cf">in</span> <span class="dv">1</span><span class="sc">:</span><span class="fu">nrow</span>(test_labels))</span>
+<span id="cb29-123"><a href="#cb29-123" aria-hidden="true" tabindex="-1"></a>  rtl<span class="ot">&lt;-</span><span class="fu">c</span>(rtl,<span class="fu">which</span>(test_labels[i,]<span class="sc">==</span><span class="dv">1</span>)<span class="sc">-</span><span class="dv">1</span>)</span>
+<span id="cb29-124"><a href="#cb29-124" aria-hidden="true" tabindex="-1"></a><span class="fu">summary</span>(rtl)</span>
+<span id="cb29-125"><a href="#cb29-125" aria-hidden="true" tabindex="-1"></a>deepviz<span class="sc">::</span><span class="fu">plot_model</span>(network)</span>
+<span id="cb29-126"><a href="#cb29-126" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-127"><a href="#cb29-127" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-128"><a href="#cb29-128" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-129"><a href="#cb29-129" aria-hidden="true" tabindex="-1"></a><span class="fu">## Confusion matrix</span></span>
+<span id="cb29-130"><a href="#cb29-130" aria-hidden="true" tabindex="-1"></a>An ideal model should produce a confusion matrix where every predicted digit matches the observed digit. This is represented by having all high frequencies in the diagonal whilst all off diagonal values should ideally be 0. In the table below, rows are predicted digits and columns are observed digits; the "p" column gives the precision for each predicted digit, the "p" row the recall for each observed digit, and the bottom-right cell the overall accuracy. In the heatmap, observed digits are on the vertical axis and predicted digits on the horizontal axis. The confusion matrix indicates around 98% prediction accuracy from 10000 images.</span>
+<span id="cb29-131"><a href="#cb29-131" aria-hidden="true" tabindex="-1"></a><span class="in">```{r confusion_matrix}</span></span>
+<span id="cb29-132"><a href="#cb29-132" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-133"><a href="#cb29-133" aria-hidden="true" tabindex="-1"></a>predicted <span class="ot">&lt;-</span> <span class="fu">as.integer</span>(<span class="fu">predict</span>(network, test_images) <span class="sc">%&gt;%</span> <span class="fu">k_argmax</span>())</span>
+<span id="cb29-134"><a href="#cb29-134" aria-hidden="true" tabindex="-1"></a>observed  <span class="ot">&lt;-</span> <span class="fu">apply</span>(test_labels, <span class="dv">1</span>, which.max) <span class="sc">-</span> <span class="dv">1</span></span>
+<span id="cb29-135"><a href="#cb29-135" aria-hidden="true" tabindex="-1"></a>op <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(<span class="at">predict=</span>predicted, <span class="at">observe=</span>observed)</span>
+<span id="cb29-136"><a href="#cb29-136" aria-hidden="true" tabindex="-1"></a><span class="fu">confusion_matrix_percent</span>(<span class="at">observed=</span>op<span class="sc">$</span>observe,<span class="at">predicted=</span>op<span class="sc">$</span>predict)</span>
+<span id="cb29-137"><a href="#cb29-137" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-138"><a href="#cb29-138" aria-hidden="true" tabindex="-1"></a>cm <span class="ot">&lt;-</span> <span class="fu">as.data.frame</span>(<span class="fu">table</span>(<span class="at">observe=</span>observed, <span class="at">predict=</span>predicted))</span>
+<span id="cb29-139"><a href="#cb29-139" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb29-140"><a href="#cb29-140" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(cm, <span class="fu">aes</span>(<span class="at">x=</span>predict, <span class="at">y=</span>observe, <span class="at">fill=</span>Freq)) <span class="sc">+</span></span>
+<span id="cb29-141"><a href="#cb29-141" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_tile</span>() <span class="sc">+</span></span>
+<span id="cb29-142"><a href="#cb29-142" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">label=</span>Freq), <span class="at">size=</span><span class="dv">3</span>) <span class="sc">+</span></span>
+<span id="cb29-143"><a href="#cb29-143" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_gradient</span>(<span class="at">low=</span><span class="st">"white"</span>, <span class="at">high=</span><span class="st">"steelblue"</span>) <span class="sc">+</span></span>
+<span id="cb29-144"><a href="#cb29-144" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x=</span><span class="st">"Predicted"</span>, <span class="at">y=</span><span class="st">"Observed"</span>, <span class="at">fill=</span><span class="st">"Count"</span>) <span class="sc">+</span></span>
+<span id="cb29-145"><a href="#cb29-145" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span>
+<span id="cb29-146"><a href="#cb29-146" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-147"><a href="#cb29-147" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-148"><a href="#cb29-148" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-149"><a href="#cb29-149" aria-hidden="true" tabindex="-1"></a><span class="fu">## Scatterplot</span></span>
+<span id="cb29-150"><a href="#cb29-150" aria-hidden="true" tabindex="-1"></a>Another descriptive view is a scatterplot of observed against predicted digits. If every prediction were correct, all points would lie on the diagonal (observed = predicted); the small off-diagonal points are the misclassified images. Because digits are categories, the fitted line and correlation are only a rough summary.</span>
+<span id="cb29-151"><a href="#cb29-151" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,out.width="100%",results="hide"}</span></span>
+<span id="cb29-152"><a href="#cb29-152" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-153"><a href="#cb29-153" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scatterplot</span>(op)</span>
+<span id="cb29-154"><a href="#cb29-154" aria-hidden="true" tabindex="-1"></a>differences<span class="ot">&lt;-</span><span class="fu">setdiff</span>(<span class="dv">1</span><span class="sc">:</span><span class="fu">length</span>(op<span class="sc">$</span>predict),<span class="fu">which</span>(op<span class="sc">$</span>predict<span class="sc">==</span>op<span class="sc">$</span>observe))</span>
+<span id="cb29-155"><a href="#cb29-155" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-156"><a href="#cb29-156" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb29-157"><a href="#cb29-157" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-158"><a href="#cb29-158" aria-hidden="true" tabindex="-1"></a><span class="fu">## Errors</span></span>
+<span id="cb29-159"><a href="#cb29-159" aria-hidden="true" tabindex="-1"></a>From the 10000 image test dataset, the network was unable to classify correctly <span class="in">`r length(differences)`</span> images. It may be interesting to visualize these misclassified images.</span>
+<span id="cb29-160"><a href="#cb29-160" aria-hidden="true" tabindex="-1"></a>Each image is labelled predicted/observed.</span>
+<span id="cb29-161"><a href="#cb29-161" aria-hidden="true" tabindex="-1"></a><span class="in">```{r errors,fig.width=10,fig.height=ceiling(length(differences)/20)*0.6,out.width="100%"}</span></span>
+<span id="cb29-162"><a href="#cb29-162" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-163"><a href="#cb29-163" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(differences)</span>
+<span id="cb29-164"><a href="#cb29-164" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="fu">ceiling</span>(<span class="fu">length</span>(differences)<span class="sc">/</span><span class="dv">20</span>),<span class="dv">20</span>),<span class="at">mar=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">0</span>,<span class="dv">1</span>,<span class="dv">0</span>))</span>
+<span id="cb29-165"><a href="#cb29-165" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span>(i <span class="cf">in</span> differences) {</span>
+<span id="cb29-166"><a href="#cb29-166" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot</span>(<span class="fu">as.raster</span>(mnist<span class="sc">$</span>test<span class="sc">$</span>x[i,,],<span class="at">max=</span><span class="dv">255</span>))</span>
+<span id="cb29-167"><a href="#cb29-167" aria-hidden="true" tabindex="-1"></a>  <span class="fu">title</span>(<span class="fu">paste0</span>(op<span class="sc">$</span>predict[i],<span class="st">"/"</span>,op<span class="sc">$</span>observe[i]),<span class="at">cex.main=</span><span class="fl">0.8</span>,<span class="at">font.main=</span><span class="dv">1</span>)</span>
+<span id="cb29-168"><a href="#cb29-168" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb29-169"><a href="#cb29-169" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-170"><a href="#cb29-170" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb29-171"><a href="#cb29-171" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-172"><a href="#cb29-172" aria-hidden="true" tabindex="-1"></a><span class="fu"># Acknowledgments</span></span>
-<span id="cb29-173"><a href="#cb29-173" aria-hidden="true" tabindex="-1"></a>The data preparation, compile settings and overall workflow follow the MNIST example in section 2.1 ("A first look at a neural network") of Chollet and Allaire (2018); the network here is larger than the book's (three hidden layers instead of one 512-unit layer) and is trained for 30 epochs with a batch size of 784. The data come from the MNIST database (LeCun et al., 1998). The model diagram is drawn with deepviz, and the confusion matrix and scatterplot use helper functions from rwf.</span>
-<span id="cb29-174"><a href="#cb29-174" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb29-175"><a href="#cb29-175" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Chollet, F., &amp; Allaire, J. J. (2018). *Deep Learning with R*. Manning Publications.</span>
-<span id="cb29-176"><a href="#cb29-176" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>LeCun, Y., Bottou, L., Bengio, Y., &amp; Haffner, P. (1998). Gradient-based learning applied to document recognition. *Proceedings of the IEEE, 86*(11), 2278–2324.</span>
-<span id="cb29-177"><a href="#cb29-177" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>LeCun, Y., Cortes, C., &amp; Burges, C. J. C. *The MNIST database of handwritten digits*. <span class="ot">&lt;http://yann.lecun.com/exdb/mnist/&gt;</span></span>
-<span id="cb29-178"><a href="#cb29-178" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Allaire, J. J., &amp; Chollet, F. *keras: R Interface to 'Keras'*. R package. <span class="ot">&lt;https://CRAN.R-project.org/package=keras&gt;</span></span>
-<span id="cb29-179"><a href="#cb29-179" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Allaire, J. J., &amp; Tang, Y. *tensorflow: R Interface to 'TensorFlow'*. R package. <span class="ot">&lt;https://tensorflow.rstudio.com/&gt;</span></span>
-<span id="cb29-180"><a href="#cb29-180" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>de Vries, A. (2019). *deepviz: Visualize Neural Network Architectures*. R package. <span class="ot">&lt;https://github.com/andrie/deepviz&gt;</span></span>
-<span id="cb29-181"><a href="#cb29-181" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>*rwf*: R functions used across these examples. <span class="ot">&lt;https://github.com/sedzinfo/rwf&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb29-172"><a href="#cb29-172" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-173"><a href="#cb29-173" aria-hidden="true" tabindex="-1"></a><span class="fu"># Acknowledgments</span></span>
+<span id="cb29-174"><a href="#cb29-174" aria-hidden="true" tabindex="-1"></a>The data preparation, compile settings and overall workflow follow the MNIST example in section 2.1 ("A first look at a neural network") of Chollet and Allaire (2018); the network here is larger than the book's (three hidden layers instead of one 512-unit layer) and is trained for 30 epochs with a batch size of 784. The data come from the MNIST database (LeCun et al., 1998). The model diagram is drawn with deepviz, and the confusion matrix and scatterplot use helper functions from rwf.</span>
+<span id="cb29-175"><a href="#cb29-175" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb29-176"><a href="#cb29-176" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Chollet, F., &amp; Allaire, J. J. (2018). *Deep Learning with R*. Manning Publications.</span>
+<span id="cb29-177"><a href="#cb29-177" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>LeCun, Y., Bottou, L., Bengio, Y., &amp; Haffner, P. (1998). Gradient-based learning applied to document recognition. *Proceedings of the IEEE, 86*(11), 2278–2324.</span>
+<span id="cb29-178"><a href="#cb29-178" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>LeCun, Y., Cortes, C., &amp; Burges, C. J. C. *The MNIST database of handwritten digits*. <span class="ot">&lt;http://yann.lecun.com/exdb/mnist/&gt;</span></span>
+<span id="cb29-179"><a href="#cb29-179" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Allaire, J. J., &amp; Chollet, F. *keras: R Interface to 'Keras'*. R package. <span class="ot">&lt;https://CRAN.R-project.org/package=keras&gt;</span></span>
+<span id="cb29-180"><a href="#cb29-180" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>Allaire, J. J., &amp; Tang, Y. *tensorflow: R Interface to 'TensorFlow'*. R package. <span class="ot">&lt;https://tensorflow.rstudio.com/&gt;</span></span>
+<span id="cb29-181"><a href="#cb29-181" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>de Vries, A. (2019). *deepviz: Visualize Neural Network Architectures*. R package. <span class="ot">&lt;https://github.com/andrie/deepviz&gt;</span></span>
+<span id="cb29-182"><a href="#cb29-182" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>*rwf*: R functions used across these examples. <span class="ot">&lt;https://github.com/sedzinfo/rwf&gt;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 <footer class="footer">

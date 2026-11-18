@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="">
+<meta name="description" content="Descriptive analysis of IPIP Big Five (OCEAN) responses in R: reverse scoring, correlations, alpha and omega reliability, scree plots and score distributions.">
 
 <title>OCEAN – Scale Validation in R</title>
 <style>
@@ -82,7 +83,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="site_libs/quarto-html/quarto-syntax-highlighting-85f7a32731ed2b609fa7be27e34d4366.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-8ae396d4416811ff27bcf6c71ba7480a.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-a2b61889bee915fd6c366a0336e5d321.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "navbar",
   "copy-button": false,
@@ -112,6 +113,16 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 }</script>
 
 
+<meta property="og:title" content="OCEAN – Scale Validation in R">
+<meta property="og:description" content="Descriptive analysis of IPIP Big Five (OCEAN) responses in R: reverse scoring, correlations, alpha and omega reliability, scree plots and score distributions.">
+<meta property="og:image" content="https://sedzinfo.github.io/vignettes/validation/social-card.png">
+<meta property="og:site_name" content="Scale Validation in R">
+<meta property="og:image:height" content="630">
+<meta property="og:image:width" content="1200">
+<meta name="twitter:title" content="OCEAN – Scale Validation in R">
+<meta name="twitter:description" content="Descriptive analysis of IPIP Big Five (OCEAN) responses in R: reverse scoring, correlations, alpha and omega reliability, scree plots and score distributions.">
+<meta name="twitter:image" content="https://sedzinfo.github.io/vignettes/validation/social-card.png">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 
 <body class="nav-fixed quarto-light"><a id="quarto-skip-link" class="visually-hidden-focusable" href="#quarto-document-content">Skip to main content</a>
@@ -229,6 +240,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="quarto-title-block"><div><h1 class="title">OCEAN</h1><button type="button" class="btn code-tools-button dropdown-toggle" id="quarto-code-tools-menu" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi"></i> Code</button><ul class="dropdown-menu dropdown-menu-end" aria-labelelledby="quarto-code-tools-menu"><li><a id="quarto-show-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Show All Code</a></li><li><a id="quarto-hide-all-code" class="dropdown-item" href="javascript:void(0)" role="button">Hide All Code</a></li><li><hr class="dropdown-divider"></li><li><a id="quarto-view-source" class="dropdown-item" href="javascript:void(0)" role="button">View Source</a></li></ul></div></div>
 </div>
 
+<div>
+  <div class="description">
+    Descriptive analysis of IPIP Big Five (OCEAN) responses in R: reverse scoring, correlations, alpha and omega reliability, scree plots and score distributions.
+  </div>
+</div>
 
 
 <div class="quarto-title-meta">
@@ -2168,323 +2184,324 @@ N10 Structure      N10 0.59 0.58        N10             I often feel blue.</code
 </script><div class="modal fade" id="quarto-embedded-source-code-modal" tabindex="-1" aria-labelledby="quarto-embedded-source-code-modal-label" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="quarto-embedded-source-code-modal-label">Source Code</h5><button class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb44" data-shortcodes="false"><pre class="sourceCode markdown code-with-copy"><code class="sourceCode markdown"><span id="cb44-1"><a href="#cb44-1" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
 <span id="cb44-2"><a href="#cb44-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "OCEAN"</span></span>
-<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
-<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
-<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
-<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
-<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
-<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
-<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
-<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
-<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
-<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
-<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> "%\\VignetteIndexEntry{OCEAN} %\\VignetteEngine{knitr::rmarkdown} %\\VignetteEncoding{UTF-8}\n"</span></span>
-<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
-<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
-<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
-<span id="cb44-19"><a href="#cb44-19" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
-<span id="cb44-20"><a href="#cb44-20" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
-<span id="cb44-21"><a href="#cb44-21" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(grid)   <span class="co"># plot_multiplot() calls viewport() and grid.layout()</span></span>
-<span id="cb44-22"><a href="#cb44-22" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-23"><a href="#cb44-23" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-24"><a href="#cb44-24" aria-hidden="true" tabindex="-1"></a><span class="in">```{r load,include=FALSE}</span></span>
-<span id="cb44-25"><a href="#cb44-25" aria-hidden="true" tabindex="-1"></a>df_lookup<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">code=</span><span class="fu">c</span>(<span class="fu">paste0</span>(<span class="st">"E"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
-<span id="cb44-26"><a href="#cb44-26" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"N"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
-<span id="cb44-27"><a href="#cb44-27" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"A"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
-<span id="cb44-28"><a href="#cb44-28" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"C"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
-<span id="cb44-29"><a href="#cb44-29" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"O"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>)),</span>
-<span id="cb44-30"><a href="#cb44-30" aria-hidden="true" tabindex="-1"></a>                      <span class="at">description=</span><span class="fu">c</span>(<span class="st">"I am the life of the party."</span>,</span>
-<span id="cb44-31"><a href="#cb44-31" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't talk a lot."</span>,</span>
-<span id="cb44-32"><a href="#cb44-32" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel comfortable around people."</span>,</span>
-<span id="cb44-33"><a href="#cb44-33" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I keep in the background."</span>,</span>
-<span id="cb44-34"><a href="#cb44-34" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I start conversations."</span>,</span>
-<span id="cb44-35"><a href="#cb44-35" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have little to say."</span>,</span>
-<span id="cb44-36"><a href="#cb44-36" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I talk to a lot of different people at parties."</span>,</span>
-<span id="cb44-37"><a href="#cb44-37" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't like to draw attention to myself."</span>,</span>
-<span id="cb44-38"><a href="#cb44-38" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't mind being the center of attention."</span>,</span>
-<span id="cb44-39"><a href="#cb44-39" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am quiet around strangers."</span>,</span>
-<span id="cb44-40"><a href="#cb44-40" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get stressed out easily."</span>,</span>
-<span id="cb44-41"><a href="#cb44-41" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am relaxed most of the time."</span>,</span>
-<span id="cb44-42"><a href="#cb44-42" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I worry about things."</span>,</span>
-<span id="cb44-43"><a href="#cb44-43" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I seldom feel blue."</span>,</span>
-<span id="cb44-44"><a href="#cb44-44" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am easily disturbed."</span>,</span>
-<span id="cb44-45"><a href="#cb44-45" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get upset easily."</span>,</span>
-<span id="cb44-46"><a href="#cb44-46" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I change my mood a lot."</span>,</span>
-<span id="cb44-47"><a href="#cb44-47" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have frequent mood swings."</span>,</span>
-<span id="cb44-48"><a href="#cb44-48" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get irritated easily."</span>,</span>
-<span id="cb44-49"><a href="#cb44-49" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I often feel blue."</span>,</span>
-<span id="cb44-50"><a href="#cb44-50" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel little concern for others."</span>,</span>
-<span id="cb44-51"><a href="#cb44-51" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am interested in people."</span>,</span>
-<span id="cb44-52"><a href="#cb44-52" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I insult people."</span>,</span>
-<span id="cb44-53"><a href="#cb44-53" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I sympathize with others' feelings."</span>,</span>
-<span id="cb44-54"><a href="#cb44-54" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not interested in other people's problems."</span>,</span>
-<span id="cb44-55"><a href="#cb44-55" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a soft heart."</span>,</span>
-<span id="cb44-56"><a href="#cb44-56" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not really interested in others."</span>,</span>
-<span id="cb44-57"><a href="#cb44-57" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I take time out for others."</span>,</span>
-<span id="cb44-58"><a href="#cb44-58" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel others' emotions."</span>,</span>
-<span id="cb44-59"><a href="#cb44-59" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I make people feel at ease."</span>,</span>
-<span id="cb44-60"><a href="#cb44-60" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am always prepared."</span>,</span>
-<span id="cb44-61"><a href="#cb44-61" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I leave my belongings around."</span>,</span>
-<span id="cb44-62"><a href="#cb44-62" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I pay attention to details."</span>,</span>
-<span id="cb44-63"><a href="#cb44-63" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I make a mess of things."</span>,</span>
-<span id="cb44-64"><a href="#cb44-64" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get chores done right away."</span>,</span>
-<span id="cb44-65"><a href="#cb44-65" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I often forget to put things back in their proper place."</span>,</span>
-<span id="cb44-66"><a href="#cb44-66" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I like order."</span>,</span>
-<span id="cb44-67"><a href="#cb44-67" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I shirk my duties."</span>,</span>
-<span id="cb44-68"><a href="#cb44-68" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I follow a schedule."</span>,</span>
-<span id="cb44-69"><a href="#cb44-69" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am exacting in my work."</span>,</span>
-<span id="cb44-70"><a href="#cb44-70" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a rich vocabulary."</span>,</span>
-<span id="cb44-71"><a href="#cb44-71" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have difficulty understanding abstract ideas."</span>,</span>
-<span id="cb44-72"><a href="#cb44-72" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a vivid imagination."</span>,</span>
-<span id="cb44-73"><a href="#cb44-73" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not interested in abstract ideas."</span>,</span>
-<span id="cb44-74"><a href="#cb44-74" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have excellent ideas."</span>,</span>
-<span id="cb44-75"><a href="#cb44-75" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I do not have a good imagination."</span>,</span>
-<span id="cb44-76"><a href="#cb44-76" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am quick to understand things."</span>,</span>
-<span id="cb44-77"><a href="#cb44-77" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I use difficult words."</span>,</span>
-<span id="cb44-78"><a href="#cb44-78" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I spend time reflecting on things."</span>,</span>
-<span id="cb44-79"><a href="#cb44-79" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am full of ideas."</span>))</span>
-<span id="cb44-80"><a href="#cb44-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-81"><a href="#cb44-81" aria-hidden="true" tabindex="-1"></a>df_lookup<span class="ot">&lt;-</span>df_lookup[<span class="fu">c</span>(<span class="fu">grep</span>(<span class="st">"O"</span>,df_lookup<span class="sc">$</span>code),</span>
-<span id="cb44-82"><a href="#cb44-82" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"C"</span>,df_lookup<span class="sc">$</span>code),</span>
-<span id="cb44-83"><a href="#cb44-83" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"E"</span>,df_lookup<span class="sc">$</span>code),</span>
-<span id="cb44-84"><a href="#cb44-84" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"A"</span>,df_lookup<span class="sc">$</span>code),</span>
-<span id="cb44-85"><a href="#cb44-85" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"N"</span>,df_lookup<span class="sc">$</span>code)),]</span>
-<span id="cb44-86"><a href="#cb44-86" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-87"><a href="#cb44-87" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-88"><a href="#cb44-88" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-89"><a href="#cb44-89" aria-hidden="true" tabindex="-1"></a><span class="fu">## Description of variables</span></span>
-<span id="cb44-90"><a href="#cb44-90" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-91"><a href="#cb44-91" aria-hidden="true" tabindex="-1"></a>This data was collected (c. 2012) through on interactive online personality test. Participants were informed that their responses would be recorded and used for research at the begining of the test and asked to confirm their consent at the end of the test.</span>
-<span id="cb44-92"><a href="#cb44-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-93"><a href="#cb44-93" aria-hidden="true" tabindex="-1"></a>The following items were rated on a five point scale where 1=Disagree, 3=Neutral, 5=Agree (0=missed). All were presented on one page in the order E1, N2, A1, C1, O1, E2...... </span>
-<span id="cb44-94"><a href="#cb44-94" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-95"><a href="#cb44-95" aria-hidden="true" tabindex="-1"></a>E1  I am the life of the party.  </span>
-<span id="cb44-96"><a href="#cb44-96" aria-hidden="true" tabindex="-1"></a>E2  I don't talk a lot.  </span>
-<span id="cb44-97"><a href="#cb44-97" aria-hidden="true" tabindex="-1"></a>E3  I feel comfortable around people.  </span>
-<span id="cb44-98"><a href="#cb44-98" aria-hidden="true" tabindex="-1"></a>E4  I keep in the background.  </span>
-<span id="cb44-99"><a href="#cb44-99" aria-hidden="true" tabindex="-1"></a>E5  I start conversations.  </span>
-<span id="cb44-100"><a href="#cb44-100" aria-hidden="true" tabindex="-1"></a>E6  I have little to say.  </span>
-<span id="cb44-101"><a href="#cb44-101" aria-hidden="true" tabindex="-1"></a>E7  I talk to a lot of different people at parties.  </span>
-<span id="cb44-102"><a href="#cb44-102" aria-hidden="true" tabindex="-1"></a>E8  I don't like to draw attention to myself.  </span>
-<span id="cb44-103"><a href="#cb44-103" aria-hidden="true" tabindex="-1"></a>E9  I don't mind being the center of attention.  </span>
-<span id="cb44-104"><a href="#cb44-104" aria-hidden="true" tabindex="-1"></a>E10 I am quiet around strangers.  </span>
-<span id="cb44-105"><a href="#cb44-105" aria-hidden="true" tabindex="-1"></a>N1  I get stressed out easily.  </span>
-<span id="cb44-106"><a href="#cb44-106" aria-hidden="true" tabindex="-1"></a>N2  I am relaxed most of the time.  </span>
-<span id="cb44-107"><a href="#cb44-107" aria-hidden="true" tabindex="-1"></a>N3  I worry about things.  </span>
-<span id="cb44-108"><a href="#cb44-108" aria-hidden="true" tabindex="-1"></a>N4  I seldom feel blue.  </span>
-<span id="cb44-109"><a href="#cb44-109" aria-hidden="true" tabindex="-1"></a>N5  I am easily disturbed.  </span>
-<span id="cb44-110"><a href="#cb44-110" aria-hidden="true" tabindex="-1"></a>N6  I get upset easily.  </span>
-<span id="cb44-111"><a href="#cb44-111" aria-hidden="true" tabindex="-1"></a>N7  I change my mood a lot.  </span>
-<span id="cb44-112"><a href="#cb44-112" aria-hidden="true" tabindex="-1"></a>N8  I have frequent mood swings.  </span>
-<span id="cb44-113"><a href="#cb44-113" aria-hidden="true" tabindex="-1"></a>N9  I get irritated easily.  </span>
-<span id="cb44-114"><a href="#cb44-114" aria-hidden="true" tabindex="-1"></a>N10 I often feel blue.  </span>
-<span id="cb44-115"><a href="#cb44-115" aria-hidden="true" tabindex="-1"></a>A1  I feel little concern for others.  </span>
-<span id="cb44-116"><a href="#cb44-116" aria-hidden="true" tabindex="-1"></a>A2  I am interested in people.  </span>
-<span id="cb44-117"><a href="#cb44-117" aria-hidden="true" tabindex="-1"></a>A3  I insult people.  </span>
-<span id="cb44-118"><a href="#cb44-118" aria-hidden="true" tabindex="-1"></a>A4  I sympathize with others' feelings.  </span>
-<span id="cb44-119"><a href="#cb44-119" aria-hidden="true" tabindex="-1"></a>A5  I am not interested in other people's problems.  </span>
-<span id="cb44-120"><a href="#cb44-120" aria-hidden="true" tabindex="-1"></a>A6  I have a soft heart.  </span>
-<span id="cb44-121"><a href="#cb44-121" aria-hidden="true" tabindex="-1"></a>A7  I am not really interested in others.  </span>
-<span id="cb44-122"><a href="#cb44-122" aria-hidden="true" tabindex="-1"></a>A8  I take time out for others.  </span>
-<span id="cb44-123"><a href="#cb44-123" aria-hidden="true" tabindex="-1"></a>A9  I feel others' emotions.  </span>
-<span id="cb44-124"><a href="#cb44-124" aria-hidden="true" tabindex="-1"></a>A10 I make people feel at ease.  </span>
-<span id="cb44-125"><a href="#cb44-125" aria-hidden="true" tabindex="-1"></a>C1  I am always prepared.  </span>
-<span id="cb44-126"><a href="#cb44-126" aria-hidden="true" tabindex="-1"></a>C2  I leave my belongings around.  </span>
-<span id="cb44-127"><a href="#cb44-127" aria-hidden="true" tabindex="-1"></a>C3  I pay attention to details.  </span>
-<span id="cb44-128"><a href="#cb44-128" aria-hidden="true" tabindex="-1"></a>C4  I make a mess of things.  </span>
-<span id="cb44-129"><a href="#cb44-129" aria-hidden="true" tabindex="-1"></a>C5  I get chores done right away.  </span>
-<span id="cb44-130"><a href="#cb44-130" aria-hidden="true" tabindex="-1"></a>C6  I often forget to put things back in their proper place.  </span>
-<span id="cb44-131"><a href="#cb44-131" aria-hidden="true" tabindex="-1"></a>C7  I like order.  </span>
-<span id="cb44-132"><a href="#cb44-132" aria-hidden="true" tabindex="-1"></a>C8  I shirk my duties.  </span>
-<span id="cb44-133"><a href="#cb44-133" aria-hidden="true" tabindex="-1"></a>C9  I follow a schedule.  </span>
-<span id="cb44-134"><a href="#cb44-134" aria-hidden="true" tabindex="-1"></a>C10 I am exacting in my work.  </span>
-<span id="cb44-135"><a href="#cb44-135" aria-hidden="true" tabindex="-1"></a>O1  I have a rich vocabulary.  </span>
-<span id="cb44-136"><a href="#cb44-136" aria-hidden="true" tabindex="-1"></a>O2  I have difficulty understanding abstract ideas.  </span>
-<span id="cb44-137"><a href="#cb44-137" aria-hidden="true" tabindex="-1"></a>O3  I have a vivid imagination.  </span>
-<span id="cb44-138"><a href="#cb44-138" aria-hidden="true" tabindex="-1"></a>O4  I am not interested in abstract ideas.  </span>
-<span id="cb44-139"><a href="#cb44-139" aria-hidden="true" tabindex="-1"></a>O5  I have excellent ideas.  </span>
-<span id="cb44-140"><a href="#cb44-140" aria-hidden="true" tabindex="-1"></a>O6  I do not have a good imagination.  </span>
-<span id="cb44-141"><a href="#cb44-141" aria-hidden="true" tabindex="-1"></a>O7  I am quick to understand things.  </span>
-<span id="cb44-142"><a href="#cb44-142" aria-hidden="true" tabindex="-1"></a>O8  I use difficult words.  </span>
-<span id="cb44-143"><a href="#cb44-143" aria-hidden="true" tabindex="-1"></a>O9  I spend time reflecting on things.  </span>
-<span id="cb44-144"><a href="#cb44-144" aria-hidden="true" tabindex="-1"></a>O10 I am full of ideas.  </span>
-<span id="cb44-145"><a href="#cb44-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-146"><a href="#cb44-146" aria-hidden="true" tabindex="-1"></a>On the next page the following values were collected.</span>
-<span id="cb44-147"><a href="#cb44-147" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-148"><a href="#cb44-148" aria-hidden="true" tabindex="-1"></a>race Chosen from a drop down menu. 1=Mixed Race, 2=Arctic (Siberian, Eskimo), 3=Caucasian (European), 4=Caucasian (Indian), 5=Caucasian (Middle East), 6=Caucasian (North African, Other), 7=Indigenous Australian, 8=Native American, 9=North East Asian (Mongol, Tibetan, Korean Japanese, etc), 10=Pacific (Polynesian, Micronesian, etc), 11=South East Asian (Chinese, Thai, Malay, Filipino, etc), 12=West African, Bushmen, Ethiopian, 13=Other (0=missed)</span>
-<span id="cb44-149"><a href="#cb44-149" aria-hidden="true" tabindex="-1"></a>age entered as text (individuals reporting age &lt; 13 were not recorded)</span>
-<span id="cb44-150"><a href="#cb44-150" aria-hidden="true" tabindex="-1"></a>engnat  Response to "is English your native language?". 1=yes, 2=no (0=missed)</span>
-<span id="cb44-151"><a href="#cb44-151" aria-hidden="true" tabindex="-1"></a>gender  Chosen from a drop down menu. 1=Male, 2=Female, 3=Other (0=missed)</span>
-<span id="cb44-152"><a href="#cb44-152" aria-hidden="true" tabindex="-1"></a>hand    "What hand do you use to write with?". 1=Right, 2=Left, 3=Both (0=missed)</span>
-<span id="cb44-153"><a href="#cb44-153" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-154"><a href="#cb44-154" aria-hidden="true" tabindex="-1"></a>On this page users were also asked to confirm that their answers were accurate and could be used for research. Participants who did not were not recorded).</span>
-<span id="cb44-155"><a href="#cb44-155" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-156"><a href="#cb44-156" aria-hidden="true" tabindex="-1"></a>Some values were calculated from technical information.</span>
-<span id="cb44-157"><a href="#cb44-157" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-158"><a href="#cb44-158" aria-hidden="true" tabindex="-1"></a>country The participant's technical location. ISO country code.</span>
-<span id="cb44-159"><a href="#cb44-159" aria-hidden="true" tabindex="-1"></a>source  How the participant came to the test. Based on HTTP Referer. 1=from another page on the test website, 2=from google, 3=from facebook, 4=from any url with ".edu" in its domain name (e.g. xxx.edu, xxx.edu.au), 6=other source, or HTTP Referer not provided.</span>
-<span id="cb44-160"><a href="#cb44-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-3"><a href="#cb44-3" aria-hidden="true" tabindex="-1"></a><span class="an">description:</span><span class="co"> "Descriptive analysis of IPIP Big Five (OCEAN) responses in R: reverse scoring, correlations, alpha and omega reliability, scree plots and score distributions."</span></span>
+<span id="cb44-4"><a href="#cb44-4" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
+<span id="cb44-5"><a href="#cb44-5" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
+<span id="cb44-6"><a href="#cb44-6" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
+<span id="cb44-7"><a href="#cb44-7" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
+<span id="cb44-8"><a href="#cb44-8" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
+<span id="cb44-9"><a href="#cb44-9" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
+<span id="cb44-10"><a href="#cb44-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
+<span id="cb44-11"><a href="#cb44-11" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
+<span id="cb44-12"><a href="#cb44-12" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
+<span id="cb44-13"><a href="#cb44-13" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
+<span id="cb44-14"><a href="#cb44-14" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> "%\\VignetteIndexEntry{OCEAN} %\\VignetteEngine{knitr::rmarkdown} %\\VignetteEncoding{UTF-8}\n"</span></span>
+<span id="cb44-15"><a href="#cb44-15" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb44-16"><a href="#cb44-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-17"><a href="#cb44-17" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb44-18"><a href="#cb44-18" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb44-19"><a href="#cb44-19" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
+<span id="cb44-20"><a href="#cb44-20" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
+<span id="cb44-21"><a href="#cb44-21" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
+<span id="cb44-22"><a href="#cb44-22" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(grid)   <span class="co"># plot_multiplot() calls viewport() and grid.layout()</span></span>
+<span id="cb44-23"><a href="#cb44-23" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-24"><a href="#cb44-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-25"><a href="#cb44-25" aria-hidden="true" tabindex="-1"></a><span class="in">```{r load,include=FALSE}</span></span>
+<span id="cb44-26"><a href="#cb44-26" aria-hidden="true" tabindex="-1"></a>df_lookup<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">code=</span><span class="fu">c</span>(<span class="fu">paste0</span>(<span class="st">"E"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
+<span id="cb44-27"><a href="#cb44-27" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"N"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
+<span id="cb44-28"><a href="#cb44-28" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"A"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
+<span id="cb44-29"><a href="#cb44-29" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"C"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>),</span>
+<span id="cb44-30"><a href="#cb44-30" aria-hidden="true" tabindex="-1"></a>                             <span class="fu">paste0</span>(<span class="st">"O"</span>,<span class="dv">1</span><span class="sc">:</span><span class="dv">10</span>)),</span>
+<span id="cb44-31"><a href="#cb44-31" aria-hidden="true" tabindex="-1"></a>                      <span class="at">description=</span><span class="fu">c</span>(<span class="st">"I am the life of the party."</span>,</span>
+<span id="cb44-32"><a href="#cb44-32" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't talk a lot."</span>,</span>
+<span id="cb44-33"><a href="#cb44-33" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel comfortable around people."</span>,</span>
+<span id="cb44-34"><a href="#cb44-34" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I keep in the background."</span>,</span>
+<span id="cb44-35"><a href="#cb44-35" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I start conversations."</span>,</span>
+<span id="cb44-36"><a href="#cb44-36" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have little to say."</span>,</span>
+<span id="cb44-37"><a href="#cb44-37" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I talk to a lot of different people at parties."</span>,</span>
+<span id="cb44-38"><a href="#cb44-38" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't like to draw attention to myself."</span>,</span>
+<span id="cb44-39"><a href="#cb44-39" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I don't mind being the center of attention."</span>,</span>
+<span id="cb44-40"><a href="#cb44-40" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am quiet around strangers."</span>,</span>
+<span id="cb44-41"><a href="#cb44-41" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get stressed out easily."</span>,</span>
+<span id="cb44-42"><a href="#cb44-42" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am relaxed most of the time."</span>,</span>
+<span id="cb44-43"><a href="#cb44-43" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I worry about things."</span>,</span>
+<span id="cb44-44"><a href="#cb44-44" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I seldom feel blue."</span>,</span>
+<span id="cb44-45"><a href="#cb44-45" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am easily disturbed."</span>,</span>
+<span id="cb44-46"><a href="#cb44-46" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get upset easily."</span>,</span>
+<span id="cb44-47"><a href="#cb44-47" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I change my mood a lot."</span>,</span>
+<span id="cb44-48"><a href="#cb44-48" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have frequent mood swings."</span>,</span>
+<span id="cb44-49"><a href="#cb44-49" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get irritated easily."</span>,</span>
+<span id="cb44-50"><a href="#cb44-50" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I often feel blue."</span>,</span>
+<span id="cb44-51"><a href="#cb44-51" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel little concern for others."</span>,</span>
+<span id="cb44-52"><a href="#cb44-52" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am interested in people."</span>,</span>
+<span id="cb44-53"><a href="#cb44-53" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I insult people."</span>,</span>
+<span id="cb44-54"><a href="#cb44-54" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I sympathize with others' feelings."</span>,</span>
+<span id="cb44-55"><a href="#cb44-55" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not interested in other people's problems."</span>,</span>
+<span id="cb44-56"><a href="#cb44-56" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a soft heart."</span>,</span>
+<span id="cb44-57"><a href="#cb44-57" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not really interested in others."</span>,</span>
+<span id="cb44-58"><a href="#cb44-58" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I take time out for others."</span>,</span>
+<span id="cb44-59"><a href="#cb44-59" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I feel others' emotions."</span>,</span>
+<span id="cb44-60"><a href="#cb44-60" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I make people feel at ease."</span>,</span>
+<span id="cb44-61"><a href="#cb44-61" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am always prepared."</span>,</span>
+<span id="cb44-62"><a href="#cb44-62" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I leave my belongings around."</span>,</span>
+<span id="cb44-63"><a href="#cb44-63" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I pay attention to details."</span>,</span>
+<span id="cb44-64"><a href="#cb44-64" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I make a mess of things."</span>,</span>
+<span id="cb44-65"><a href="#cb44-65" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I get chores done right away."</span>,</span>
+<span id="cb44-66"><a href="#cb44-66" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I often forget to put things back in their proper place."</span>,</span>
+<span id="cb44-67"><a href="#cb44-67" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I like order."</span>,</span>
+<span id="cb44-68"><a href="#cb44-68" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I shirk my duties."</span>,</span>
+<span id="cb44-69"><a href="#cb44-69" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I follow a schedule."</span>,</span>
+<span id="cb44-70"><a href="#cb44-70" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am exacting in my work."</span>,</span>
+<span id="cb44-71"><a href="#cb44-71" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a rich vocabulary."</span>,</span>
+<span id="cb44-72"><a href="#cb44-72" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have difficulty understanding abstract ideas."</span>,</span>
+<span id="cb44-73"><a href="#cb44-73" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have a vivid imagination."</span>,</span>
+<span id="cb44-74"><a href="#cb44-74" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am not interested in abstract ideas."</span>,</span>
+<span id="cb44-75"><a href="#cb44-75" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I have excellent ideas."</span>,</span>
+<span id="cb44-76"><a href="#cb44-76" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I do not have a good imagination."</span>,</span>
+<span id="cb44-77"><a href="#cb44-77" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am quick to understand things."</span>,</span>
+<span id="cb44-78"><a href="#cb44-78" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I use difficult words."</span>,</span>
+<span id="cb44-79"><a href="#cb44-79" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I spend time reflecting on things."</span>,</span>
+<span id="cb44-80"><a href="#cb44-80" aria-hidden="true" tabindex="-1"></a>                                    <span class="st">"I am full of ideas."</span>))</span>
+<span id="cb44-81"><a href="#cb44-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-82"><a href="#cb44-82" aria-hidden="true" tabindex="-1"></a>df_lookup<span class="ot">&lt;-</span>df_lookup[<span class="fu">c</span>(<span class="fu">grep</span>(<span class="st">"O"</span>,df_lookup<span class="sc">$</span>code),</span>
+<span id="cb44-83"><a href="#cb44-83" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"C"</span>,df_lookup<span class="sc">$</span>code),</span>
+<span id="cb44-84"><a href="#cb44-84" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"E"</span>,df_lookup<span class="sc">$</span>code),</span>
+<span id="cb44-85"><a href="#cb44-85" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"A"</span>,df_lookup<span class="sc">$</span>code),</span>
+<span id="cb44-86"><a href="#cb44-86" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">grep</span>(<span class="st">"N"</span>,df_lookup<span class="sc">$</span>code)),]</span>
+<span id="cb44-87"><a href="#cb44-87" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-88"><a href="#cb44-88" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-89"><a href="#cb44-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-90"><a href="#cb44-90" aria-hidden="true" tabindex="-1"></a><span class="fu">## Description of variables</span></span>
+<span id="cb44-91"><a href="#cb44-91" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-92"><a href="#cb44-92" aria-hidden="true" tabindex="-1"></a>This data was collected (c. 2012) through on interactive online personality test. Participants were informed that their responses would be recorded and used for research at the begining of the test and asked to confirm their consent at the end of the test.</span>
+<span id="cb44-93"><a href="#cb44-93" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-94"><a href="#cb44-94" aria-hidden="true" tabindex="-1"></a>The following items were rated on a five point scale where 1=Disagree, 3=Neutral, 5=Agree (0=missed). All were presented on one page in the order E1, N2, A1, C1, O1, E2...... </span>
+<span id="cb44-95"><a href="#cb44-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-96"><a href="#cb44-96" aria-hidden="true" tabindex="-1"></a>E1  I am the life of the party.  </span>
+<span id="cb44-97"><a href="#cb44-97" aria-hidden="true" tabindex="-1"></a>E2  I don't talk a lot.  </span>
+<span id="cb44-98"><a href="#cb44-98" aria-hidden="true" tabindex="-1"></a>E3  I feel comfortable around people.  </span>
+<span id="cb44-99"><a href="#cb44-99" aria-hidden="true" tabindex="-1"></a>E4  I keep in the background.  </span>
+<span id="cb44-100"><a href="#cb44-100" aria-hidden="true" tabindex="-1"></a>E5  I start conversations.  </span>
+<span id="cb44-101"><a href="#cb44-101" aria-hidden="true" tabindex="-1"></a>E6  I have little to say.  </span>
+<span id="cb44-102"><a href="#cb44-102" aria-hidden="true" tabindex="-1"></a>E7  I talk to a lot of different people at parties.  </span>
+<span id="cb44-103"><a href="#cb44-103" aria-hidden="true" tabindex="-1"></a>E8  I don't like to draw attention to myself.  </span>
+<span id="cb44-104"><a href="#cb44-104" aria-hidden="true" tabindex="-1"></a>E9  I don't mind being the center of attention.  </span>
+<span id="cb44-105"><a href="#cb44-105" aria-hidden="true" tabindex="-1"></a>E10 I am quiet around strangers.  </span>
+<span id="cb44-106"><a href="#cb44-106" aria-hidden="true" tabindex="-1"></a>N1  I get stressed out easily.  </span>
+<span id="cb44-107"><a href="#cb44-107" aria-hidden="true" tabindex="-1"></a>N2  I am relaxed most of the time.  </span>
+<span id="cb44-108"><a href="#cb44-108" aria-hidden="true" tabindex="-1"></a>N3  I worry about things.  </span>
+<span id="cb44-109"><a href="#cb44-109" aria-hidden="true" tabindex="-1"></a>N4  I seldom feel blue.  </span>
+<span id="cb44-110"><a href="#cb44-110" aria-hidden="true" tabindex="-1"></a>N5  I am easily disturbed.  </span>
+<span id="cb44-111"><a href="#cb44-111" aria-hidden="true" tabindex="-1"></a>N6  I get upset easily.  </span>
+<span id="cb44-112"><a href="#cb44-112" aria-hidden="true" tabindex="-1"></a>N7  I change my mood a lot.  </span>
+<span id="cb44-113"><a href="#cb44-113" aria-hidden="true" tabindex="-1"></a>N8  I have frequent mood swings.  </span>
+<span id="cb44-114"><a href="#cb44-114" aria-hidden="true" tabindex="-1"></a>N9  I get irritated easily.  </span>
+<span id="cb44-115"><a href="#cb44-115" aria-hidden="true" tabindex="-1"></a>N10 I often feel blue.  </span>
+<span id="cb44-116"><a href="#cb44-116" aria-hidden="true" tabindex="-1"></a>A1  I feel little concern for others.  </span>
+<span id="cb44-117"><a href="#cb44-117" aria-hidden="true" tabindex="-1"></a>A2  I am interested in people.  </span>
+<span id="cb44-118"><a href="#cb44-118" aria-hidden="true" tabindex="-1"></a>A3  I insult people.  </span>
+<span id="cb44-119"><a href="#cb44-119" aria-hidden="true" tabindex="-1"></a>A4  I sympathize with others' feelings.  </span>
+<span id="cb44-120"><a href="#cb44-120" aria-hidden="true" tabindex="-1"></a>A5  I am not interested in other people's problems.  </span>
+<span id="cb44-121"><a href="#cb44-121" aria-hidden="true" tabindex="-1"></a>A6  I have a soft heart.  </span>
+<span id="cb44-122"><a href="#cb44-122" aria-hidden="true" tabindex="-1"></a>A7  I am not really interested in others.  </span>
+<span id="cb44-123"><a href="#cb44-123" aria-hidden="true" tabindex="-1"></a>A8  I take time out for others.  </span>
+<span id="cb44-124"><a href="#cb44-124" aria-hidden="true" tabindex="-1"></a>A9  I feel others' emotions.  </span>
+<span id="cb44-125"><a href="#cb44-125" aria-hidden="true" tabindex="-1"></a>A10 I make people feel at ease.  </span>
+<span id="cb44-126"><a href="#cb44-126" aria-hidden="true" tabindex="-1"></a>C1  I am always prepared.  </span>
+<span id="cb44-127"><a href="#cb44-127" aria-hidden="true" tabindex="-1"></a>C2  I leave my belongings around.  </span>
+<span id="cb44-128"><a href="#cb44-128" aria-hidden="true" tabindex="-1"></a>C3  I pay attention to details.  </span>
+<span id="cb44-129"><a href="#cb44-129" aria-hidden="true" tabindex="-1"></a>C4  I make a mess of things.  </span>
+<span id="cb44-130"><a href="#cb44-130" aria-hidden="true" tabindex="-1"></a>C5  I get chores done right away.  </span>
+<span id="cb44-131"><a href="#cb44-131" aria-hidden="true" tabindex="-1"></a>C6  I often forget to put things back in their proper place.  </span>
+<span id="cb44-132"><a href="#cb44-132" aria-hidden="true" tabindex="-1"></a>C7  I like order.  </span>
+<span id="cb44-133"><a href="#cb44-133" aria-hidden="true" tabindex="-1"></a>C8  I shirk my duties.  </span>
+<span id="cb44-134"><a href="#cb44-134" aria-hidden="true" tabindex="-1"></a>C9  I follow a schedule.  </span>
+<span id="cb44-135"><a href="#cb44-135" aria-hidden="true" tabindex="-1"></a>C10 I am exacting in my work.  </span>
+<span id="cb44-136"><a href="#cb44-136" aria-hidden="true" tabindex="-1"></a>O1  I have a rich vocabulary.  </span>
+<span id="cb44-137"><a href="#cb44-137" aria-hidden="true" tabindex="-1"></a>O2  I have difficulty understanding abstract ideas.  </span>
+<span id="cb44-138"><a href="#cb44-138" aria-hidden="true" tabindex="-1"></a>O3  I have a vivid imagination.  </span>
+<span id="cb44-139"><a href="#cb44-139" aria-hidden="true" tabindex="-1"></a>O4  I am not interested in abstract ideas.  </span>
+<span id="cb44-140"><a href="#cb44-140" aria-hidden="true" tabindex="-1"></a>O5  I have excellent ideas.  </span>
+<span id="cb44-141"><a href="#cb44-141" aria-hidden="true" tabindex="-1"></a>O6  I do not have a good imagination.  </span>
+<span id="cb44-142"><a href="#cb44-142" aria-hidden="true" tabindex="-1"></a>O7  I am quick to understand things.  </span>
+<span id="cb44-143"><a href="#cb44-143" aria-hidden="true" tabindex="-1"></a>O8  I use difficult words.  </span>
+<span id="cb44-144"><a href="#cb44-144" aria-hidden="true" tabindex="-1"></a>O9  I spend time reflecting on things.  </span>
+<span id="cb44-145"><a href="#cb44-145" aria-hidden="true" tabindex="-1"></a>O10 I am full of ideas.  </span>
+<span id="cb44-146"><a href="#cb44-146" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-147"><a href="#cb44-147" aria-hidden="true" tabindex="-1"></a>On the next page the following values were collected.</span>
+<span id="cb44-148"><a href="#cb44-148" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-149"><a href="#cb44-149" aria-hidden="true" tabindex="-1"></a>race Chosen from a drop down menu. 1=Mixed Race, 2=Arctic (Siberian, Eskimo), 3=Caucasian (European), 4=Caucasian (Indian), 5=Caucasian (Middle East), 6=Caucasian (North African, Other), 7=Indigenous Australian, 8=Native American, 9=North East Asian (Mongol, Tibetan, Korean Japanese, etc), 10=Pacific (Polynesian, Micronesian, etc), 11=South East Asian (Chinese, Thai, Malay, Filipino, etc), 12=West African, Bushmen, Ethiopian, 13=Other (0=missed)</span>
+<span id="cb44-150"><a href="#cb44-150" aria-hidden="true" tabindex="-1"></a>age entered as text (individuals reporting age &lt; 13 were not recorded)</span>
+<span id="cb44-151"><a href="#cb44-151" aria-hidden="true" tabindex="-1"></a>engnat  Response to "is English your native language?". 1=yes, 2=no (0=missed)</span>
+<span id="cb44-152"><a href="#cb44-152" aria-hidden="true" tabindex="-1"></a>gender  Chosen from a drop down menu. 1=Male, 2=Female, 3=Other (0=missed)</span>
+<span id="cb44-153"><a href="#cb44-153" aria-hidden="true" tabindex="-1"></a>hand    "What hand do you use to write with?". 1=Right, 2=Left, 3=Both (0=missed)</span>
+<span id="cb44-154"><a href="#cb44-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-155"><a href="#cb44-155" aria-hidden="true" tabindex="-1"></a>On this page users were also asked to confirm that their answers were accurate and could be used for research. Participants who did not were not recorded).</span>
+<span id="cb44-156"><a href="#cb44-156" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-157"><a href="#cb44-157" aria-hidden="true" tabindex="-1"></a>Some values were calculated from technical information.</span>
+<span id="cb44-158"><a href="#cb44-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-159"><a href="#cb44-159" aria-hidden="true" tabindex="-1"></a>country The participant's technical location. ISO country code.</span>
+<span id="cb44-160"><a href="#cb44-160" aria-hidden="true" tabindex="-1"></a>source  How the participant came to the test. Based on HTTP Referer. 1=from another page on the test website, 2=from google, 3=from facebook, 4=from any url with ".edu" in its domain name (e.g. xxx.edu, xxx.edu.au), 6=other source, or HTTP Referer not provided.</span>
 <span id="cb44-161"><a href="#cb44-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-162"><a href="#cb44-162" aria-hidden="true" tabindex="-1"></a><span class="fu">## Descriprion of reponse data</span></span>
-<span id="cb44-163"><a href="#cb44-163" aria-hidden="true" tabindex="-1"></a><span class="in">```{r description,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-164"><a href="#cb44-164" aria-hidden="true" tabindex="-1"></a><span class="fu">load</span>(<span class="st">"data/df_ocean.rda"</span>)</span>
-<span id="cb44-165"><a href="#cb44-165" aria-hidden="true" tabindex="-1"></a>df_ocean[df_ocean<span class="sc">==</span><span class="dv">0</span>]<span class="ot">&lt;-</span><span class="cn">NA</span></span>
-<span id="cb44-166"><a href="#cb44-166" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(df_ocean)</span>
-<span id="cb44-167"><a href="#cb44-167" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-168"><a href="#cb44-168" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-169"><a href="#cb44-169" aria-hidden="true" tabindex="-1"></a><span class="fu">## Reverse data</span></span>
-<span id="cb44-170"><a href="#cb44-170" aria-hidden="true" tabindex="-1"></a><span class="in">```{r reverse,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-171"><a href="#cb44-171" aria-hidden="true" tabindex="-1"></a>key<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-172"><a href="#cb44-172" aria-hidden="true" tabindex="-1"></a>          <span class="at">C=</span><span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-173"><a href="#cb44-173" aria-hidden="true" tabindex="-1"></a>          <span class="at">E=</span><span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-174"><a href="#cb44-174" aria-hidden="true" tabindex="-1"></a>          <span class="at">A=</span><span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-175"><a href="#cb44-175" aria-hidden="true" tabindex="-1"></a>          <span class="at">N=</span><span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>))</span>
-<span id="cb44-176"><a href="#cb44-176" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-177"><a href="#cb44-177" aria-hidden="true" tabindex="-1"></a>reverse<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
-<span id="cb44-178"><a href="#cb44-178" aria-hidden="true" tabindex="-1"></a>              <span class="at">C=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
-<span id="cb44-179"><a href="#cb44-179" aria-hidden="true" tabindex="-1"></a>              <span class="at">E=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>),</span>
-<span id="cb44-180"><a href="#cb44-180" aria-hidden="true" tabindex="-1"></a>              <span class="at">A=</span><span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
-<span id="cb44-181"><a href="#cb44-181" aria-hidden="true" tabindex="-1"></a>              <span class="at">N=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>))</span>
-<span id="cb44-182"><a href="#cb44-182" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-183"><a href="#cb44-183" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">reverse.code</span>(<span class="fu">as.numeric</span>(<span class="fu">as.character</span>(<span class="fu">unlist</span>(reverse))),</span>
-<span id="cb44-184"><a href="#cb44-184" aria-hidden="true" tabindex="-1"></a>                                       df_ocean[,<span class="fu">as.character</span>(<span class="fu">unlist</span>(key))],</span>
-<span id="cb44-185"><a href="#cb44-185" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">mini=</span><span class="dv">1</span>,<span class="at">maxi=</span><span class="dv">5</span>)</span>
-<span id="cb44-186"><a href="#cb44-186" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="ot">&lt;-</span><span class="fu">data.frame</span>(df_ocean_reversed)</span>
-<span id="cb44-187"><a href="#cb44-187" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-188"><a href="#cb44-188" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-189"><a href="#cb44-189" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-190"><a href="#cb44-190" aria-hidden="true" tabindex="-1"></a><span class="fu">## Correlations</span></span>
-<span id="cb44-191"><a href="#cb44-191" aria-hidden="true" tabindex="-1"></a><span class="in">```{r correlations,fig.height=7,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-192"><a href="#cb44-192" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Openness"</span>)</span>
-<span id="cb44-193"><a href="#cb44-193" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Conscientiousness"</span>)</span>
-<span id="cb44-194"><a href="#cb44-194" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Extraversion"</span>)</span>
-<span id="cb44-195"><a href="#cb44-195" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Agreeableness"</span>)</span>
-<span id="cb44-196"><a href="#cb44-196" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Neuroticism"</span>)</span>
-<span id="cb44-197"><a href="#cb44-197" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-198"><a href="#cb44-198" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-199"><a href="#cb44-199" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-200"><a href="#cb44-200" aria-hidden="true" tabindex="-1"></a><span class="fu">## Alpha</span></span>
-<span id="cb44-201"><a href="#cb44-201" aria-hidden="true" tabindex="-1"></a><span class="in">```{r alpha,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-202"><a href="#cb44-202" aria-hidden="true" tabindex="-1"></a>key_reversed<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-203"><a href="#cb44-203" aria-hidden="true" tabindex="-1"></a>                   <span class="at">C=</span><span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-204"><a href="#cb44-204" aria-hidden="true" tabindex="-1"></a>                   <span class="at">E=</span><span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-205"><a href="#cb44-205" aria-hidden="true" tabindex="-1"></a>                   <span class="at">A=</span><span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
-<span id="cb44-206"><a href="#cb44-206" aria-hidden="true" tabindex="-1"></a>                   <span class="at">N=</span><span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>))</span>
-<span id="cb44-207"><a href="#cb44-207" aria-hidden="true" tabindex="-1"></a><span class="fu">report_alpha</span>(<span class="at">df=</span>df_ocean_reversed,<span class="at">key=</span>key_reversed,<span class="at">n.iter=</span><span class="dv">10</span>,<span class="at">check.keys=</span><span class="cn">TRUE</span>,<span class="at">file=</span><span class="cn">NULL</span>)</span>
-<span id="cb44-208"><a href="#cb44-208" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-209"><a href="#cb44-209" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-210"><a href="#cb44-210" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-211"><a href="#cb44-211" aria-hidden="true" tabindex="-1"></a><span class="fu">## Omega</span></span>
-<span id="cb44-212"><a href="#cb44-212" aria-hidden="true" tabindex="-1"></a><span class="in">```{r omega,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-213"><a href="#cb44-213" aria-hidden="true" tabindex="-1"></a>omega_O<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
-<span id="cb44-214"><a href="#cb44-214" aria-hidden="true" tabindex="-1"></a>omega_C<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
-<span id="cb44-215"><a href="#cb44-215" aria-hidden="true" tabindex="-1"></a>omega_E<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
-<span id="cb44-216"><a href="#cb44-216" aria-hidden="true" tabindex="-1"></a>omega_A<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
-<span id="cb44-217"><a href="#cb44-217" aria-hidden="true" tabindex="-1"></a>omega_N<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
-<span id="cb44-218"><a href="#cb44-218" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-219"><a href="#cb44-219" aria-hidden="true" tabindex="-1"></a>omega_O</span>
-<span id="cb44-220"><a href="#cb44-220" aria-hidden="true" tabindex="-1"></a>omega_C</span>
-<span id="cb44-221"><a href="#cb44-221" aria-hidden="true" tabindex="-1"></a>omega_E</span>
-<span id="cb44-222"><a href="#cb44-222" aria-hidden="true" tabindex="-1"></a>omega_A</span>
-<span id="cb44-223"><a href="#cb44-223" aria-hidden="true" tabindex="-1"></a>omega_N</span>
-<span id="cb44-224"><a href="#cb44-224" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-225"><a href="#cb44-225" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-226"><a href="#cb44-226" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-227"><a href="#cb44-227" aria-hidden="true" tabindex="-1"></a><span class="fu">## Scree</span></span>
-<span id="cb44-228"><a href="#cb44-228" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scree,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-229"><a href="#cb44-229" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Openness"</span>)</span>
-<span id="cb44-230"><a href="#cb44-230" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Conscientiousness"</span>)</span>
-<span id="cb44-231"><a href="#cb44-231" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Extraversion"</span>)</span>
-<span id="cb44-232"><a href="#cb44-232" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Agreeableness"</span>)</span>
-<span id="cb44-233"><a href="#cb44-233" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Neuroticism"</span>)</span>
-<span id="cb44-234"><a href="#cb44-234" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-235"><a href="#cb44-235" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-236"><a href="#cb44-236" aria-hidden="true" tabindex="-1"></a><span class="fu">## Structure</span></span>
-<span id="cb44-237"><a href="#cb44-237" aria-hidden="true" tabindex="-1"></a><span class="in">```{r structure,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
-<span id="cb44-238"><a href="#cb44-238" aria-hidden="true" tabindex="-1"></a>model_O<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
-<span id="cb44-239"><a href="#cb44-239" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">3</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-240"><a href="#cb44-240" aria-hidden="true" tabindex="-1"></a>model_C<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
-<span id="cb44-241"><a href="#cb44-241" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-242"><a href="#cb44-242" aria-hidden="true" tabindex="-1"></a>model_E<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
-<span id="cb44-243"><a href="#cb44-243" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-244"><a href="#cb44-244" aria-hidden="true" tabindex="-1"></a>model_A<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
-<span id="cb44-245"><a href="#cb44-245" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-246"><a href="#cb44-246" aria-hidden="true" tabindex="-1"></a>model_N<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
-<span id="cb44-247"><a href="#cb44-247" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-248"><a href="#cb44-248" aria-hidden="true" tabindex="-1"></a>mlo<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_O,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">4</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
-<span id="cb44-249"><a href="#cb44-249" aria-hidden="true" tabindex="-1"></a>mlc<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_C,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">5</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
-<span id="cb44-250"><a href="#cb44-250" aria-hidden="true" tabindex="-1"></a>mle<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_E,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">61</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
-<span id="cb44-251"><a href="#cb44-251" aria-hidden="true" tabindex="-1"></a>mla<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_A,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">55</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
-<span id="cb44-252"><a href="#cb44-252" aria-hidden="true" tabindex="-1"></a>mln<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_N,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">5</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
-<span id="cb44-253"><a href="#cb44-253" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-254"><a href="#cb44-254" aria-hidden="true" tabindex="-1"></a>mlo<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"O"</span>,df_lookup<span class="sc">$</span>code),]</span>
-<span id="cb44-255"><a href="#cb44-255" aria-hidden="true" tabindex="-1"></a>mlc<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"C"</span>,df_lookup<span class="sc">$</span>code),]</span>
-<span id="cb44-256"><a href="#cb44-256" aria-hidden="true" tabindex="-1"></a>mle<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"E"</span>,df_lookup<span class="sc">$</span>code),]</span>
-<span id="cb44-257"><a href="#cb44-257" aria-hidden="true" tabindex="-1"></a>mla<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"A"</span>,df_lookup<span class="sc">$</span>code),]</span>
-<span id="cb44-258"><a href="#cb44-258" aria-hidden="true" tabindex="-1"></a>mln<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"N"</span>,df_lookup<span class="sc">$</span>code),]</span>
-<span id="cb44-259"><a href="#cb44-259" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-260"><a href="#cb44-260" aria-hidden="true" tabindex="-1"></a>mlo</span>
-<span id="cb44-261"><a href="#cb44-261" aria-hidden="true" tabindex="-1"></a>mlc</span>
-<span id="cb44-262"><a href="#cb44-262" aria-hidden="true" tabindex="-1"></a>mle</span>
-<span id="cb44-263"><a href="#cb44-263" aria-hidden="true" tabindex="-1"></a>mla</span>
-<span id="cb44-264"><a href="#cb44-264" aria-hidden="true" tabindex="-1"></a>mln</span>
-<span id="cb44-265"><a href="#cb44-265" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-266"><a href="#cb44-266" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-267"><a href="#cb44-267" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-268"><a href="#cb44-268" aria-hidden="true" tabindex="-1"></a><span class="fu">## Response Frequencies</span></span>
-<span id="cb44-269"><a href="#cb44-269" aria-hidden="true" tabindex="-1"></a><span class="in">```{r responsefrequencies,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='hide'}</span></span>
-<span id="cb44-270"><a href="#cb44-270" aria-hidden="true" tabindex="-1"></a><span class="co"># share of each answer to each item, one panel per trait (answers as given, before reversing)</span></span>
-<span id="cb44-271"><a href="#cb44-271" aria-hidden="true" tabindex="-1"></a>traits<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="at">O=</span><span class="st">"Openness"</span>,<span class="at">C=</span><span class="st">"Conscientiousness"</span>,<span class="at">E=</span><span class="st">"Extraversion"</span>,<span class="at">A=</span><span class="st">"Agreeableness"</span>,<span class="at">N=</span><span class="st">"Neuroticism"</span>)</span>
-<span id="cb44-272"><a href="#cb44-272" aria-hidden="true" tabindex="-1"></a>answers<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"1 Disagree"</span>,<span class="st">"2"</span>,<span class="st">"3 Neutral"</span>,<span class="st">"4"</span>,<span class="st">"5 Agree"</span>)</span>
-<span id="cb44-273"><a href="#cb44-273" aria-hidden="true" tabindex="-1"></a>items<span class="ot">&lt;-</span><span class="fu">as.character</span>(<span class="fu">unlist</span>(key))</span>
-<span id="cb44-274"><a href="#cb44-274" aria-hidden="true" tabindex="-1"></a>responses<span class="ot">&lt;-</span><span class="fu">do.call</span>(rbind,<span class="fu">lapply</span>(items,<span class="cf">function</span>(i)</span>
-<span id="cb44-275"><a href="#cb44-275" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">item=</span>i,<span class="at">trait=</span>traits[[<span class="fu">substr</span>(i,<span class="dv">1</span>,<span class="dv">1</span>)]],<span class="at">answer=</span>answers,</span>
-<span id="cb44-276"><a href="#cb44-276" aria-hidden="true" tabindex="-1"></a>             <span class="at">p=</span><span class="fu">as.vector</span>(<span class="fu">prop.table</span>(<span class="fu">table</span>(<span class="fu">factor</span>(df_ocean[[i]],<span class="at">levels=</span><span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>)))))))</span>
-<span id="cb44-277"><a href="#cb44-277" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>item<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>item,<span class="at">levels=</span><span class="fu">rev</span>(items))</span>
-<span id="cb44-278"><a href="#cb44-278" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>trait<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>trait,<span class="at">levels=</span>traits)</span>
-<span id="cb44-279"><a href="#cb44-279" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>answer<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>answer,<span class="at">levels=</span>answers)</span>
-<span id="cb44-280"><a href="#cb44-280" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-281"><a href="#cb44-281" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(responses,<span class="fu">aes</span>(<span class="at">x=</span>p,<span class="at">y=</span>item,<span class="at">fill=</span>answer)) <span class="sc">+</span></span>
-<span id="cb44-282"><a href="#cb44-282" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">width=</span><span class="fl">0.85</span>,<span class="at">position=</span><span class="fu">position_stack</span>(<span class="at">reverse=</span><span class="cn">TRUE</span>)) <span class="sc">+</span></span>
-<span id="cb44-283"><a href="#cb44-283" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>trait,<span class="at">nrow=</span><span class="dv">1</span>,<span class="at">scales=</span><span class="st">"free_y"</span>) <span class="sc">+</span></span>
-<span id="cb44-284"><a href="#cb44-284" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#b2182b"</span>,<span class="st">"#ef8a62"</span>,<span class="st">"#e0e0e0"</span>,<span class="st">"#67a9cf"</span>,<span class="st">"#2166ac"</span>),<span class="at">name=</span><span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb44-285"><a href="#cb44-285" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">breaks=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="fl">0.5</span>,<span class="dv">1</span>),<span class="at">labels=</span><span class="fu">c</span>(<span class="st">"0%"</span>,<span class="st">"50%"</span>,<span class="st">"100%"</span>),<span class="at">expand=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">0</span>)) <span class="sc">+</span></span>
-<span id="cb44-286"><a href="#cb44-286" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x=</span><span class="fu">paste0</span>(<span class="st">"Respondents ("</span>,<span class="fu">nrow</span>(df_ocean),<span class="st">")"</span>),<span class="at">y=</span><span class="cn">NULL</span>,<span class="at">title=</span><span class="st">"Distribution of the answers to each item"</span>) <span class="sc">+</span></span>
-<span id="cb44-287"><a href="#cb44-287" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>) <span class="sc">+</span></span>
-<span id="cb44-288"><a href="#cb44-288" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position=</span><span class="st">"top"</span>,<span class="at">panel.grid=</span><span class="fu">element_blank</span>(),<span class="at">panel.spacing.x=</span><span class="fu">unit</span>(<span class="dv">1</span>,<span class="st">"lines"</span>),</span>
-<span id="cb44-289"><a href="#cb44-289" aria-hidden="true" tabindex="-1"></a>        <span class="at">plot.margin=</span><span class="fu">margin</span>(<span class="fl">5.5</span>,<span class="dv">12</span>,<span class="fl">5.5</span>,<span class="fl">5.5</span>))</span>
-<span id="cb44-290"><a href="#cb44-290" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-291"><a href="#cb44-291" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-292"><a href="#cb44-292" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-293"><a href="#cb44-293" aria-hidden="true" tabindex="-1"></a><span class="fu">## Histogram of Scores</span></span>
-<span id="cb44-294"><a href="#cb44-294" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scores,fig.height=6,fig.keep="last",echo=TRUE,message=FALSE,warning=FALSE,results='hide'}</span></span>
-<span id="cb44-295"><a href="#cb44-295" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_O<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-296"><a href="#cb44-296" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_C<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-297"><a href="#cb44-297" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_E<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-298"><a href="#cb44-298" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_A<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-299"><a href="#cb44-299" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_N<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
-<span id="cb44-300"><a href="#cb44-300" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-301"><a href="#cb44-301" aria-hidden="true" tabindex="-1"></a>scores_ocean<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">Openness=</span>df_ocean_reversed<span class="sc">$</span>score_O,</span>
-<span id="cb44-302"><a href="#cb44-302" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Conscientiousness=</span>df_ocean_reversed<span class="sc">$</span>score_C,</span>
-<span id="cb44-303"><a href="#cb44-303" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Extraversion=</span>df_ocean_reversed<span class="sc">$</span>score_E,</span>
-<span id="cb44-304"><a href="#cb44-304" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Agreeableness=</span>df_ocean_reversed<span class="sc">$</span>score_A,</span>
-<span id="cb44-305"><a href="#cb44-305" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Neuroticism=</span>df_ocean_reversed<span class="sc">$</span>score_N)</span>
-<span id="cb44-306"><a href="#cb44-306" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-307"><a href="#cb44-307" aria-hidden="true" tabindex="-1"></a>scores<span class="ot">&lt;-</span><span class="fu">plot_histogram</span>(scores_ocean,<span class="at">bins=</span><span class="dv">40</span>)</span>
-<span id="cb44-308"><a href="#cb44-308" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-309"><a href="#cb44-309" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_multiplot</span>(<span class="at">plotlist=</span>scores,<span class="at">cols=</span><span class="dv">3</span>)</span>
-<span id="cb44-310"><a href="#cb44-310" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-311"><a href="#cb44-311" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb44-312"><a href="#cb44-312" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-162"><a href="#cb44-162" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-163"><a href="#cb44-163" aria-hidden="true" tabindex="-1"></a><span class="fu">## Descriprion of reponse data</span></span>
+<span id="cb44-164"><a href="#cb44-164" aria-hidden="true" tabindex="-1"></a><span class="in">```{r description,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-165"><a href="#cb44-165" aria-hidden="true" tabindex="-1"></a><span class="fu">load</span>(<span class="st">"data/df_ocean.rda"</span>)</span>
+<span id="cb44-166"><a href="#cb44-166" aria-hidden="true" tabindex="-1"></a>df_ocean[df_ocean<span class="sc">==</span><span class="dv">0</span>]<span class="ot">&lt;-</span><span class="cn">NA</span></span>
+<span id="cb44-167"><a href="#cb44-167" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(df_ocean)</span>
+<span id="cb44-168"><a href="#cb44-168" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-169"><a href="#cb44-169" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-170"><a href="#cb44-170" aria-hidden="true" tabindex="-1"></a><span class="fu">## Reverse data</span></span>
+<span id="cb44-171"><a href="#cb44-171" aria-hidden="true" tabindex="-1"></a><span class="in">```{r reverse,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-172"><a href="#cb44-172" aria-hidden="true" tabindex="-1"></a>key<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-173"><a href="#cb44-173" aria-hidden="true" tabindex="-1"></a>          <span class="at">C=</span><span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-174"><a href="#cb44-174" aria-hidden="true" tabindex="-1"></a>          <span class="at">E=</span><span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-175"><a href="#cb44-175" aria-hidden="true" tabindex="-1"></a>          <span class="at">A=</span><span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-176"><a href="#cb44-176" aria-hidden="true" tabindex="-1"></a>          <span class="at">N=</span><span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean),<span class="at">value=</span><span class="cn">TRUE</span>))</span>
+<span id="cb44-177"><a href="#cb44-177" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-178"><a href="#cb44-178" aria-hidden="true" tabindex="-1"></a>reverse<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
+<span id="cb44-179"><a href="#cb44-179" aria-hidden="true" tabindex="-1"></a>              <span class="at">C=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
+<span id="cb44-180"><a href="#cb44-180" aria-hidden="true" tabindex="-1"></a>              <span class="at">E=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>),</span>
+<span id="cb44-181"><a href="#cb44-181" aria-hidden="true" tabindex="-1"></a>              <span class="at">A=</span><span class="fu">c</span>(<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>),</span>
+<span id="cb44-182"><a href="#cb44-182" aria-hidden="true" tabindex="-1"></a>              <span class="at">N=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="sc">-</span><span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>,<span class="dv">1</span>))</span>
+<span id="cb44-183"><a href="#cb44-183" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-184"><a href="#cb44-184" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">reverse.code</span>(<span class="fu">as.numeric</span>(<span class="fu">as.character</span>(<span class="fu">unlist</span>(reverse))),</span>
+<span id="cb44-185"><a href="#cb44-185" aria-hidden="true" tabindex="-1"></a>                                       df_ocean[,<span class="fu">as.character</span>(<span class="fu">unlist</span>(key))],</span>
+<span id="cb44-186"><a href="#cb44-186" aria-hidden="true" tabindex="-1"></a>                                       <span class="at">mini=</span><span class="dv">1</span>,<span class="at">maxi=</span><span class="dv">5</span>)</span>
+<span id="cb44-187"><a href="#cb44-187" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="ot">&lt;-</span><span class="fu">data.frame</span>(df_ocean_reversed)</span>
+<span id="cb44-188"><a href="#cb44-188" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-189"><a href="#cb44-189" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-190"><a href="#cb44-190" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-191"><a href="#cb44-191" aria-hidden="true" tabindex="-1"></a><span class="fu">## Correlations</span></span>
+<span id="cb44-192"><a href="#cb44-192" aria-hidden="true" tabindex="-1"></a><span class="in">```{r correlations,fig.height=7,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-193"><a href="#cb44-193" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Openness"</span>)</span>
+<span id="cb44-194"><a href="#cb44-194" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Conscientiousness"</span>)</span>
+<span id="cb44-195"><a href="#cb44-195" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Extraversion"</span>)</span>
+<span id="cb44-196"><a href="#cb44-196" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Agreeableness"</span>)</span>
+<span id="cb44-197"><a href="#cb44-197" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_corrplot</span>(<span class="at">mydata=</span>stats<span class="sc">::</span><span class="fu">cor</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed))],<span class="at">use=</span><span class="st">"pairwise"</span>),<span class="at">base_size=</span><span class="dv">20</span>,<span class="at">title=</span><span class="st">"Neuroticism"</span>)</span>
+<span id="cb44-198"><a href="#cb44-198" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-199"><a href="#cb44-199" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-200"><a href="#cb44-200" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-201"><a href="#cb44-201" aria-hidden="true" tabindex="-1"></a><span class="fu">## Alpha</span></span>
+<span id="cb44-202"><a href="#cb44-202" aria-hidden="true" tabindex="-1"></a><span class="in">```{r alpha,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-203"><a href="#cb44-203" aria-hidden="true" tabindex="-1"></a>key_reversed<span class="ot">&lt;-</span><span class="fu">list</span>(<span class="at">O=</span><span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-204"><a href="#cb44-204" aria-hidden="true" tabindex="-1"></a>                   <span class="at">C=</span><span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-205"><a href="#cb44-205" aria-hidden="true" tabindex="-1"></a>                   <span class="at">E=</span><span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-206"><a href="#cb44-206" aria-hidden="true" tabindex="-1"></a>                   <span class="at">A=</span><span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>),</span>
+<span id="cb44-207"><a href="#cb44-207" aria-hidden="true" tabindex="-1"></a>                   <span class="at">N=</span><span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>))</span>
+<span id="cb44-208"><a href="#cb44-208" aria-hidden="true" tabindex="-1"></a><span class="fu">report_alpha</span>(<span class="at">df=</span>df_ocean_reversed,<span class="at">key=</span>key_reversed,<span class="at">n.iter=</span><span class="dv">10</span>,<span class="at">check.keys=</span><span class="cn">TRUE</span>,<span class="at">file=</span><span class="cn">NULL</span>)</span>
+<span id="cb44-209"><a href="#cb44-209" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-210"><a href="#cb44-210" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-211"><a href="#cb44-211" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-212"><a href="#cb44-212" aria-hidden="true" tabindex="-1"></a><span class="fu">## Omega</span></span>
+<span id="cb44-213"><a href="#cb44-213" aria-hidden="true" tabindex="-1"></a><span class="in">```{r omega,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-214"><a href="#cb44-214" aria-hidden="true" tabindex="-1"></a>omega_O<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
+<span id="cb44-215"><a href="#cb44-215" aria-hidden="true" tabindex="-1"></a>omega_C<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
+<span id="cb44-216"><a href="#cb44-216" aria-hidden="true" tabindex="-1"></a>omega_E<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
+<span id="cb44-217"><a href="#cb44-217" aria-hidden="true" tabindex="-1"></a>omega_A<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
+<span id="cb44-218"><a href="#cb44-218" aria-hidden="true" tabindex="-1"></a>omega_N<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">omega</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">niter=</span><span class="dv">10</span>,<span class="at">nfactors=</span><span class="dv">3</span>)</span>
+<span id="cb44-219"><a href="#cb44-219" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-220"><a href="#cb44-220" aria-hidden="true" tabindex="-1"></a>omega_O</span>
+<span id="cb44-221"><a href="#cb44-221" aria-hidden="true" tabindex="-1"></a>omega_C</span>
+<span id="cb44-222"><a href="#cb44-222" aria-hidden="true" tabindex="-1"></a>omega_E</span>
+<span id="cb44-223"><a href="#cb44-223" aria-hidden="true" tabindex="-1"></a>omega_A</span>
+<span id="cb44-224"><a href="#cb44-224" aria-hidden="true" tabindex="-1"></a>omega_N</span>
+<span id="cb44-225"><a href="#cb44-225" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-226"><a href="#cb44-226" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-227"><a href="#cb44-227" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-228"><a href="#cb44-228" aria-hidden="true" tabindex="-1"></a><span class="fu">## Scree</span></span>
+<span id="cb44-229"><a href="#cb44-229" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scree,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-230"><a href="#cb44-230" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Openness"</span>)</span>
+<span id="cb44-231"><a href="#cb44-231" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Conscientiousness"</span>)</span>
+<span id="cb44-232"><a href="#cb44-232" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Extraversion"</span>)</span>
+<span id="cb44-233"><a href="#cb44-233" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Agreeableness"</span>)</span>
+<span id="cb44-234"><a href="#cb44-234" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_scree</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">title=</span><span class="st">"Neuroticism"</span>)</span>
+<span id="cb44-235"><a href="#cb44-235" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-236"><a href="#cb44-236" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-237"><a href="#cb44-237" aria-hidden="true" tabindex="-1"></a><span class="fu">## Structure</span></span>
+<span id="cb44-238"><a href="#cb44-238" aria-hidden="true" tabindex="-1"></a><span class="in">```{r structure,echo=TRUE,message=FALSE,warning=FALSE,results='show'}</span></span>
+<span id="cb44-239"><a href="#cb44-239" aria-hidden="true" tabindex="-1"></a>model_O<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
+<span id="cb44-240"><a href="#cb44-240" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">3</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-241"><a href="#cb44-241" aria-hidden="true" tabindex="-1"></a>model_C<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
+<span id="cb44-242"><a href="#cb44-242" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-243"><a href="#cb44-243" aria-hidden="true" tabindex="-1"></a>model_E<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
+<span id="cb44-244"><a href="#cb44-244" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-245"><a href="#cb44-245" aria-hidden="true" tabindex="-1"></a>model_A<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
+<span id="cb44-246"><a href="#cb44-246" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-247"><a href="#cb44-247" aria-hidden="true" tabindex="-1"></a>model_N<span class="ot">&lt;-</span>psych<span class="sc">::</span><span class="fu">fa</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],</span>
+<span id="cb44-248"><a href="#cb44-248" aria-hidden="true" tabindex="-1"></a>                   <span class="at">nfactors=</span><span class="dv">2</span>,<span class="at">rotate=</span><span class="st">"oblimin"</span>,<span class="at">fm=</span><span class="st">"pa"</span>,<span class="at">oblique.scores=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-249"><a href="#cb44-249" aria-hidden="true" tabindex="-1"></a>mlo<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_O,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">4</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
+<span id="cb44-250"><a href="#cb44-250" aria-hidden="true" tabindex="-1"></a>mlc<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_C,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">5</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
+<span id="cb44-251"><a href="#cb44-251" aria-hidden="true" tabindex="-1"></a>mle<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_E,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">61</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
+<span id="cb44-252"><a href="#cb44-252" aria-hidden="true" tabindex="-1"></a>mla<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_A,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">55</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
+<span id="cb44-253"><a href="#cb44-253" aria-hidden="true" tabindex="-1"></a>mln<span class="ot">&lt;-</span><span class="fu">model_loadings</span>(model_N,<span class="at">matrix_type=</span><span class="st">"structure"</span>,<span class="at">cut=</span>.<span class="dv">5</span>,<span class="at">sort=</span><span class="cn">FALSE</span>)</span>
+<span id="cb44-254"><a href="#cb44-254" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-255"><a href="#cb44-255" aria-hidden="true" tabindex="-1"></a>mlo<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"O"</span>,df_lookup<span class="sc">$</span>code),]</span>
+<span id="cb44-256"><a href="#cb44-256" aria-hidden="true" tabindex="-1"></a>mlc<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"C"</span>,df_lookup<span class="sc">$</span>code),]</span>
+<span id="cb44-257"><a href="#cb44-257" aria-hidden="true" tabindex="-1"></a>mle<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"E"</span>,df_lookup<span class="sc">$</span>code),]</span>
+<span id="cb44-258"><a href="#cb44-258" aria-hidden="true" tabindex="-1"></a>mla<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"A"</span>,df_lookup<span class="sc">$</span>code),]</span>
+<span id="cb44-259"><a href="#cb44-259" aria-hidden="true" tabindex="-1"></a>mln<span class="sc">$</span>names<span class="ot">&lt;-</span>df_lookup[<span class="fu">grep</span>(<span class="st">"N"</span>,df_lookup<span class="sc">$</span>code),]</span>
+<span id="cb44-260"><a href="#cb44-260" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-261"><a href="#cb44-261" aria-hidden="true" tabindex="-1"></a>mlo</span>
+<span id="cb44-262"><a href="#cb44-262" aria-hidden="true" tabindex="-1"></a>mlc</span>
+<span id="cb44-263"><a href="#cb44-263" aria-hidden="true" tabindex="-1"></a>mle</span>
+<span id="cb44-264"><a href="#cb44-264" aria-hidden="true" tabindex="-1"></a>mla</span>
+<span id="cb44-265"><a href="#cb44-265" aria-hidden="true" tabindex="-1"></a>mln</span>
+<span id="cb44-266"><a href="#cb44-266" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-267"><a href="#cb44-267" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-268"><a href="#cb44-268" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-269"><a href="#cb44-269" aria-hidden="true" tabindex="-1"></a><span class="fu">## Response Frequencies</span></span>
+<span id="cb44-270"><a href="#cb44-270" aria-hidden="true" tabindex="-1"></a><span class="in">```{r responsefrequencies,fig.height=4.5,echo=TRUE,message=FALSE,warning=FALSE,results='hide'}</span></span>
+<span id="cb44-271"><a href="#cb44-271" aria-hidden="true" tabindex="-1"></a><span class="co"># share of each answer to each item, one panel per trait (answers as given, before reversing)</span></span>
+<span id="cb44-272"><a href="#cb44-272" aria-hidden="true" tabindex="-1"></a>traits<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="at">O=</span><span class="st">"Openness"</span>,<span class="at">C=</span><span class="st">"Conscientiousness"</span>,<span class="at">E=</span><span class="st">"Extraversion"</span>,<span class="at">A=</span><span class="st">"Agreeableness"</span>,<span class="at">N=</span><span class="st">"Neuroticism"</span>)</span>
+<span id="cb44-273"><a href="#cb44-273" aria-hidden="true" tabindex="-1"></a>answers<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"1 Disagree"</span>,<span class="st">"2"</span>,<span class="st">"3 Neutral"</span>,<span class="st">"4"</span>,<span class="st">"5 Agree"</span>)</span>
+<span id="cb44-274"><a href="#cb44-274" aria-hidden="true" tabindex="-1"></a>items<span class="ot">&lt;-</span><span class="fu">as.character</span>(<span class="fu">unlist</span>(key))</span>
+<span id="cb44-275"><a href="#cb44-275" aria-hidden="true" tabindex="-1"></a>responses<span class="ot">&lt;-</span><span class="fu">do.call</span>(rbind,<span class="fu">lapply</span>(items,<span class="cf">function</span>(i)</span>
+<span id="cb44-276"><a href="#cb44-276" aria-hidden="true" tabindex="-1"></a>  <span class="fu">data.frame</span>(<span class="at">item=</span>i,<span class="at">trait=</span>traits[[<span class="fu">substr</span>(i,<span class="dv">1</span>,<span class="dv">1</span>)]],<span class="at">answer=</span>answers,</span>
+<span id="cb44-277"><a href="#cb44-277" aria-hidden="true" tabindex="-1"></a>             <span class="at">p=</span><span class="fu">as.vector</span>(<span class="fu">prop.table</span>(<span class="fu">table</span>(<span class="fu">factor</span>(df_ocean[[i]],<span class="at">levels=</span><span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>)))))))</span>
+<span id="cb44-278"><a href="#cb44-278" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>item<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>item,<span class="at">levels=</span><span class="fu">rev</span>(items))</span>
+<span id="cb44-279"><a href="#cb44-279" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>trait<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>trait,<span class="at">levels=</span>traits)</span>
+<span id="cb44-280"><a href="#cb44-280" aria-hidden="true" tabindex="-1"></a>responses<span class="sc">$</span>answer<span class="ot">&lt;-</span><span class="fu">factor</span>(responses<span class="sc">$</span>answer,<span class="at">levels=</span>answers)</span>
+<span id="cb44-281"><a href="#cb44-281" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-282"><a href="#cb44-282" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>(responses,<span class="fu">aes</span>(<span class="at">x=</span>p,<span class="at">y=</span>item,<span class="at">fill=</span>answer)) <span class="sc">+</span></span>
+<span id="cb44-283"><a href="#cb44-283" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">width=</span><span class="fl">0.85</span>,<span class="at">position=</span><span class="fu">position_stack</span>(<span class="at">reverse=</span><span class="cn">TRUE</span>)) <span class="sc">+</span></span>
+<span id="cb44-284"><a href="#cb44-284" aria-hidden="true" tabindex="-1"></a>  <span class="fu">facet_wrap</span>(<span class="sc">~</span>trait,<span class="at">nrow=</span><span class="dv">1</span>,<span class="at">scales=</span><span class="st">"free_y"</span>) <span class="sc">+</span></span>
+<span id="cb44-285"><a href="#cb44-285" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_fill_manual</span>(<span class="at">values=</span><span class="fu">c</span>(<span class="st">"#b2182b"</span>,<span class="st">"#ef8a62"</span>,<span class="st">"#e0e0e0"</span>,<span class="st">"#67a9cf"</span>,<span class="st">"#2166ac"</span>),<span class="at">name=</span><span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb44-286"><a href="#cb44-286" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_continuous</span>(<span class="at">breaks=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="fl">0.5</span>,<span class="dv">1</span>),<span class="at">labels=</span><span class="fu">c</span>(<span class="st">"0%"</span>,<span class="st">"50%"</span>,<span class="st">"100%"</span>),<span class="at">expand=</span><span class="fu">c</span>(<span class="dv">0</span>,<span class="dv">0</span>)) <span class="sc">+</span></span>
+<span id="cb44-287"><a href="#cb44-287" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x=</span><span class="fu">paste0</span>(<span class="st">"Respondents ("</span>,<span class="fu">nrow</span>(df_ocean),<span class="st">")"</span>),<span class="at">y=</span><span class="cn">NULL</span>,<span class="at">title=</span><span class="st">"Distribution of the answers to each item"</span>) <span class="sc">+</span></span>
+<span id="cb44-288"><a href="#cb44-288" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>(<span class="at">base_size=</span><span class="dv">10</span>) <span class="sc">+</span></span>
+<span id="cb44-289"><a href="#cb44-289" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">legend.position=</span><span class="st">"top"</span>,<span class="at">panel.grid=</span><span class="fu">element_blank</span>(),<span class="at">panel.spacing.x=</span><span class="fu">unit</span>(<span class="dv">1</span>,<span class="st">"lines"</span>),</span>
+<span id="cb44-290"><a href="#cb44-290" aria-hidden="true" tabindex="-1"></a>        <span class="at">plot.margin=</span><span class="fu">margin</span>(<span class="fl">5.5</span>,<span class="dv">12</span>,<span class="fl">5.5</span>,<span class="fl">5.5</span>))</span>
+<span id="cb44-291"><a href="#cb44-291" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-292"><a href="#cb44-292" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb44-293"><a href="#cb44-293" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-294"><a href="#cb44-294" aria-hidden="true" tabindex="-1"></a><span class="fu">## Histogram of Scores</span></span>
+<span id="cb44-295"><a href="#cb44-295" aria-hidden="true" tabindex="-1"></a><span class="in">```{r scores,fig.height=6,fig.keep="last",echo=TRUE,message=FALSE,warning=FALSE,results='hide'}</span></span>
+<span id="cb44-296"><a href="#cb44-296" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_O<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"O"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-297"><a href="#cb44-297" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_C<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"C"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-298"><a href="#cb44-298" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_E<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"E"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-299"><a href="#cb44-299" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_A<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"A"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-300"><a href="#cb44-300" aria-hidden="true" tabindex="-1"></a>df_ocean_reversed<span class="sc">$</span>score_N<span class="ot">&lt;-</span><span class="fu">rowMeans</span>(df_ocean_reversed[,<span class="fu">grep</span>(<span class="st">"N"</span>,<span class="fu">names</span>(df_ocean_reversed),<span class="at">value=</span><span class="cn">TRUE</span>)],<span class="at">na.rm=</span><span class="cn">TRUE</span>)</span>
+<span id="cb44-301"><a href="#cb44-301" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-302"><a href="#cb44-302" aria-hidden="true" tabindex="-1"></a>scores_ocean<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="at">Openness=</span>df_ocean_reversed<span class="sc">$</span>score_O,</span>
+<span id="cb44-303"><a href="#cb44-303" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Conscientiousness=</span>df_ocean_reversed<span class="sc">$</span>score_C,</span>
+<span id="cb44-304"><a href="#cb44-304" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Extraversion=</span>df_ocean_reversed<span class="sc">$</span>score_E,</span>
+<span id="cb44-305"><a href="#cb44-305" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Agreeableness=</span>df_ocean_reversed<span class="sc">$</span>score_A,</span>
+<span id="cb44-306"><a href="#cb44-306" aria-hidden="true" tabindex="-1"></a>                         <span class="at">Neuroticism=</span>df_ocean_reversed<span class="sc">$</span>score_N)</span>
+<span id="cb44-307"><a href="#cb44-307" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-308"><a href="#cb44-308" aria-hidden="true" tabindex="-1"></a>scores<span class="ot">&lt;-</span><span class="fu">plot_histogram</span>(scores_ocean,<span class="at">bins=</span><span class="dv">40</span>)</span>
+<span id="cb44-309"><a href="#cb44-309" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-310"><a href="#cb44-310" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_multiplot</span>(<span class="at">plotlist=</span>scores,<span class="at">cols=</span><span class="dv">3</span>)</span>
+<span id="cb44-311"><a href="#cb44-311" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-312"><a href="#cb44-312" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb44-313"><a href="#cb44-313" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-314"><a href="#cb44-314" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-315"><a href="#cb44-315" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-316"><a href="#cb44-316" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-317"><a href="#cb44-317" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb44-318"><a href="#cb44-318" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb44-319"><a href="#cb44-319" aria-hidden="true" tabindex="-1"></a></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb44-319"><a href="#cb44-319" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb44-320"><a href="#cb44-320" aria-hidden="true" tabindex="-1"></a></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 <footer class="footer">
