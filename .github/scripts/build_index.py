@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[2]
 QUARTO = ROOT / "quarto"
 DOCS = Path(os.environ.get("DOCS_DIR", ROOT / "docs"))
 REPO_URL = "https://github.com/sedzinfo/vignettes"
+# what search results show for this page: up to about 60 characters of title, 160 of description
+TITLE = "R tutorials on psychometrics, statistics and data visualisation"
+DESCRIPTION = ("Free R tutorials with code: computerised adaptive testing and IRT, validation of psychological tests, "
+               "machine learning and data visualisation with real data.")
 CONSENT = (QUARTO / "_shared" / "_ga_consent.html").read_text(encoding="utf-8")  # cookie banner + Google Analytics, shared with the Quarto sites
 
 
@@ -67,8 +71,8 @@ page = f"""<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>vignettes</title>
-  <meta name="description" content="Tutorials and worked examples in R.">
+  <title>{html.escape(TITLE)}</title>
+  <meta name="description" content="{html.escape(DESCRIPTION)}">
   <link rel="alternate" type="application/rss+xml" title="sedzinfo · R tutorials" href="feed.xml">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.3/dist/flatly/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -99,8 +103,8 @@ page = f"""<!doctype html>
   </nav>
 
   <main class="container py-5">
-    <h1 class="mb-2">vignettes</h1>
-    <p class="lead text-muted mb-2">Tutorials and worked examples in R.</p>
+    <h1 class="mb-2">R tutorials</h1>
+    <p class="lead text-muted mb-2">{html.escape(DESCRIPTION)}</p>
     <!-- the link to R-bloggers is a condition of its listing (feed.xml, built by build_feed.py) -->
     <p class="small text-muted mb-4"><i class="bi bi-rss"></i> <a href="feed.xml" class="link-secondary">RSS feed</a> of new tutorials ·
       R news and tutorials from many authors: <a href="https://www.r-bloggers.com/" class="link-secondary">R-bloggers</a></p>
