@@ -149,7 +149,7 @@ if (preview) {
   # LANDING PAGE, RSS FEED AND STRUCTURED DATA
   ##########################################################################################
   if (!is.na(python)) {
-    for (script in c("build_index.py", "build_feed.py", "add_structured_data.py")) {
+    for (script in c("build_index.py", "add_see_also.py", "build_feed.py", "add_structured_data.py")) {
       run_python(script, c(DOCS_DIR = out_root))
       if (publish) run_python(script, c(DOCS_DIR = docs_root))
     }
