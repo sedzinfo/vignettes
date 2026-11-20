@@ -32,7 +32,7 @@ TARGETS = {   # name: (site, live app or None, what it is)
                  "each trait scored with the rating scale model"),
     "golemworldbank": (HOME + "golemworldbank/", "https://sedzinfo.shinyapps.io/golemworldbank/",
                        "an interactive explorer of the World Bank development indicators of every country"),
-    "golemeurostat": (HOME + "golemeurostat/", None,
+    "golemeurostat": (HOME + "golemeurostat/", "https://sedzinfo.shinyapps.io/golemeurostat/",
                       "a Shiny app for exploring the Eurostat indicators of the countries and regions of Europe"),
     "golemenviro": (HOME + "golemenviro/", "https://sedzinfo-golemenviro.share.connect.posit.cloud/",
                     "a live dashboard of the readings of Pimoroni Enviro sensors: temperature, humidity, "
