@@ -297,7 +297,9 @@ from_pool <- unlist(pooled$pooled[pooled$pooled$term == "hours", names(by_hand)]
 signif(rbind(by_hand, from_pool), 4)
 ```
 
-The two rows agree. For the slope, $\lambda$ = `r sprintf("%.2f", lambda)`: about `r round(100 * lambda)`% of its variance comes from not knowing the missing values, and the FMI says about `r round(100 * fmi)`% of the information about it was lost. That is less than the `r round(100 * mean(is.na(data_mar$wellbeing)))`% of wellbeing values that are missing, because sleep and hours tell us something about the missing wellbeing.
+The two rows agree. For the slope, $\lambda$ = `r sprintf("%.2f", lambda)`: about `r round(100 * lambda)`% of its variance comes from not knowing the missing values, and the FMI says about `r round(100 * fmi)`% of the information about it was lost.
+
+The FMI is not simply the share of missing values. The better the other variables predict the missing values, the smaller it is: with a perfect predictor nothing would be lost. Sleep predicts wellbeing only moderately (*r* = 0.60), and here the FMI ends up a little above the share of people with an incomplete row (`r round(100 * mean(!complete.cases(data_mar)))`%).
 
 ### Checking the imputations
 
@@ -456,6 +458,8 @@ res$method <- factor(res$method, levels = rev(c("listwise deletion", "mean imput
 res <- res[order(res$estimand, res$mechanism, -as.integer(res$method)), ]
 rownames(res) <- NULL
 res
+# one number from the table, for the text below
+get <- function(mech, meth, est, what) res[res$mechanism == mech & res$method == meth & res$estimand == est, what]
 ```
 
 ```{r simulation_plot, fig.height = 6.5}
@@ -475,11 +479,11 @@ ggplot(long, aes(value, method, colour = mechanism)) +
 
 What the simulation shows:
 
-- **Listwise deletion** is fine under MCAR (unbiased, about 95% coverage). Under MAR and MNAR its mean is biased and its intervals miss the truth most of the time.
-- **Mean imputation** distorts the slope towards 0 even under MCAR, and its too-narrow intervals rarely contain the true slope.
-- **Regression imputation** gets the mean right under MAR but overstates the slope, and its intervals are too narrow.
-- **Stochastic regression** is nearly unbiased under MCAR and MAR, but its intervals are too narrow, because one imputation hides the uncertainty of the guesses.
-- **Multiple imputation** is unbiased with close to 95% coverage under MCAR and MAR. Under MNAR every method is biased; only a sensitivity analysis (section 6) shows how much it could matter.
+- **Listwise deletion** is fine under MCAR: no bias, and coverage of `r sprintf("%.2f", get("MCAR", "listwise deletion", "mean", "coverage"))` for the mean and `r sprintf("%.2f", get("MCAR", "listwise deletion", "slope", "coverage"))` for the slope (with 100 samples, coverage is itself uncertain by about ±0.04). Under MAR and MNAR its mean is too high, by `r sprintf("%.1f", get("MAR", "listwise deletion", "mean", "bias"))` and `r sprintf("%.1f", get("MNAR", "listwise deletion", "mean", "bias"))` points, and its intervals almost never contain the true mean.
+- **Mean imputation** pulls the slope towards 0 even under MCAR (a bias of `r sprintf("%.2f", get("MCAR", "mean imputation", "slope", "bias"))`), and its intervals contain the true slope only `r round(100 * get("MCAR", "mean imputation", "slope", "coverage"))`% of the time or less.
+- **Regression imputation** gets the mean nearly right under MAR, but makes the slope too steep (a bias of `r sprintf("%.2f", get("MAR", "regression imputation", "slope", "bias"))`), and its intervals are too narrow (coverage of the slope `r sprintf("%.2f", get("MAR", "regression imputation", "slope", "coverage"))`).
+- **Stochastic regression** is about as accurate as multiple imputation here, since the simulated data are exactly normal, which suits it. But its intervals are too narrow, because one imputation hides the uncertainty of the guesses: coverage between `r sprintf("%.2f", min(res$coverage[res$method == "stochastic regression" & res$mechanism != "MNAR"]))` and `r sprintf("%.2f", max(res$coverage[res$method == "stochastic regression" & res$mechanism != "MNAR"]))` under MCAR and MAR.
+- **Multiple imputation** is nearly unbiased under MCAR and MAR (for the mean under MAR, `r sprintf("%.2f", get("MAR", "multiple imputation", "mean", "bias"))` points, against `r sprintf("%.2f", get("MAR", "listwise deletion", "mean", "bias"))` for deletion), with coverage between `r sprintf("%.2f", min(res$coverage[res$method == "multiple imputation" & res$mechanism != "MNAR"]))` and `r sprintf("%.2f", max(res$coverage[res$method == "multiple imputation" & res$mechanism != "MNAR"]))`. Under MNAR every method is biased; only a sensitivity analysis (section 6) shows how much it could matter.
 
 ---
 

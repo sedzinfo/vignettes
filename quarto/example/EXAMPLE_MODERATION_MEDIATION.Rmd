@@ -47,7 +47,7 @@ library(lavaan)     # the mediation model as a path model
 
 ```{r diagrams, fig.height = 3.6}
 # a path diagram: boxes, arrows between them, and labels on the arrows
-draw_paths <- function(boxes, arrows, title) {
+draw_paths <- function(boxes, arrows, title, subtitle = NULL) {
   ggplot() +
     geom_segment(data = arrows, aes(x, y, xend = xend, yend = yend),
                  arrow = arrow(length = unit(0.22, "cm"), type = "closed"), linewidth = 0.7) +
@@ -56,20 +56,20 @@ draw_paths <- function(boxes, arrows, title) {
     geom_text(data = arrows, aes(lx, ly, label = label), size = 3.8, colour = "#E74C3C", fontface = "bold") +
     coord_cartesian(xlim = c(0, 10), ylim = c(0.5, 6)) +
     theme_void(base_size = 11) +
-    labs(title = title)
+    labs(title = title, subtitle = subtitle)
 }
 moderation <- draw_paths(
   boxes  = data.frame(x = c(1.6, 8.4, 5), y = c(1.5, 1.5, 5.2),
                       label = c("Protest\n(X)", "Liking\n(Y)", "Perceived sexism\n(W)")),
   arrows = data.frame(x = c(2.7, 5), y = c(1.5, 4.5), xend = c(7.3, 5), yend = c(1.5, 1.6),
                       label = c("", ""), lx = 0, ly = 0),
-  title = "Moderation: W changes the X → Y effect")
+  title = "Moderation", subtitle = "W changes the effect of X on Y")
 mediation <- draw_paths(
   boxes  = data.frame(x = c(1.6, 8.4, 5), y = c(1.5, 1.5, 5.2),
                       label = c("Protest\n(X)", "Liking\n(Y)", "Appropriateness\n(M)")),
   arrows = data.frame(x = c(2.1, 6.4, 2.7), y = c(2.2, 4.6, 1.5), xend = c(3.7, 7.9, 7.3), yend = c(4.6, 2.2, 1.5),
                       label = c("a", "b", "c′"), lx = c(2.4, 7.6, 5), ly = c(3.6, 3.6, 1.0)),
-  title = "Mediation: X → M → Y, plus X → Y")
+  title = "Mediation", subtitle = "X affects Y through M (a × b), and directly (c′)")
 moderation + mediation
 ```
 
@@ -224,13 +224,14 @@ ggplot(jn_df, aes(sexism, effect)) +
   geom_vline(xintercept = jn, linetype = "dashed", colour = "#E74C3C") +
   annotate("text", x = jn, y = max(jn_df$upper), label = sprintf("%.2f", jn), hjust = -0.15, size = 3.5,
            colour = "#E74C3C") +
-  geom_rug(data = d, aes(x = sexism), inherit.aes = FALSE, alpha = 0.4) +
+  geom_rug(data = d, aes(x = sexism), inherit.aes = FALSE, alpha = 0.3,   # jittered: many readers share a score
+           position = position_jitter(width = 0.05, height = 0, seed = 1)) +
   labs(title = "The effect of protest on liking, at each level of perceived sexism",
        x = "perceived pervasiveness of sex discrimination (W)",
        y = "effect of protest (95% CI)")
 ```
 
-Where the blue band does not include 0, the effect is significant. The dashed lines are the Johnson–Neyman points, and the ticks at the bottom show the readers' actual sexism scores: most lie to the right of `r sprintf("%.2f", jn[2])`.
+Where the blue band does not include 0, the effect is significant. The dashed lines are the Johnson–Neyman points, and the ticks at the bottom show the readers' actual sexism scores (one tick per reader, spread a little where readers share a score): most lie to the right of `r sprintf("%.2f", jn[2])`.
 
 ### The interaction plot
 
