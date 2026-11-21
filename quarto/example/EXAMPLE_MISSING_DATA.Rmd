@@ -227,8 +227,8 @@ ggplot(pts, aes(hours, wellbeing, colour = imputed)) +
 Row by row:
 
 - **Listwise deletion** keeps `r quick["listwise deletion", "n"]` of 1,000 people. Its mean (`r sprintf("%.2f", quick["listwise deletion", "mean"])`) is too high, because the bad sleepers, who are less happy, are the ones who left.
-- **Mean imputation** is the worst. Every hole gets the same value (the horizontal red line in the plot), so the mean stays as biased as with deletion, the SD shrinks (`r sprintf("%.2f", quick["mean imputation", "sd"])` against `r sprintf("%.2f", quick["complete data (benchmark)", "sd"])`), and the correlation and slope are pulled towards 0 (`r sprintf("%.3f", quick["mean imputation", "slope"])`). On top of that, R treats the 1,000 rows as real data, so the standard error is too small.
-- **Regression imputation** uses sleep, so the mean is nearly right. But the imputed values sit exactly on a line (the middle plot), with none of the scatter of real data: the SD is too small, the correlation too strong (`r sprintf("%.3f", quick["regression imputation", "r"])` against `r sprintf("%.3f", quick["complete data (benchmark)", "r"])`), and the standard error too small.
+- **Mean imputation** is the worst. Every hole gets the same value: the horizontal red line in the plot, and the vertical blue line of people whose hours were filled with the mean. So the mean stays as biased as with deletion, the SD shrinks (`r sprintf("%.2f", quick["mean imputation", "sd"])` against `r sprintf("%.2f", quick["complete data (benchmark)", "sd"])`), and the correlation and slope are pulled towards 0 (`r sprintf("%.3f", quick["mean imputation", "slope"])`). On top of that, R treats the 1,000 rows as real data, so the standard error is too small.
+- **Regression imputation** uses sleep, so the mean is nearly right. But each imputed value is an exact prediction from hours and sleep, with none of the scatter of real data around the prediction, so in the middle plot the red points are packed more tightly than the blue ones. The SD is too small, the correlation too strong (`r sprintf("%.3f", quick["regression imputation", "r"])` against `r sprintf("%.3f", quick["complete data (benchmark)", "r"])`), and the standard error too small.
 - **Stochastic regression** adds random scatter, so the mean, SD, correlation and slope all come out about right. Only the standard error is still wrong: R thinks the imputed values are as certain as observed ones, but they are guesses. The next section fixes that.
 
 ---
@@ -312,7 +312,7 @@ trace_df <- data.frame(iteration = rep(seq_len(nrow(chains)), ncol(chains)), cha
                        mean = as.vector(chains))
 c1 <- ggplot(trace_df, aes(iteration, mean, colour = chain)) +
   geom_line(linewidth = 0.8) +
-  labs(title = "Convergence: mean of the imputed\nwellbeing values", x = "iteration", y = "mean of imputed values") +
+  labs(title = "Convergence of the\nimputed mean", x = "iteration", y = "mean of imputed wellbeing") +
   theme(legend.position = "none")
 
 imputed <- imp$imp$wellbeing                                     # one column per imputation
@@ -323,8 +323,9 @@ c2 <- ggplot(dens, aes(value, group = draw, colour = set, linewidth = set)) +
   scale_colour_manual(values = c(observed = "#0082c8", imputed = "#E74C3C")) +
   scale_linewidth_manual(values = c(observed = 1.4, imputed = 0.2)) +
   labs(title = "Observed and imputed wellbeing\n(one red line per imputation)", x = "wellbeing", y = "density",
-       colour = NULL, linewidth = NULL)
-c1 + c2
+       colour = NULL, linewidth = NULL) +
+  theme(legend.position = "bottom")
+c1 + c2 + plot_layout(widths = c(1, 1.3))
 ```
 
 - **Left**: the chains wander around the same level from the first iterations, with no trend. Five iterations (the default) are enough here.
@@ -474,10 +475,10 @@ ggplot(long, aes(value, method, colour = mechanism)) +
   scale_colour_manual(values = c(MCAR = "#0082c8", MAR = "#f39c12", MNAR = "#E74C3C")) +
   labs(title = "100 samples per mechanism: average error and 95% CI coverage\n(dashed: no bias, 95% coverage)",
        x = NULL, y = NULL, colour = NULL) +
-  theme(legend.position = "bottom")
+  theme(legend.position = "bottom", panel.spacing.x = unit(1.5, "lines"))
 ```
 
-What the simulation shows:
+What the simulation shows (the true slope is negative, so a positive bias of the slope means a slope that is too flat):
 
 - **Listwise deletion** is fine under MCAR: no bias, and coverage of `r sprintf("%.2f", get("MCAR", "listwise deletion", "mean", "coverage"))` for the mean and `r sprintf("%.2f", get("MCAR", "listwise deletion", "slope", "coverage"))` for the slope (with 100 samples, coverage is itself uncertain by about ±0.04). Under MAR and MNAR its mean is too high, by `r sprintf("%.1f", get("MAR", "listwise deletion", "mean", "bias"))` and `r sprintf("%.1f", get("MNAR", "listwise deletion", "mean", "bias"))` points, and its intervals almost never contain the true mean.
 - **Mean imputation** pulls the slope towards 0 even under MCAR (a bias of `r sprintf("%.2f", get("MCAR", "mean imputation", "slope", "bias"))`), and its intervals contain the true slope only `r round(100 * get("MCAR", "mean imputation", "slope", "coverage"))`% of the time or less.
