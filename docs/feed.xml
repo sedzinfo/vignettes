@@ -7,7 +7,1039 @@
     <atom:link href="https://sedzinfo.github.io/vignettes/feed.xml" rel="self" type="application/rss+xml"/>
     <description>Tutorials in R with the code on every page: psychometrics, adaptive testing, scale validation, statistics, machine learning and data visualisation with real data.</description>
     <language>en</language>
-    <lastBuildDate>Wed, 11 Nov 2026 19:32:47 +0200</lastBuildDate>
+    <lastBuildDate>Sun, 22 Nov 2026 00:30:44 +0200</lastBuildDate>
+    <item>
+      <title>Logistic Regression With a Rare Outcome: Is a 95/5 Split a Problem?</title>
+      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC.html</link>
+      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC.html</guid>
+      <pubDate>Sun, 22 Nov 2026 00:30:44 +0200</pubDate>
+      <category>R</category>
+      <category>Worked Examples in R</category>
+      <description>Logistic regression with 95% zeros and 5% ones in R: why the 0.5 cutoff, accuracy and resampling mislead, and how cutoffs, Firth and calibration fix it.</description>
+      <content:encoded><![CDATA[<p><em>Logistic regression with 95% zeros and 5% ones in R: why the 0.5 cutoff, accuracy and resampling mislead, and how cutoffs, Firth and calibration fix it.</em></p>
+<section id="the-problem-95-zeros-for-every-5-ones" class="level2">
+<h2 class="anchored" data-anchor-id="the-problem-95-zeros-for-every-5-ones">The problem: 95 zeros for every 5 ones</h2>
+<p>Suppose <strong>5% of people have a disease</strong> and we want to predict who has it from a blood marker, age and smoking. We fit a logistic regression, and a colleague says: <em>“95% zeros and 5% ones? That is a problem, you have to balance the data first.”</em></p>
+<p>It is a very common belief, and it is <strong>mostly wrong</strong>. The 95/5 split by itself does not hurt logistic regression. What does go wrong is one of four things that often come <strong>with</strong> a rare outcome:</p>
+<ol type="1">
+<li><strong>The 0.5 cutoff</strong> (section 3). With a 5% base rate almost nobody gets a predicted probability above 0.5, so the model “predicts” that nobody is sick.</li>
+<li><strong>Judging the model by accuracy</strong> (section 4). Calling everybody healthy is already 95% accurate.</li>
+<li><strong>Too few events</strong> (section 5). What limits the model is the <strong>number</strong> of 1s, not their percentage. With only a handful of them, estimates are unstable and can even run off to infinity.</li>
+<li><strong>The popular “fixes”</strong> (section 6). Oversampling, undersampling, SMOTE and class weights do not make the model better at telling the groups apart. They make its probabilities wrong.</li>
+</ol>
+<p>As a reminder, logistic regression models the <strong>probability</strong> of a 1:</p>
+<p><span class="math display">\[P(y = 1 \mid x) = \frac{1}{1 + e^{-(\beta_0 + \beta_1 x_1 + \beta_2 x_2 + \dots)}} \qquad\Longleftrightarrow\qquad \log\frac{P}{1 - P} = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \dots\]</span></p>
+<p>The slopes <span class="math inline">\(\beta_1, \beta_2, \dots\)</span> say how the risk <strong>changes</strong> with each predictor. The intercept <span class="math inline">\(\beta_0\)</span> sets the overall <strong>level</strong> of risk, and that is where the 5% lives. Keep this in mind: every “fix” for imbalance in section 6 works by moving the intercept.</p>
+<p>As in other pages of this site, we <strong>simulate</strong> the data, so we know the true answer and can check every method against it.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(ggplot2)
+library(patchwork)  # put plots side by side
+library(pROC)       # ROC curves and the AUC
+library(logistf)    # Firth's penalised logistic regression (section 5)</code></pre></div></div>
+</details>
+</div>
+<hr>
+</section>
+<section id="simulate-the-data" class="level2">
+<h2 class="anchored" data-anchor-id="simulate-the-data">1. Simulate the data</h2>
+<p>The true model, on the log-odds scale:</p>
+<p><span class="math display">\[\log\frac{P(\text{disease})}{1 - P(\text{disease})} = -3.61 + 1.0 \times \text{marker} + 0.5 \times \text{age10} + 1.0 \times \text{smoker}\]</span></p>
+<ul>
+<li><strong>marker</strong>: a blood marker in standard deviations. One SD more multiplies the odds of disease by <span class="math inline">\(e^{1} = 2.72\)</span>.</li>
+<li><strong>age10</strong>: age in decades from 50 (so 1 means 60 years old). Each decade multiplies the odds by <span class="math inline">\(e^{0.5} = 1.65\)</span>.</li>
+<li><strong>smoker</strong>: 1 for the 10% of people who smoke. Smoking multiplies the odds by <span class="math inline">\(e^{1} = 2.72\)</span>.</li>
+<li>The intercept <span class="math inline">\(-3.61\)</span> was chosen so that <strong>5%</strong> of people have the disease.</li>
+</ul>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">b_true &lt;- c("(Intercept)" = -3.61, marker = 1.0, age10 = 0.5, smoker = 1.0)
+simulate_people &lt;- function(n) {
+  marker &lt;- rnorm(n)                  # blood marker, in standard deviations
+  age10  &lt;- rnorm(n)                  # age in decades from 50
+  smoker &lt;- rbinom(n, 1, 0.10)        # 10% smoke
+  log_odds &lt;- b_true[1] + b_true[2] * marker + b_true[3] * age10 + b_true[4] * smoker
+  data.frame(disease = rbinom(n, 1, plogis(log_odds)), marker, age10, smoker)
+}
+set.seed(2026)
+test  &lt;- simulate_people(100000)   # "the future": new people we will judge the models on
+train &lt;- simulate_people(20000)    # the data we fit the models to
+c(people = nrow(train), sick = sum(train$disease), share_sick = mean(train$disease))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>    people       sick share_sick 
+ 2.000e+04  9.550e+02  4.775e-02 </code></pre>
+</div>
+</div>
+<p><code>plogis()</code> turns log-odds into a probability: <span class="math inline">\(\text{plogis}(z) = 1 / (1 + e^{-z})\)</span>. So <code>rbinom(n, 1, plogis(log_odds))</code> gives each person the disease with their own probability.</p>
+<p>The training data has 955 sick people out of 20,000: a 95/5 split. In real life we never have a test set of 100,000 new people. Section 7 shows how to do without one.</p>
+<hr>
+</section>
+<section id="a-large-sample-the-model-is-fine" class="level2">
+<h2 class="anchored" data-anchor-id="a-large-sample-the-model-is-fine">2. A large sample: the model is fine</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">fit &lt;- glm(disease ~ marker + age10 + smoker, family = binomial, data = train)
+summary(fit)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = disease ~ marker + age10 + smoker, family = binomial, 
+    data = train)
+Coefficients:
+            Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept) -3.70687    0.05269  -70.36   &lt;2e-16 ***
+marker       1.04643    0.03767   27.78   &lt;2e-16 ***
+age10        0.49340    0.03557   13.87   &lt;2e-16 ***
+smoker       1.07257    0.08818   12.16   &lt;2e-16 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+(Dispersion parameter for binomial family taken to be 1)
+    Null deviance: 7673.4  on 19999  degrees of freedom
+Residual deviance: 6500.2  on 19996  degrees of freedom
+AIC: 6508.2
+Number of Fisher Scoring iterations: 7</code></pre>
+</div>
+</div>
+<section id="how-to-read-the-output" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-output">How to read the output</h3>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Estimate</code></td>
+<td>The change in the <strong>log-odds</strong> of disease for one unit more of the predictor. <code>exp(Estimate)</code> is the <strong>odds ratio</strong></td>
+</tr>
+<tr class="even">
+<td><code>Std. Error</code></td>
+<td>How uncertain the estimate is</td>
+</tr>
+<tr class="odd">
+<td><code>z value</code></td>
+<td><code>Estimate / Std. Error</code></td>
+</tr>
+<tr class="even">
+<td><code>Pr(&gt;|z|)</code></td>
+<td>The chance of a <em>z</em> this large if the true effect were 0</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>Null deviance</code></strong> and <strong><code>Residual deviance</code></strong> measure how badly the model without and with the predictors fits (lower is better). Their difference is the likelihood-ratio test of all the predictors together.</li>
+<li><strong><code>Number of Fisher Scoring iterations</code></strong> is the number of steps R took to find the estimates. Usually 4 to 8. Remember it: a large number is a warning sign in section 5.</li>
+</ul>
+<p>Compare with the truth:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">data.frame(truth = b_true, estimate = round(coef(fit), 3), se = round(sqrt(diag(vcov(fit))), 3),
+           odds_ratio_true = round(exp(b_true), 2), odds_ratio_estimated = round(exp(coef(fit)), 2))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>            truth estimate    se odds_ratio_true odds_ratio_estimated
+(Intercept) -3.61   -3.707 0.053            0.03                 0.02
+marker       1.00    1.046 0.038            2.72                 2.85
+age10        0.50    0.493 0.036            1.65                 1.64
+smoker       1.00    1.073 0.088            2.72                 2.92</code></pre>
+</div>
+</div>
+<p>Every estimate is within about two standard errors of the truth. The 95/5 split did not bias anything.</p>
+<p>There is one more check, and it holds <strong>exactly</strong>. Logistic regression with an intercept makes the average predicted probability equal to the share of 1s in the data:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">p_train &lt;- predict(fit, type = "response")   # type = "response": probabilities, not log-odds
+c(average_predicted = mean(p_train), share_sick = mean(train$disease))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>average_predicted        share_sick 
+          0.04775           0.04775 </code></pre>
+</div>
+</div>
+<p>Why exactly? The intercept’s estimating equation is <span class="math inline">\(\sum_i (y_i - \hat p_i) = 0\)</span>. So the model knows that the disease is rare, and its probabilities are honest about it.</p>
+<hr>
+</section>
+</section>
+<section id="problem-1-the-0.5-cutoff" class="level2">
+<h2 class="anchored" data-anchor-id="problem-1-the-0.5-cutoff">3. Problem 1: the 0.5 cutoff</h2>
+<p>Now we use the model to <strong>classify</strong>: call a person sick if their predicted probability is above 0.5, the default of many tools.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">p_test &lt;- predict(fit, newdata = test, type = "response")
+called_sick &lt;- p_test &gt; 0.5
+table(truth = test$disease, called_sick)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>     called_sick
+truth FALSE  TRUE
+    0 94766    75
+    1  5048   111</code></pre>
+</div>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">c(accuracy             = mean(called_sick == (test$disease == 1)),
+  accuracy_call_nobody = mean(test$disease == 0),         # call everybody healthy
+  sick_people_caught   = mean(called_sick[test$disease == 1]))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>            accuracy accuracy_call_nobody   sick_people_caught 
+           0.9487700            0.9484100            0.0215158 </code></pre>
+</div>
+</div>
+<p>The model is 94.9% accurate, no better than calling everybody healthy, and it catches only 2.2% of the sick people. It looks like a useless model. It is not: the <strong>cutoff</strong> is the problem.</p>
+<section id="why-almost-nobody-passes-0.5" class="level3">
+<h3 class="anchored" data-anchor-id="why-almost-nobody-passes-0.5">Why almost nobody passes 0.5</h3>
+<p>Take a person at the very top of the risk scale: a 60-year-old smoker with a marker 2 SD above average.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">predict(fit, newdata = data.frame(marker = 2, age10 = 1, smoker = 1), type = "response")</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>        1 
+0.4879954 </code></pre>
+</div>
+</div>
+<p>This person’s risk is about 10 times the average, and <strong>still</strong> below 0.5. When the base rate is 5%, a probability of 0.2 or 0.3 already means <strong>very high risk</strong>. The plot shows the predicted probabilities of the healthy and the sick people of the test set, drawn with <code>plot_separability()</code> of the rwf package:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">plot_separability(observed = test$disease, predicted = p_test) +
+  geom_vline(xintercept = 0.5, linetype = "dashed") +
+  annotate("text", x = 0.51, y = Inf, label = "0.5 cutoff", hjust = 0, vjust = 1.5, size = 3.5) +
+  scale_colour_manual(values = c("0" = "#0082c8", "1" = "#E74C3C"), labels = c("healthy (0)", "sick (1)")) +
+  labs(title = "Predicted probabilities of the healthy and the sick", x = "predicted probability of disease",
+       y = "density", colour = NULL, caption = NULL)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Separability – Why almost nobody passes 0.5" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/separability-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The sick people (red) do get higher probabilities than the healthy ones (blue). The model <strong>does</strong> tell them apart. But nearly all of both curves lies left of 0.5, so a 0.5 cutoff throws that information away.</p>
+</section>
+<section id="choosing-the-cutoff-from-the-costs-of-the-two-errors" class="level3">
+<h3 class="anchored" data-anchor-id="choosing-the-cutoff-from-the-costs-of-the-two-errors">Choosing the cutoff from the costs of the two errors</h3>
+<p>A classification can go wrong in two ways:</p>
+<ul>
+<li><strong>False negative</strong> (FN): a sick person called healthy. Cost <span class="math inline">\(C_{FN}\)</span>.</li>
+<li><strong>False positive</strong> (FP): a healthy person called sick. Cost <span class="math inline">\(C_{FP}\)</span>.</li>
+</ul>
+<p>For a person with probability <span class="math inline">\(p\)</span> of being sick:</p>
+<ul>
+<li>calling them <strong>healthy</strong> costs <span class="math inline">\(C_{FN}\)</span> with probability <span class="math inline">\(p\)</span>, so on average <span class="math inline">\(p \cdot C_{FN}\)</span>;</li>
+<li>calling them <strong>sick</strong> costs <span class="math inline">\(C_{FP}\)</span> with probability <span class="math inline">\(1 - p\)</span>, so on average <span class="math inline">\((1 - p) \cdot C_{FP}\)</span>.</li>
+</ul>
+<p>Call them sick when that is cheaper: <span class="math inline">\((1 - p)\,C_{FP} &lt; p\,C_{FN}\)</span>, which gives</p>
+<p><span class="math display">\[\text{call sick when}\quad p &gt; \frac{C_{FP}}{C_{FP} + C_{FN}}\]</span></p>
+<p>If both errors cost the same, the cutoff is 0.5. If missing a sick person is <strong>10 times</strong> worse than a false alarm (say, a false alarm means one more test, while a missed case goes untreated), the cutoff is <span class="math inline">\(1 / (1 + 10) = 0.091\)</span>.</p>
+<p>The formula needs <strong>honest probabilities</strong>: a <span class="math inline">\(p\)</span> of 0.1 must really mean 10%. We saw in section 2 that logistic regression gives them. Keep this in mind for section 6.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r"># what a cutoff does: everything is a share of the test set, or of a group of it
+metrics &lt;- function(y, p, cut) {
+  flag &lt;- p &gt; cut                                    # called sick
+  c(cutoff      = cut,
+    called_sick = mean(flag),                        # share of all people called sick
+    sensitivity = mean(flag[y == 1]),                # sick people caught (recall)
+    specificity = mean(!flag[y == 0]),               # healthy people cleared
+    precision   = mean(y[flag]),                     # called sick who really are sick (PPV)
+    accuracy    = mean(flag == (y == 1)))
+}
+cost_fn &lt;- 10; cost_fp &lt;- 1
+cut_cost &lt;- cost_fp / (cost_fp + cost_fn)
+prevalence &lt;- mean(train$disease)
+cuts &lt;- c(0.5, 0.3, 0.2, cut_cost, prevalence)
+tab &lt;- as.data.frame(t(sapply(cuts, function(k) metrics(test$disease, p_test, k))))
+# expected cost per 1,000 people: 10 per missed case, 1 per false alarm
+tab$cost_per_1000 &lt;- sapply(cuts, function(k) {
+  flag &lt;- p_test &gt; k
+  1000 * (cost_fn * mean(test$disease == 1 &amp; !flag) + cost_fp * mean(test$disease == 0 &amp; flag))
+})
+round(tab, 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>  cutoff called_sick sensitivity specificity precision accuracy cost_per_1000
+1  0.500       0.002       0.022       0.999     0.597    0.949        505.55
+2  0.300       0.012       0.093       0.992     0.390    0.946        475.59
+3  0.200       0.035       0.202       0.974     0.299    0.934        436.24
+4  0.091       0.140       0.475       0.878     0.175    0.857        386.17
+5  0.048       0.305       0.703       0.716     0.119    0.716        422.02</code></pre>
+</div>
+</div>
+<ul>
+<li>At <strong>0.5</strong>, almost nobody is called sick: high accuracy, but nearly every sick person is missed, and the cost is the highest.</li>
+<li>At <strong>0.091</strong> (the cost cutoff), about 48% of the sick are caught, while 14% of all people are called sick. Accuracy <strong>drops</strong>, yet this cutoff has the lowest cost: accuracy counts both errors as equally bad, which is exactly what we said they are not.</li>
+<li><strong>Precision</strong> is modest at every cutoff that catches a useful share of the sick: at the cost cutoff, about 1 in 6 people called sick really is sick. With 95 healthy people for every 5 sick ones, even a small share of false alarms among the healthy outnumbers the true alarms. That is a fact about rare outcomes, not a fault of the model.</li>
+</ul>
+<p>The cost curve finds nearly the same cutoff as the formula (the small difference is noise in the test set):</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">grid &lt;- seq(0.01, 0.6, by = 0.005)
+curve_df &lt;- as.data.frame(t(sapply(grid, function(k) metrics(test$disease, p_test, k))))
+curve_df$cost &lt;- sapply(grid, function(k) {
+  flag &lt;- p_test &gt; k
+  1000 * (cost_fn * mean(test$disease == 1 &amp; !flag) + cost_fp * mean(test$disease == 0 &amp; flag))
+})
+long &lt;- rbind(data.frame(cutoff = grid, value = curve_df$sensitivity, measure = "sensitivity"),
+              data.frame(cutoff = grid, value = curve_df$specificity, measure = "specificity"),
+              data.frame(cutoff = grid, value = curve_df$precision,   measure = "precision"))
+p1 &lt;- ggplot(long, aes(cutoff, value, colour = measure)) +
+  geom_line(linewidth = 1.1) +
+  geom_vline(xintercept = c(cut_cost, 0.5), linetype = "dashed") +
+  scale_colour_manual(values = c(sensitivity = "#E74C3C", specificity = "#0082c8", precision = "#f39c12")) +
+  labs(title = "What each cutoff catches", x = NULL, y = NULL, colour = NULL)
+p2 &lt;- ggplot(curve_df, aes(cutoff, cost)) +
+  geom_line(linewidth = 1.1) +
+  geom_vline(xintercept = c(cut_cost, 0.5), linetype = "dashed") +
+  annotate("text", x = cut_cost + 0.01, y = max(curve_df$cost), label = "cost cutoff", hjust = 0, size = 3.5) +
+  annotate("text", x = 0.49, y = max(curve_df$cost), label = "0.5", hjust = 1, size = 3.5) +
+  labs(title = "Cost per 1,000 people (a missed case costs 10, a false alarm 1)",
+       x = "cutoff", y = "cost")
+p1 / p2</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Cutoff curves – Choosing the cutoff from the costs of the two errors" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/cutoff_curves-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">c(formula = cut_cost, lowest_cost_on_the_curve = grid[which.min(curve_df$cost)])</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                 formula lowest_cost_on_the_curve 
+              0.09090909               0.08500000 </code></pre>
+</div>
+</div>
+</section>
+<section id="when-nobody-can-name-the-costs" class="level3">
+<h3 class="anchored" data-anchor-id="when-nobody-can-name-the-costs">When nobody can name the costs</h3>
+<p>A common choice is the cutoff that maximises <strong>sensitivity + specificity</strong> (Youden’s index):</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre><code class="language-r">roc_test &lt;- roc(test$disease, p_test, levels = c(0, 1), direction = "&lt;", quiet = TRUE)
+coords(roc_test, "best", best.method = "youden", ret = c("threshold", "sensitivity", "specificity"))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>   threshold sensitivity specificity
+1 0.04229693    0.743555   0.6784513</code></pre>
+</div>
+</div>
+<p>For a model with honest probabilities this cutoff lands near the <strong>base rate</strong> (here 0.048). That is no accident: maximising sensitivity + specificity is the cost rule with <span class="math inline">\(C_{FN} / C_{FP} = (1 - \pi) / \pi\)</span>, where <span class="math inline">\(\pi\)</span> is the base rate, and then the formula gives <span class="math inline">\(p &gt; \pi\)</span>. So at a 5% base rate, Youden’s cutoff quietly assumes that missing one sick person is as bad as 20 false alarms. Be aware of that choice.</p>
+</section>
+<section id="sometimes-you-need-no-cutoff-at-all" class="level3">
+<h3 class="anchored" data-anchor-id="sometimes-you-need-no-cutoff-at-all">Sometimes you need no cutoff at all</h3>
+<p>If the decision is <em>“whom do we test first”</em>, rank the people by <span class="math inline">\(p\)</span> and work down the list as far as resources allow. If the decision is made by a doctor or a manager, give them the probability itself. A cutoff is only needed when a yes/no answer must come out of the model.</p>
+<hr>
+</section>
+</section>
+<section id="problem-2-judging-the-model-by-accuracy" class="level2">
+<h2 class="anchored" data-anchor-id="problem-2-judging-the-model-by-accuracy">4. Problem 2: judging the model by accuracy</h2>
+<p>Accuracy rewards the model for the easy part, the healthy majority. Better measures look at each group separately, or at the probabilities themselves.</p>
+<section id="discrimination-the-auc" class="level3">
+<h3 class="anchored" data-anchor-id="discrimination-the-auc">Discrimination: the AUC</h3>
+<p>The <strong>AUC</strong> (area under the ROC curve) is the chance that a randomly chosen sick person gets a higher predicted probability than a randomly chosen healthy person. 0.5 is a coin toss and 1 is perfect. It compares the sick with the healthy <strong>within</strong> their own groups, so the base rate does not change it.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre><code class="language-r">auc(roc_test)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Area under the curve: 0.7837</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre><code class="language-r">ci.auc(roc_test)    # 95% confidence interval (DeLong)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>95% CI: 0.7774-0.79 (DeLong)</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre><code class="language-r"># the same thing by brute force: draw random sick-healthy pairs, and count how often the sick person is ranked higher
+set.seed(1)
+sick_p    &lt;- sample(p_test[test$disease == 1], 1e5, replace = TRUE)
+healthy_p &lt;- sample(p_test[test$disease == 0], 1e5, replace = TRUE)
+mean(sick_p &gt; healthy_p)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.78556</code></pre>
+</div>
+</div>
+<p>What is the best AUC possible with these three predictors? The <strong>true</strong> model:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">p_true &lt;- plogis(b_true[1] + b_true[2] * test$marker + b_true[3] * test$age10 + b_true[4] * test$smoker)
+auc(roc(test$disease, p_true, levels = c(0, 1), direction = "&lt;", quiet = TRUE))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Area under the curve: 0.7838</code></pre>
+</div>
+</div>
+<p>Our model is as good as the truth. The poor sensitivity at 0.5 was never a fault of the model.</p>
+</section>
+<section id="the-roc-and-precision-recall-curves" class="level3">
+<h3 class="anchored" data-anchor-id="the-roc-and-precision-recall-curves">The ROC and precision-recall curves</h3>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre><code class="language-r">th &lt;- quantile(p_test, seq(0, 0.999, length.out = 400))
+rc &lt;- as.data.frame(t(sapply(th, function(k) metrics(test$disease, p_test, k))))
+marks &lt;- as.data.frame(t(sapply(c(0.5, cut_cost, prevalence), function(k) metrics(test$disease, p_test, k))))
+marks$label &lt;- c("0.5", "cost cutoff", "base rate")
+p_roc &lt;- ggplot(rc, aes(1 - specificity, sensitivity)) +
+  geom_abline(linetype = "dotted") +
+  geom_line(colour = "#0082c8", linewidth = 1.1) +
+  geom_point(data = marks, colour = "#E74C3C", size = 2.5) +
+  geom_text(data = marks, aes(label = label), hjust = -0.15, vjust = 1.2, size = 3) +
+  coord_equal() +
+  labs(title = "ROC curve", x = "false alarm rate (1 - specificity)", y = "sensitivity")
+p_pr &lt;- ggplot(rc, aes(sensitivity, precision)) +
+  geom_hline(yintercept = prevalence, linetype = "dotted") +
+  geom_line(colour = "#0082c8", linewidth = 1.1) +
+  geom_point(data = marks, colour = "#E74C3C", size = 2.5) +
+  geom_text(data = marks, aes(label = label), hjust = -0.15, vjust = -0.5, size = 3) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "Precision-recall curve", x = "sensitivity (recall)", y = "precision")
+p_roc + p_pr</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="The ROC and precision-recall curves" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/roc_pr-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<ul>
+<li>The <strong>ROC curve</strong> (left) does not depend on the base rate. The dotted diagonal is a coin toss.</li>
+<li>The <strong>precision-recall curve</strong> (right) does. Its dotted baseline is the base rate, 0.048: the precision of calling people sick at random. Use it when what matters is how many of the people you flag really are sick. It is honest about how hard a rare outcome is.</li>
+</ul>
+</section>
+<section id="are-the-probabilities-right-brier-score-and-calibration" class="level3">
+<h3 class="anchored" data-anchor-id="are-the-probabilities-right-brier-score-and-calibration">Are the probabilities right? Brier score and calibration</h3>
+<p>The <strong>Brier score</strong> is the mean squared difference between the predicted probability and what happened (0 or 1). Lower is better. A model that gives everybody the base rate scores <span class="math inline">\(\pi(1 - \pi)\)</span>, so the <strong>scaled Brier score</strong> <span class="math inline">\(1 - \text{Brier} / [\pi(1 - \pi)]\)</span> is the improvement over knowing nothing but the base rate.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre><code class="language-r">brier &lt;- function(y, p) mean((p - y)^2)
+base_rate_test &lt;- mean(test$disease)                 # the base rate of the people we judge the model on
+b_model &lt;- brier(test$disease, p_test)
+b_null  &lt;- base_rate_test * (1 - base_rate_test)     # give everybody the base rate
+c(brier = b_model, brier_base_rate_only = b_null, scaled_brier = 1 - b_model / b_null)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>               brier brier_base_rate_only         scaled_brier 
+          0.04486773           0.04892847           0.08299347 </code></pre>
+</div>
+</div>
+<p>The model improves on the base rate by about 8%. That sounds small, but it is typical: with a rare outcome both numbers are small and close together, because predicting “almost 0” for everybody is already nearly right. Use the Brier score to <strong>compare</strong> models fitted to the same outcome, not on its own.</p>
+<p><strong>Calibration</strong> asks whether a predicted 10% really comes true 10% of the time. Sort the people into 20 groups by predicted probability and compare each group’s average prediction with the share who are sick:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre><code class="language-r">calibration_bins &lt;- function(y, p, bins = 20) {
+  g &lt;- cut(p, unique(quantile(p, seq(0, 1, length.out = bins + 1))), include.lowest = TRUE)
+  data.frame(predicted = as.numeric(tapply(p, g, mean)), observed = as.numeric(tapply(y, g, mean)))
+}
+cal &lt;- calibration_bins(test$disease, p_test)
+ggplot(cal, aes(predicted, observed)) +
+  geom_abline(linetype = "dashed") +
+  geom_line(colour = "#0082c8") +
+  geom_point(colour = "#0082c8", size = 2.5) +
+  coord_equal(xlim = c(0, max(cal)), ylim = c(0, max(cal))) +
+  labs(title = "Calibration: predicted risk against the share who are sick",
+       x = "average predicted probability (20 groups)", y = "share sick in the group")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Are the probabilities right? Brier score and calibration" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/calibration-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The points lie close to the diagonal. They sit slightly above it because, by chance, the training sample has a few fewer sick people (4.8%) than the test set (5.2%). Two numbers summarise the plot:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre><code class="language-r">lp &lt;- qlogis(p_test)                                                         # predictions as log-odds
+c(calibration_intercept = unname(coef(glm(test$disease ~ offset(lp), family = binomial))[1]),   # ideal 0
+  calibration_slope     = unname(coef(glm(test$disease ~ lp, family = binomial))[2]))           # ideal 1</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>calibration_intercept     calibration_slope 
+           0.07899984            0.95165337 </code></pre>
+</div>
+</div>
+<ul>
+<li><strong>Calibration intercept</strong> (ideal 0): are the predictions too high (negative) or too low (positive) on average?</li>
+<li><strong>Calibration slope</strong> (ideal 1): below 1, the predictions are too extreme, the typical sign of an overfitted model; above 1, too timid.</li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="problem-3-too-few-events" class="level2">
+<h2 class="anchored" data-anchor-id="problem-3-too-few-events">5. Problem 3: too few events</h2>
+<p>So far we had 955 sick people. Now the problem that is real: a <strong>small</strong> sample, where 5% is only a handful of people.</p>
+<section id="a-small-sample-separation" class="level3">
+<h3 class="anchored" data-anchor-id="a-small-sample-separation">A small sample: separation</h3>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre><code class="language-r">set.seed(46)
+small &lt;- simulate_people(200)
+c(people = nrow(small), sick = sum(small$disease))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>people   sick 
+   200     10 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre><code class="language-r">table(smoker = small$smoker, disease = small$disease)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>      disease
+smoker   0   1
+     0 172  10
+     1  18   0</code></pre>
+</div>
+</div>
+<p>Only 10 people are sick, and by chance <strong>none</strong> of the 18 smokers is. Ordinary logistic regression:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre><code class="language-r">fit_small &lt;- glm(disease ~ marker + age10 + smoker, family = binomial, data = small)
+summary(fit_small)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+Call:
+glm(formula = disease ~ marker + age10 + smoker, family = binomial, 
+    data = small)
+Coefficients:
+              Estimate Std. Error z value Pr(&gt;|z|)    
+(Intercept)   -3.24939    0.43961  -7.392 1.45e-13 ***
+marker         0.79318    0.32754   2.422   0.0155 *  
+age10          0.07154    0.33284   0.215   0.8298    
+smoker       -15.17658 1493.28802  -0.010   0.9919    
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+(Dispersion parameter for binomial family taken to be 1)
+    Null deviance: 79.406  on 199  degrees of freedom
+Residual deviance: 70.988  on 196  degrees of freedom
+AIC: 78.988
+Number of Fisher Scoring iterations: 17</code></pre>
+</div>
+</div>
+<p>Look at <code>smoker</code>: an estimate of about -15, an odds ratio of 0.0000003, which says that smokers <strong>cannot</strong> get the disease, with an enormous standard error. In truth smoking multiplies the odds by 2.7.</p>
+<p>This is <strong>separation</strong>. Because no smoker is sick, the likelihood keeps increasing as the smoker coefficient goes towards <span class="math inline">\(-\infty\)</span>, so the best estimate does not exist. R stops when the improvement becomes tiny, after 17 iterations instead of the usual 4 to 8, and reports wherever it stopped. Sometimes <code>glm()</code> warns <em>“fitted probabilities numerically 0 or 1 occurred”</em>, often, as here, it says <strong>nothing</strong>. Signs to look for: a huge estimate, a huge standard error, many iterations, and a category of a predictor with no 1s (or no 0s) in it.</p>
+</section>
+<section id="the-fix-firths-penalised-likelihood" class="level3">
+<h3 class="anchored" data-anchor-id="the-fix-firths-penalised-likelihood">The fix: Firth’s penalised likelihood</h3>
+<p>Ordinary logistic regression maximises the log-likelihood <span class="math inline">\(\log L(\beta)\)</span>. <strong>Firth’s method</strong> maximises a penalised version:</p>
+<p><span class="math display">\[\log L^*(\beta) = \log L(\beta) + \tfrac{1}{2} \log \left| I(\beta) \right|\]</span></p>
+<p><span class="math inline">\(I(\beta)\)</span> is the <strong>Fisher information</strong>: how much the data can tell us about <span class="math inline">\(\beta\)</span>. It is largest when the predicted probabilities are away from 0 and 1, and it shrinks towards 0 as a coefficient runs off to infinity. So the penalty pulls the estimates back from infinity, by a lot when the data say little (as for the smokers here) and by almost nothing when the data say much. It also removes most of the small-sample bias of ordinary maximum likelihood, which makes coefficients too large in small samples. In R, <code>logistf()</code> fits it (<code>install.packages("logistf")</code>):</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre><code class="language-r">fit_firth &lt;- logistf(disease ~ marker + age10 + smoker, data = small)
+summary(fit_firth)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>logistf(formula = disease ~ marker + age10 + smoker, data = small)
+Model fitted by Penalized ML
+Coefficients:
+                   coef  se(coef) lower 0.95 upper 0.95      Chisq          p method
+(Intercept) -3.08649293 0.4004973 -4.0331079  -2.382327        Inf 0.00000000      2
+marker       0.74629289 0.2987553  0.1483080   1.402900 6.04305392 0.01396111      2
+age10        0.08679259 0.3021880 -0.5682952   0.712907 0.07135286 0.78937710      2
+smoker      -0.37756420 1.4498505 -5.2664768   1.846124 0.07075176 0.79024535      2
+Method: 1-Wald, 2-Profile penalized log-likelihood, 3-None
+Likelihood ratio test=6.532561 on 3 df, p=0.0883872, n=200
+Wald test = 74.32831 on 3 df, p = 5.551115e-16</code></pre>
+</div>
+</div>
+<ul>
+<li><strong><code>coef</code></strong> are the estimates. The smoker effect is now finite.</li>
+<li><strong><code>lower 0.95</code>, <code>upper 0.95</code></strong> are 95% confidence intervals from the <strong>profile penalised likelihood</strong>. They are better than estimate ± 1.96 SE in small samples, because they need not be symmetric.</li>
+<li><strong><code>Chisq</code> and <code>p</code></strong> test each coefficient against 0 with a likelihood-ratio test.</li>
+</ul>
+<p>The smoker interval is very wide, and it should be: 18 smokers and no case among them tell us very little. Firth gives an <strong>honest “we do not know much”</strong> instead of a nonsense “never”.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre><code class="language-r">round(data.frame(truth = b_true, glm = coef(fit_small), firth = coef(fit_firth)), 2)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>            truth    glm firth
+(Intercept) -3.61  -3.25 -3.09
+marker       1.00   0.79  0.75
+age10        0.50   0.07  0.09
+smoker       1.00 -15.18 -0.38</code></pre>
+</div>
+</div>
+</section>
+<section id="firths-predictions-correct-the-intercept-with-flic" class="level3">
+<h3 class="anchored" data-anchor-id="firths-predictions-correct-the-intercept-with-flic">Firth’s predictions: correct the intercept with <code>flic()</code></h3>
+<p>The Firth penalty also pulls the <strong>intercept</strong> towards 0, which pushes the predicted probabilities towards 0.5. With a rare outcome they come out a little too high on average. <code>flic()</code> (Firth’s logistic regression with intercept correction) keeps Firth’s slopes and re-estimates the intercept, so that the average prediction again equals the share of 1s:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre><code class="language-r">fit_flic &lt;- flic(fit_firth)
+c(share_sick    = mean(small$disease),
+  glm           = mean(predict(fit_small, type = "response")),
+  firth         = mean(predict(fit_firth, newdata = small, type = "response")),
+  firth_flic    = mean(predict(fit_flic,  newdata = small, type = "response")))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>share_sick        glm      firth firth_flic 
+0.05000000 0.05000000 0.05833987 0.05000000 </code></pre>
+</div>
+</div>
+<p>Use <code>logistf()</code> for the <strong>coefficients</strong> (odds ratios and their intervals) and <code>flic()</code> for <strong>predicted probabilities</strong>.</p>
+</section>
+<section id="how-many-events-are-enough-a-simulation" class="level3">
+<h3 class="anchored" data-anchor-id="how-many-events-are-enough-a-simulation">How many events are enough? A simulation</h3>
+<p>One sample proves little. We draw 500 samples at each of five sizes, always with a 5% base rate, fit ordinary and Firth logistic regression to each, and compare the estimates with the truth.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre><code class="language-r">one_sample &lt;- function(n) {
+  d &lt;- simulate_people(n)
+  g &lt;- suppressWarnings(glm(disease ~ marker + age10 + smoker, family = binomial, data = d))
+  f &lt;- logistf(disease ~ marker + age10 + smoker, data = d, pl = FALSE)   # pl = FALSE: skip the intervals, faster
+  c(n = n, events = sum(d$disease),
+    separation = sum(d$disease[d$smoker == 1]) == 0,                     # no sick smoker in the sample
+    glm_marker = unname(coef(g)["marker"]), firth_marker = unname(coef(f)["marker"]),
+    glm_smoker = unname(coef(g)["smoker"]), firth_smoker = unname(coef(f)["smoker"]))
+}
+sizes &lt;- c(200, 400, 1000, 2000, 5000)
+set.seed(1)
+sim &lt;- as.data.frame(do.call(rbind, lapply(sizes, function(n) t(replicate(500, one_sample(n))))))
+rmse &lt;- function(x, truth) sqrt(mean((x - truth)^2))   # typical distance from the truth
+sim_table &lt;- do.call(rbind, lapply(split(sim, sim$n), function(s) data.frame(
+  n                  = s$n[1],
+  events             = round(mean(s$events)),
+  separation_pct     = round(100 * mean(s$separation), 1),
+  marker_glm_mean    = round(mean(s$glm_marker), 3),
+  marker_firth_mean  = round(mean(s$firth_marker), 3),
+  marker_glm_sd      = round(sd(s$glm_marker), 3),
+  smoker_glm_rmse    = round(rmse(s$glm_smoker, 1), 2),
+  smoker_firth_rmse  = round(rmse(s$firth_smoker, 1), 2))))
+sim_table</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>        n events separation_pct marker_glm_mean marker_firth_mean marker_glm_sd smoker_glm_rmse smoker_firth_rmse
+200   200     10           13.8           1.109             1.015         0.473            6.27              0.86
+400   400     20            3.0           1.041             1.003         0.292            2.98              0.69
+1000 1000     50            0.0           1.000             0.986         0.175            0.39              0.37
+2000 2000    100            0.0           1.013             1.006         0.122            0.29              0.28
+5000 5000    251            0.0           1.002             0.999         0.072            0.18              0.17</code></pre>
+</div>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre><code class="language-r">sim$size &lt;- factor(paste0(sim$n, " people\n~", round(ave(sim$events, sim$n)), " events"),
+                   levels = unique(paste0(sim$n, " people\n~", round(ave(sim$events, sim$n)), " events")))
+long_sim &lt;- rbind(
+  data.frame(size = sim$size, coefficient = "marker (truth 1)", method = "glm",   estimate = sim$glm_marker),
+  data.frame(size = sim$size, coefficient = "marker (truth 1)", method = "Firth", estimate = sim$firth_marker),
+  data.frame(size = sim$size, coefficient = "smoker (truth 1)", method = "glm",   estimate = sim$glm_smoker),
+  data.frame(size = sim$size, coefficient = "smoker (truth 1)", method = "Firth", estimate = sim$firth_smoker))
+ggplot(long_sim, aes(size, estimate, fill = method)) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  geom_boxplot(outlier.size = 0.6, outlier.alpha = 0.4) +
+  facet_wrap(~coefficient, ncol = 1) +
+  coord_cartesian(ylim = c(-2.5, 4)) +   # glm's separated estimates (around -16) are below the chart
+  scale_fill_manual(values = c(glm = "#E74C3C", Firth = "#0082c8")) +
+  labs(title = "Estimates from 500 samples of each size, all with a 5% base rate",
+       x = NULL, y = "estimated coefficient", fill = NULL)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="How many events are enough? A simulation" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/simulation_plot-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>What the table and plot show:</p>
+<ul>
+<li><strong>The base rate is 5% in every row. The precision is not.</strong> The spread of the marker estimate (<code>marker_glm_sd</code>) falls from 0.473 with about 10 events to 0.072 with about 251: roughly in proportion to <span class="math inline">\(1/\sqrt{\text{events}}\)</span>. What matters is <strong>how many</strong> 1s there are, not what percentage they are.</li>
+<li><strong>With about 10 events</strong>, 13.8% of the samples had no sick smoker, and in those <code>glm()</code> gave a smoker coefficient around -16 (below the chart). Its typical error for smokers (<code>smoker_glm_rmse</code>) is 6.27, against 0.86 for Firth. Even for the marker, <code>glm()</code> overestimates the effect on average (1.109 instead of 1), while Firth is close to 1.</li>
+<li><strong>From about 100 events on</strong>, the two methods agree and both are right. Firth costs nothing when there is enough data, so it is a safe default when events are few.</li>
+</ul>
+</section>
+<section id="rules-of-thumb-for-the-number-of-events" class="level3">
+<h3 class="anchored" data-anchor-id="rules-of-thumb-for-the-number-of-events">Rules of thumb for the number of events</h3>
+<ul>
+<li>The classic rule is <strong>at least 10 events per estimated coefficient</strong> (Peduzzi et al., 1996). Count every coefficient: each dummy of a categorical predictor, each interaction, and every predictor you <strong>tried</strong>, not only the ones you kept.</li>
+<li>“Events” means the <strong>rarer</strong> class. If 95% were 1s, count the 0s.</li>
+<li>The rule is rough. Modern guidance (Riley et al., 2020; van Smeden et al., 2016) computes the sample size a model needs from the base rate, the number of predictors and the expected fit. The <code>pmsampsize</code> package does the calculation.</li>
+<li>With few events and many predictors, use fewer predictors, or a penalised regression (ridge, lasso, elastic net) that shrinks all coefficients. The <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_REGULARIZED_REGRESSION.html">Regularized Regression</a> tutorial shows how; <code>glmnet(..., family = "binomial")</code> does it for a binary outcome.</li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="problem-4-the-popular-fixes-make-it-worse" class="level2">
+<h2 class="anchored" data-anchor-id="problem-4-the-popular-fixes-make-it-worse">6. Problem 4: the popular “fixes” make it worse</h2>
+<p>The usual advice for imbalance is to <strong>balance</strong> the data before fitting:</p>
+<ul>
+<li><strong>Undersampling</strong>: keep all the 1s and only as many randomly chosen 0s.</li>
+<li><strong>Oversampling</strong>: keep all the 0s and copy randomly chosen 1s until there are as many.</li>
+<li><strong>Class weights</strong>: give each 1 a weight of <span class="math inline">\(n_0 / n_1\)</span> (here about 20), so the two classes weigh the same.</li>
+<li><strong>SMOTE</strong>: like oversampling, but it makes up new 1s between existing ones. It has the same problem as the others (van den Goorbergh et al., 2022), so we do not run it here.</li>
+</ul>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb53"><pre><code class="language-r">set.seed(7)
+ones  &lt;- train[train$disease == 1, ]
+zeros &lt;- train[train$disease == 0, ]
+n1 &lt;- nrow(ones); n0 &lt;- nrow(zeros)
+under &lt;- rbind(ones, zeros[sample(n0, n1), ])                    # all 1s, as many random 0s
+over  &lt;- rbind(zeros, ones[sample(n1, n0, replace = TRUE), ])    # all 0s, 1s copied up to as many
+w     &lt;- ifelse(train$disease == 1, round(n0 / n1), 1)           # weight about 20 for each 1
+form &lt;- disease ~ marker + age10 + smoker
+models &lt;- list("original"      = fit,
+               "undersampled"  = glm(form, family = binomial, data = under),
+               "oversampled"   = glm(form, family = binomial, data = over),
+               "class weights" = glm(form, family = binomial, data = train, weights = w))
+summarise_model &lt;- function(m) {
+  p &lt;- predict(m, newdata = test, type = "response")
+  c(rows_used          = nrow(m$model),
+    intercept          = unname(coef(m)[1]),
+    marker             = unname(coef(m)["marker"]),
+    marker_se          = unname(sqrt(diag(vcov(m)))["marker"]),
+    average_prediction = mean(p),
+    auc                = as.numeric(auc(roc(test$disease, p, levels = c(0, 1), direction = "&lt;", quiet = TRUE))),
+    brier              = brier(test$disease, p))
+}
+round(t(sapply(models, summarise_model)), 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>              rows_used intercept marker marker_se average_prediction   auc brier
+original          20000    -3.707  1.046     0.038              0.048 0.784 0.045
+undersampled       1910    -0.744  1.059     0.061              0.380 0.784 0.185
+oversampled       38090    -0.734  1.089     0.014              0.381 0.784 0.187
+class weights     20000    -0.735  1.087     0.014              0.382 0.784 0.187</code></pre>
+</div>
+</div>
+<p>Row by row:</p>
+<ul>
+<li><strong><code>auc</code> is the same for all four.</strong> Balancing did not make the model better at telling the sick from the healthy, not even a little.</li>
+<li><strong><code>marker</code> is about the same.</strong> The slopes barely move: balancing does not change how risk depends on the predictors.</li>
+<li><strong><code>intercept</code> jumped</strong> from about <span class="math inline">\(-3.7\)</span> to about <span class="math inline">\(-0.75\)</span>. That is <span class="math inline">\(\log(n_0 / n_1) = \log(19.9) = 2.99\)</span> higher: the balanced models think the base rate is 50%.</li>
+<li><strong><code>average_prediction</code></strong> is therefore about 0.38 instead of 0.048. The probabilities are about 8 times too high on average, and the <strong>Brier score</strong> is worse. You can no longer read them as risks, or use them with the cost cutoff of section 3.</li>
+<li><strong><code>marker_se</code></strong> is <strong>too small</strong> for oversampling and weights (0.014 against 0.038): the copies of the same sick people are counted as new people, so confidence intervals and <em>p</em> values are far too optimistic. Undersampling has the opposite problem: it threw away 18,090 people and their information, so its SE is larger.</li>
+</ul>
+<p>The calibration plot shows the damage:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre><code class="language-r">cal_all &lt;- do.call(rbind, lapply(names(models), function(nm) {
+  p &lt;- predict(models[[nm]], newdata = test, type = "response")
+  data.frame(calibration_bins(test$disease, p), model = nm)
+}))
+cal_all$model &lt;- factor(cal_all$model, levels = names(models))
+ggplot(cal_all, aes(predicted, observed, colour = model)) +
+  geom_abline(linetype = "dashed") +
+  geom_line() +
+  geom_point(size = 2) +
+  scale_colour_manual(values = c("original" = "black", "undersampled" = "#E74C3C",
+                                 "oversampled" = "#f39c12", "class weights" = "#8E44AD")) +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(title = "Balanced models predict far more disease than there is",
+       x = "average predicted probability (20 groups)", y = "share sick in the group", colour = NULL)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Resample calibration – 6. Problem 4: the popular “fixes” make it worse" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC_files/figure-html/resample_calibration-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The original model sits on the diagonal (in the bottom-left corner, where the risks of a rare disease are). The three balanced models lie on top of each other, far below it: where they predict about 60%, only about 7% are sick.</p>
+<section id="all-that-balancing-did-was-move-the-cutoff" class="level3">
+<h3 class="anchored" data-anchor-id="all-that-balancing-did-was-move-the-cutoff">All that balancing did was move the cutoff</h3>
+<p>Why does balancing seem to “work” for people who use the 0.5 cutoff? Undersampling the 0s by a factor <span class="math inline">\(r\)</span> multiplies the odds by <span class="math inline">\(r\)</span>, so it adds <span class="math inline">\(\log r\)</span> to every log-odds:</p>
+<p><span class="math display">\[\text{log-odds}_{\text{balanced}} \approx \text{log-odds}_{\text{original}} + \log\frac{1 - \pi}{\pi}\]</span></p>
+<p>So <span class="math inline">\(p_{\text{balanced}} &gt; 0.5\)</span> (log-odds above 0) is the same as <span class="math inline">\(\text{log-odds}_{\text{original}} &gt; \log\frac{\pi}{1 - \pi}\)</span>, which is <span class="math inline">\(p_{\text{original}} &gt; \pi\)</span>. The balanced model at <strong>0.5</strong> classifies like the original model at the <strong>base rate</strong>:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb56"><pre><code class="language-r">p_under &lt;- predict(models[["undersampled"]], newdata = test, type = "response")
+agree &lt;- table(original_at_base_rate = p_test &gt; prevalence, balanced_at_0.5 = p_under &gt; 0.5)
+agree</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                     balanced_at_0.5
+original_at_base_rate FALSE  TRUE
+                FALSE 69280   200
+                TRUE    596 29924</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre><code class="language-r">c(agreement = sum(diag(agree)) / sum(agree))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>agreement 
+  0.99204 </code></pre>
+</div>
+</div>
+<p>The two classify 99.2% of people the same way. The small differences come from the random 0s that undersampling kept. Balancing is a roundabout way of choosing a cutoff, and it costs you honest probabilities, correct standard errors or data. Moving the cutoff of the original model (section 3) gets the same classifications with none of these costs.</p>
+</section>
+<section id="if-you-did-sample-on-the-outcome-correct-the-intercept" class="level3">
+<h3 class="anchored" data-anchor-id="if-you-did-sample-on-the-outcome-correct-the-intercept">If you did sample on the outcome: correct the intercept</h3>
+<p>Sometimes sampling on the outcome is a <strong>good</strong> design. If measuring the predictors is expensive (a lab test, an interview), it is sensible to measure all the sick people and only some of the healthy ones: a <strong>case-control</strong> design. The slopes from such a sample are still valid (Prentice &amp; Pyke, 1979). Only the intercept is off, and it can be corrected if the true base rate <span class="math inline">\(\tau\)</span> is known (King &amp; Zeng, 2001):</p>
+<p><span class="math display">\[\hat\beta_0^{\text{corrected}} = \hat\beta_0 - \log\left[\frac{\bar y}{1 - \bar y} \cdot \frac{1 - \tau}{\tau}\right]\]</span></p>
+<p>where <span class="math inline">\(\bar y\)</span> is the share of 1s in the sample (0.5 here) and <span class="math inline">\(\tau\)</span> the share in the population.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre><code class="language-r">m_under &lt;- models[["undersampled"]]
+y_bar   &lt;- mean(under$disease)          # 0.5 in the balanced sample
+tau     &lt;- prevalence                   # the true base rate, known from elsewhere
+m_corrected &lt;- m_under
+m_corrected$coefficients[1] &lt;- coef(m_under)[1] - log((y_bar / (1 - y_bar)) * ((1 - tau) / tau))
+p_corrected &lt;- predict(m_corrected, newdata = test, type = "response")
+round(c(intercept_truth = unname(b_true[1]), intercept_original = unname(coef(fit)[1]),
+        intercept_corrected = unname(coef(m_corrected)[1]),
+        average_prediction_original = mean(p_test), average_prediction_corrected = mean(p_corrected)), 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>             intercept_truth           intercept_original          intercept_corrected  average_prediction_original average_prediction_corrected 
+                      -3.610                       -3.707                       -3.737                        0.048                        0.048 </code></pre>
+</div>
+</div>
+<p>After the correction the undersampled model predicts like the model fitted to all the data, from 1,910 people instead of 20,000. Its standard errors are larger, the price of the smaller sample, but they are correct.</p>
+<hr>
+</section>
+</section>
+<section id="a-workflow-for-a-rare-outcome" class="level2">
+<h2 class="anchored" data-anchor-id="a-workflow-for-a-rare-outcome">7. A workflow for a rare outcome</h2>
+<p>In practice there is no test set of 100,000. Judge the model on data it has not seen: hold out part of the data, or use cross-validation or the bootstrap. The steps:</p>
+<ol type="1">
+<li><strong>Count the events</strong> (the rarer class) and the coefficients. Below about 10 events per coefficient, or with separation, use Firth (<code>logistf()</code>, and <code>flic()</code> for predictions), fewer predictors, or a penalised regression.</li>
+<li><strong>Fit on the data as they are.</strong> Do not balance them.</li>
+<li><strong>Judge the model</strong> with the AUC (and, if you care about the flagged people, the precision-recall curve), the Brier score and a calibration plot, never with accuracy alone.</li>
+<li><strong>Choose a cutoff from the costs</strong> of the two errors, <span class="math inline">\(p &gt; C_{FP} / (C_{FP} + C_{FN})\)</span>, or give the probabilities themselves.</li>
+<li><strong>Report</strong> the number of events, the model and how you judged it (section 8).</li>
+</ol>
+<p>Here are the steps with 10-fold cross-validation on the training data. Every person gets a prediction from a model fitted without them:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre><code class="language-r">set.seed(11)
+k &lt;- 10
+fold &lt;- sample(rep(1:k, length.out = nrow(train)))
+p_cv &lt;- numeric(nrow(train))
+for (i in 1:k) {
+  m &lt;- glm(disease ~ marker + age10 + smoker, family = binomial, data = train[fold != i, ])
+  p_cv[fold == i] &lt;- predict(m, newdata = train[fold == i, ], type = "response")
+}
+c(events                 = sum(train$disease),
+  events_per_coefficient = sum(train$disease) / 3,
+  auc_cv                 = as.numeric(auc(roc(train$disease, p_cv, levels = c(0, 1), direction = "&lt;", quiet = TRUE))),
+  scaled_brier_cv        = 1 - brier(train$disease, p_cv) / (prevalence * (1 - prevalence)),
+  calibration_slope_cv   = unname(coef(glm(train$disease ~ qlogis(p_cv), family = binomial))[2]))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                events events_per_coefficient                 auc_cv        scaled_brier_cv   calibration_slope_cv 
+          955.00000000           318.33333333             0.79712948             0.08174037             0.99638144 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb64"><pre><code class="language-r">round(metrics(train$disease, p_cv, cut_cost), 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>     cutoff called_sick sensitivity specificity   precision    accuracy 
+      0.091       0.138       0.489       0.879       0.169       0.861 </code></pre>
+</div>
+</div>
+<p>The cross-validated numbers are close to what the test set of 100,000 showed, so in real data, where there is no such test set, cross-validation tells the same story.</p>
+<hr>
+</section>
+<section id="reporting-the-results-in-apa-style" class="level2">
+<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">8. Reporting the results in APA style</h2>
+<p>A report (APA 7th edition) should give the number of events, the effects with their uncertainty, and how well the model predicts: discrimination, calibration and, if you classify, the cutoff and why. We collect the numbers from the R objects:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb66"><pre><code class="language-r">or    &lt;- exp(coef(fit))
+or_ci &lt;- exp(confint(fit))                                      # profile-likelihood 95% CI
+s     &lt;- summary(fit)$coefficients
+auc_ci &lt;- as.numeric(ci.auc(roc_test))                          # lower, AUC, upper
+cal_slope &lt;- unname(coef(glm(test$disease ~ qlogis(p_test), family = binomial))[2])
+at_cut &lt;- metrics(test$disease, p_test, cut_cost)
+f2   &lt;- function(x) formatC(x, format = "f", digits = 2)
+nz   &lt;- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
+pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))</code></pre></div></div>
+</details>
+</div>
+<p><strong>Method</strong> (data analysis):</p>
+<blockquote class="blockquote">
+<p>Disease status was analysed with logistic regression, with the blood marker, age (in decades) and smoking as predictors. Of the 20,000 participants, 955 (4.8%) had the disease, giving 318 events per estimated coefficient. The data were not resampled or weighted. Predictive performance was assessed in an independent validation sample (<em>N</em> = 100,000) with the area under the ROC curve (AUC), the Brier score and the calibration slope. Participants were classified as at risk when their predicted probability exceeded .091, the cutoff that minimises the expected cost when a missed case is judged 10 times as costly as a false alarm. Analyses were conducted in R (Version 4.6.2; R Core Team, 2026) with the <em>pROC</em> package.</p>
+</blockquote>
+<p><strong>Results:</strong></p>
+<blockquote class="blockquote">
+<p>A higher marker level, <em>OR</em> = 2.85, 95% CI [2.65, 3.07], <em>p</em> &lt; .001, older age, <em>OR</em> = 1.64 per decade, 95% CI [1.53, 1.76], <em>p</em> &lt; .001, and smoking, <em>OR</em> = 2.92, 95% CI [2.45, 3.47], <em>p</em> &lt; .001, were each associated with higher odds of disease. In the validation sample the model discriminated well, AUC = .78, 95% CI [.78, .79], and was well calibrated (calibration slope = 0.95; Brier score = .045, against .049 for predicting the base rate). At the cutoff of .091, sensitivity was .48, specificity .88 and the positive predictive value .18, with 14.0% of participants classified as at risk.</p>
+</blockquote>
+<p><strong>Table 1</strong></p>
+<p><em>Logistic Regression Predicting Disease</em></p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<thead>
+<tr class="header">
+<th style="text-align: left;">Predictor</th>
+<th style="text-align: right;"><em>b</em></th>
+<th style="text-align: right;"><em>SE</em></th>
+<th style="text-align: right;"><em>OR</em></th>
+<th style="text-align: right;">95% CI for <em>OR</em></th>
+<th style="text-align: right;"><em>p</em></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Marker (SD)</td>
+<td style="text-align: right;">1.05</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">2.85</td>
+<td style="text-align: right;">[2.65, 3.07]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Age (decades)</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">1.64</td>
+<td style="text-align: right;">[1.53, 1.76]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Smoker</td>
+<td style="text-align: right;">1.07</td>
+<td style="text-align: right;">0.09</td>
+<td style="text-align: right;">2.92</td>
+<td style="text-align: right;">[2.45, 3.47]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><em>Note.</em> <em>N</em> = 20,000, 955 cases (4.8%). Intercept <em>b</em> = -3.71. Confidence intervals are profile-likelihood intervals. AUC in the validation sample = .78.</p>
+<p><strong>Points to remember:</strong></p>
+<ul>
+<li>Give the <strong>number of events</strong>, not only the percentage, and say that the data were not resampled. If they were sampled on the outcome (case-control), say how the intercept was corrected.</li>
+<li>Report <strong>discrimination</strong> (AUC) and <strong>calibration</strong> (calibration plot or slope, Brier score), not accuracy alone.</li>
+<li>If you classify, give the <strong>cutoff and the reason</strong> for it, with sensitivity, specificity and the positive predictive value at that cutoff.</li>
+<li>With few events or separation, say that you used Firth’s penalised likelihood, and give its profile-likelihood intervals.</li>
+<li>Cite R and the packages; <code>citation()</code>, <code>citation("pROC")</code> and <code>citation("logistf")</code> in R give the exact references.</li>
+</ul>
+<hr>
+</section>
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">9. Summary</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td><strong>Is 95/5 a problem?</strong></td>
+<td>Not by itself. Logistic regression estimates the slopes without bias and gives honest probabilities whatever the split</td>
+</tr>
+<tr class="even">
+<td><strong>The 0.5 cutoff</strong></td>
+<td>With a rare outcome almost nobody passes it. Use <span class="math inline">\(p &gt; C_{FP} / (C_{FP} + C_{FN})\)</span>, or give the probabilities</td>
+</tr>
+<tr class="odd">
+<td><strong>Accuracy</strong></td>
+<td>Calling everybody 0 is already 95% accurate. Use the AUC, the precision-recall curve, the Brier score and a calibration plot</td>
+</tr>
+<tr class="even">
+<td><strong>Few events</strong></td>
+<td>The real problem: count the 1s, not the percentage. Aim for 10 or more events per coefficient</td>
+</tr>
+<tr class="odd">
+<td><strong>Separation</strong></td>
+<td>A huge estimate and SE, many iterations, a category with no 1s. Use Firth: <code>logistf()</code>, with <code>flic()</code> for predictions</td>
+</tr>
+<tr class="even">
+<td><strong>Under/oversampling, SMOTE, weights</strong></td>
+<td>Same AUC, wrong probabilities, wrong (or wasted) standard errors. They only move the cutoff</td>
+</tr>
+<tr class="odd">
+<td><strong>Case-control data</strong></td>
+<td>Slopes are fine. Correct the intercept with the known base rate</td>
+</tr>
+<tr class="even">
+<td><strong>R</strong></td>
+<td><code>glm(y ~ x, family = binomial)</code>; <code>logistf::logistf()</code> and <code>flic()</code>; <code>pROC::roc()</code>, <code>auc()</code>, <code>ci.auc()</code>, <code>coords()</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>Elkan, C. (2001). The foundations of cost-sensitive learning. In <em>Proceedings of the Seventeenth International Joint Conference on Artificial Intelligence</em> (pp.&nbsp;973–978).</p>
+<p>Firth, D. (1993). Bias reduction of maximum likelihood estimates. <em>Biometrika</em>, <em>80</em>(1), 27–38.</p>
+<p>Heinze, G., &amp; Schemper, M. (2002). A solution to the problem of separation in logistic regression. <em>Statistics in Medicine</em>, <em>21</em>(16), 2409–2419.</p>
+<p>Heinze, G., Ploner, M., Jiricka, L., &amp; Steiner, G. (2025). <em>logistf: Firth’s bias-reduced logistic regression</em> (R package version 1.26.1). https://CRAN.R-project.org/package=logistf</p>
+<p>King, G., &amp; Zeng, L. (2001). Logistic regression in rare events data. <em>Political Analysis</em>, <em>9</em>(2), 137–163.</p>
+<p>Peduzzi, P., Concato, J., Kemper, E., Holford, T. R., &amp; Feinstein, A. R. (1996). A simulation study of the number of events per variable in logistic regression analysis. <em>Journal of Clinical Epidemiology</em>, <em>49</em>(12), 1373–1379.</p>
+<p>Prentice, R. L., &amp; Pyke, R. (1979). Logistic disease incidence models and case-control studies. <em>Biometrika</em>, <em>66</em>(3), 403–411.</p>
+<p>Puhr, R., Heinze, G., Nold, M., Lusa, L., &amp; Geroldinger, A. (2017). Firth’s logistic regression with rare events: Accurate effect estimates and predictions? <em>Statistics in Medicine</em>, <em>36</em>(14), 2302–2317.</p>
+<p>Riley, R. D., Ensor, J., Snell, K. I. E., Harrell, F. E., Martin, G. P., Reitsma, J. B., Moons, K. G. M., Collins, G., &amp; van Smeden, M. (2020). Calculating the sample size required for developing a clinical prediction model. <em>BMJ</em>, <em>368</em>, m441.</p>
+<p>Robin, X., Turck, N., Hainard, A., Tiberti, N., Lisacek, F., Sanchez, J.-C., &amp; Müller, M. (2011). pROC: An open-source package for R and S+ to analyze and compare ROC curves. <em>BMC Bioinformatics</em>, <em>12</em>, 77.</p>
+<p>van den Goorbergh, R., van Smeden, M., Timmerman, D., &amp; Van Calster, B. (2022). The harm of class imbalance corrections for risk prediction models: Illustration and simulation using logistic regression. <em>Journal of the American Medical Informatics Association</em>, <em>29</em>(9), 1525–1534.</p>
+<p>van Smeden, M., de Groot, J. A. H., Moons, K. G. M., Collins, G. S., Altman, D. G., Eijkemans, M. J. C., &amp; Reitsma, J. B. (2016). No rationale for 1 variable per 10 events criterion for binary logistic regression analysis. <em>BMC Medical Research Methodology</em>, <em>16</em>, 163.</p>
+<!-- -->
+</section>
+<!-- see-also: written by .github/scripts/add_see_also.py -->
+<section id="see-also" class="level2">
+<h2 class="anchored" data-anchor-id="see-also">See also</h2>
+<ul>
+<li><a href="https://sedzinfo.github.io/rwf/">rwf</a>: the R package behind <code>plot_separability()</code> on this page</li>
+</ul>
+</section>
+<!-- /see-also -->
+<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
+    </item>
     <item>
       <title>Is Greece a Good Place to Invest? Risk, Costs, the State and the Courts</title>
       <link>https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_INVESTMENT.html</link>
@@ -5351,512 +6383,6 @@ head(recovery$decreased)</code></pre></div></div>
 <!-- -->
 </section>
 <p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_EURO_CRISIS.html">Illustrations in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
-    </item>
-    <item>
-      <title>Greece Since 2000: Boom, Crisis and Recovery</title>
-      <link>https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html</link>
-      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html</guid>
-      <pubDate>Tue, 27 Oct 2026 10:33:52 +0200</pubDate>
-      <category>R</category>
-      <category>Illustrations in R</category>
-      <description>Greece from 2000 to today, year by year: the boom, the debt crisis and the recovery in World Bank data on income, jobs, investment, population and energy.</description>
-      <content:encoded><![CDATA[<p><em>Greece from 2000 to today, year by year: the boom, the debt crisis and the recovery in World Bank data on income, jobs, investment, population and energy.</em></p>
-<p><img src="https://sedzinfo.github.io/vignettes/illustration/social-card.png" alt="Illustrations in R" width="1200" height="630"></p>
-<section id="what-is-this" class="level2">
-<h2 class="anchored" data-anchor-id="what-is-this">What is this?</h2>
-<p>If you compare Greece in 2000 with Greece in 2020, you get a confusing picture. Both years are unusual: in 2000 Greece did not yet use the euro, and 2020 was the year COVID shut the world down. In between, Greece went through a boom, a very deep crisis and a slow recovery, and two snapshots cannot show that.</p>
-<p>This data story follows Greece year by year, in plain words, through the World Bank’s numbers on:</p>
-<ul>
-<li><strong>income</strong> — how much the country produces per person,</li>
-<li><strong>jobs</strong> — how many people who want work cannot find it,</li>
-<li><strong>investment</strong> — what the country spends on its future,</li>
-<li><strong>people</strong> — who moves in and out, and how old the population is,</li>
-<li><strong>energy</strong> — where the electricity comes from.</li>
-</ul>
-<p>All the data comes from <a href="https://github.com/sedzinfo/golemworldbank">golemworldbank</a>, an R package and Shiny app for exploring World Bank indicators. The page carries its own copy of the Greek data and of the one function it uses, so it runs without installing anything from GitHub; install golemworldbank to do the same for any other country, or to explore the data in the app.</p>
-<hr>
-</section>
-<section id="packages" class="level2">
-<h2 class="anchored" data-anchor-id="packages">Packages</h2>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("dplyr", "tidyr", "plotly"))
-# The data and indicator_change() come from golemworldbank, copied next to this page:
-# R/code_golemworldbank.R (sourced above) and R/mfi_greece.rds. For every country,
-# install golemworldbank itself; its data is in Git LFS, so install it from a clone
-# (install_github() can download LFS pointer files instead of the data):
-#   git lfs install
-#   git clone https://github.com/sedzinfo/golemworldbank.git
-# then in R:
-#   devtools::install_local("golemworldbank")
-library(dplyr)
-library(plotly)          # interactive charts</code></pre></div></div>
-</details>
-</div>
-<hr>
-</section>
-<section id="the-data" class="level2">
-<h2 class="anchored" data-anchor-id="the-data">The data</h2>
-<p>golemworldbank ships the World Bank’s <a href="https://datatopics.worldbank.org/world-development-indicators/">World Development Indicators</a> as one long table, <code>mfi</code>: one row per country, indicator and year. <code>R/mfi_greece.rds</code> holds its rows for Greece, every indicator and year. We keep the years from 2000 onwards and the indicators this story needs, each with a short name:</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r"># golemworldbank's mfi, Greece only (with the package installed, its mfi has every country)
-mfi &lt;- readRDS(paste0(directory, "R/mfi_greece.rds"))
-indicators &lt;- c(
-  income             = "GDP per capita (constant 2015 US$)",
-  unemployment       = "Unemployment, total (% of total labor force) (modeled ILO estimate)",
-  youth_unemployment = "Unemployment, youth total (% of total labor force ages 15-24) (modeled ILO estimate)",
-  investment         = "Gross fixed capital formation (% of GDP)",
-  net_migration      = "Net migration",
-  population         = "Population, total",
-  aged_65            = "Population ages 65 and above (% of total population)",
-  fertility          = "Fertility rate, total (births per woman)",
-  coal               = "Electricity production from coal sources (% of total)",
-  renewables         = "Renewable electricity output (% of total electricity output)",
-  gas                = "Electricity production from natural gas sources (% of total)",
-  tourism            = "International tourism, receipts (current US$)",
-  life_expectancy    = "Life expectancy at birth, total (years)",
-  internet           = "Individuals using the Internet (% of population)",
-  exports            = "Exports of goods and services (% of GDP)",
-  poverty            = "Poverty headcount ratio at societal poverty line (% of population)"
-)
-df_greece &lt;- mfi %&gt;%
-  filter(`Country Name` == "Greece", `Indicator Name` %in% indicators) %&gt;%
-  mutate(year    = as.numeric(as.character(Year)),
-         measure = names(indicators)[match(`Indicator Name`, indicators)]) %&gt;%
-  filter(year &gt;= 2000) %&gt;%
-  select(measure, year, value) %&gt;%
-  arrange(measure, year)
-head(df_greece, 12)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>   measure year    value
-1  aged_65 2000 17.02536
-2  aged_65 2001 17.26438
-3  aged_65 2002 17.53454
-4  aged_65 2003 17.83265
-5  aged_65 2004 18.10322
-6  aged_65 2005 18.32481
-7  aged_65 2006 18.48934
-8  aged_65 2007 18.60483
-9  aged_65 2008 18.71140
-10 aged_65 2009 18.88299
-11 aged_65 2010 19.15789
-12 aged_65 2011 19.50739</code></pre>
-</div>
-</div>
-<p>Each row is one indicator in one year:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 38%">
-<col style="width: 61%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Column</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><code>measure</code></td>
-<td>Short name of the indicator (the names of <code>indicators</code> above)</td>
-</tr>
-<tr class="even">
-<td><code>year</code></td>
-<td>Year of observation</td>
-</tr>
-<tr class="odd">
-<td><code>value</code></td>
-<td>The World Bank’s value for Greece in that year</td>
-</tr>
-</tbody>
-</table>
-<p>Two of these need a word of explanation:</p>
-<ul>
-<li><strong>Income</strong> is the value of everything Greece produces in a year, divided by the number of people who live there, in US dollars with price rises removed, so that years can be compared fairly. It is a rough measure of how well off the average person is.</li>
-<li><strong>Investment</strong> is the money spent on things that help a country earn more later: new buildings, factories, machines, roads and equipment, as a share of everything the economy produces.</li>
-</ul>
-<p>Every chart below shades the two shocks of the period — the debt crisis (2008 to 2013) and COVID (2020) — and writes the latest value at the end of each line:</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r"># the latest value of a measure, and its value in a given year
-at &lt;- function(m, y) df_greece$value[df_greece$measure == m &amp; df_greece$year == y]
-last_year &lt;- function(m) max(df_greece$year[df_greece$measure == m])
-latest &lt;- function(m) at(m, last_year(m))
-change_pct &lt;- function(from, to) round((to - from) / from * 100)
-big &lt;- function(v) format(round(v), big.mark = ",")
-# "$21,922" for dollars, "8.5%" for percentages
-fmt &lt;- function(v, unit) {
-  if (unit == "$") paste0("$", big(v)) else paste0(round(v, 1), unit)
-}
-shocks &lt;- list(list(from = 2008,   to = 2013,   label = "Debt crisis"),
-               list(from = 2019.5, to = 2020.5, label = "COVID"))
-# chart height in pixels, set on the widget itself (width stays 100% of the
-# page), so the chart always fills the box it is drawn in — no scroll bars.
-# Returned inside a tagList: printed straight from a chunk, a widget's height
-# is overridden by the chunk's figure size; inside a tagList it is kept
-# The plotly toolbar goes down the right edge, so it never covers a long title
-sized &lt;- function(p, h) {
-  p &lt;- plotly::layout(p, modebar = list(orientation = "v"))
-  p$height &lt;- h
-  htmltools::tagList(p)
-}
-# title, shaded shocks, end labels and the data source in one layout() call
-# (a second layout(annotations = ...) would replace the first one's). The
-# source sits at the bottom of the bottom margin `b`, in pixels, so it lands
-# in the same place whatever the chart's height; the x axis range is fixed,
-# because plotly would otherwise widen it to make room for the end labels
-finish &lt;- function(p, title, ytitle, labels, unit = "", legend = TRUE, b = if (legend) 150 else 110) {
-  shapes &lt;- lapply(shocks, function(s) {
-    list(type = "rect", xref = "x", yref = "paper", x0 = s$from, x1 = s$to, y0 = 0, y1 = 1,
-         fillcolor = "#EBEBEB", line = list(width = 0), layer = "below")
-  })
-  tags &lt;- lapply(shocks, function(s) {
-    list(x = (s$from + s$to) / 2, y = 1, xref = "x", yref = "paper", yanchor = "bottom",
-         text = s$label, showarrow = FALSE, font = list(size = 12, color = "#666666"))
-  })
-  source_note &lt;- list(
-    text = "Source: World Bank, World Development Indicators, via &lt;a href='https://github.com/sedzinfo/golemworldbank'&gt;golemworldbank&lt;/a&gt;",
-    xref = "paper", yref = "paper", x = 1, y = 0, yshift = -(b - 22),
-    xanchor = "right", yanchor = "top", showarrow = FALSE,
-    font = list(size = 11, color = "#7F7F7F"))
-  plotly::layout(p,
-    title  = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    margin = list(t = 90, r = 130, b = b),
-    xaxis  = list(title = "", tickangle = -90, range = c(1999.5, max(df_greece$year) + 0.5)),
-    yaxis  = list(title = ytitle, ticksuffix = if (unit == "%") "%" else "", rangemode = "tozero"),
-    legend = list(orientation = "h", y = -0.2),
-    showlegend = legend,
-    shapes = shapes,
-    annotations = c(tags, labels, list(source_note)),
-    font   = list(size = 13, color = "#404040"))
-}
-# one line per measure, each with its value written at the end; `nudge` lifts
-# a label (in pixels) off a line it would otherwise be written over
-story_chart &lt;- function(measures, names, short, colors, title, ytitle, unit = "", h = 520,
-                        nudge = rep(0, length(measures))) {
-  p &lt;- plot_ly()
-  ends &lt;- list()
-  for (i in seq_along(measures)) {
-    d &lt;- df_greece[df_greece$measure == measures[i], ]
-    p &lt;- add_trace(p, data = d, x = ~year, y = ~value, name = names[i],
-                   type = "scatter", mode = "lines+markers",
-                   line = list(color = colors[i], width = 2),
-                   marker = list(color = colors[i], size = 7),
-                   text = paste0(names[i], " · ", d$year, "&lt;br&gt;", fmt(d$value, unit)),
-                   hoverinfo = "text")
-    ends[[i]] &lt;- list(x = last_year(measures[i]), y = latest(measures[i]), xref = "x", yref = "y",
-                      xanchor = "left", xshift = 8, yshift = nudge[i], showarrow = FALSE,
-                      text = trimws(paste(short[i], fmt(latest(measures[i]), unit))),
-                      font = list(size = 13, color = "#404040"))
-  }
-  finish(p, title, ytitle, ends, unit, legend = length(measures) &gt; 1) %&gt;% sized(h)
-}</code></pre></div></div>
-</details>
-</div>
-<hr>
-</section>
-<section id="greece-at-a-glance" class="level2">
-<h2 class="anchored" data-anchor-id="greece-at-a-glance">Greece at a glance</h2>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r">peak   &lt;- df_greece %&gt;% filter(measure == "income", year &lt;= 2010) %&gt;% slice_max(value)
-bottom &lt;- df_greece %&gt;% filter(measure == "income", year &gt; 2008, year &lt;= 2016) %&gt;% slice_min(value)
-p &lt;- plot_ly(df_greece[df_greece$measure == "income", ], x = ~year, y = ~value,
-             type = "scatter", mode = "lines+markers",
-             line = list(color = "#0082c8", width = 2), marker = list(color = "#0082c8", size = 7),
-             text = ~paste0("Greece · ", year, "&lt;br&gt;", fmt(value, "$"), " per person"), hoverinfo = "text")
-finish(p, "Greece: how much the country produces per person (US$, price rises removed)", "US$ per person",
-       labels = list(
-         list(x = peak$year, y = peak$value, yshift = 10, yanchor = "bottom", showarrow = FALSE,
-              text = paste0("Peak ", peak$year, ": ", fmt(peak$value, "$")), font = list(color = "#404040")),
-         list(x = bottom$year, y = bottom$value, yshift = -10, yanchor = "top", showarrow = FALSE,
-              text = paste0("Bottom ", bottom$year, ": ", fmt(bottom$value, "$")), font = list(color = "#404040")),
-         list(x = last_year("income"), y = latest("income"), xanchor = "left", xshift = 8, showarrow = FALSE,
-              text = fmt(latest("income"), "$"), font = list(color = "#404040"))),
-       legend = FALSE) %&gt;%
-  sized(520)</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Interactive chart: Greece: how much the country produces per person (US$, price rises removed)</a></p>
-</div>
-</div>
-<p>The line has five chapters:</p>
-<ol type="1">
-<li><strong>2000 to 2008: boom.</strong> Joining the euro made borrowing cheap for the government and for families, and money flowed in. Income per person grew by <strong>33%</strong>. Part of that growth was paid for with borrowed money.</li>
-<li><strong>2008 to 2013: crisis.</strong> In late 2009 it came out that the government’s finances were far worse than it had reported. From 2010 Greece needed rescue loans from other euro countries and the International Monetary Fund, and in return it had to cut wages, pensions and public spending and raise taxes. Income per person fell by <strong>26%</strong> in five years.</li>
-<li><strong>2013 to 2019: slow recovery.</strong> The economy grew again, slowly. The last rescue programme ended in 2018.</li>
-<li><strong>2020: COVID.</strong> Tourists stopped coming and the economy fell again.</li>
-<li><strong>2021 onwards: rebound.</strong> Growth returned, but in 2025 income per person was still <strong>8%</strong> below 2008.</li>
-</ol>
-<hr>
-</section>
-<section id="jobs-the-deepest-wound-now-healing" class="level2">
-<h2 class="anchored" data-anchor-id="jobs-the-deepest-wound-now-healing">Jobs: the deepest wound, now healing</h2>
-<p>The unemployment rate counts people who want a job and are looking for one, but cannot find one.</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">story_chart(c("unemployment", "youth_unemployment"),
-            names  = c("Everyone", "Young people (15 to 24)"),
-            short  = c("Everyone", "Young"),
-            colors = c("#0082c8", "#E74C3C"),
-            title  = "Greece: people looking for work who cannot find it (%)",
-            ytitle = "% of people looking for work", unit = "%")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Interactive chart: Greece: people looking for work who cannot find it (%)</a></p>
-</div>
-</div>
-<p>In 2013, <strong>28%</strong> of people looking for work could not find a job — more than 1 in 4. Among young people it was <strong>58%</strong>, almost 6 in 10. Since then unemployment has fallen every year, and by 2025 it was back near its level before the crisis (<strong>8.5%</strong>, against 7.7% in 2008).</p>
-<hr>
-</section>
-<section id="investment-what-has-not-come-back" class="level2">
-<h2 class="anchored" data-anchor-id="investment-what-has-not-come-back">Investment: what has not come back</h2>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r">story_chart("investment", names = "Investment", short = "",
-            colors = "#0082c8",
-            title  = "Greece: investment in buildings, machines and roads (% of the economy)",
-            ytitle = "% of the economy", unit = "%")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Interactive chart: Greece: investment in buildings, machines and roads (% of the economy)</a></p>
-</div>
-</div>
-<p>Before the crisis Greece invested about a quarter of what it produced. During the crisis this fell to about a tenth (<strong>11.5%</strong> in 2013) and stayed there until 2019. It is rising again (<strong>16.9%</strong> in 2025), but it is still well below where it was. A decade of low investment is one reason incomes have not fully recovered.</p>
-<hr>
-</section>
-<section id="people-fewer-and-older" class="level2">
-<h2 class="anchored" data-anchor-id="people-fewer-and-older">People: fewer and older</h2>
-<p>Net migration is the number of people who moved into the country minus the number who moved out. Blue bars mean more people arrived than left; red bars mean more people left than arrived.</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">d &lt;- df_greece %&gt;%
-  filter(measure == "net_migration") %&gt;%
-  mutate(color = ifelse(value &gt;= 0, "#0082c8", "#E74C3C"),
-         what  = ifelse(value &gt;= 0, "more arrived than left", "more left than arrived"))
-p &lt;- plot_ly(d, x = ~year, y = ~value, type = "bar",
-             marker = list(color = ~color),
-             text = ~paste0("Greece · ", year, "&lt;br&gt;", big(value), " people: ", what),
-             hoverinfo = "text", textposition = "none")
-finish(p, "Greece: people who moved in, minus people who moved out, per year", "people per year",
-       labels = list(), legend = FALSE) %&gt;%
-  sized(520)</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Interactive chart: Greece: people who moved in, minus people who moved out, per year</a></p>
-</div>
-</div>
-<p>During the crisis many people, often young and well educated, moved abroad to find work: between 2011 and 2015 about <strong>250,000</strong> more people left Greece than arrived. Treat the latest years with care — the World Bank’s estimates for them jump sharply from one year to the next.</p>
-<p>At the same time, Greek families have few children: about <strong>1.2</strong> per woman, while about 2 are needed to keep a population steady. Together these explain why there are fewer Greeks now (<strong>10.4 million</strong> in 2025, down from 11.1 million around 2010) and why they are older: people aged 65 and over were <strong>17%</strong> of the population in 2000 and <strong>24%</strong> in 2025.</p>
-<hr>
-</section>
-<section id="energy-much-less-coal" class="level2">
-<h2 class="anchored" data-anchor-id="energy-much-less-coal">Energy: much less coal</h2>
-<p>Most of Greece’s electricity used to come from lignite, a cheap and dirty kind of coal. Those power stations are being closed, and solar parks, wind farms and power stations that burn natural gas have taken their place.</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">story_chart(c("coal", "renewables", "gas"),
-            names  = c("Coal", "Renewable (sun, wind, water)", "Natural gas"),
-            short  = c("Coal", "Renewable", "Gas"),
-            colors = c("#E74C3C", "#0082c8", "#999999"),
-            title  = "Greece: where the electricity comes from (% of all electricity)",
-            ytitle = "% of all electricity", unit = "%",
-            nudge  = c(0, 14, 0))   # renewables stop in 2021, above the gas line</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Interactive chart: Greece: where the electricity comes from (% of all electricity)</a></p>
-</div>
-</div>
-<p>In 2000 coal made <strong>64%</strong> of Greece’s electricity; by 2025 it made <strong>5%</strong>. Renewable sources went from 8% to <strong>41%</strong> (2021 is the last year the World Bank reports), and natural gas from 11% to <strong>39%</strong>.</p>
-<hr>
-</section>
-<section id="comparing-two-years-with-indicator_change" class="level2">
-<h2 class="anchored" data-anchor-id="comparing-two-years-with-indicator_change">Comparing two years with <code>indicator_change()</code></h2>
-<p>golemworldbank’s <code>indicator_change()</code> compares every indicator a country has in two years and splits them into those that went up and those that went down, each sorted by percentage change — the same comparison as the app’s <strong>Change (%)</strong> tab. The result depends entirely on which two years you pick. Comparing 2000 with 2020 mixes twenty years of change with one very bad year: in 2019 tourists spent <strong>$23 billion</strong> in Greece, in 2020 <strong>$6 billion</strong>, a fall of 73% in one year.</p>
-<p>These pairs each answer one clear question:</p>
-<table class="caption-top table">
-<thead>
-<tr class="header">
-<th>Question</th>
-<th>From</th>
-<th>To</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>What did the boom look like?</td>
-<td>2000</td>
-<td>2008</td>
-</tr>
-<tr class="even">
-<td>How bad was the crisis?</td>
-<td>2008</td>
-<td>2013</td>
-</tr>
-<tr class="odd">
-<td>How strong was the recovery?</td>
-<td>2013</td>
-<td>2019</td>
-</tr>
-<tr class="even">
-<td>Is Greece back to where it was?</td>
-<td>2008</td>
-<td>2024</td>
-</tr>
-</tbody>
-</table>
-<p>Avoid 2020 and 2021 as end points, because COVID makes almost everything look worse than the real trend, and use 2024 as the latest year, because the 2025 numbers are still incomplete. The crisis, for example:</p>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">crisis &lt;- indicator_change(mfi, country = "Greece", year1 = 2008, year2 = 2013)
-c(increased = nrow(crisis$increased), decreased = nrow(crisis$decreased))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>increased decreased 
-      319       474 </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r"># the indicators of this story, by their short names
-headline &lt;- function(tab) {
-  tab &lt;- tab[tab$Indicator %in% indicators, ]
-  tab$Indicator &lt;- names(indicators)[match(tab$Indicator, indicators)]
-  # 3 significant digits, with thousands separators and no scientific notation
-  tab[, 2:4] &lt;- lapply(tab[, 2:4], function(x) {
-    vapply(x, function(v) format(signif(v, 3), big.mark = ",", scientific = FALSE), "")
-  })
-  tab
-}
-headline(crisis$increased)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>             Indicator 2008 2013 Change Change %
-17        unemployment 7.66 27.7     20   261.25
-34  youth_unemployment 21.6 58.5   36.9   170.67
-44          renewables 10.3 25.2   14.8   143.61
-94            internet 38.2 59.9   21.7    56.72
-117            poverty   15 20.4    5.4    36.00
-121            exports 22.8 30.3   7.54    33.10
-196            aged_65 18.7 20.3   1.58     8.44
-287    life_expectancy 79.9 81.3   1.35     1.68</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">headline(crisis$decreased)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>     Indicator           2008           2013       Change Change %
-50  investment           23.3           11.5        -11.7   -50.45
-170     income         23,900         17,600       -6,280   -26.25
-271  fertility            1.5           1.29        -0.21   -14.00
-291        gas           21.6             19        -2.64   -12.20
-298       coal           52.3           46.2        -6.12   -11.70
-455 population     11,100,000     11,000,000     -113,000    -1.02
-457    tourism 17,600,000,000 17,400,000,000 -175,000,000    -0.99</code></pre>
-</div>
-</div>
-<p>Because it compares hundreds of indicators automatically, some odd ones end up at the top of the list. These ones do not mean what they seem to:</p>
-<ul>
-<li><strong>Fossil fuels “fall to 0%”.</strong> From 2017 the World Bank stopped reporting this figure for Greece, and the gap shows up as 0.</li>
-<li><strong>The exchange rate “falls 99.8%”</strong> between 2000 and any later year. In 2000 it was counted in drachmas, and from 2001 in euros: nothing collapsed, the currency changed.</li>
-<li><strong>“Children out of school” jumps 50 times.</strong> This figure moves up and down from year to year because of changes in how it is measured.</li>
-<li><strong>University enrolment above 100%.</strong> It counts everyone enrolled, including older students and students who stay registered for many years, and divides them by the number of people of student age.</li>
-<li><strong>Huge percentages on small numbers.</strong> Going from a few hundred to a few thousand is a big percentage, even when the numbers themselves are small.</li>
-</ul>
-<hr>
-</section>
-<section id="what-the-charts-show" class="level2">
-<h2 class="anchored" data-anchor-id="what-the-charts-show">What the charts show</h2>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">snapshot &lt;- df_greece %&gt;%
-  filter(year %in% c(2000, 2008, 2013, 2019, 2024),
-         measure %in% c("income", "unemployment", "youth_unemployment", "investment", "poverty",
-                        "exports", "aged_65", "life_expectancy", "coal", "internet")) %&gt;%
-  mutate(value = round(value, 1)) %&gt;%
-  tidyr::pivot_wider(names_from = year, values_from = value) %&gt;%
-  as.data.frame()
-snapshot</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>              measure    2000    2008    2013    2019    2024
-1             aged_65    17.0    18.7    20.3    22.1    23.9
-2                coal    63.7    52.3    46.2    24.9     5.6
-3             exports    24.0    22.8    30.3    39.6    42.1
-4              income 18002.9 23923.9 17644.9 19216.7 21494.7
-5            internet     9.1    38.2    59.9    75.7    86.3
-6          investment    25.9    23.3    11.5    11.0    16.0
-7     life_expectancy    77.9    79.9    81.3    81.6    81.8
-8             poverty    17.6    15.0    20.4    17.0      NA
-9        unemployment    11.3     7.7    27.7    17.0    10.0
-10 youth_unemployment    29.0    21.6    58.5    34.8    22.4</code></pre>
-</div>
-</div>
-<ul>
-<li><strong>Income:</strong> up <strong>33%</strong> in the boom, down <strong>26%</strong> in the crisis, and in 2025 still <strong>8%</strong> below 2008.</li>
-<li><strong>Jobs:</strong> unemployment peaked at <strong>28%</strong> in 2013 (<strong>58%</strong> for young people) and is now back near pre-crisis levels.</li>
-<li><strong>Investment:</strong> fell from about a quarter of the economy to about a tenth, and has only partly come back.</li>
-<li><strong>People:</strong> fewer (<strong>10.4 million</strong>) and older (<strong>24%</strong> aged 65 and over); about 250,000 more people left than arrived in 2011–2015.</li>
-<li><strong>Things that improved the whole time:</strong> people live longer (<strong>81.8 years</strong>, from 77.9 in 2000), almost everyone is online (<strong>86%</strong>, from 9%), and coal fell from 64% of the electricity to <strong>5%</strong>.</li>
-<li><strong>Poverty</strong> here is the World Bank’s <em>societal</em> poverty line, which moves with what is normal in each country: the share of people living well below the usual Greek standard of living. It rose during the crisis and has since come back down.</li>
-</ul>
-<hr>
-</section>
-<section id="customising-it" class="level2">
-<h2 class="anchored" data-anchor-id="customising-it">Customising it</h2>
-<section id="another-country" class="level3">
-<h3 class="anchored" data-anchor-id="another-country">Another country</h3>
-<p><code>R/mfi_greece.rds</code> holds Greece only. With golemworldbank installed (see <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html#packages">Packages</a>), its <code>mfi</code> has every country: load it instead of the file and change <code>"Greece"</code> in the data chunk (the shaded shocks are Greece’s, so adjust <code>shocks</code> too).</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb18"><pre><code class="language-r">library(golemworldbank)   # replaces mfi &lt;- readRDS(...)
-df_greece &lt;- mfi %&gt;%
-  filter(`Country Name` == "Portugal", `Indicator Name` %in% indicators) %&gt;%
-  mutate(year    = as.numeric(as.character(Year)),
-         measure = names(indicators)[match(`Indicator Name`, indicators)]) %&gt;%
-  filter(year &gt;= 2000) %&gt;%
-  select(measure, year, value)</code></pre></div></div>
-</section>
-<section id="another-pair-of-years" class="level3">
-<h3 class="anchored" data-anchor-id="another-pair-of-years">Another pair of years</h3>
-<div class="cell" data-layout-align="center">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">recovery &lt;- indicator_change(mfi, country = "Greece", year1 = 2013, year2 = 2019)
-head(recovery$increased)
-head(recovery$decreased)</code></pre></div></div>
-</details>
-</div>
-</section>
-<section id="explore-it-in-the-app" class="level3">
-<h3 class="anchored" data-anchor-id="explore-it-in-the-app">Explore it in the app</h3>
-<p>The same data, with country and indicator comparisons, a population pyramid, a bar chart race, maps and the Change (%) tab:</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb20"><pre><code class="language-r">golemworldbank::run_app()</code></pre></div></div>
-<hr>
-</section>
-</section>
-<section id="further-reading" class="level2">
-<h2 class="anchored" data-anchor-id="further-reading">Further reading</h2>
-<ul>
-<li><a href="https://github.com/sedzinfo/golemworldbank">golemworldbank</a> — the R package and Shiny app this story’s data and <code>indicator_change()</code> come from (<a href="https://sedzinfo.github.io/golemworldbank/">documentation</a>)</li>
-<li><a href="https://datatopics.worldbank.org/world-development-indicators/">World Development Indicators</a> — the World Bank’s database behind <code>mfi</code></li>
-<li><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WAGES_PRICES.html">Greek Wages Race</a> and <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_HOUSING.html">Greek Housing Race</a> — Greece against the rest of Europe on salaries, prices, rents and house prices</li>
-</ul>
-<hr>
-<p><em>Rendered with R 4.6.2 · plotly · golemworldbank</em></p>
-<!-- -->
-</section>
-<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREECE_SINCE_2000.html">Illustrations in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
     </item>
   </channel>
 </rss>
