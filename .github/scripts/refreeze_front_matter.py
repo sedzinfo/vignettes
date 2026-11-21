@@ -1,4 +1,4 @@
-"""Keep a page from running its R code again when only its title or description changed.
+"""Keep a page from running its R code again when only its title, description or the layout of its headings changed.
 
 Quarto runs the R code of a page again when the page no longer matches the fingerprint saved in
 quarto/<site>/_freeze/<page>/execute-results/html.json (the MD5 of its source, with Unix line endings),
@@ -21,7 +21,9 @@ import os
 import re
 from pathlib import Path
 
-KEYS = ("title", "subtitle", "description", "image", "keywords")
+# front matter that cannot change what the R code computes: what the page is called and how pandoc
+# lays out its headings (shift-heading-level-by: 1 keeps the title the only h1; toc-depth)
+KEYS = ("title", "subtitle", "description", "image", "keywords", "shift-heading-level-by", "toc-depth")
 FRONT_MATTER = re.compile(r"---\n.*?\n---\n", re.S)
 INLINE_R = re.compile(r"`r[ \t]")
 

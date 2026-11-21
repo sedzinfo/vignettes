@@ -146,15 +146,15 @@ if (preview) {
     if (publish) copy_site(site_dir, docs_root)
   }
   ##########################################################################################
-  # LANDING PAGE, RSS FEED AND STRUCTURED DATA
+  # LANDING PAGE, SEE ALSO LINKS, ALT TEXT, RSS FEED AND STRUCTURED DATA
   ##########################################################################################
   if (!is.na(python)) {
-    for (script in c("build_index.py", "add_see_also.py", "build_feed.py", "add_structured_data.py")) {
+    for (script in c("build_index.py", "add_see_also.py", "add_img_alt.py", "build_feed.py", "add_structured_data.py")) {
       run_python(script, c(DOCS_DIR = out_root))
       if (publish) run_python(script, c(DOCS_DIR = docs_root))
     }
   } else {
-    message("Python not found: skipped the landing page (index.html), the feed (feed.xml), the structured data and the check of _freeze/.")
+    message("Python not found: skipped the landing page (index.html), the See also links, the alt text of the plots, the feed (feed.xml), the structured data and the check of _freeze/.")
   }
   ##########################################################################################
   # CHECK OF _freeze/
