@@ -1,0 +1,524 @@
+---
+title: "Hierarchical Regression: Does Beauty Predict Teaching Evaluations?"
+description: "Hierarchical (blockwise) regression in R with real data: do better-looking instructors get better evaluations? R² change, F-change, order effects, APA reporting."
+author: ""
+output:
+  html_document:
+    css: styles.css
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float: true
+    code_folding: show
+    self_contained: true
+vignette: "%\\VignetteIndexEntry{Hierarchical Regression} %\\VignetteEngine{knitr::rmarkdown} %\\VignetteEncoding{UTF-8}\n"
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+source(paste0(directory, "R/code_rwf.R"))
+# wider, shorter figures than the site default; no knitr cache: the page runs in seconds
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: does beauty matter over and above everything else?
+
+At the end of every term, students at the University of Texas at Austin rated their courses from 1 (very unsatisfactory) to 5 (excellent). For 463 courses taught between 2000 and 2002, economists Daniel Hamermesh and Amy Parker also asked six students to rate the **physical appearance** of each instructor from their photograph. Their question: do better-looking instructors get better evaluations (Hamermesh & Parker, 2005)?
+
+A simple correlation is not enough to answer it. Beauty might go together with other things that also affect evaluations: age, gender, the kind of course, the size of the class. The real question is one of **incremental validity**:
+
+> Does beauty predict teaching evaluations **over and above** who the instructor is and what they teach?
+
+**Hierarchical regression** answers exactly this kind of question. We enter the predictors in **blocks**, in an order decided in advance, and after each block we ask how much more of the variance of the outcome the model explains. That increase is the **R² change**, $\Delta R^2$, and the **F-change** test tells us whether it is larger than chance.
+
+The predictor of interest goes in **last**, so it gets credit only for what the earlier blocks cannot explain. If beauty still adds something after everything else, that is strong evidence that it matters on its own.
+
+**A note on the name.** "Hierarchical" here means the **order in which blocks of predictors enter** the model. It has nothing to do with **hierarchical linear models**, also called multilevel or mixed models, which are for data nested in groups (students in schools, courses in instructors). Those have their own tutorial: [Multilevel Models](EXAMPLE_MULTILEVEL.Rmd). We will meet the nesting issue in section 8, because these data have it too.
+
+```{r packages}
+library(AER)        # the data: TeachingRatings
+library(ggplot2)
+library(patchwork)  # put plots together
+library(car)        # vif(): checks multicollinearity
+library(sandwich)   # vcovCL(): cluster-robust standard errors (section 8)
+library(lmtest)     # coeftest() and waldtest() with those standard errors
+library(ggfortify)  # needed by rwf's report_regression() for its diagnostic plots (section 7)
+```
+
+---
+
+## 1. The data
+
+```{r data}
+data("TeachingRatings", package = "AER")
+tr <- TeachingRatings
+c(courses = nrow(tr), instructors = length(unique(tr$prof)))
+```
+
+| Variable | Meaning |
+|---|---|
+| `eval` | The course's average evaluation, from 1 (very unsatisfactory) to 5 (excellent) |
+| `beauty` | The instructor's appearance, rated by six students from a photograph and averaged, shifted to a mean of 0 |
+| `gender`, `minority`, `native`, `age` | The instructor: female or male, from a minority (non-Caucasian) or not, native English speaker or not, age in years |
+| `tenure` | Is the instructor on the tenure track? |
+| `division` | An upper-division course, or a lower-division one (mainly large first- and second-year courses) |
+| `credits` | A single-credit elective (yoga, aerobics, dance) or a regular course |
+| `allstudents` | The number of students enrolled |
+| `prof` | Which of the 94 instructors taught the course |
+
+We code each yes/no variable as a **0/1 dummy** with a clear name, so that every coefficient says what it compares. Age goes in decades, so that its coefficient is not a tiny number per year. Class size is very skewed (8 to 581 students), so we use its base-2 logarithm: one unit more means **twice as many students**.
+
+```{r recode}
+d <- data.frame(
+  eval           = tr$eval,
+  female         = as.integer(tr$gender == "female"),   # 1 = female instructor
+  minority       = as.integer(tr$minority == "yes"),    # 1 = minority (non-Caucasian)
+  non_native     = as.integer(tr$native == "no"),       # 1 = not a native English speaker
+  age            = tr$age / 10,                         # in decades: +1 = ten years older
+  tenure_track   = as.integer(tr$tenure == "yes"),      # 1 = on the tenure track
+  lower_division = as.integer(tr$division == "lower"),  # 1 = lower-division course
+  single_credit  = as.integer(tr$credits == "single"),  # 1 = single-credit elective
+  log2_size      = log2(tr$allstudents),                # +1 = class twice as large
+  beauty         = tr$beauty,
+  prof           = tr$prof)
+
+round(sapply(d[, 1:10], function(x) c(mean = mean(x), sd = sd(x), min = min(x), max = max(x))), 2)
+```
+
+For the dummies, the mean is the share of courses with a 1: for example, `r round(100 * mean(d$female))`% of the courses were taught by women and `r round(100 * mean(d$single_credit))`% were single-credit electives. The average evaluation is `r sprintf("%.2f", mean(d$eval))` (*SD* = `r sprintf("%.2f", sd(d$eval))`): students were generally satisfied.
+
+Hierarchical regression compares models fitted to **the same people**. If some variables had missing values, each model would drop different rows and the R² values would not be comparable. These data have none, but in your own data remove incomplete rows first, e.g. `d <- na.omit(d[, variables_of_all_blocks])`.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 7.5}
+r_beauty <- cor(d$beauty, d$eval)
+p1 <- ggplot(d, aes(beauty, eval)) +
+  geom_point(colour = "#0082c8", alpha = 0.5, size = 1.8) +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "#E74C3C", fill = "#E74C3C", alpha = 0.15) +
+  labs(title = sprintf("Better-looking instructors get somewhat better evaluations (r = %.2f)", r_beauty),
+       x = "beauty rating (0 = average)", y = "course evaluation (1 to 5)")
+
+predictors <- c("female", "minority", "non_native", "age", "tenure_track",
+                "lower_division", "single_credit", "log2_size", "beauty")
+cors <- data.frame(predictor = factor(predictors, levels = rev(predictors)),
+                   with_eval = sapply(d[predictors], cor, y = d$eval))
+p2 <- ggplot(cors, aes(with_eval, predictor, fill = with_eval > 0)) +
+  geom_col() +
+  geom_vline(xintercept = 0) +
+  scale_fill_manual(values = c(`TRUE` = "#0082c8", `FALSE` = "#E74C3C"), guide = "none") +
+  labs(title = "Correlation of each predictor with the evaluation", x = "correlation", y = NULL)
+p1 / p2
+```
+
+Beauty correlates `r round(r_beauty, 2)` with the evaluations, so it explains $r^2$ = `r round(100 * r_beauty^2, 1)`% of their variance on its own. Single-credit electives get the best evaluations; female, non-native and tenure-track instructors, and larger classes, get lower ones. Several of these predictors also correlate with beauty, which is why we need a model that holds them constant.
+
+---
+
+## 3. The plan: three blocks, chosen in advance
+
+| Step | Block | Predictors | Why here |
+|---|---|---|---|
+| 1 | Who the instructor is | `female`, `minority`, `non_native`, `age` | Fixed before any teaching starts, so nothing else can cause them |
+| 2 | The job and the course | `tenure_track`, `lower_division`, `single_credit`, `log2_size` | What and whom they teach, and on which contract |
+| 3 | Appearance | `beauty` | The predictor of interest: entered last, so it must explain something the first two blocks cannot |
+
+The order comes from **theory and the research question**, decided before looking at the results. Common rules: background variables and things that come first in time go first, control variables go before the predictors of interest, and the predictor whose added value you want to test goes last.
+
+This is the opposite of **stepwise regression**, where the computer adds or drops predictors according to their *p* values. Stepwise selection capitalises on chance, and its *p* values and R² are too optimistic. In hierarchical regression **you** decide the order, and the data only answer the question you asked.
+
+---
+
+## 4. Fit the three models and test each step
+
+```{r fit}
+m0 <- lm(eval ~ 1, data = d)                                                        # no predictors: R² = 0
+m1 <- lm(eval ~ female + minority + non_native + age, data = d)                     # step 1
+m2 <- update(m1, . ~ . + tenure_track + lower_division + single_credit + log2_size) # step 2: + block 2
+m3 <- update(m2, . ~ . + beauty)                                                    # step 3: + beauty
+```
+
+`update(m1, . ~ . + ...)` means: the same model as `m1`, with these predictors added.
+
+### The formulas
+
+For a model with $k$ predictors fitted to $n$ cases:
+
+- **R²**, the share of the variance of the outcome the model explains: $R^2 = 1 - \dfrac{RSS}{TSS}$, where $RSS = \sum (y_i - \hat y_i)^2$ is what the model leaves unexplained and $TSS = \sum (y_i - \bar y)^2$ is the total.
+- **Adjusted R²** corrects R² for the number of predictors, since adding any predictor, even pure noise, raises R² a little: $R^2_{adj} = 1 - (1 - R^2)\dfrac{n - 1}{n - k - 1}$
+- **R² change** from a smaller model (1) to a larger one (2): $\Delta R^2 = R^2_2 - R^2_1$
+- **F-change**, the test of $\Delta R^2$, where $\Delta k$ is the number of predictors added and $k_2$ the number in the larger model:
+
+$$F = \frac{\Delta R^2 / \Delta k}{(1 - R^2_2) / (n - k_2 - 1)}, \qquad \text{with } \Delta k \text{ and } n - k_2 - 1 \text{ degrees of freedom}$$
+
+The top is the variance explained by the new block, per predictor added. The bottom is the variance still unexplained, per remaining degree of freedom. If the new block were useless, the two would be about equal and $F$ would be close to 1.
+
+- **Effect size** of the change, Cohen's $f^2 = \dfrac{\Delta R^2}{1 - R^2_2}$: about .02 is small, .15 medium and .35 large (Cohen, 1988).
+
+### The steps by hand
+
+```{r steps}
+n <- nrow(d)
+models <- list(m0, m1, m2, m3)
+k_of <- function(m) length(coef(m)) - 1                     # number of predictors
+steps <- do.call(rbind, lapply(2:4, function(i) {
+  small <- models[[i - 1]]; big <- models[[i]]
+  r2_small <- summary(small)$r.squared
+  r2_big   <- summary(big)$r.squared
+  delta    <- r2_big - r2_small
+  dk       <- k_of(big) - k_of(small)
+  df2      <- n - k_of(big) - 1
+  F_change <- (delta / dk) / ((1 - r2_big) / df2)
+  data.frame(step = i - 1, k = k_of(big), r2 = r2_big, adj_r2 = summary(big)$adj.r.squared,
+             delta_r2 = delta, F_change = F_change, df1 = dk, df2 = df2,
+             p = pf(F_change, dk, df2, lower.tail = FALSE), f2 = delta / (1 - r2_big))
+}))
+steps$block <- c("1: who the instructor is", "2: + the job and the course", "3: + beauty")
+format(steps[, c("block", "k", "r2", "adj_r2", "delta_r2", "F_change", "df1", "df2", "p", "f2")], digits = 3)
+```
+
+```{r steps_plot, fig.height = 4}
+bars <- data.frame(model = factor(rep(steps$block, 1:3), levels = steps$block),
+                   block = factor(c(steps$block[1], steps$block[1:2], steps$block[1:3]), levels = steps$block),
+                   value = c(steps$delta_r2[1], steps$delta_r2[1:2], steps$delta_r2[1:3]))
+ggplot(bars, aes(model, value, fill = block)) +
+  geom_col(width = 0.65, position = position_stack(reverse = TRUE)) +
+  geom_text(data = steps, aes(x = block, y = r2, label = sprintf("R² = %.3f\nΔR² = %.3f", r2, delta_r2)),
+            inherit.aes = FALSE, vjust = -0.3, size = 3.2, lineheight = 0.9) +
+  scale_fill_manual(values = c("#95A5A6", "#f39c12", "#E74C3C"), labels = c("block 1", "block 2", "beauty")) +
+  scale_y_continuous(limits = c(0, 0.22), labels = scales::percent) +
+  labs(title = "Variance of the evaluations explained, step by step", x = NULL, y = "R²", fill = NULL)
+```
+
+Step by step:
+
+1. **Who the instructor is** explains `r round(100 * steps$r2[1], 1)`% of the variance of the evaluations, *F*(`r steps$df1[1]`, `r steps$df2[1]`) = `r round(steps$F_change[1], 2)`, *p* `r if (steps$p[1] < .001) "< .001" else paste("=", round(steps$p[1], 3))`.
+2. **The job and the course** add another `r round(100 * steps$delta_r2[2], 1)`%, *F*(`r steps$df1[2]`, `r steps$df2[2]`) = `r round(steps$F_change[2], 2)`, *p* < .001.
+3. **Beauty** adds `r round(100 * steps$delta_r2[3], 1)`% more, *F*(`r steps$df1[3]`, `r steps$df2[3]`) = `r round(steps$F_change[3], 2)`, *p* < .001, $f^2$ = `r round(steps$f2[3], 3)`, a small effect by Cohen's labels. Beauty predicts evaluations even after all eight other predictors have had their say.
+
+Altogether the model explains `r round(100 * steps$r2[3], 1)`% (adjusted `r round(100 * steps$adj_r2[3], 1)`%). Most of what makes a course well rated is not in these data, which is normal for something as complex as teaching.
+
+### The same tests with `anova()`
+
+R compares nested models with `anova()`. Comparing **each pair** gives exactly the F-change of the table above, the value SPSS reports:
+
+```{r anova_pairs}
+anova(m0, m1)
+anova(m1, m2)
+anova(m2, m3)
+```
+
+How to read it: `Res.Df` and `RSS` are the residual degrees of freedom and the residual sum of squares of each model. `Df` is the number of predictors added, `Sum of Sq` how much the residual sum of squares went down, and `F` and `Pr(>F)` are the F-change and its *p* value.
+
+You will often see all the models in one call:
+
+```{r anova_all}
+anova(m1, m2, m3)
+```
+
+The last line is the same, but the *F* for step 2 is now `r round(anova(m1, m2, m3)$F[2], 2)` instead of `r round(anova(m1, m2)$F[2], 2)`. With several models, `anova()` divides every comparison by the unexplained variance of the **largest** model (here `m3`), not of the model at that step. Both are valid tests. The pairwise version matches the F-change formula and SPSS; say which one you report.
+
+### One predictor: ΔR² is its squared semipartial correlation
+
+When a step adds a **single** predictor, two shortcuts hold:
+
+- $\Delta R^2$ equals the **squared semipartial correlation** $sr^2$: the squared correlation between the outcome and the part of beauty that the other eight predictors cannot predict.
+- The F-change equals the square of beauty's *t* value in the final model.
+
+```{r semipartial}
+beauty_unique <- resid(lm(beauty ~ female + minority + non_native + age + tenure_track +
+                            lower_division + single_credit + log2_size, data = d))   # beauty, minus what the others predict
+t_beauty <- summary(m3)$coefficients["beauty", "t value"]
+c(delta_r2 = steps$delta_r2[3], semipartial_squared = cor(d$eval, beauty_unique)^2,
+  F_change = steps$F_change[3], t_squared = t_beauty^2)
+```
+
+So $\Delta R^2$ for a single predictor is the share of the variance of the evaluations that **only** beauty explains.
+
+---
+
+## 5. The final model: what the coefficients say
+
+```{r final}
+summary(m3)
+```
+
+### How to read the output
+
+| Part | Meaning |
+|---|---|
+| `Estimate` | $b$: the change in the evaluation for one unit more of the predictor, **holding all the other predictors constant**. For a 0/1 dummy, the difference between the two groups |
+| `Std. Error` | How uncertain the estimate is |
+| `t value` | `Estimate / Std. Error` |
+| `Pr(>|t|)` | The chance of a *t* this large if the true effect were 0 |
+| `Residual standard error` | The typical distance of an evaluation from the model's prediction, in evaluation points |
+| `Multiple R-squared`, `Adjusted R-squared` | R² and adjusted R² of the final model, as in our table |
+| `F-statistic` | Tests all nine predictors together against the model with none |
+
+- **`(Intercept)`** is the predicted evaluation when every predictor is 0: a male, native, non-minority instructor aged 0, teaching one student. It is needed for the predictions but means nothing by itself.
+- **`beauty`**: `r round(coef(m3)["beauty"], 3)` points per unit of beauty. One standard deviation of beauty (`r round(sd(d$beauty), 2)`) is worth `r round(coef(m3)["beauty"] * sd(d$beauty), 2)` points, and the gap between the least and the best-looking instructor in the data is `r round(coef(m3)["beauty"] * diff(range(d$beauty)), 2)` points, about one standard deviation of the evaluations.
+- **`female`**: courses taught by women are rated `r sprintf("%.2f", abs(coef(m3)["female"]))` points lower than comparable courses taught by men.
+- **`single_credit`**: single-credit electives are rated `r round(coef(m3)["single_credit"], 2)` points higher.
+- **`log2_size`**: each doubling of the class costs `r round(abs(coef(m3)["log2_size"]), 2)` points.
+- **`non_native`** and **`minority`** instructors are rated `r round(abs(coef(m3)["non_native"]), 2)` and `r round(abs(coef(m3)["minority"]), 2)` points lower; age, tenure track and division add nothing once the rest is held constant.
+
+These are associations in observational data. Better-looking people may also be more confident or more practised speakers, so the coefficient says that beauty **predicts** evaluations, not that it causes them.
+
+### Standardised coefficients
+
+The *b*'s are in different units (decades, doublings of the class, rating points), so they cannot be compared with each other. A **standardised coefficient** $\beta$ puts every predictor in standard deviations: $\beta = b \cdot \dfrac{SD_x}{SD_y}$, the change in the evaluation, in *SD*s, for one *SD* more of the predictor.
+
+```{r standardised, fig.height = 4.5}
+sd_ratio <- sapply(d[predictors], sd) / sd(d$eval)
+ci <- confint(m3)[predictors, ]
+betas <- data.frame(predictor = factor(predictors, levels = rev(predictors)),
+                    b = coef(m3)[predictors], beta = coef(m3)[predictors] * sd_ratio,
+                    low = ci[, 1] * sd_ratio, high = ci[, 2] * sd_ratio)
+round(betas[, -1], 3)
+
+ggplot(betas, aes(beta, predictor)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_errorbar(aes(xmin = low, xmax = high), width = 0.25, colour = "grey40") +
+  geom_point(aes(colour = predictor == "beauty"), size = 3) +
+  scale_colour_manual(values = c(`TRUE` = "#E74C3C", `FALSE` = "#0082c8"), guide = "none") +
+  labs(title = "Standardised coefficients of the final model, with 95% CIs",
+       x = "β (SDs of evaluation per SD of the predictor)", y = NULL)
+```
+
+Beauty ($\beta$ = `r round(betas["beauty", "beta"], 2)`) and single-credit electives ($\beta$ = `r round(betas["single_credit", "beta"], 2)`) are the strongest predictors. For 0/1 dummies, a "one *SD* change" is an odd idea, so many authors report $\beta$ only for continuous predictors and $b$ for dummies.
+
+---
+
+## 6. The order matters
+
+What if we had entered beauty **first**? Its share would then be its squared correlation with the evaluations. Entered **last**, it is its squared semipartial correlation. Here is that comparison for every predictor:
+
+```{r order}
+full_r2 <- summary(m3)$r.squared
+order_tab <- do.call(rbind, lapply(predictors, function(v) {
+  alone   <- summary(lm(reformulate(v, "eval"), data = d))$r.squared            # entered first: r²
+  without <- summary(update(m3, as.formula(paste(". ~ . -", v))))$r.squared
+  data.frame(predictor = v, entered_first = alone, entered_last = full_r2 - without)   # entered last: sr²
+}))
+format(order_tab, digits = 2)
+```
+
+```{r order_plot, fig.height = 8}
+# (a) the same total R², credited differently in two orders
+b1 <- lm(eval ~ beauty, data = d)
+b2 <- update(b1, . ~ . + female + minority + non_native + age)
+orders <- data.frame(
+  order = factor(rep(c("planned order:\nbackground, course, beauty", "beauty first:\nbeauty, background, course"), each = 3),
+                 levels = c("planned order:\nbackground, course, beauty", "beauty first:\nbeauty, background, course")),
+  block = factor(rep(c("block 1: background", "block 2: course", "beauty"), 2),
+                 levels = c("block 1: background", "block 2: course", "beauty")),
+  value = c(steps$delta_r2,
+            summary(b2)$r.squared - summary(b1)$r.squared, full_r2 - summary(b2)$r.squared, summary(b1)$r.squared),
+  entry = c(1, 2, 3, 2, 3, 1))                     # the step at which each block enters: stacked in that order
+pa <- ggplot(orders, aes(order, value, fill = block, group = entry)) +
+  geom_col(width = 0.6, position = position_stack(reverse = TRUE)) +
+  geom_text(aes(label = sprintf("%.3f", value)), position = position_stack(vjust = 0.5, reverse = TRUE), size = 3.2) +
+  scale_fill_manual(values = c("#95A5A6", "#f39c12", "#E74C3C")) +
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+  labs(title = "(a) The same total R², credited differently", x = NULL, y = "R²", fill = NULL) +
+  theme(legend.position = "bottom")
+
+# (b) each predictor entered first (r²) and last (sr²)
+order_tab$predictor <- factor(order_tab$predictor, levels = rev(predictors))
+pb <- ggplot(order_tab, aes(y = predictor)) +
+  geom_segment(aes(x = entered_first, xend = entered_last, yend = predictor), colour = "grey60", linewidth = 1) +
+  geom_point(aes(x = entered_first, colour = "entered first (r²)"), size = 3) +
+  geom_point(aes(x = entered_last, colour = "entered last (sr²)"), size = 3) +
+  scale_colour_manual(values = c("entered first (r²)" = "#0082c8", "entered last (sr²)" = "#E74C3C")) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "(b) Variance each predictor explains, entered first or last",
+       x = "share of the variance of the evaluations", y = NULL, colour = NULL) +
+  theme(legend.position = "bottom")
+pa / pb
+```
+
+Two things happen:
+
+- **Shared variance shrinks a predictor's share.** Tenure track explains `r round(100 * order_tab$entered_first[order_tab$predictor == "tenure_track"], 1)`% of the variance alone, but only `r round(100 * order_tab$entered_last[order_tab$predictor == "tenure_track"], 1)`% when entered last. What it explains, the other predictors explain too: tenure-track instructors rarely teach the well-rated single-credit electives (*r* = `r round(cor(d$tenure_track, d$single_credit), 2)`) and teach larger classes (*r* = `r round(cor(d$tenure_track, d$log2_size), 2)`). In hierarchical regression **shared variance goes to the block that enters first**. Division shows the same, because the single-credit electives are lower-division courses (*r* = `r round(cor(d$lower_division, d$single_credit), 2)`), and so does native language.
+- **Suppression enlarges it.** Beauty explains `r round(100 * order_tab$entered_first[order_tab$predictor == "beauty"], 1)`% alone, but `r round(100 * order_tab$entered_last[order_tab$predictor == "beauty"], 1)`% entered last. Better-looking instructors are more often women (*r* = `r round(cor(d$beauty, d$female), 2)`), teach somewhat larger classes (*r* = `r round(cor(d$beauty, d$log2_size), 2)`) and fewer single-credit electives (*r* = `r round(cor(d$beauty, d$single_credit), 2)`): all of these go with **lower** evaluations, so they hide part of beauty's effect in the simple correlation. Holding them constant uncovers it. Gender, minority and class size grow for similar reasons.
+
+That is why the order must be decided before the analysis and reported with the results: with correlated predictors, **the credit each block gets depends on where it enters**. The total R² does not change (panel a). Entering the predictor of interest last is the conservative choice: it gets credit only for what nothing else explains.
+
+---
+
+## 7. Checking the assumptions
+
+The F-change tests and the standard errors assume that the residuals have constant variance, are roughly normal, contain no extreme cases with undue influence, and are **independent** of each other; that the relationships are linear; and that the predictors are not too strongly correlated. `report_regression()` of the rwf package collects the usual checks for an `lm` model: diagnostic plots, standardised coefficients, VIFs, an outlier test and more. It also prints a long text report, which we capture here, and keep only the parts we need:
+
+```{r diagnostics, fig.height = 9}
+set.seed(1)    # its Durbin-Watson test uses random resampling
+invisible(capture.output(diag_m3 <- report_regression(m3, plot_diagnostics = TRUE)))
+```
+
+| Panel | What to look for | Here |
+|---|---|---|
+| Residuals vs Fitted | No curve and no funnel shape | Flat, but the residuals are cut off at the top: no course can be rated above 5 |
+| Normal Q-Q | Points on the line | A longer lower tail: a few courses were rated much lower than predicted |
+| Scale-Location | A flat line: constant variance | Roughly flat |
+| Cook's distance | No case far above the others (values above 1 are a concern) | The largest is `r round(max(diag_m3$diagnostics$cooks_distance), 2)` |
+| Residuals vs Leverage, Cook's dist vs Leverage | No case with both high leverage and a large residual | None |
+
+```{r diagnostics_numbers}
+data.frame(predictor = predictors, vif = round(diag_m3$vif$vif, 2), tolerance = round(diag_m3$vif$tolerance, 2))
+diag_m3$outlier_test   # the most extreme studentised residual, with a Bonferroni-corrected p value
+```
+
+- **Multicollinearity**: the **VIF** (variance inflation factor) says how much a coefficient's variance grows because the predictor correlates with the others. All are below `r ceiling(10 * max(diag_m3$vif$vif)) / 10`, far from the usual warning level of 5 to 10.
+- **Outliers**: the most extreme residual is not significant after the Bonferroni correction (`bonf.p` = `r round(diag_m3$outlier_test$bonf.p, 2)`).
+- **Normality**: the skew comes from the ceiling at 5. With `r n` cases, the tests of the coefficients are robust to it.
+
+The assumption that these plots cannot check is **independence**, and these data break it.
+
+---
+
+## 8. A caveat: 463 courses, but only 94 instructors
+
+Each instructor taught between `r min(table(d$prof))` and `r max(table(d$prof))` of the courses, and their beauty rating is the same in all of them. The plot shows every course as a point and joins the courses of the same instructor:
+
+```{r clusters}
+ggplot(d, aes(beauty, eval, group = prof)) +
+  geom_line(colour = "grey70") +
+  geom_point(colour = "#0082c8", alpha = 0.6, size = 1.6) +
+  labs(title = "Each vertical strip is one instructor and their courses",
+       x = "beauty rating of the instructor", y = "course evaluation")
+```
+
+Courses of the same instructor are rated alike. The share of the unexplained variance that lies **between instructors**, the intraclass correlation of the residuals, is:
+
+```{r residual_icc}
+d$residual <- resid(m3)
+ri <- nlme::lme(residual ~ 1, random = ~ 1 | prof, data = d)   # residuals: instructor part + course part
+vc <- as.numeric(nlme::VarCorr(ri)[, "Variance"])
+icc <- vc[1] / sum(vc)
+avg_courses <- n / length(unique(d$prof))
+c(icc = icc, courses_per_instructor = avg_courses, design_effect = 1 + (avg_courses - 1) * icc)
+```
+
+About `r round(100 * icc)`% of what the model cannot explain is about **who** teaches the course. For a predictor that is constant within each instructor, like beauty, the 463 courses then carry about as much information as $463 / \text{design effect} \approx$ `r round(n / (1 + (avg_courses - 1) * icc))` independent ones. Ordinary standard errors ignore this and are too small.
+
+A quick fix is **cluster-robust standard errors**, which allow the residuals of the same instructor to be correlated:
+
+```{r cluster_robust}
+vc_cl <- vcovCL(m3, cluster = ~ prof)       # courses clustered within instructors
+coeftest(m3, vcov = vc_cl)
+
+se_compare <- data.frame(b = coef(m3), se_ordinary = sqrt(diag(vcov(m3))), se_cluster = sqrt(diag(vc_cl)),
+                         p_ordinary = summary(m3)$coefficients[, 4], p_cluster = coeftest(m3, vcov = vc_cl)[, 4])
+round(se_compare, 3)
+```
+
+The coefficients stay the same; the standard errors grow, for beauty from `r round(se_compare["beauty", "se_ordinary"], 3)` to `r round(se_compare["beauty", "se_cluster"], 3)`, close to what the design effect predicted ($\sqrt{`r round(1 + (avg_courses - 1) * icc, 2)`}$ = `r round(sqrt(1 + (avg_courses - 1) * icc), 2)` times larger). Beauty is still significant (*p* = `r round(se_compare["beauty", "p_cluster"], 3)`), but minority (*p* = `r round(se_compare["minority", "p_cluster"], 3)`), non-native (*p* = `r round(se_compare["non_native", "p_cluster"], 3)`) and class size (*p* = `r round(se_compare["log2_size", "p_cluster"], 3)`) are no longer significant at .05.
+
+The F-change tests can be redone the same way with a **Wald test**, using the cluster-robust variance of the larger model:
+
+```{r cluster_wald}
+waldtest(m1, m2, vcov = vcovCL(m2, cluster = ~ prof))   # step 2
+waldtest(m2, m3, vcov = vc_cl)                          # step 3: beauty
+```
+
+Beauty's robust *F* = `r round(waldtest(m2, m3, vcov = vc_cl)$F[2], 2)` is its robust *t* squared (`r round(coeftest(m3, vcov = vc_cl)["beauty", "t value"], 2)`²), against `r round(steps$F_change[3], 2)` with ordinary standard errors. The R² changes stay as they were; only their tests change.
+
+Cluster-robust errors fix the standard errors, but they do not model the instructors. A **multilevel model** with a random intercept for each instructor does both, and also tells how much instructors differ: see the [Multilevel Models](EXAMPLE_MULTILEVEL.Rmd) tutorial.
+
+---
+
+## 9. Reporting the results in APA style
+
+A hierarchical regression report (APA 7th edition) gives the order of the blocks and why, R², $\Delta R^2$ and the F-change of every step, and the coefficients of the final model. We collect the numbers from the R objects:
+
+```{r apa_numbers}
+f2d  <- function(x) formatC(x, format = "f", digits = 2)
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+s3   <- summary(m3)$coefficients
+cl   <- coeftest(m3, vcov = vc_cl)
+```
+
+**Method** (data analysis):
+
+> Course evaluations were analysed with a three-step hierarchical regression. Instructor characteristics (gender, minority status, native English, age) were entered in Step 1, job and course characteristics (tenure track, lower division, single-credit course, class size as the base-2 logarithm of enrolment) in Step 2, and the instructor's beauty rating in Step 3, so that beauty was credited only with variance not explained by the other predictors. Because the `r n` courses were taught by `r length(unique(d$prof))` instructors, we also report standard errors clustered by instructor. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the *sandwich* and *lmtest* packages.
+
+**Results:**
+
+> Instructor characteristics explained `r round(100 * steps$r2[1], 1)`% of the variance in evaluations, *R*² = `r nz(steps$r2[1])`, *F*(`r steps$df1[1]`, `r steps$df2[1]`) = `r f2d(steps$F_change[1])`, *p* `r pval(steps$p[1])`. Job and course characteristics explained an additional `r round(100 * steps$delta_r2[2], 1)`%, Δ*R*² = `r nz(steps$delta_r2[2])`, *F*(`r steps$df1[2]`, `r steps$df2[2]`) = `r f2d(steps$F_change[2])`, *p* `r pval(steps$p[2])`. Adding beauty in Step 3 increased the explained variance by a further `r round(100 * steps$delta_r2[3], 1)`%, Δ*R*² = `r nz(steps$delta_r2[3])`, *F*(`r steps$df1[3]`, `r steps$df2[3]`) = `r f2d(steps$F_change[3])`, *p* `r pval(steps$p[3])`, *f*² = `r nz(steps$f2[3])`. In the final model, *R*² = `r nz(steps$r2[3])`, adjusted *R*² = `r nz(steps$adj_r2[3])`, more attractive instructors received higher evaluations, *b* = `r f2d(s3["beauty", 1])`, *SE* = `r f2d(s3["beauty", 2])`, β = `r nz(betas["beauty", "beta"])`, *p* `r pval(s3["beauty", 4])`: one standard deviation of beauty was associated with `r f2d(coef(m3)["beauty"] * sd(d$beauty))` points higher evaluations on the 5-point scale. The effect remained significant with standard errors clustered by instructor, *SE* = `r f2d(cl["beauty", 2])`, *p* `r pval(cl["beauty", 4])`.
+
+**Table 1**
+
+*Hierarchical Regression Predicting Course Evaluations*
+
+```{r apa_table, echo=FALSE}
+labels <- c(female = "Female", minority = "Minority", non_native = "Non-native English", age = "Age (decades)",
+            tenure_track = "Tenure track", lower_division = "Lower division", single_credit = "Single-credit course",
+            log2_size = "Class size (log2)", beauty = "Beauty")
+stars <- function(p) if (p < .001) "***" else if (p < .01) "**" else if (p < .05) "*" else ""
+cell <- function(m, v) {
+  if (!v %in% names(coef(m))) return("")
+  s <- summary(m)$coefficients[v, ]
+  paste0(f2d(s[1]), " (", f2d(s[2]), ")", stars(s[4]))
+}
+tab <- data.frame(Predictor = labels[predictors],
+                  Step1 = sapply(predictors, cell, m = m1),
+                  Step2 = sapply(predictors, cell, m = m2),
+                  Step3 = sapply(predictors, cell, m = m3),
+                  beta  = nz(betas[predictors, "beta"]))
+fit_rows <- data.frame(Predictor = c("*R*²", "Δ*R*²", "*F* for Δ*R*²"),
+                       Step1 = c(nz(steps$r2[1]), nz(steps$delta_r2[1]), paste0(f2d(steps$F_change[1]), stars(steps$p[1]))),
+                       Step2 = c(nz(steps$r2[2]), nz(steps$delta_r2[2]), paste0(f2d(steps$F_change[2]), stars(steps$p[2]))),
+                       Step3 = c(nz(steps$r2[3]), nz(steps$delta_r2[3]), paste0(f2d(steps$F_change[3]), stars(steps$p[3]))),
+                       beta = "")
+knitr::kable(rbind(tab, fit_rows), col.names = c("Predictor", "Step 1 *b* (*SE*)", "Step 2 *b* (*SE*)", "Step 3 *b* (*SE*)", "Step 3 β"),
+             align = "lrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r n` courses taught by `r length(unique(d$prof))` instructors. *F* for Δ*R*² has `r steps$df1[1]` and `r steps$df2[1]`, `r steps$df1[2]` and `r steps$df2[2]`, and `r steps$df1[3]` and `r steps$df2[3]` degrees of freedom in Steps 1 to 3. Ordinary standard errors; with standard errors clustered by instructor, beauty remains significant (*p* `r pval(cl["beauty", 4])`), while minority, non-native English and class size do not (*p* `r pval(min(cl[c("minority", "non_native", "log2_size"), 4]))` or above). \* *p* < .05. \*\* *p* < .01. \*\*\* *p* < .001.
+
+**Points to remember:**
+
+- Give the **order of the blocks and the reason** for it, decided before the analysis.
+- Report R² for every step, and for every block $\Delta R^2$ with its F-change, degrees of freedom and *p*; an effect size such as $f^2$ for the step of interest helps.
+- Say which *F* you report when you use `anova()` with more than two models (section 4).
+- Report the coefficients of the final model (and, if useful, of every step, as in Table 1), with *b*, *SE* and, for continuous predictors, β.
+- Say how you handled any dependence in the data, such as several observations per person or group.
+- Cite R and the packages; `citation()` and `citation("sandwich")` in R give the exact references.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **What it answers** | Does a predictor (or block) explain variance **over and above** others: incremental validity |
+| **How** | Enter blocks in an order fixed in advance by theory; test each step with ΔR² and its F-change |
+| **ΔR²** | $R^2_2 - R^2_1$; for a single predictor, its squared semipartial correlation |
+| **F-change** | $F = \dfrac{\Delta R^2 / \Delta k}{(1 - R^2_2) / (n - k_2 - 1)}$; in R, `anova(m1, m2)` for each pair |
+| **Effect size** | $f^2 = \Delta R^2 / (1 - R^2_2)$: .02 small, .15 medium, .35 large |
+| **The order matters** | Shared variance goes to the block that enters first; suppression can make a later predictor explain more. Put the predictor of interest last |
+| **Not stepwise** | You choose the order, not the *p* values |
+| **Same cases** | Every model must use the same rows: remove missing values first |
+| **Dependence** | Several observations per person or group: cluster-robust SEs (`sandwich::vcovCL`) or a multilevel model |
+| **Here** | Beauty added `r round(100 * steps$delta_r2[3], 1)`% of explained variance after eight other predictors; one *SD* of beauty ≈ `r f2d(coef(m3)["beauty"] * sd(d$beauty))` evaluation points |
+
+---
+
+## References
+
+Cohen, J. (1988). *Statistical power analysis for the behavioral sciences* (2nd ed.). Lawrence Erlbaum.
+
+Cohen, J., Cohen, P., West, S. G., & Aiken, L. S. (2003). *Applied multiple regression/correlation analysis for the behavioral sciences* (3rd ed.). Lawrence Erlbaum.
+
+Fox, J., & Weisberg, S. (2019). *An R companion to applied regression* (3rd ed.). Sage.
+
+Hamermesh, D. S., & Parker, A. (2005). Beauty in the classroom: Instructors' pulchritude and putative pedagogical productivity. *Economics of Education Review*, *24*(4), 369–376.
+
+Kleiber, C., & Zeileis, A. (2008). *Applied econometrics with R*. Springer.
+
+Zeileis, A., Köll, S., & Graham, N. (2020). Various versatile variances: An object-oriented implementation of clustered covariances in R. *Journal of Statistical Software*, *95*(1), 1–36.
