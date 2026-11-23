@@ -315,13 +315,14 @@ m_pois <- glm(children ~ age + sex + bmi + smoker + region,
 summary(m_pois)
 ```
 
-**Formal overdispersion test** via ratio of residual deviance to degrees of freedom; values substantially above 1 indicate overdispersion.
+**Rule of thumb for overdispersion:** the ratio of the residual deviance to its degrees of freedom; values well above 1 suggest overdispersion.
 
 ```{r poisson_disptest}
 dispersion_ratio <- m_pois$deviance / m_pois$df.residual
 cat("Residual deviance / df:", round(dispersion_ratio, 4), "\n")
-cat("Interpretation: ratio", ifelse(dispersion_ratio > 1.5, "> 1.5 — overdispersion likely", "≤ 1.5 — equidispersion plausible"), "\n")
 ```
+
+The ratio points to overdispersion: with counts as small as these, it would be about 1.15 if the Poisson model were right. There is no exact cut-off, however, so section 4.5 tests it.
 
 ### 4.4 Negative Binomial Model
 
@@ -354,7 +355,7 @@ cat("Likelihood ratio   :", round(lr_nb, 2), "\n")
 cat("p value            :", format.pval(p_nb, digits=3, eps=0.001), "\n")
 ```
 
-The test rejects the Poisson model (*LR* = `r round(lr_nb, 2)`, *p* < .001) and the AIC of the Negative Binomial model is `r round(AIC(m_pois) - AIC(m_nb), 2)` lower, so the counts are overdispersed. The ratio in section 4.3 did not show it: at `r round(dispersion_ratio, 4)` it was just below the cut-off of 1.5, which is only a rule of thumb. The coefficients of the two models are nearly the same; it is the standard errors that change. They are about 19% larger in the Negative Binomial model, because the Poisson model assumes less variance than the data have.
+The test rejects the Poisson model (*LR* = `r round(lr_nb, 2)`, *p* < .001) and the AIC of the Negative Binomial model is `r round(AIC(m_pois) - AIC(m_nb), 2)` lower, so the counts are overdispersed, as the ratio in section 4.3 suggested. The coefficients of the two models are nearly the same; it is the standard errors that change. They are about 19% larger in the Negative Binomial model, because the Poisson model assumes less variance than the data have.
 
 ### 4.6 Incidence Rate Ratios (IRR)
 
@@ -450,7 +451,7 @@ abline(a=0, b=1, lty=2, col="grey60")
 
 ### 6.1 Information Criteria
 
-AIC penalises model complexity as $-2\ell + 2k$; BIC uses $-2\ell + k\ln n$ and imposes a heavier penalty for larger samples, favouring more parsimonious models.
+AIC penalises model complexity as $-2\ell + 2k$; BIC uses $-2\ell + k\ln n$ and imposes a heavier penalty for larger samples, favouring more parsimonious models. Here $\ell$ is the log-likelihood and $k$ the number of estimated parameters: the coefficients, plus the residual variance of a Gaussian model or $\theta$ of a Negative Binomial model.
 
 ```{r aic_table}
 models <- list(
@@ -465,7 +466,7 @@ models <- list(
 
 aic_df <- data.frame(
   Model    = names(models),
-  k        = sapply(models, function(m) length(coef(m))),
+  k        = sapply(models, function(m) attr(logLik(m), "df")),
   LogLik   = sapply(models, function(m) round(as.numeric(logLik(m)), 2)),
   AIC      = sapply(models, function(m) round(AIC(m), 2)),
   BIC      = sapply(models, function(m) round(BIC(m), 2)),
