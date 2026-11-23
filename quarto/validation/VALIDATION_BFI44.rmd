@@ -7,7 +7,6 @@ author: ""
 ```{r options, echo=FALSE, warning=FALSE, message=FALSE}
 directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
 source(paste0(directory, "R/code_options.R"))
-source(paste0(directory, "R/code_rwf.R"))
 ```
 
 ```{r load, include=FALSE}
@@ -130,7 +129,7 @@ knitr::kable(
 
 ## Inter-Item Correlation Matrix
 
-```{r corrmatrix, message=FALSE, warning=FALSE, results='show', dev='png'}
+```{r corrmatrix, message=FALSE, warning=FALSE}
 cor_mat  <- cor(df[, factor_order], use="pairwise.complete.obs")
 cor_long <- melt(cor_mat)
 cor_long$Var1 <- factor(cor_long$Var1, levels=factor_order)
@@ -150,7 +149,7 @@ ggplot(cor_long, aes(x=Var1, y=Var2, fill=value)) +
 
 ## Subscale Correlations
 
-```{r subscalecor, message=FALSE, warning=FALSE, dev='png', results='show'}
+```{r subscalecor, message=FALSE, warning=FALSE}
 subscale_scores <- as.data.frame(sapply(names(factors), function(f) {
   cols <- item_name_map[sprintf("pers%02d", factors[[f]])]
   rowMeans(df[, cols], na.rm=TRUE)
@@ -176,7 +175,7 @@ ggplot(sub_long, aes(x=Var1, y=Var2, fill=value)) +
 
 ## Exploratory Factor Analysis (5 Factors)
 
-```{r efa, message=FALSE, warning=FALSE, results='show', dev='png'}
+```{r efa, message=FALSE, warning=FALSE}
 set.seed(42)
 efa <- fa(df, nfactors=5, rotate="oblimin", fm="ml", scores="regression")
 
@@ -207,7 +206,7 @@ ggplot(load_long, aes(x=factor, y=item, fill=loading)) +
 
 ## Parallel Analysis
 
-```{r parallel, message=FALSE, warning=FALSE, results='show', dev='png'}
+```{r parallel, message=FALSE, warning=FALSE}
 fa.parallel(df, fm="ml", fa="fa",
             main="Parallel analysis scree plot (BFI-44)")
 ```

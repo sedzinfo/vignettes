@@ -54,7 +54,6 @@ PAGES = {   # "<site>/<page>": [(target, note, or None for the target's own desc
     "cat_irt_eap/eap_rsm": [("golemirt", CAT.format("rating scale model")), ("golemcat", None)],
     "example/EXAMPLE_SIMULATION_catR": [("golemirt", None), ("golemcat", None)],
     "example/EXAMPLE_MSTR": [("golemirt", None)],
-    "example/EXAMPLE_TEST_NORMS": [("snp", None)],
     "example/EXAMPLE_TIRT": [("golemirt", "an interactive app for item response theory, with the response "
                                           "functions of Thurstonian IRT")],
     "example/EXAMPLE_TIRT_SCORING_GR": [("golemirt", "διαδραστική εφαρμογή για τη θεωρία απόκρισης ερωτημάτων "

@@ -17,7 +17,6 @@ library(MASS)
 library(car)
 library(pROC)
 library(emmeans)
-library(reshape2)
 
 load(paste0(directory,"data/df_admission.rda"))
 load(paste0(directory,"data/df_insurance.rda"))
@@ -85,7 +84,7 @@ plot_multiplot(p1, p2, cols=2)
 
 We fit a saturated model including all main effects and the theoretically motivated `smoker × bmi` interaction (smoking amplifies the effect of obesity on health costs).
 
-```{r gaussian_glm, results='show'}
+```{r gaussian_glm}
 m_gauss_null <- glm(log_charges ~ 1,
                     family=gaussian(link="identity"),
                     data=df_insurance)
@@ -104,13 +103,13 @@ summary(m_gauss_full)
 
 ### 2.3 Type II Analysis of Deviance
 
-```{r gaussian_anova, results='show'}
+```{r gaussian_anova}
 Anova(m_gauss_full, type=2)
 ```
 
 ### 2.4 Likelihood Ratio Test — Interaction Term
 
-```{r gaussian_lrt, results='show'}
+```{r gaussian_lrt}
 lrt_interaction <- anova(m_gauss_main, m_gauss_full, test="LRT")
 lrt_interaction
 cat(sprintf("\nLRT: χ²(%d) = %.3f, p = %.4f\n",
@@ -121,7 +120,7 @@ cat(sprintf("\nLRT: χ²(%d) = %.3f, p = %.4f\n",
 
 ### 2.5 Model Fit
 
-```{r gaussian_fit, results='show'}
+```{r gaussian_fit}
 cat("Null deviance     :", round(m_gauss_null$deviance, 2), "\n")
 cat("Residual deviance :", round(m_gauss_full$deviance, 2), "\n")
 cat("McFadden pseudo-R²:", round(1 - m_gauss_full$deviance/m_gauss_null$deviance, 4), "\n")
@@ -132,7 +131,7 @@ cat("AIC               :", round(AIC(m_gauss_full), 2), "\n")
 
 VIF > 5 indicates problematic collinearity; VIF > 10 is severe.
 
-```{r gaussian_vif, results='show'}
+```{r gaussian_vif}
 vif(m_gauss_full)
 ```
 
@@ -194,7 +193,7 @@ plot_multiplot(p1, p2, cols=2)
 
 ### 3.3 Model Estimation
 
-```{r logistic_models, results='show'}
+```{r logistic_models}
 m_admit_null <- glm(admit ~ 1,
                     family=binomial(link="logit"),
                     data=df_admission)
@@ -208,7 +207,7 @@ summary(m_admit_main)
 
 ### 3.4 Omnibus Likelihood Ratio Test
 
-```{r logistic_lrt, results='show'}
+```{r logistic_lrt}
 lrt_admit <- anova(m_admit_null, m_admit_main, test="LRT")
 lrt_admit
 cat(sprintf("\nOverall model: χ²(%d) = %.3f, p = %.4f\n",
@@ -219,7 +218,7 @@ cat(sprintf("\nOverall model: χ²(%d) = %.3f, p = %.4f\n",
 
 ### 3.5 Odds Ratios and 95% Profile-Likelihood CIs
 
-```{r logistic_or, results='show'}
+```{r logistic_or}
 or_table <- cbind(
   OR    = exp(coef(m_admit_main)),
   exp(confint(m_admit_main))
@@ -229,7 +228,7 @@ round(or_table, 3)
 
 ### 3.6 Model Fit Indices
 
-```{r logistic_fit, results='show'}
+```{r logistic_fit}
 # McFadden pseudo-R²
 pseudo_r2 <- 1 - m_admit_main$deviance / m_admit_null$deviance
 # Nagelkerke pseudo-R²
@@ -256,7 +255,7 @@ abline(a=0, b=1, lty=2, col="grey60")
 
 ### 3.8 Classification Table (threshold = 0.5)
 
-```{r logistic_confusion, results='show'}
+```{r logistic_confusion}
 pred_class <- ifelse(pred_prob >= 0.5, 1, 0)
 conf_mat   <- table(Predicted=pred_class, Observed=df_admission$admit)
 conf_mat
@@ -294,7 +293,7 @@ The number of dependent children is a non-negative integer — a natural candida
 
 ### 4.2 Checking for Overdispersion
 
-```{r poisson_disp, results='show'}
+```{r poisson_disp}
 cat("Mean of children:", round(mean(df_insurance$children), 4), "\n")
 cat("Var  of children:", round(var(df_insurance$children),  4), "\n")
 cat("Dispersion ratio :", round(var(df_insurance$children)/mean(df_insurance$children), 4), "\n")
@@ -309,7 +308,7 @@ ggplot(df_insurance, aes(x=children)) +
 
 ### 4.3 Poisson Model
 
-```{r poisson_model, results='show'}
+```{r poisson_model}
 m_pois <- glm(children ~ age + sex + bmi + smoker + region,
               family=poisson(link="log"),
               data=df_insurance)
@@ -318,7 +317,7 @@ summary(m_pois)
 
 **Formal overdispersion test** via ratio of residual deviance to degrees of freedom; values substantially above 1 indicate overdispersion.
 
-```{r poisson_disptest, results='show'}
+```{r poisson_disptest}
 dispersion_ratio <- m_pois$deviance / m_pois$df.residual
 cat("Residual deviance / df:", round(dispersion_ratio, 4), "\n")
 cat("Interpretation: ratio", ifelse(dispersion_ratio > 1.5, "> 1.5 — overdispersion likely", "≤ 1.5 — equidispersion plausible"), "\n")
@@ -326,7 +325,7 @@ cat("Interpretation: ratio", ifelse(dispersion_ratio > 1.5, "> 1.5 — overdispe
 
 ### 4.4 Negative Binomial Model
 
-```{r nb_model, results='show'}
+```{r nb_model}
 m_nb <- glm.nb(children ~ age + sex + bmi + smoker + region,
                data=df_insurance)
 summary(m_nb)
@@ -337,7 +336,7 @@ cat("\nEstimated dispersion parameter (theta):", round(m_nb$theta, 4), "\n")
 
 Because the Poisson model is nested in the NB when $\alpha \to 0$, we compare them using a likelihood ratio test.
 
-```{r nb_lrt, results='show'}
+```{r nb_lrt}
 lrt_nb <- anova(m_pois, m_nb, test="LRT")
 cat("AIC Poisson        :", round(AIC(m_pois), 2), "\n")
 cat("AIC Negative Binom :", round(AIC(m_nb),   2), "\n")
@@ -347,7 +346,7 @@ cat("Log-likelihood NB  :", round(logLik(m_nb),   2), "\n")
 
 ### 4.6 Incidence Rate Ratios (IRR)
 
-```{r nb_irr, results='show'}
+```{r nb_irr}
 irr_table <- cbind(
   IRR   = exp(coef(m_nb)),
   exp(confint(m_nb))
@@ -384,11 +383,7 @@ ggplot(nd3, aes(x=age, y=predicted, colour=smoker)) +
 
 The Titanic evacuation followed a "women and children first" protocol, motivating a `sex × pclass` interaction: the survival advantage of female passengers may differ by class.
 
-```{r titanic_models, results='show'}
-m_titanic_null <- glm(survived ~ 1,
-                      family=binomial(link="logit"),
-                      data=df_titanic)
-
+```{r titanic_models}
 m_titanic_main <- glm(survived ~ sex + pclass + age,
                       family=binomial(link="logit"),
                       data=df_titanic)
@@ -400,19 +395,19 @@ m_titanic_int  <- glm(survived ~ sex * pclass + age,
 anova(m_titanic_main, m_titanic_int, test="LRT")
 ```
 
-```{r titanic_summary, results='show'}
+```{r titanic_summary}
 summary(m_titanic_int)
 ```
 
 ### 5.2 Odds Ratios
 
-```{r titanic_or, results='show'}
+```{r titanic_or}
 round(cbind(OR=exp(coef(m_titanic_int)), exp(confint(m_titanic_int))), 3)
 ```
 
 ### 5.3 Estimated Marginal Means (Survival Probability)
 
-```{r titanic_emm, results='show', fig.height=4}
+```{r titanic_emm, fig.height=4}
 emm <- emmeans(m_titanic_int, ~ sex * pclass, type="response")
 emm_df <- as.data.frame(emm)
 
@@ -445,7 +440,7 @@ abline(a=0, b=1, lty=2, col="grey60")
 
 AIC penalises model complexity as $-2\ell + 2k$; BIC uses $-2\ell + k\ln n$ and imposes a heavier penalty for larger samples, favouring more parsimonious models.
 
-```{r aic_table, results='show'}
+```{r aic_table}
 models <- list(
   "Gaussian — main effects"    = m_gauss_main,
   "Gaussian — + smoker×bmi"    = m_gauss_full,

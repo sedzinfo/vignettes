@@ -50,7 +50,7 @@ This section constructs a small 1-2-3 MST design by hand and demonstrates the tw
 
 **`nextModule` with score cutoffs** (`cut.score`): Routes based on raw number-correct scores rather than θ estimates. In this case the `theta` argument must hold the examinee's summed score over all administered items: here, the score on module 1 (`x`) plus the score on module 3 (`x3`), i.e. 4 + 4 = 8, which is below the threshold of 10 between modules 5 and 6, so module 5 is selected. This is useful when IRT scoring is not available or when content-balancing rules are score-based.
 
-```{r excamples0,message=FALSE,warning=FALSE,results='hide',dev='png'}
+```{r excamples0,message=FALSE,warning=FALSE,dev='png'}
 it.MST <- rbind(genDichoMatrix(8, model = "2PL"), 
                 genDichoMatrix(6, model = "2PL",bPrior = c("norm", -1, 1)),
                 genDichoMatrix(6, model = "2PL",bPrior = c("norm", 1, 1)),
@@ -117,7 +117,7 @@ This section runs full MST simulations using `randomMST` and compares MST perfor
 
 **MST vs. CAT comparison**: The final block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, randomesque = 5 for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2. Both formats administer 45 items. Each simulee's full response pattern to the 100-item bank is generated once with `genPattern` and passed to both `randomCAT` and `randomMST` through `responses`, so the two designs are compared on the same simulated examinees. Both `thFinal` (final ability estimate) and `seFinal` (standard error of measurement) are stored in `RES` for comparison of precision between the two adaptive testing formats.
 
-```{r mst_examples,message=FALSE,warning=FALSE,results='hide',dev='png'}
+```{r mst_examples,message=FALSE,warning=FALSE,dev='png'}
 A1 <- c(7, 13, 14, 15, 22, 28, 34, 38, 51, 59, 70, 84, 85, 87, 89)
 B1 <- c(4, 12, 19, 27, 29, 39, 43, 60, 69, 71, 72, 73, 75, 90, 97)
 C1 <- c(32, 35, 36, 45, 52, 57, 61, 63, 66, 78, 81,82, 88, 92, 100)
@@ -167,7 +167,7 @@ mst.ex3 <- randomMST(trueTheta = 1, itemBank = it.2PL, modules = module1, transM
 
 The block below runs 1000 replications at each of 9 true θ levels (from −2 to +2) through the `module1` design, then computes **ASB** and **RMSE** at every level from the resulting θ estimates. Response patterns are generated once with `genPattern` and passed to `randomMST` through `responses`, so every simulee answers independently generated items.
 
-```{r asb_rmse_sim,message=FALSE,warning=FALSE,results='hide'}
+```{r asb_rmse_sim,message=FALSE,warning=FALSE}
 s <- seq(-2, 2, 0.5)
 TH <- rep(s, each = 1000)
 DATA <- genPattern(TH, it.2PL, seed = 1)
@@ -216,7 +216,7 @@ ASB stays close to zero in the middle of the range and drifts slightly outward a
 
 This block compares MST (BM scoring, MFI module selection) against CAT (45-item stopping rule, BM scoring, MFI item selection, `randomesque = 5` for item exposure control) across 9000 simulated examinees spanning θ from −2 to +2.
 
-```{r cat_mst_sim,message=FALSE,warning=FALSE,results='hide'}
+```{r cat_mst_sim,message=FALSE,warning=FALSE}
 s <- seq(-2, 2, 0.5)
 TH <- rep(s, each = 1000)
 DATA <- genPattern(TH, it.2PL, seed = 1)
