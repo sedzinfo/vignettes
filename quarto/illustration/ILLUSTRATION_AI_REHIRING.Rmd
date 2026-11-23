@@ -1,0 +1,393 @@
+---
+title: "Fired for AI, Hired Back: What Happens When Companies Replace Workers with AI"
+description: "Job cuts blamed on AI, the US layoff and hiring rates, how many laid-off workers are hired back and how fast, what it costs, and the cases of Klarna, Commonwealth Bank and Ford, in Challenger, JOLTS, Visier and survey data."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+## What is this?
+
+Since ChatGPT came out at the end of 2022, more and more companies have said that they are cutting jobs because of artificial intelligence, and some of them have later had to hire people back. This page puts together the data there are on what happens then:
+
+1. **How many jobs are cut "because of AI"?**
+2. **Does the labour market show a wave of AI layoffs?**
+3. **How many of the people laid off are hired back, and how fast?**
+4. **Does it save money?**
+5. **What happened at Klarna, Commonwealth Bank of Australia and Ford?**
+6. **What do employers and analysts say?**
+7. **Why does it happen, and what can a company do instead?**
+
+The data are of four kinds, and they are not equally solid:
+
+- **Counts of what happened**: the layoffs and hires of the whole US economy, from the Job Openings and Labor Turnover Survey (JOLTS) of the Bureau of Labor Statistics, downloaded from FRED when the document is knitted; and the records of 2.4 million employees, in which Visier counted how many of the people laid off were hired back by the same employer.
+- **Counts of what companies said**: the job cuts announced by US employers, with the reason they gave, counted by the outplacement firm Challenger, Gray & Christmas.
+- **Surveys** of HR professionals and business leaders: Careerminds, Orgvue and Gartner.
+- **Forecasts** of analysts: Forrester and Gartner.
+
+Challenger, Visier and the surveys publish their figures in press releases and reports, not as datasets, so the figures are typed in below, and the page each one comes from is listed under [Sources](#sources).
+
+**What these numbers can and cannot say.** No source counts the people who were replaced by AI and then hired back. Challenger counts the reason a company *gives* for a cut, and "AI" may sound better to investors than "weak sales". Visier counts people hired back after any layoff, not only after cuts blamed on AI. The surveys ask the people who made the decisions, and the firms that run them sell outplacement, people analytics or workforce planning. Together they show the size of what is happening and its direction, not exact numbers, and almost all of them are about the United States.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages("plotly")
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a FRED series as dates and values; FRED leaves the months without a value empty
+fred <- function(id) {
+  url <- paste0("https://fred.stlouisfed.org/graph/fredgraph.csv?id=", id)
+  x <- tryCatch(read.csv(url),
+                error = function(e) stop("Could not download ", id, " from FRED: ", conditionMessage(e), call. = FALSE))
+  names(x) <- c("date", "value")
+  x$date <- as.Date(x$date)
+  x$value <- suppressWarnings(as.numeric(x$value))
+  x[!is.na(x$value), ]
+}
+# JOLTS, all US non-farm employers, seasonally adjusted, monthly: layoffs and discharges and hires as
+# % of employment, and layoffs and discharges in thousands
+layoffs_rate <- fred("JTSLDR")
+hires_rate <- fred("JTSHIR")
+layoffs <- fred("JTSLDL")
+
+# job cuts announced by US employers, for all reasons and those for which the employer cited
+# artificial intelligence; Challenger started counting AI as a reason in 2023. The AI cuts of 2024
+# are not published on their own: they are the 71,825 AI cuts from 2023 to 2025 minus those of 2023
+# and of 2025
+challenger <- data.frame(
+  period = c("2023", "2024", "2025", "2026, Jan-Oct"),
+  from = as.Date(c("2023-01-01", "2024-01-01", "2025-01-01", "2026-01-01")),
+  to = as.Date(c("2023-12-01", "2024-12-01", "2025-12-01", "2026-10-01")),
+  ai = c(4247, 71825 - 4247 - 54836, 54836, 121401),
+  all = c(721677, 761358, 1206374, 617189)
+)
+challenger$months <- 12 * (as.numeric(format(challenger$to, "%Y")) - as.numeric(format(challenger$from, "%Y"))) +
+  as.numeric(format(challenger$to, "%m")) - as.numeric(format(challenger$from, "%m")) + 1
+# the AI cuts of 2026 from the start of the year to the end of each month; the cuts of a month are the
+# difference between two months
+ai_2026 <- data.frame(
+  month = seq(as.Date("2026-01-01"), by = "month", length.out = 10),
+  to_date = c(7624, 12304, 27645, 49135, 87714, 101743, 112713, 116175, 120136, 121401)
+)
+ai_2026$cuts <- diff(c(0, ai_2026$to_date))
+
+# Visier: rehiring by the same employer after a layoff, in the records of 2.4 million employees of 142
+# organisations (actual records, not a survey)
+visier <- list(rehired = 5.3, months = "just under six", pay_back = 5, pay_stayed = 2,
+               high_performers = 120, managers = 68)
+
+# Careerminds: 600 HR professionals whose organisations made layoffs in the 12 months before
+# February 2026. The share of the roles that were cut and then filled again, the time until they
+# were filled again, and the money the layoffs saved after the rehiring, % of the HR professionals
+roles_back <- data.frame(
+  answer = c("The rest: under a quarter, or none", "A quarter to a half", "More than half"),
+  share = c(100 - 32.7 - 35.6, 32.7, 35.6)
+)
+time_back <- data.frame(
+  answer = c("Under 3 months", "3 to 6 months", "6 to 12 months", "Over 12 months"),
+  share = c(17.8, 52.1, 27.8, 2.1)
+)
+money <- data.frame(
+  answer = c("Rehiring cost more than the layoffs saved", "Broke even", "Came out ahead"),
+  share = c(30.9, 42.37, 26.69)
+)
+careerminds <- list(lost_skills = 32.9, oversight = 54.6, fully_replaced = 21.4, some_replaced = 66.1,
+                    worse = 12.3, repeat_unchanged = 8.4, never_discussed = 55.1,
+                    redeploy_quarter = 51.3, redeploy_half = 28.3, ai_understanding = 53.8, skills_data = 40.6)
+```
+
+```{r chart_style}
+red <- "#d62728"
+blue <- "#1f77b4"
+gray <- "#9e9e9e"
+dark_gray <- "#6b6b6b"   # also the color of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(p, title, source, y_title = "", y_axis = list(), x_axis = list(), annotations = list(),
+                  margin = list(t = 70, b = 90), note_y = -0.16, ...) {
+  note <- list(
+    text = paste("Source:", source), xref = "paper", yref = "paper", x = 0, y = note_y,
+    xanchor = "left", yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)
+  )
+  layout(p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = modifyList(list(title = y_title), y_axis),
+    xaxis = modifyList(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>% config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+
+# the answers to one survey question as horizontal bars, the first answer at the top, with the share
+# at the end of each bar; color is one color, or one per answer
+answers <- function(x, title, source, color = blue) {
+  x$answer <- factor(x$answer, levels = rev(x$answer))
+  plot_ly(x,
+    x = ~share, y = ~answer, type = "bar", orientation = "h", marker = list(color = color),
+    text = ~paste0(format(round(share, 1), nsmall = 1), "%"), textposition = "outside", cliponaxis = FALSE,
+    textfont = list(color = dark_gray), hovertemplate = "%{y}: %{x:.1f}%<extra></extra>"
+  ) %>%
+    chart(title, source, x_axis = list(ticksuffix = "%", range = c(0, max(x$share) * 1.2)),
+          margin = list(l = 10, t = 70, b = 80), note_y = -0.25, bargap = 0.35) %>%
+    layout(yaxis = list(automargin = TRUE))
+}
+
+# short labels of numbers
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+thousands <- function(x) format(round(x), big.mark = ",", scientific = FALSE)
+month_year <- function(d) format(d, "%B %Y")
+```
+
+---
+
+## 1. How many jobs are cut "because of AI"?
+
+```{r ai_numbers}
+challenger$share <- 100 * challenger$ai / challenger$all
+peak <- ai_2026[which.max(ai_2026$cuts), ]
+last <- ai_2026[nrow(ai_2026), ]
+```
+
+**More every year, from almost nothing.** In 2023, the first year that Challenger counted it, US employers cited AI for `r thousands(challenger$ai[1])` job cuts, `r percent(challenger$share[1], 1)` of all the cuts they announced. In 2025 they cited it for `r thousands(challenger$ai[3])`, `r percent(challenger$share[3], 1)` of all cuts, and in the first ten months of 2026 for `r thousands(challenger$ai[4])`, `r percent(challenger$share[4])`: more than in the three years before put together. In the spring of 2026 AI was the reason that employers cited most often.
+
+```{r ai_years}
+plot_ly(challenger,
+  x = ~factor(period, levels = period), y = ~ai, type = "bar", marker = list(color = blue),
+  text = ~paste0(thousands(ai), "<br>", percent(share, 1), " of all cuts"), textposition = "outside",
+  cliponaxis = FALSE, textfont = list(color = dark_gray),
+  hovertemplate = "%{x}: %{y:,} job cuts<extra></extra>"
+) %>%
+  chart("Job cuts for which US employers cited AI", "Challenger, Gray & Christmas, job cuts reports",
+        y_axis = list(range = c(0, max(challenger$ai) * 1.25), tickformat = ","), bargap = 0.45)
+```
+
+**But not a steady rise.** The AI cuts of 2026 came in a few large announcements: `r thousands(peak$cuts)` in `r month_year(peak$month)`, the most of any month since Challenger started counting, then fewer every month, down to `r thousands(last$cuts)` in `r month_year(last$month)`.
+
+```{r ai_months}
+plot_ly(ai_2026,
+  x = ~month, y = ~cuts, type = "bar", marker = list(color = blue),
+  hovertemplate = "%{x|%B %Y}: %{y:,} job cuts<extra></extra>"
+) %>%
+  chart("AI-cited job cuts by month, 2026", "Challenger, Gray & Christmas, job cuts reports",
+        y_axis = list(tickformat = ","), x_axis = list(tickformat = "%b", dtick = "M1"), bargap = 0.3)
+```
+
+These are **announcements and reasons given**, not people who lost their job because a machine now does it. An announced cut can take months or years, or never happen, and a company that cuts jobs to save money can choose to say that AI made it possible. A Gartner analyst, Kathy Ross, said that most recent reductions "were influenced by broader economic conditions rather than automation alone".
+
+## 2. Does the labour market show a wave of AI layoffs?
+
+```{r jolts_numbers}
+latest_layoffs <- layoffs_rate[nrow(layoffs_rate), ]
+latest_hires <- hires_rate[nrow(hires_rate), ]
+before <- function(x) mean(x$value[x$date >= as.Date("2015-01-01") & x$date <= as.Date("2019-12-01")])
+peak_layoffs <- layoffs_rate[which.max(layoffs_rate$value), ]
+```
+
+**No.** If companies were replacing many workers with AI, more people would lose their jobs. JOLTS counts every layoff and discharge in the US every month, and since ChatGPT came out the share of workers laid off or discharged in a month has stayed at about 1%: `r one(latest_layoffs$value)`% in `r month_year(latest_layoffs$date)`, against `r one(before(layoffs_rate))`% on average in 2015 to 2019, before COVID-19. A real wave of layoffs looks like `r month_year(peak_layoffs$date)`, when `r one(peak_layoffs$value)`% of all workers were laid off in one month.
+
+What has changed is **hiring**: `r one(latest_hires$value)`% of workers were hired in `r month_year(latest_hires$date)`, against `r one(before(hires_rate))`% in 2015 to 2019. Companies are not firing more people; they are taking on fewer. A hiring freeze is also the quietest way to replace people with AI: no one is laid off, the people who leave are not replaced, and the work that they did goes to the software or to the people who stay.
+
+```{r jolts}
+chatgpt <- as.Date("2022-11-30")
+plot_ly() %>%
+  add_lines(data = hires_rate, x = ~date, y = ~value, name = "Hires", line = list(color = blue, width = 2),
+            hovertemplate = "%{x|%B %Y}: %{y:.1f}% of employment<extra>Hires</extra>") %>%
+  add_lines(data = layoffs_rate, x = ~date, y = ~value, name = "Layoffs and discharges", line = list(color = red, width = 2),
+            hovertemplate = "%{x|%B %Y}: %{y:.1f}% of employment<extra>Layoffs and discharges</extra>") %>%
+  chart("US hires and layoffs in a month, % of employment", "US Bureau of Labor Statistics, JOLTS, via FRED (JTSHIR, JTSLDR)",
+        y_axis = list(ticksuffix = "%", rangemode = "tozero"), legend = legend_top,
+        shapes = list(list(type = "line", x0 = chatgpt, x1 = chatgpt, y0 = 0, y1 = 1, yref = "paper",
+                           line = list(color = dark_gray, width = 1, dash = "dot"))),
+        annotations = list(list(x = chatgpt, y = 1, yref = "paper", text = "ChatGPT", xanchor = "right", yanchor = "top",
+                                xshift = -4, showarrow = FALSE, font = list(color = dark_gray))))
+```
+
+**AI-cited cuts are a small part of all layoffs.** Even in 2026, the job cuts for which employers cited AI were less than 1% of the people laid off or discharged in the US. The comparison is rough, as Challenger counts announcements and JOLTS counts people who left, and JOLTS also counts people fired for their work, but the difference is of a hundred times or more.
+
+```{r ai_share}
+# the AI cuts per month against the layoffs and discharges per month, over the months of each period
+# that JOLTS has published
+challenger$layoffs <- sapply(seq_len(nrow(challenger)), function(i) {
+  1000 * mean(layoffs$value[layoffs$date >= challenger$from[i] & layoffs$date <= challenger$to[i]])
+})
+challenger$of_layoffs <- 100 * (challenger$ai / challenger$months) / challenger$layoffs
+plot_ly(challenger,
+  x = ~factor(period, levels = period), y = ~of_layoffs, type = "bar", marker = list(color = blue),
+  text = ~percent(of_layoffs, 2), textposition = "outside", cliponaxis = FALSE, textfont = list(color = dark_gray),
+  hovertemplate = "%{x}: %{y:.2f}%<extra></extra>"
+) %>%
+  chart("Job cuts citing AI, % of all layoffs and discharges in the US", "Challenger, Gray & Christmas; BLS, JOLTS, via FRED (JTSLDL)",
+        y_axis = list(ticksuffix = "%", range = c(0, max(challenger$of_layoffs) * 1.25)), bargap = 0.45)
+```
+
+## 3. How many are hired back, and how fast?
+
+"Hired back" means two different things, and the data on them are very different:
+
+- **The same person comes back.** In the records of 2.4 million employees, Visier found that about `r visier$rehired`% of the people laid off were later hired again by the employer that laid them off, after `r visier$months` months on average. This is after any layoff, not only those blamed on AI. The people who come back are not a random group: high performers were rehired `r visier$high_performers`% more often than others, and managers `r visier$managers`% more often than employees who manage no one. The company calls back the people it most needs.
+- **The job is filled again**, by the same person or by someone else, perhaps with another title, at a lower wage, through an agency or in another country. This is what the surveys ask about, and it is much more common. Of 600 HR professionals whose organisations had made layoffs in the previous year, `r percent(roles_back$share[3], 1)` said that their organisation had filled again more than half of the roles it cut, and `r percent(roles_back$share[2], 1)` between a quarter and a half.
+
+```{r roles_back, fig.height = 3.5}
+answers(roles_back, "Roles cut and then filled again, % of HR professionals", "Careerminds, survey of 600 HR professionals, February 2026")
+```
+
+**And fast.** Of the organisations that filled the roles again, `r percent(time_back$share[1] + time_back$share[2], 1)` did so within six months of the cuts, `r percent(time_back$share[1], 1)` within three.
+
+```{r time_back, fig.height = 3.8}
+answers(time_back, "Time until the roles were filled again, % of HR professionals", "Careerminds, survey of 600 HR professionals, February 2026")
+```
+
+## 4. Does it save money?
+
+**For most, it did not.** Asked what the layoffs saved once the roles had been filled again, `r percent(money$share[1], 1)` of the HR professionals said that the rehiring cost more than the layoffs saved, and `r percent(money$share[2], 1)` that they broke even. Only `r percent(money$share[3], 1)` came out ahead.
+
+```{r money, fig.height = 3.5}
+answers(money, "Savings after the rehiring, % of HR professionals",
+        "Careerminds, survey of 600 HR professionals, February 2026", color = c(red, gray, blue))
+```
+
+The reason is simple arithmetic. Cutting a job saves its pay for every month that it stays empty, but the cut and the rehiring cost money once: the severance pay, the recruiting and the onboarding, the months before the new person does the job well, and, for people who come back, a higher wage. Visier found that the people hired back got a pay rise of `r visier$pay_back`%, against `r visier$pay_stayed`% for those who had stayed. If the job is filled again soon, the months of pay saved do not cover these costs.
+
+The model below makes that concrete. Its numbers are **assumptions, not data**: every cost is in months of the pay of the job that is cut, so that it fits any job and any country. Change them to fit a real case.
+
+```{r model}
+severance <- 2           # months of pay paid when the job is cut; depends on the country and the years of service
+hiring <- 1              # recruiting, interviews and onboarding when the job is filled again
+ramp_up <- 3 * 0.5       # the new person does half the work in the first 3 months
+premium <- 12 * 0.05     # a 5% higher wage for a year, the rise that Visier found for people hired back
+ai_cost <- 0.10          # what the AI costs per month, as a share of the pay that the cut saves
+one_off <- severance + hiring + ramp_up + premium
+saving <- data.frame(months = 0:24)
+saving$net <- saving$months * (1 - ai_cost) - one_off
+break_even <- one_off / (1 - ai_cost)
+```
+
+With these assumptions the cut costs `r one(one_off)` months of pay once, and saves `r one(1 - ai_cost)` of a month's pay for every month that the job stays empty. **A job filled again in less than `r one(break_even)` months costs more than it saves**, and the shaded area shows that, in the Careerminds survey, `r percent(time_back$share[1] + time_back$share[2])` of the roles were filled again in the first six months.
+
+```{r model_chart}
+plot_ly(saving,
+  x = ~months, y = ~net, type = "scatter", mode = "lines", line = list(color = blue, width = 2),
+  hovertemplate = "Filled again after %{x} months: %{y:.1f} months of pay<extra></extra>"
+) %>%
+  chart("What a job cut saves, by the months until the job is filled again", "the assumptions of the model above",
+        y_title = "Months of pay saved (net)", x_axis = list(title = "Months until the job is filled again", dtick = 3),
+        y_axis = list(zeroline = TRUE, zerolinecolor = dark_gray),
+        shapes = list(list(type = "rect", x0 = 0, x1 = 6, y0 = 0, y1 = 1, yref = "paper",
+                           fillcolor = gray, opacity = 0.15, line = list(width = 0))),
+        annotations = list(
+          list(x = 3, y = 1, yref = "paper", text = paste0("Filled again within 6 months:<br>",
+                                                           percent(time_back$share[1] + time_back$share[2]), " of the roles"),
+               yanchor = "top", showarrow = FALSE, font = list(size = 11, color = dark_gray)),
+          list(x = break_even, y = 0, text = paste("Break-even:", one(break_even), "months"), ax = 70, ay = 35, xanchor = "left",
+               arrowcolor = dark_gray, font = list(size = 11, color = dark_gray))),
+        margin = list(t = 70, b = 110), note_y = -0.3)
+```
+
+The model leaves out the costs that are hardest to count, and the next section shows that they can be the larger part: service that gets worse, overtime for the people who stayed, and knowledge that left with the people who were let go. In the Careerminds survey, `r percent(careerminds$lost_skills, 1)` said that their organisation lost critical skills and expertise with the layoffs. It also leaves out the cheaper ways of filling a job again, with lower pay or in another country, which make the cut save more.
+
+## 5. Three cases
+
+```{r cases}
+cases <- data.frame(
+  Company = c("Klarna (payments, Sweden)", "Commonwealth Bank of Australia", "Ford (cars, US)"),
+  `What it did` = c(
+    "Stopped hiring anyone but engineers in December 2023. In February 2024 it said that its AI assistant was doing the work of 700 full-time customer service agents, most of whom worked for outside providers. Its staff fell from 5,441 in 2022 to 4,201 in 2023.",
+    "In July 2025 it told the union that 45 customer service jobs were no longer needed, because a new AI voice bot had reduced the calls.",
+    "Relied \"more and more on automated quality systems\" to find faults in its cars."
+  ),
+  `What happened` = c(
+    "In May 2025 its CEO said that cost had been \"a too predominant evaluation factor\" and the result was \"lower quality\". Klarna started hiring people for customer service again, and now says that human service will be \"a VIP thing\", while AI answers the simple questions.",
+    "The union said that the calls had in fact increased, and that the staff were doing overtime and team leaders were answering phones. It took the case to the Fair Work Commission. In August 2025 the bank said that it had been wrong, apologised, and kept the jobs.",
+    "In June 2026 it said that it had hired 350 veteran engineers, some of them former Ford employees and others from its suppliers, to find faults before parts reach the plant, to train younger engineers and to reprogram its AI tools. Ford keeps using AI."
+  ),
+  check.names = FALSE
+)
+knitr::kable(cases, caption = "Companies that replaced people with AI and then needed people again")
+```
+
+The three cases are different from each other, and each is different from the headline "fired for AI, hired back":
+
+- **Klarna** did not fire 700 people: most of its customer service agents worked for outside providers, and the company shrank mainly by not hiring. What failed was the quality of the service, and the CEO said so.
+- **Commonwealth Bank** measured the wrong thing. The bot answered some calls, but the work did not go away: it went to the people who stayed.
+- **Ford** did not say that it had laid these engineers off because of AI. Its case is about knowledge: the experience of veteran engineers was not in the data from which its automated systems learned, and Ford needed people who had it.
+
+## 6. What do employers and analysts say?
+
+```{r surveys}
+surveys <- data.frame(
+  Source = c("Orgvue", "Careerminds", "Gartner", "Gartner", "Forrester"),
+  Date = c("April 2025", "February 2026", "October 2025", "March 2026", "November 2025"),
+  Kind = c("Survey", "Survey", "Survey", "Forecast", "Forecast"),
+  `Who` = c("More than 1,000 business leaders", "600 HR professionals", "321 customer service and support leaders",
+            "Analysts", "Analysts"),
+  Finding = c(
+    "39% made people redundant because of AI, and 55% of these say that they made the wrong decisions: about one in five of all.",
+    paste0("Only ", careerminds$repeat_unchanged, "% would make the same AI-driven layoffs again without changes."),
+    "Only about 20% had reduced their number of customer service agents because of AI; most kept them stable.",
+    "By 2027, 50% of the companies that attributed a cut in headcount to AI will rehire staff to \"perform similar functions, but under different job titles\".",
+    "\"Half of AI-attributed layoffs\" will be \"quietly reversed, with jobs returning offshore or at lower wages\"."
+  ),
+  check.names = FALSE
+)
+knitr::kable(surveys, caption = "Surveys of employers and forecasts of analysts")
+```
+
+The surveys agree on the direction: many of the companies that cut jobs for AI regret it, and many fill the jobs again. The two forecasts agree on what happens next: the jobs come back **in another form**, with other titles, at lower pay or in another country. Neither form shows up as a company "hiring back the people it replaced", which is one reason why the counts of rehiring are low and the counts of roles filled again are high.
+
+## 7. Why does it happen, and what can a company do instead?
+
+**Why it happens:**
+
+1. **AI does tasks, but companies cut jobs.** Almost every job has a part that AI does well and a part that it does not. In the Careerminds survey, only `r percent(careerminds$fully_replaced, 1)` said that AI fully replaced the roles with no problems; `r percent(careerminds$some_replaced, 1)` said that it replaced some of them, and `r percent(careerminds$oversight, 1)` that the layoffs were not worth it because of the human oversight the AI needed.
+2. **Decisions are made on promises, not on results.** `r percent(careerminds$ai_understanding, 1)` said that they would have decided better with a clearer understanding of what AI could do.
+3. **Cost is measured, quality is not.** Klarna's CEO said so in as many words, and Commonwealth Bank counted the calls that the bot answered, not the work that was left.
+4. **Knowledge that is not written down leaves with the people.** AI learns from the data it is given, and the experience of people who know the exceptions, the customers and the history is rarely in those data. This is what Ford found.
+5. **"AI" is sometimes only the label.** A cut made to save money can be announced as a cut made possible by AI, and the work comes back when it turns out that someone still has to do it.
+
+**What a company can do instead:**
+
+1. **Split each job into tasks before cutting jobs**, and cut only where AI can do the whole job, or join the parts that remain into new jobs.
+2. **Run the AI next to the people first**, for long enough, and measure quality, mistakes, the work that is left and customer satisfaction, not only cost and speed.
+3. **Move people instead of letting them go.** `r percent(careerminds$never_discussed, 1)` of the HR professionals said that moving people to other roles was never formally discussed, and `r percent(careerminds$redeploy_quarter, 1)` that up to a quarter of the roles cut could have been redeployed (`r percent(careerminds$redeploy_half, 1)` said a quarter to a half). Knowing the skills of the people who are already there makes this possible: `r percent(careerminds$skills_data, 1)` said that they would have needed more data on skills.
+4. **Keep the knowledge**: write down how the work is done, and keep a core of experienced people who can train others and correct the AI.
+5. **If people must go, let them go well.** The people a company most often hires back are its high performers and managers, and they come back only if they left on good terms.
+
+---
+
+## So, what happens?
+
+1. **More and more job cuts are blamed on AI**: `r thousands(challenger$ai[4])` in the first ten months of 2026, `r percent(challenger$share[4])` of all job cuts announced in the US, against `r thousands(challenger$ai[1])` in all of 2023.
+2. **But there is no wave of layoffs**: the share of US workers laid off in a month is still about 1%, as before ChatGPT, and AI-cited cuts are less than 1% of all layoffs. What has fallen is hiring.
+3. **The same people rarely come back**, about `r visier$rehired`% of those laid off, but **the jobs often do**: two in three organisations that made layoffs filled at least a quarter of the roles again, most of them within six months.
+4. **It usually does not save money**: once the roles were filled again, `r percent(money$share[1] + money$share[2])` of the organisations had saved nothing or lost money. A job filled again within a few months costs more than it saves, before counting the service, the overtime and the knowledge that were lost.
+5. **The jobs come back changed**: with other titles, at lower pay, through agencies or in other countries, which is what both Gartner and Forrester expect.
+
+The data are thin: one count of announcements, one count of people hired back, and surveys run by firms with an interest in the answer. But they point the same way: replacing people with AI before the AI can do the whole job tends to cost a company twice, once to let people go and once to get the work done again.
+
+---
+
+## Sources
+
+- US Bureau of Labor Statistics, Job Openings and Labor Turnover Survey (JOLTS), via FRED: [JTSHIR](https://fred.stlouisfed.org/series/JTSHIR) (hires rate), [JTSLDR](https://fred.stlouisfed.org/series/JTSLDR) (layoffs and discharges rate), [JTSLDL](https://fred.stlouisfed.org/series/JTSLDL) (layoffs and discharges, level).
+- Challenger, Gray & Christmas, job cuts reports: [December 2023](https://www.challengergray.com/blog/december-2023-challenger-report-job-cuts-fall-to-second-lowest-monthly-total-of-the-year-job-cuts-steady-as-hiring-plummets/), [December 2024](https://www.challengergray.com/blog/job-cuts-rise-over-last-year-38792-in-december-2024/), [2025 year-end](https://www.challengergray.com/blog/2025-year-end-challenger-report-highest-q4-layoffs-since-2008-lowest-ytd-hiring-since-2010/), [May 2026](https://www.challengergray.com/blog/challenger-report-may-job-cuts-rise-16-from-april-highest-may-total-since-2020/), [June 2026](https://www.challengergray.com/blog/challenger-report-june-layoffs-cool-to-45849-down-53-from-may-ai-leads-reasons-for-fourth-consecutive-month/), [August 2026](https://www.challengergray.com/blog/challenger-report-august-job-cuts-up-58-consumer-products-food-lead/), [October 2026](https://www.challengergray.com/blog/october-layoffs-at-three-year-low-seasonal-hiring-plans-up-26/); the AI cuts from the start of 2026 to the end of January, February, March, April, July and September as reported by [HRD America](https://www.hcamag.com/us/specialization/transformation/ai-blamed-for-121401-job-cuts-but-the-labor-data-isnt-buying-it/594129), which match Challenger's own figures for the other months.
+- Visier, [The true cost of layoff boomerangs](https://www.visier.com/blog/true-cost-layoff-boomerangs/) (February 2026) and [The Layoff Boomerang Report](https://www.visier.com/lp/layoffs-boomerang-employees/) (November 2025).
+- Careerminds, [AI-led layoffs: what HR leaders wish they knew before making job cuts](https://careerminds.com/blog/cost-of-ai-layoffs) (February 2026). The headings of the page give some rounded or combined figures (75% cost more than they saved, 52.1% within six months) that do not match its own charts; this page uses the figures of the charts.
+- Orgvue, as reported by [HR Dive](https://www.hrdive.com/news/leaders-who-laid-off-workers-due-to-ai-regretted-it/746643/) and [TechRadar](https://www.techradar.com/pro/over-half-of-uk-businesses-who-replaced-workers-with-ai-regret-their-decision) (April 2025).
+- Gartner, as reported by [TechRepublic](https://www.techrepublic.com/article/gartner-ai-customer-service-rehire-2027/) (March 2026) and [CX Today](https://www.cxtoday.com/contact-center/ai-wont-kill-the-customer-service-agent-at-least-not-yet/) (June 2025).
+- Forrester, [Predictions 2026: The Workforce Muddles Through Ambient Disruption](https://www.forrester.com/blogs/future-of-work-predictions-2026-whats-coming-for-work-and-the-workforce/) (November 2025).
+- Klarna: [CX Today, February 2024](https://www.cxtoday.com/contact-center/klarna-claims-its-new-ai-assistant-does-the-work-of-700-full-time-agents/), [CX Today, May 2025](https://www.cxtoday.com/contact-center/klarna-grapples-with-ai-led-customer-service-pivots-to-an-uber-type-of-setup/), [TechCrunch, June 2025](https://techcrunch.com/2025/06/04/klarna-ceo-says-company-will-use-humans-to-offer-vip-customer-service).
+- Commonwealth Bank of Australia: [The Register](https://www.theregister.com/2025/08/22/commonwealth_ban_chatbot_fail_rehiring/), [Bloomberg](https://www.bloomberg.com/news/articles/2025-08-21/commonwealth-bank-reverses-job-cuts-decision-over-ai-chatbots) (August 2025).
+- Ford: [TechCrunch](https://techcrunch.com/2026/06/28/ford-rehires-gray-beard-engineers-after-ai-falls-short/) (June 2026).
