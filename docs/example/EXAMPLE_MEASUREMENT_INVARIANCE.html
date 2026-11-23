@@ -133,7 +133,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  "image": "https://sedzinfo.github.io/vignettes/example/social-card.png",
  "inLanguage": "en",
  "datePublished": "2026-10-03T15:09:48+03:00",
- "dateModified": "2026-11-21T17:34:57+02:00",
+ "dateModified": "2026-11-23T18:46:42+02:00",
  "articleSection": "Worked Examples in R",
  "author": {
   "@type": "Person",
@@ -1700,170 +1700,157 @@ FACTOR MEAN INVARIANCE               0   1   1   1    NA   1 0.00865   1</code><
 <span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Measurement invariance"</span></span>
 <span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a><span class="an">description:</span><span class="co"> "Multi-group CFA in lavaan on simulated data: configural, metric, scalar and strict measurement invariance, then equal factor variances, covariances and means."</span></span>
 <span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
-<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
-<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
-<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
-<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
-<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
-<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
-<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
-<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
-<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
-<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
-<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{Measurement invariance}</span></span>
-<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
-<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
-<span id="cb32-18"><a href="#cb32-18" aria-hidden="true" tabindex="-1"></a><span class="an">shift-heading-level-by:</span><span class="co"> 1   # its sections are # headings: they become h2, the title stays the only h1</span></span>
-<span id="cb32-19"><a href="#cb32-19" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb32-20"><a href="#cb32-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-21"><a href="#cb32-21" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
-<span id="cb32-22"><a href="#cb32-22" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
-<span id="cb32-23"><a href="#cb32-23" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
-<span id="cb32-24"><a href="#cb32-24" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
-<span id="cb32-25"><a href="#cb32-25" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-26"><a href="#cb32-26" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-27"><a href="#cb32-27" aria-hidden="true" tabindex="-1"></a><span class="fu"># CFA measurement invariance</span></span>
-<span id="cb32-28"><a href="#cb32-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-29"><a href="#cb32-29" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data simulation</span></span>
-<span id="cb32-30"><a href="#cb32-30" aria-hidden="true" tabindex="-1"></a>The data are simulated in lavaan. From this simulation it is possible to extract 3 factors and 2 arbitrary groups.</span>
-<span id="cb32-31"><a href="#cb32-31" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,simulation}</span></span>
-<span id="cb32-32"><a href="#cb32-32" aria-hidden="true" tabindex="-1"></a><span class="co"># specify population model</span></span>
-<span id="cb32-33"><a href="#cb32-33" aria-hidden="true" tabindex="-1"></a>population_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+.6*x2+.7*x3</span></span>
-<span id="cb32-34"><a href="#cb32-34" aria-hidden="true" tabindex="-1"></a><span class="st">                   f2=~x4+.6*x5+.7*x6</span></span>
-<span id="cb32-35"><a href="#cb32-35" aria-hidden="true" tabindex="-1"></a><span class="st">                   f3=~x7+.6*x8+.7*x9'</span></span>
-<span id="cb32-36"><a href="#cb32-36" aria-hidden="true" tabindex="-1"></a><span class="co"># generate data</span></span>
-<span id="cb32-37"><a href="#cb32-37" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1234</span>)</span>
-<span id="cb32-38"><a href="#cb32-38" aria-hidden="true" tabindex="-1"></a>model_data<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">simulateData</span>(population_model,<span class="at">sample.nobs=</span><span class="dv">20000</span>)</span>
-<span id="cb32-39"><a href="#cb32-39" aria-hidden="true" tabindex="-1"></a>model_data<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="cn">NA</span></span>
-<span id="cb32-40"><a href="#cb32-40" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group1"</span></span>
-<span id="cb32-41"><a href="#cb32-41" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">10001</span><span class="sc">:</span><span class="dv">20000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group2"</span></span>
-<span id="cb32-42"><a href="#cb32-42" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a><span class="an">shift-heading-level-by:</span><span class="co"> 1   # its sections are # headings: they become h2, the title stays the only h1</span></span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a><span class="in">```{r options,echo=FALSE,warning=FALSE,message=FALSE}</span></span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a><span class="fu"># CFA measurement invariance</span></span>
+<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data simulation</span></span>
+<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a>The data are simulated in lavaan. From this simulation it is possible to extract 3 factors and 2 arbitrary groups.</span>
+<span id="cb32-18"><a href="#cb32-18" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,simulation}</span></span>
+<span id="cb32-19"><a href="#cb32-19" aria-hidden="true" tabindex="-1"></a><span class="co"># specify population model</span></span>
+<span id="cb32-20"><a href="#cb32-20" aria-hidden="true" tabindex="-1"></a>population_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+.6*x2+.7*x3</span></span>
+<span id="cb32-21"><a href="#cb32-21" aria-hidden="true" tabindex="-1"></a><span class="st">                   f2=~x4+.6*x5+.7*x6</span></span>
+<span id="cb32-22"><a href="#cb32-22" aria-hidden="true" tabindex="-1"></a><span class="st">                   f3=~x7+.6*x8+.7*x9'</span></span>
+<span id="cb32-23"><a href="#cb32-23" aria-hidden="true" tabindex="-1"></a><span class="co"># generate data</span></span>
+<span id="cb32-24"><a href="#cb32-24" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">1234</span>)</span>
+<span id="cb32-25"><a href="#cb32-25" aria-hidden="true" tabindex="-1"></a>model_data<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">simulateData</span>(population_model,<span class="at">sample.nobs=</span><span class="dv">20000</span>)</span>
+<span id="cb32-26"><a href="#cb32-26" aria-hidden="true" tabindex="-1"></a>model_data<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="cn">NA</span></span>
+<span id="cb32-27"><a href="#cb32-27" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">1</span><span class="sc">:</span><span class="dv">10000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group1"</span></span>
+<span id="cb32-28"><a href="#cb32-28" aria-hidden="true" tabindex="-1"></a>model_data[<span class="dv">10001</span><span class="sc">:</span><span class="dv">20000</span>,]<span class="sc">$</span>group<span class="ot">&lt;-</span><span class="st">"Group2"</span></span>
+<span id="cb32-29"><a href="#cb32-29" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-30"><a href="#cb32-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-31"><a href="#cb32-31" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data summary</span></span>
+<span id="cb32-32"><a href="#cb32-32" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,summary}</span></span>
+<span id="cb32-33"><a href="#cb32-33" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(model_data,<span class="at">name_length=</span><span class="dv">5</span>)</span>
+<span id="cb32-34"><a href="#cb32-34" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-35"><a href="#cb32-35" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-36"><a href="#cb32-36" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model specification</span></span>
+<span id="cb32-37"><a href="#cb32-37" aria-hidden="true" tabindex="-1"></a>The specified model is shown in the figure below.</span>
+<span id="cb32-38"><a href="#cb32-38" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,spesification,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
+<span id="cb32-39"><a href="#cb32-39" aria-hidden="true" tabindex="-1"></a>bf_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+x2+x3</span></span>
+<span id="cb32-40"><a href="#cb32-40" aria-hidden="true" tabindex="-1"></a><span class="st">           f2=~x4+x5+x6</span></span>
+<span id="cb32-41"><a href="#cb32-41" aria-hidden="true" tabindex="-1"></a><span class="st">           f3=~x7+x8+x9'</span></span>
+<span id="cb32-42"><a href="#cb32-42" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(bf_model)</span>
 <span id="cb32-43"><a href="#cb32-43" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-44"><a href="#cb32-44" aria-hidden="true" tabindex="-1"></a><span class="fu">## Data summary</span></span>
-<span id="cb32-45"><a href="#cb32-45" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,summary}</span></span>
-<span id="cb32-46"><a href="#cb32-46" aria-hidden="true" tabindex="-1"></a><span class="fu">cdf</span>(model_data,<span class="at">name_length=</span><span class="dv">5</span>)</span>
-<span id="cb32-47"><a href="#cb32-47" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-48"><a href="#cb32-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-49"><a href="#cb32-49" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model specification</span></span>
-<span id="cb32-50"><a href="#cb32-50" aria-hidden="true" tabindex="-1"></a>The specified model is shown in the figure below.</span>
-<span id="cb32-51"><a href="#cb32-51" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,spesification,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
-<span id="cb32-52"><a href="#cb32-52" aria-hidden="true" tabindex="-1"></a>bf_model<span class="ot">&lt;-</span><span class="st">'f1=~x1+x2+x3</span></span>
-<span id="cb32-53"><a href="#cb32-53" aria-hidden="true" tabindex="-1"></a><span class="st">           f2=~x4+x5+x6</span></span>
-<span id="cb32-54"><a href="#cb32-54" aria-hidden="true" tabindex="-1"></a><span class="st">           f3=~x7+x8+x9'</span></span>
-<span id="cb32-55"><a href="#cb32-55" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(bf_model)</span>
-<span id="cb32-56"><a href="#cb32-56" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-57"><a href="#cb32-57" aria-hidden="true" tabindex="-1"></a>bfa<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data)</span>
-<span id="cb32-58"><a href="#cb32-58" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bfa,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
-<span id="cb32-59"><a href="#cb32-59" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-44"><a href="#cb32-44" aria-hidden="true" tabindex="-1"></a>bfa<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data)</span>
+<span id="cb32-45"><a href="#cb32-45" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bfa,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
+<span id="cb32-46"><a href="#cb32-46" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-47"><a href="#cb32-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-48"><a href="#cb32-48" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model estimates and model fit</span></span>
+<span id="cb32-49"><a href="#cb32-49" aria-hidden="true" tabindex="-1"></a>Model estimates are provided by three main matrices:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-50"><a href="#cb32-50" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>The lambda matrix representing factor loadings  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-51"><a href="#cb32-51" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>The theta matrix, containing residual (error) variances of the items on the diagonal and residual covariances between items off the diagonal  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-52"><a href="#cb32-52" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>The psi matrix, containing factor variances on the diagonal and factor covariances off the diagonal  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-53"><a href="#cb32-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-54"><a href="#cb32-54" aria-hidden="true" tabindex="-1"></a>Model estimates from a converged CFA model reproduce a model-implied covariance matrix, Sigma = Lambda × Psi × Lambda' + Theta. A covariance matrix can also be computed directly from the item responses (the observed, sample covariance matrix). Because of that, we can compare the covariance matrix implied by the model and the covariance matrix computed from item responses. In a good model, these two matrices should have similar values. Fit indices, shown below, quantify model fit. There is conflicting information and several opinions on critical values of fit indices. In our case we consider good model fit to be indicated by:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-55"><a href="#cb32-55" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>RMSEA &lt; .07  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-56"><a href="#cb32-56" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>CFI &gt; .90 (acceptable; &gt; .95 good)  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-57"><a href="#cb32-57" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>TLI &gt; .90 (acceptable; &gt; .95 good)  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-58"><a href="#cb32-58" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>SRMR &lt; .08  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
+<span id="cb32-59"><a href="#cb32-59" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>GFI &gt; .95  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
 <span id="cb32-60"><a href="#cb32-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-61"><a href="#cb32-61" aria-hidden="true" tabindex="-1"></a><span class="fu">## Model estimates and model fit</span></span>
-<span id="cb32-62"><a href="#cb32-62" aria-hidden="true" tabindex="-1"></a>Model estimates are provided by three main matrices:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-63"><a href="#cb32-63" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>The lambda matrix representing factor loadings  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-64"><a href="#cb32-64" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>The theta matrix, containing residual (error) variances of the items on the diagonal and residual covariances between items off the diagonal  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-65"><a href="#cb32-65" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>The psi matrix, containing factor variances on the diagonal and factor covariances off the diagonal  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-66"><a href="#cb32-66" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-67"><a href="#cb32-67" aria-hidden="true" tabindex="-1"></a>Model estimates from a converged CFA model reproduce a model-implied covariance matrix, Sigma = Lambda × Psi × Lambda' + Theta. A covariance matrix can also be computed directly from the item responses (the observed, sample covariance matrix). Because of that, we can compare the covariance matrix implied by the model and the covariance matrix computed from item responses. In a good model, these two matrices should have similar values. Fit indices, shown below, quantify model fit. There is conflicting information and several opinions on critical values of fit indices. In our case we consider good model fit to be indicated by:  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-68"><a href="#cb32-68" aria-hidden="true" tabindex="-1"></a><span class="ss">1. </span>RMSEA &lt; .07  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-69"><a href="#cb32-69" aria-hidden="true" tabindex="-1"></a><span class="ss">2. </span>CFI &gt; .90 (acceptable; &gt; .95 good)  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-70"><a href="#cb32-70" aria-hidden="true" tabindex="-1"></a><span class="ss">3. </span>TLI &gt; .90 (acceptable; &gt; .95 good)  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-71"><a href="#cb32-71" aria-hidden="true" tabindex="-1"></a><span class="ss">4. </span>SRMR &lt; .08  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-72"><a href="#cb32-72" aria-hidden="true" tabindex="-1"></a><span class="ss">5. </span>GFI &gt; .95  <span class="dt">&lt;</span><span class="kw">br</span><span class="dt">/&gt;</span></span>
-<span id="cb32-73"><a href="#cb32-73" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-74"><a href="#cb32-74" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit}</span></span>
-<span id="cb32-75"><a href="#cb32-75" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bfa,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
-<span id="cb32-76"><a href="#cb32-76" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bfa,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
-<span id="cb32-77"><a href="#cb32-77" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-78"><a href="#cb32-78" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-79"><a href="#cb32-79" aria-hidden="true" tabindex="-1"></a><span class="fu"># Testing for invariance</span></span>
-<span id="cb32-80"><a href="#cb32-80" aria-hidden="true" tabindex="-1"></a>We first fit the model separately in each group, then fit a series of multi-group models with increasing equality constraints; if constraining lambda, nu (intercepts), theta or psi to be equal significantly worsens fit, the measurement is non-invariant at that level.</span>
-<span id="cb32-81"><a href="#cb32-81" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-82"><a href="#cb32-82" aria-hidden="true" tabindex="-1"></a><span class="fu">## Separate-group baseline models</span></span>
-<span id="cb32-83"><a href="#cb32-83" aria-hidden="true" tabindex="-1"></a>Before testing invariance, we fit the model separately to Group1 and Group2 to check that it fits acceptably in each group (separate-group baseline models).</span>
-<span id="cb32-84"><a href="#cb32-84" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,structural_invariance}</span></span>
-<span id="cb32-85"><a href="#cb32-85" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the first group responses</span></span>
-<span id="cb32-86"><a href="#cb32-86" aria-hidden="true" tabindex="-1"></a>ft<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group1"</span>,])</span>
-<span id="cb32-87"><a href="#cb32-87" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the second group responses</span></span>
-<span id="cb32-88"><a href="#cb32-88" aria-hidden="true" tabindex="-1"></a>st<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group2"</span>,])</span>
-<span id="cb32-89"><a href="#cb32-89" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">Group1=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(ft,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)),</span>
-<span id="cb32-90"><a href="#cb32-90" aria-hidden="true" tabindex="-1"></a>           <span class="at">Group2=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(st,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)))</span>
-<span id="cb32-91"><a href="#cb32-91" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-61"><a href="#cb32-61" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit}</span></span>
+<span id="cb32-62"><a href="#cb32-62" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bfa,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
+<span id="cb32-63"><a href="#cb32-63" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bfa,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
+<span id="cb32-64"><a href="#cb32-64" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-65"><a href="#cb32-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-66"><a href="#cb32-66" aria-hidden="true" tabindex="-1"></a><span class="fu"># Testing for invariance</span></span>
+<span id="cb32-67"><a href="#cb32-67" aria-hidden="true" tabindex="-1"></a>We first fit the model separately in each group, then fit a series of multi-group models with increasing equality constraints; if constraining lambda, nu (intercepts), theta or psi to be equal significantly worsens fit, the measurement is non-invariant at that level.</span>
+<span id="cb32-68"><a href="#cb32-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-69"><a href="#cb32-69" aria-hidden="true" tabindex="-1"></a><span class="fu">## Separate-group baseline models</span></span>
+<span id="cb32-70"><a href="#cb32-70" aria-hidden="true" tabindex="-1"></a>Before testing invariance, we fit the model separately to Group1 and Group2 to check that it fits acceptably in each group (separate-group baseline models).</span>
+<span id="cb32-71"><a href="#cb32-71" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,structural_invariance}</span></span>
+<span id="cb32-72"><a href="#cb32-72" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the first group responses</span></span>
+<span id="cb32-73"><a href="#cb32-73" aria-hidden="true" tabindex="-1"></a>ft<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group1"</span>,])</span>
+<span id="cb32-74"><a href="#cb32-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Model with the second group responses</span></span>
+<span id="cb32-75"><a href="#cb32-75" aria-hidden="true" tabindex="-1"></a>st<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data[model_data<span class="sc">$</span>group <span class="sc">%in%</span> <span class="st">"Group2"</span>,])</span>
+<span id="cb32-76"><a href="#cb32-76" aria-hidden="true" tabindex="-1"></a><span class="fu">data.frame</span>(<span class="at">Group1=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(ft,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)),</span>
+<span id="cb32-77"><a href="#cb32-77" aria-hidden="true" tabindex="-1"></a>           <span class="at">Group2=</span>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(st,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)))</span>
+<span id="cb32-78"><a href="#cb32-78" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-79"><a href="#cb32-79" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-80"><a href="#cb32-80" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for CONFIGURAL INVARIANCE</span></span>
+<span id="cb32-81"><a href="#cb32-81" aria-hidden="true" tabindex="-1"></a>For configural invariance we specify a model with 2 groups. This procedure estimates separate lambda, theta, psi and nu (item intercept) matrices for each group, with latent means (alpha) fixed to 0. By comparing the two lambda and theta matrices we notice that their values are not identical. The question is whether the differences between these values are statistically significant. In any case, the configural invariance model below displays similar fit indices compared with the separate-group models above. But more importantly, according to fit indices the model fits the data and this suggests configural invariance.</span>
+<span id="cb32-82"><a href="#cb32-82" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,configural_invariance,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
+<span id="cb32-83"><a href="#cb32-83" aria-hidden="true" tabindex="-1"></a><span class="co"># CONFIGURAL INVARIANCE</span></span>
+<span id="cb32-84"><a href="#cb32-84" aria-hidden="true" tabindex="-1"></a>bf<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>)</span>
+<span id="cb32-85"><a href="#cb32-85" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
+<span id="cb32-86"><a href="#cb32-86" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bf,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
+<span id="cb32-87"><a href="#cb32-87" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>))</span>
+<span id="cb32-88"><a href="#cb32-88" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bf,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
+<span id="cb32-89"><a href="#cb32-89" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-90"><a href="#cb32-90" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-91"><a href="#cb32-91" aria-hidden="true" tabindex="-1"></a>In order to test if differences between estimated matrices among models are significant, we have to create a series of models for which impose equality constraints for parameters between groups. By imposing constraints we impose the estimator procedure to keep a matrix between groups equal. For instance by imposing an equality constraint on loadings, we force the parameter estimator to produce models that have equal lambda matrices between groups. Finally we compare the unconstrained and constrained models to see if they have any differences. If the constrained model does not fit significantly worse (and ΔCFI ≤ .01; Cheung &amp; Rensvold, 2002), invariance at that level is supported.</span>
 <span id="cb32-92"><a href="#cb32-92" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-93"><a href="#cb32-93" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for CONFIGURAL INVARIANCE</span></span>
-<span id="cb32-94"><a href="#cb32-94" aria-hidden="true" tabindex="-1"></a>For configural invariance we specify a model with 2 groups. This procedure estimates separate lambda, theta, psi and nu (item intercept) matrices for each group, with latent means (alpha) fixed to 0. By comparing the two lambda and theta matrices we notice that their values are not identical. The question is whether the differences between these values are statistically significant. In any case, the configural invariance model below displays similar fit indices compared with the separate-group models above. But more importantly, according to fit indices the model fits the data and this suggests configural invariance.</span>
-<span id="cb32-95"><a href="#cb32-95" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,configural_invariance,out.width="1000px",out.height="500px",fig.retina=2}</span></span>
-<span id="cb32-96"><a href="#cb32-96" aria-hidden="true" tabindex="-1"></a><span class="co"># CONFIGURAL INVARIANCE</span></span>
-<span id="cb32-97"><a href="#cb32-97" aria-hidden="true" tabindex="-1"></a>bf<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>)</span>
-<span id="cb32-98"><a href="#cb32-98" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,<span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>))</span>
-<span id="cb32-99"><a href="#cb32-99" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">inspect</span>(bf,<span class="st">"est"</span>,<span class="at">add.labels=</span><span class="cn">TRUE</span>,<span class="at">add.class=</span><span class="cn">TRUE</span>,<span class="at">list.by.group=</span><span class="cn">TRUE</span>,<span class="at">drop.list.single.group=</span><span class="cn">TRUE</span>)</span>
-<span id="cb32-100"><a href="#cb32-100" aria-hidden="true" tabindex="-1"></a><span class="fu">par</span>(<span class="at">mfrow=</span><span class="fu">c</span>(<span class="dv">1</span>,<span class="dv">2</span>))</span>
-<span id="cb32-101"><a href="#cb32-101" aria-hidden="true" tabindex="-1"></a>semPlot<span class="sc">::</span><span class="fu">semPaths</span>(bf,<span class="st">"model"</span>,<span class="at">layout=</span><span class="st">"tree2"</span>,<span class="at">what=</span><span class="st">"est"</span>)</span>
-<span id="cb32-102"><a href="#cb32-102" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-103"><a href="#cb32-103" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-104"><a href="#cb32-104" aria-hidden="true" tabindex="-1"></a>In order to test if differences between estimated matrices among models are significant, we have to create a series of models for which impose equality constraints for parameters between groups. By imposing constraints we impose the estimator procedure to keep a matrix between groups equal. For instance by imposing an equality constraint on loadings, we force the parameter estimator to produce models that have equal lambda matrices between groups. Finally we compare the unconstrained and constrained models to see if they have any differences. If the constrained model does not fit significantly worse (and ΔCFI ≤ .01; Cheung &amp; Rensvold, 2002), invariance at that level is supported.</span>
-<span id="cb32-105"><a href="#cb32-105" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-106"><a href="#cb32-106" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for WEAK METRIC INVARIANCE</span></span>
-<span id="cb32-107"><a href="#cb32-107" aria-hidden="true" tabindex="-1"></a>For weak metric invariance we impose a restriction that groups have equal loadings.</span>
-<span id="cb32-108"><a href="#cb32-108" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,weak_metric_invariance}</span></span>
-<span id="cb32-109"><a href="#cb32-109" aria-hidden="true" tabindex="-1"></a><span class="co"># WEAK METRIC INVARIANCE</span></span>
-<span id="cb32-110"><a href="#cb32-110" aria-hidden="true" tabindex="-1"></a>bf_metric<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>))</span>
-<span id="cb32-111"><a href="#cb32-111" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric)</span>
-<span id="cb32-112"><a href="#cb32-112" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-113"><a href="#cb32-113" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-114"><a href="#cb32-114" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRONG SCALAR INVARIANCE</span></span>
-<span id="cb32-115"><a href="#cb32-115" aria-hidden="true" tabindex="-1"></a>For strong scalar invariance we impose the restriction that groups have equal loadings and intercepts and then compare the strong scalar invariance model with the weak metric invariance model.</span>
-<span id="cb32-116"><a href="#cb32-116" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strong_scalar_invarience}</span></span>
-<span id="cb32-117"><a href="#cb32-117" aria-hidden="true" tabindex="-1"></a><span class="co"># STRONG SCALAR INVARIANCE</span></span>
-<span id="cb32-118"><a href="#cb32-118" aria-hidden="true" tabindex="-1"></a>bf_scalar<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>))</span>
-<span id="cb32-119"><a href="#cb32-119" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_metric,bf_scalar)</span>
-<span id="cb32-120"><a href="#cb32-120" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-121"><a href="#cb32-121" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-122"><a href="#cb32-122" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRICT ERROR VARIANCE INVARIANCE</span></span>
-<span id="cb32-123"><a href="#cb32-123" aria-hidden="true" tabindex="-1"></a>For strict error variance invariance, we impose the restriction that groups have equal loadings intercepts and residuals.</span>
-<span id="cb32-124"><a href="#cb32-124" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strict_error_invariance}</span></span>
-<span id="cb32-125"><a href="#cb32-125" aria-hidden="true" tabindex="-1"></a><span class="co"># STRICT ERROR VARIANCE INVARIANCE</span></span>
-<span id="cb32-126"><a href="#cb32-126" aria-hidden="true" tabindex="-1"></a>bf_full_strict<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>))</span>
-<span id="cb32-127"><a href="#cb32-127" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_scalar,bf_full_strict)</span>
-<span id="cb32-128"><a href="#cb32-128" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-129"><a href="#cb32-129" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-130"><a href="#cb32-130" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR VARIANCE COVARIANCE</span></span>
-<span id="cb32-131"><a href="#cb32-131" aria-hidden="true" tabindex="-1"></a>For factor variance covariance invariance we impose the restriction that groups have equal loadings intercepts residuals latent variable variances and latent variable covariances.</span>
-<span id="cb32-132"><a href="#cb32-132" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_variance_covariance}</span></span>
-<span id="cb32-133"><a href="#cb32-133" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR VARIANCE COVARIANCE</span></span>
-<span id="cb32-134"><a href="#cb32-134" aria-hidden="true" tabindex="-1"></a>bf_factor_vc<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>))</span>
-<span id="cb32-135"><a href="#cb32-135" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_full_strict,bf_factor_vc)</span>
-<span id="cb32-136"><a href="#cb32-136" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-137"><a href="#cb32-137" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-138"><a href="#cb32-138" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR MEAN INVARIANCE</span></span>
-<span id="cb32-139"><a href="#cb32-139" aria-hidden="true" tabindex="-1"></a>For factor mean invariance we impose the restriction that groups have equal loadings intercepts and residuals and we impose the restriction that factors have equal variances covariances and means between groups.</span>
-<span id="cb32-140"><a href="#cb32-140" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_mean_invariance}</span></span>
-<span id="cb32-141"><a href="#cb32-141" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR MEAN INVARIANCE</span></span>
-<span id="cb32-142"><a href="#cb32-142" aria-hidden="true" tabindex="-1"></a>bf_factor_mean<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>,<span class="st">"means"</span>))</span>
-<span id="cb32-143"><a href="#cb32-143" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_factor_vc,bf_factor_mean)</span>
-<span id="cb32-144"><a href="#cb32-144" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-145"><a href="#cb32-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-146"><a href="#cb32-146" aria-hidden="true" tabindex="-1"></a><span class="fu">## Comparing models</span></span>
-<span id="cb32-147"><a href="#cb32-147" aria-hidden="true" tabindex="-1"></a>Finally we compare the nested models with sequential chi-square difference (likelihood-ratio) tests; p-values (Pr(&gt;Chisq)) above .05 indicate that the added equality constraints do not significantly worsen fit, supporting that level of invariance.</span>
-<span id="cb32-148"><a href="#cb32-148" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,compare_models}</span></span>
-<span id="cb32-149"><a href="#cb32-149" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric,bf_scalar,bf_full_strict,bf_factor_vc,bf_factor_mean)</span>
-<span id="cb32-150"><a href="#cb32-150" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb32-151"><a href="#cb32-151" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb32-152"><a href="#cb32-152" aria-hidden="true" tabindex="-1"></a>In addition, the fit indices for each model above are summarized below.</span>
-<span id="cb32-153"><a href="#cb32-153" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit_indices}</span></span>
-<span id="cb32-154"><a href="#cb32-154" aria-hidden="true" tabindex="-1"></a>findex<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)</span>
-<span id="cb32-155"><a href="#cb32-155" aria-hidden="true" tabindex="-1"></a>fit_indices<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="fu">rbind</span>(lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,findex),</span>
-<span id="cb32-156"><a href="#cb32-156" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_metric,findex),</span>
-<span id="cb32-157"><a href="#cb32-157" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_scalar,findex),</span>
-<span id="cb32-158"><a href="#cb32-158" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_full_strict,findex),</span>
-<span id="cb32-159"><a href="#cb32-159" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_vc,findex),</span>
-<span id="cb32-160"><a href="#cb32-160" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_mean,findex)))</span>
-<span id="cb32-161"><a href="#cb32-161" aria-hidden="true" tabindex="-1"></a><span class="fu">row.names</span>(fit_indices)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"CONFIGURAL INVARIANCE"</span>,</span>
-<span id="cb32-162"><a href="#cb32-162" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"WEAK METRIC INVARIANCE"</span>,</span>
-<span id="cb32-163"><a href="#cb32-163" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRONG SCALAR INVARIANCE"</span>,</span>
-<span id="cb32-164"><a href="#cb32-164" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRICT ERROR VARIANCE INVARIANCE"</span>,</span>
-<span id="cb32-165"><a href="#cb32-165" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR VARIANCE COVARIANCE"</span>,</span>
-<span id="cb32-166"><a href="#cb32-166" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR MEAN INVARIANCE"</span>)</span>
-<span id="cb32-167"><a href="#cb32-167" aria-hidden="true" tabindex="-1"></a>fit_indices</span>
-<span id="cb32-168"><a href="#cb32-168" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb32-93"><a href="#cb32-93" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for WEAK METRIC INVARIANCE</span></span>
+<span id="cb32-94"><a href="#cb32-94" aria-hidden="true" tabindex="-1"></a>For weak metric invariance we impose a restriction that groups have equal loadings.</span>
+<span id="cb32-95"><a href="#cb32-95" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,weak_metric_invariance}</span></span>
+<span id="cb32-96"><a href="#cb32-96" aria-hidden="true" tabindex="-1"></a><span class="co"># WEAK METRIC INVARIANCE</span></span>
+<span id="cb32-97"><a href="#cb32-97" aria-hidden="true" tabindex="-1"></a>bf_metric<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>))</span>
+<span id="cb32-98"><a href="#cb32-98" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric)</span>
+<span id="cb32-99"><a href="#cb32-99" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-100"><a href="#cb32-100" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-101"><a href="#cb32-101" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRONG SCALAR INVARIANCE</span></span>
+<span id="cb32-102"><a href="#cb32-102" aria-hidden="true" tabindex="-1"></a>For strong scalar invariance we impose the restriction that groups have equal loadings and intercepts and then compare the strong scalar invariance model with the weak metric invariance model.</span>
+<span id="cb32-103"><a href="#cb32-103" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strong_scalar_invarience}</span></span>
+<span id="cb32-104"><a href="#cb32-104" aria-hidden="true" tabindex="-1"></a><span class="co"># STRONG SCALAR INVARIANCE</span></span>
+<span id="cb32-105"><a href="#cb32-105" aria-hidden="true" tabindex="-1"></a>bf_scalar<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>))</span>
+<span id="cb32-106"><a href="#cb32-106" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_metric,bf_scalar)</span>
+<span id="cb32-107"><a href="#cb32-107" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-108"><a href="#cb32-108" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-109"><a href="#cb32-109" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for STRICT ERROR VARIANCE INVARIANCE</span></span>
+<span id="cb32-110"><a href="#cb32-110" aria-hidden="true" tabindex="-1"></a>For strict error variance invariance, we impose the restriction that groups have equal loadings intercepts and residuals.</span>
+<span id="cb32-111"><a href="#cb32-111" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,strict_error_invariance}</span></span>
+<span id="cb32-112"><a href="#cb32-112" aria-hidden="true" tabindex="-1"></a><span class="co"># STRICT ERROR VARIANCE INVARIANCE</span></span>
+<span id="cb32-113"><a href="#cb32-113" aria-hidden="true" tabindex="-1"></a>bf_full_strict<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>))</span>
+<span id="cb32-114"><a href="#cb32-114" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_scalar,bf_full_strict)</span>
+<span id="cb32-115"><a href="#cb32-115" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-116"><a href="#cb32-116" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-117"><a href="#cb32-117" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR VARIANCE COVARIANCE</span></span>
+<span id="cb32-118"><a href="#cb32-118" aria-hidden="true" tabindex="-1"></a>For factor variance covariance invariance we impose the restriction that groups have equal loadings intercepts residuals latent variable variances and latent variable covariances.</span>
+<span id="cb32-119"><a href="#cb32-119" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_variance_covariance}</span></span>
+<span id="cb32-120"><a href="#cb32-120" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR VARIANCE COVARIANCE</span></span>
+<span id="cb32-121"><a href="#cb32-121" aria-hidden="true" tabindex="-1"></a>bf_factor_vc<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>))</span>
+<span id="cb32-122"><a href="#cb32-122" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_full_strict,bf_factor_vc)</span>
+<span id="cb32-123"><a href="#cb32-123" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-124"><a href="#cb32-124" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-125"><a href="#cb32-125" aria-hidden="true" tabindex="-1"></a><span class="fu">## Test for FACTOR MEAN INVARIANCE</span></span>
+<span id="cb32-126"><a href="#cb32-126" aria-hidden="true" tabindex="-1"></a>For factor mean invariance we impose the restriction that groups have equal loadings intercepts and residuals and we impose the restriction that factors have equal variances covariances and means between groups.</span>
+<span id="cb32-127"><a href="#cb32-127" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,factor_mean_invariance}</span></span>
+<span id="cb32-128"><a href="#cb32-128" aria-hidden="true" tabindex="-1"></a><span class="co"># FACTOR MEAN INVARIANCE</span></span>
+<span id="cb32-129"><a href="#cb32-129" aria-hidden="true" tabindex="-1"></a>bf_factor_mean<span class="ot">&lt;-</span>lavaan<span class="sc">::</span><span class="fu">cfa</span>(bf_model,<span class="at">data=</span>model_data,<span class="at">group=</span><span class="st">"group"</span>,<span class="at">group.equal=</span><span class="fu">c</span>(<span class="st">"loadings"</span>,<span class="st">"intercepts"</span>,<span class="st">"residuals"</span>,<span class="st">"lv.variances"</span>,<span class="st">"lv.covariances"</span>,<span class="st">"means"</span>))</span>
+<span id="cb32-130"><a href="#cb32-130" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf_factor_vc,bf_factor_mean)</span>
+<span id="cb32-131"><a href="#cb32-131" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-132"><a href="#cb32-132" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-133"><a href="#cb32-133" aria-hidden="true" tabindex="-1"></a><span class="fu">## Comparing models</span></span>
+<span id="cb32-134"><a href="#cb32-134" aria-hidden="true" tabindex="-1"></a>Finally we compare the nested models with sequential chi-square difference (likelihood-ratio) tests; p-values (Pr(&gt;Chisq)) above .05 indicate that the added equality constraints do not significantly worsen fit, supporting that level of invariance.</span>
+<span id="cb32-135"><a href="#cb32-135" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,compare_models}</span></span>
+<span id="cb32-136"><a href="#cb32-136" aria-hidden="true" tabindex="-1"></a>lavaan<span class="sc">::</span><span class="fu">anova</span>(bf,bf_metric,bf_scalar,bf_full_strict,bf_factor_vc,bf_factor_mean)</span>
+<span id="cb32-137"><a href="#cb32-137" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb32-138"><a href="#cb32-138" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-139"><a href="#cb32-139" aria-hidden="true" tabindex="-1"></a>In addition, the fit indices for each model above are summarized below.</span>
+<span id="cb32-140"><a href="#cb32-140" aria-hidden="true" tabindex="-1"></a><span class="in">```{r,fit_indices}</span></span>
+<span id="cb32-141"><a href="#cb32-141" aria-hidden="true" tabindex="-1"></a>findex<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"rmsea"</span>,<span class="st">"cfi"</span>,<span class="st">"tli"</span>,<span class="st">"rni"</span>,<span class="st">"rfi"</span>,<span class="st">"ifi"</span>,<span class="st">"srmr"</span>,<span class="st">"gfi"</span>)</span>
+<span id="cb32-142"><a href="#cb32-142" aria-hidden="true" tabindex="-1"></a>fit_indices<span class="ot">&lt;-</span><span class="fu">data.frame</span>(<span class="fu">rbind</span>(lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf,findex),</span>
+<span id="cb32-143"><a href="#cb32-143" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_metric,findex),</span>
+<span id="cb32-144"><a href="#cb32-144" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_scalar,findex),</span>
+<span id="cb32-145"><a href="#cb32-145" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_full_strict,findex),</span>
+<span id="cb32-146"><a href="#cb32-146" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_vc,findex),</span>
+<span id="cb32-147"><a href="#cb32-147" aria-hidden="true" tabindex="-1"></a>                              lavaan<span class="sc">::</span><span class="fu">fitMeasures</span>(bf_factor_mean,findex)))</span>
+<span id="cb32-148"><a href="#cb32-148" aria-hidden="true" tabindex="-1"></a><span class="fu">row.names</span>(fit_indices)<span class="ot">&lt;-</span><span class="fu">c</span>(<span class="st">"CONFIGURAL INVARIANCE"</span>,</span>
+<span id="cb32-149"><a href="#cb32-149" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"WEAK METRIC INVARIANCE"</span>,</span>
+<span id="cb32-150"><a href="#cb32-150" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRONG SCALAR INVARIANCE"</span>,</span>
+<span id="cb32-151"><a href="#cb32-151" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"STRICT ERROR VARIANCE INVARIANCE"</span>,</span>
+<span id="cb32-152"><a href="#cb32-152" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR VARIANCE COVARIANCE"</span>,</span>
+<span id="cb32-153"><a href="#cb32-153" aria-hidden="true" tabindex="-1"></a>                          <span class="st">"FACTOR MEAN INVARIANCE"</span>)</span>
+<span id="cb32-154"><a href="#cb32-154" aria-hidden="true" tabindex="-1"></a>fit_indices</span>
+<span id="cb32-155"><a href="#cb32-155" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 <footer class="footer">

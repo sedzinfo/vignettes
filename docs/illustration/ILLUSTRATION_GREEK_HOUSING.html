@@ -141,7 +141,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
  "image": "https://sedzinfo.github.io/vignettes/illustration/social-card.png",
  "inLanguage": "en",
  "datePublished": "2026-10-20T14:07:05+03:00",
- "dateModified": "2026-11-18T21:17:41+02:00",
+ "dateModified": "2026-11-23T18:46:42+02:00",
  "articleSection": "Illustrations in R",
  "author": {
   "@type": "Person",
@@ -1832,452 +1832,439 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="an">title:</span><span class="co"> "Greek Housing Race: Rents, House Prices and Affordability in Europe"</span></span>
 <span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a><span class="an">description:</span><span class="co"> "Rents, house prices and affordability ratios in Greece and Europe from OECD data, as ranked bar chart races and animated GIFs made in R with gganimate."</span></span>
 <span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="an">author:</span><span class="co"> ""</span></span>
-<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="an">output:</span></span>
-<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a><span class="co">  html_document:</span></span>
-<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="co">    css: styles.css</span></span>
-<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="co">    theme: flatly</span></span>
-<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a><span class="co">    highlight: tango</span></span>
-<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="co">    toc: true</span></span>
-<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="co">    toc_float: true</span></span>
-<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a><span class="co">    code_folding: show</span></span>
-<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a><span class="co">    self_contained: true</span></span>
-<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a><span class="an">vignette:</span><span class="co"> &gt;</span></span>
-<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteIndexEntry{Greek Housing Race}</span></span>
-<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEngine{knitr::rmarkdown}</span></span>
-<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="co">  %\VignetteEncoding{UTF-8}</span></span>
-<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
-<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a><span class="in">```{r setup, include=FALSE}</span></span>
-<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
-<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
-<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
-<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a><span class="fu">## What is this?</span></span>
-<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a>The OECD publishes yearly **analytical house price indicators** for its members and partner countries: an index of **rent prices**, an index of **house prices**, and two affordability ratios — **price-to-income** and **price-to-rent**. The OECD gives them as indices with 2015 = 100; here every value is turned into a plain **percentage change since 2015** — "+13%" means rents are 13% higher than in 2015. They show how much each market moved, not the level of rents in euros.</span>
-<span id="cb19-29"><a href="#cb19-29" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-30"><a href="#cb19-30" aria-hidden="true" tabindex="-1"></a>This vignette pulls the series straight from the OECD data API and builds the same kind of visualisations as the <span class="co">[</span><span class="ot">EU Salary Race</span><span class="co">](ILLUSTRATION_EU_SALARY.html)</span>: four ranked "bar chart races" (one per indicator) and a shareable GIF of each — with Greece highlighted in red against the rest of Europe in gray. It starts with a look at Greece on its own, since rents and house prices there have taken very different paths, followed by the same chart for every other country.</span>
-<span id="cb19-31"><a href="#cb19-31" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-32"><a href="#cb19-32" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-33"><a href="#cb19-33" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-34"><a href="#cb19-34" aria-hidden="true" tabindex="-1"></a><span class="fu">## Packages</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a><span class="co">---</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="in">```{r setup, include=FALSE}</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a>directory<span class="ot">&lt;-</span><span class="cf">if</span> (rstudioapi<span class="sc">::</span><span class="fu">isAvailable</span>()) <span class="fu">paste0</span>(<span class="fu">dirname</span>(rstudioapi<span class="sc">::</span><span class="fu">getActiveDocumentContext</span>()<span class="sc">$</span>path),<span class="st">"/"</span>) <span class="cf">else</span> <span class="st">""</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_options.R"</span>))</span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="fu">source</span>(<span class="fu">paste0</span>(directory, <span class="st">"R/code_rwf.R"</span>))</span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a><span class="fu">## What is this?</span></span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>The OECD publishes yearly **analytical house price indicators** for its members and partner countries: an index of **rent prices**, an index of **house prices**, and two affordability ratios — **price-to-income** and **price-to-rent**. The OECD gives them as indices with 2015 = 100; here every value is turned into a plain **percentage change since 2015** — "+13%" means rents are 13% higher than in 2015. They show how much each market moved, not the level of rents in euros.</span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a>This vignette pulls the series straight from the OECD data API and builds the same kind of visualisations as the <span class="co">[</span><span class="ot">EU Salary Race</span><span class="co">](ILLUSTRATION_EU_SALARY.html)</span>: four ranked "bar chart races" (one per indicator) and a shareable GIF of each — with Greece highlighted in red against the rest of Europe in gray. It starts with a look at Greece on its own, since rents and house prices there have taken very different paths, followed by the same chart for every other country.</span>
+<span id="cb19-18"><a href="#cb19-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-19"><a href="#cb19-19" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-20"><a href="#cb19-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-21"><a href="#cb19-21" aria-hidden="true" tabindex="-1"></a><span class="fu">## Packages</span></span>
+<span id="cb19-22"><a href="#cb19-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-23"><a href="#cb19-23" aria-hidden="true" tabindex="-1"></a><span class="in">```{r packages}</span></span>
+<span id="cb19-24"><a href="#cb19-24" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages(c("dplyr", "tidyr", "countrycode", "plotly",</span></span>
+<span id="cb19-25"><a href="#cb19-25" aria-hidden="true" tabindex="-1"></a><span class="co">#                     "gganimate", "gifski", "scales", "ragg"))</span></span>
+<span id="cb19-26"><a href="#cb19-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-27"><a href="#cb19-27" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
+<span id="cb19-28"><a href="#cb19-28" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyr)</span>
+<span id="cb19-29"><a href="#cb19-29" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(countrycode)  <span class="co"># ISO3 codes -&gt; country names</span></span>
+<span id="cb19-30"><a href="#cb19-30" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(plotly)       <span class="co"># interactive charts</span></span>
+<span id="cb19-31"><a href="#cb19-31" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gganimate)    <span class="co"># animation</span></span>
+<span id="cb19-32"><a href="#cb19-32" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gifski)       <span class="co"># GIF renderer</span></span>
+<span id="cb19-33"><a href="#cb19-33" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(scales)       <span class="co"># axis formatting</span></span>
+<span id="cb19-34"><a href="#cb19-34" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb19-35"><a href="#cb19-35" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-36"><a href="#cb19-36" aria-hidden="true" tabindex="-1"></a><span class="in">```{r packages}</span></span>
-<span id="cb19-37"><a href="#cb19-37" aria-hidden="true" tabindex="-1"></a><span class="co"># install.packages(c("dplyr", "tidyr", "countrycode", "plotly",</span></span>
-<span id="cb19-38"><a href="#cb19-38" aria-hidden="true" tabindex="-1"></a><span class="co">#                     "gganimate", "gifski", "scales", "ragg"))</span></span>
+<span id="cb19-36"><a href="#cb19-36" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-37"><a href="#cb19-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-38"><a href="#cb19-38" aria-hidden="true" tabindex="-1"></a><span class="fu">## The data</span></span>
 <span id="cb19-39"><a href="#cb19-39" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-40"><a href="#cb19-40" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
-<span id="cb19-41"><a href="#cb19-41" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(tidyr)</span>
-<span id="cb19-42"><a href="#cb19-42" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(countrycode)  <span class="co"># ISO3 codes -&gt; country names</span></span>
-<span id="cb19-43"><a href="#cb19-43" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(plotly)       <span class="co"># interactive charts</span></span>
-<span id="cb19-44"><a href="#cb19-44" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gganimate)    <span class="co"># animation</span></span>
-<span id="cb19-45"><a href="#cb19-45" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gifski)       <span class="co"># GIF renderer</span></span>
-<span id="cb19-46"><a href="#cb19-46" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(scales)       <span class="co"># axis formatting</span></span>
-<span id="cb19-47"><a href="#cb19-47" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-40"><a href="#cb19-40" aria-hidden="true" tabindex="-1"></a>The OECD serves its datasets through an SDMX API that can answer with a plain CSV, so <span class="in">`read.csv()`</span> is all we need — no API key, no extra package. The dataset is *Analytical house prices indicators* (`DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES`). We keep the **annual** observations of the 29 European countries the OECD covers (EU members, Norway, Switzerland, Iceland and the United Kingdom).</span>
+<span id="cb19-41"><a href="#cb19-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-42"><a href="#cb19-42" aria-hidden="true" tabindex="-1"></a><span class="in">```{r data}</span></span>
+<span id="cb19-43"><a href="#cb19-43" aria-hidden="true" tabindex="-1"></a>url <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"https://sdmx.oecd.org/public/rest/data/"</span>,</span>
+<span id="cb19-44"><a href="#cb19-44" aria-hidden="true" tabindex="-1"></a>              <span class="st">"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/all"</span>,</span>
+<span id="cb19-45"><a href="#cb19-45" aria-hidden="true" tabindex="-1"></a>              <span class="st">"?startPeriod=2000&amp;dimensionAtObservation=AllDimensions"</span>,</span>
+<span id="cb19-46"><a href="#cb19-46" aria-hidden="true" tabindex="-1"></a>              <span class="st">"&amp;format=csvfilewithlabels"</span>)</span>
+<span id="cb19-47"><a href="#cb19-47" aria-hidden="true" tabindex="-1"></a>df_raw <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(url, <span class="at">fileEncoding =</span> <span class="st">"UTF-8-BOM"</span>, <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
 <span id="cb19-48"><a href="#cb19-48" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-49"><a href="#cb19-49" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-50"><a href="#cb19-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-51"><a href="#cb19-51" aria-hidden="true" tabindex="-1"></a><span class="fu">## The data</span></span>
-<span id="cb19-52"><a href="#cb19-52" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-53"><a href="#cb19-53" aria-hidden="true" tabindex="-1"></a>The OECD serves its datasets through an SDMX API that can answer with a plain CSV, so <span class="in">`read.csv()`</span> is all we need — no API key, no extra package. The dataset is *Analytical house prices indicators* (`DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES`). We keep the **annual** observations of the 29 European countries the OECD covers (EU members, Norway, Switzerland, Iceland and the United Kingdom).</span>
-<span id="cb19-54"><a href="#cb19-54" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-55"><a href="#cb19-55" aria-hidden="true" tabindex="-1"></a><span class="in">```{r data}</span></span>
-<span id="cb19-56"><a href="#cb19-56" aria-hidden="true" tabindex="-1"></a>url <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"https://sdmx.oecd.org/public/rest/data/"</span>,</span>
-<span id="cb19-57"><a href="#cb19-57" aria-hidden="true" tabindex="-1"></a>              <span class="st">"OECD.ECO.MPD,DSD_AN_HOUSE_PRICES@DF_HOUSE_PRICES,1.0/all"</span>,</span>
-<span id="cb19-58"><a href="#cb19-58" aria-hidden="true" tabindex="-1"></a>              <span class="st">"?startPeriod=2000&amp;dimensionAtObservation=AllDimensions"</span>,</span>
-<span id="cb19-59"><a href="#cb19-59" aria-hidden="true" tabindex="-1"></a>              <span class="st">"&amp;format=csvfilewithlabels"</span>)</span>
-<span id="cb19-60"><a href="#cb19-60" aria-hidden="true" tabindex="-1"></a>df_raw <span class="ot">&lt;-</span> <span class="fu">read.csv</span>(url, <span class="at">fileEncoding =</span> <span class="st">"UTF-8-BOM"</span>, <span class="at">check.names =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb19-61"><a href="#cb19-61" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-62"><a href="#cb19-62" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE_NAME<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-63"><a href="#cb19-63" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-64"><a href="#cb19-64" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE_ID<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-65"><a href="#cb19-65" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>ACTION<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-66"><a href="#cb19-66" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Time period</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-67"><a href="#cb19-67" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Observation value</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-68"><a href="#cb19-68" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Base period</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-69"><a href="#cb19-69" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>OBS_STATUS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-70"><a href="#cb19-70" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>Decimals<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-71"><a href="#cb19-71" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>DECIMALS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-72"><a href="#cb19-72" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>ADJUSTMENT<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-73"><a href="#cb19-73" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>Adjustment<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-74"><a href="#cb19-74" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Unit multiplier</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-75"><a href="#cb19-75" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>UNIT_MULT<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-76"><a href="#cb19-76" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>OBS_STATUS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-77"><a href="#cb19-77" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Observation status</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
-<span id="cb19-78"><a href="#cb19-78" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-79"><a href="#cb19-79" aria-hidden="true" tabindex="-1"></a>europe <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"AUT"</span>, <span class="st">"BEL"</span>, <span class="st">"BGR"</span>, <span class="st">"HRV"</span>, <span class="st">"CZE"</span>, <span class="st">"DNK"</span>, <span class="st">"EST"</span>, <span class="st">"FIN"</span>, <span class="st">"FRA"</span>, <span class="st">"DEU"</span>,</span>
-<span id="cb19-80"><a href="#cb19-80" aria-hidden="true" tabindex="-1"></a>            <span class="st">"GRC"</span>, <span class="st">"HUN"</span>, <span class="st">"IRL"</span>, <span class="st">"ITA"</span>, <span class="st">"LVA"</span>, <span class="st">"LTU"</span>, <span class="st">"LUX"</span>, <span class="st">"NLD"</span>, <span class="st">"POL"</span>, <span class="st">"PRT"</span>,</span>
-<span id="cb19-81"><a href="#cb19-81" aria-hidden="true" tabindex="-1"></a>            <span class="st">"ROU"</span>, <span class="st">"SVK"</span>, <span class="st">"SVN"</span>, <span class="st">"ESP"</span>, <span class="st">"SWE"</span>, <span class="st">"NOR"</span>, <span class="st">"CHE"</span>, <span class="st">"ISL"</span>, <span class="st">"GBR"</span>)</span>
-<span id="cb19-82"><a href="#cb19-82" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-83"><a href="#cb19-83" aria-hidden="true" tabindex="-1"></a>df_housing <span class="ot">&lt;-</span> df_raw <span class="sc">%&gt;%</span></span>
-<span id="cb19-84"><a href="#cb19-84" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(FREQ <span class="sc">==</span> <span class="st">"A"</span>, REF_AREA <span class="sc">%in%</span> europe,</span>
-<span id="cb19-85"><a href="#cb19-85" aria-hidden="true" tabindex="-1"></a>         MEASURE <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"RPI"</span>, <span class="st">"HPI"</span>, <span class="st">"HPI_YDH"</span>, <span class="st">"HPI_RPI"</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-86"><a href="#cb19-86" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">iso     =</span> REF_AREA,</span>
-<span id="cb19-87"><a href="#cb19-87" aria-hidden="true" tabindex="-1"></a>            <span class="at">country =</span> <span class="fu">countrycode</span>(REF_AREA, <span class="at">origin =</span> <span class="st">"iso3c"</span>, <span class="at">destination =</span> <span class="st">"country.name"</span>),</span>
-<span id="cb19-88"><a href="#cb19-88" aria-hidden="true" tabindex="-1"></a>            <span class="at">measure =</span> MEASURE,</span>
-<span id="cb19-89"><a href="#cb19-89" aria-hidden="true" tabindex="-1"></a>            <span class="at">year    =</span> <span class="fu">as.integer</span>(TIME_PERIOD),</span>
-<span id="cb19-90"><a href="#cb19-90" aria-hidden="true" tabindex="-1"></a>            <span class="at">values  =</span> <span class="fu">round</span>(<span class="fu">as.numeric</span>(OBS_VALUE), <span class="dv">1</span>),</span>
-<span id="cb19-91"><a href="#cb19-91" aria-hidden="true" tabindex="-1"></a>            <span class="at">change  =</span> <span class="fu">round</span>(values <span class="sc">-</span> <span class="dv">100</span>, <span class="dv">1</span>)) <span class="sc">%&gt;%</span>  <span class="co"># % change since 2015</span></span>
-<span id="cb19-92"><a href="#cb19-92" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(values))</span>
+<span id="cb19-49"><a href="#cb19-49" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE_NAME<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-50"><a href="#cb19-50" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-51"><a href="#cb19-51" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>STRUCTURE_ID<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-52"><a href="#cb19-52" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>ACTION<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-53"><a href="#cb19-53" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Time period</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-54"><a href="#cb19-54" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Observation value</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-55"><a href="#cb19-55" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Base period</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-56"><a href="#cb19-56" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>OBS_STATUS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-57"><a href="#cb19-57" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>Decimals<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-58"><a href="#cb19-58" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>DECIMALS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-59"><a href="#cb19-59" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>ADJUSTMENT<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-60"><a href="#cb19-60" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>Adjustment<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-61"><a href="#cb19-61" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Unit multiplier</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-62"><a href="#cb19-62" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>UNIT_MULT<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-63"><a href="#cb19-63" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span>OBS_STATUS<span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-64"><a href="#cb19-64" aria-hidden="true" tabindex="-1"></a>df_raw<span class="sc">$</span><span class="st">`</span><span class="at">Observation status</span><span class="st">`</span><span class="ot">&lt;-</span><span class="cn">NULL</span></span>
+<span id="cb19-65"><a href="#cb19-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-66"><a href="#cb19-66" aria-hidden="true" tabindex="-1"></a>europe <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"AUT"</span>, <span class="st">"BEL"</span>, <span class="st">"BGR"</span>, <span class="st">"HRV"</span>, <span class="st">"CZE"</span>, <span class="st">"DNK"</span>, <span class="st">"EST"</span>, <span class="st">"FIN"</span>, <span class="st">"FRA"</span>, <span class="st">"DEU"</span>,</span>
+<span id="cb19-67"><a href="#cb19-67" aria-hidden="true" tabindex="-1"></a>            <span class="st">"GRC"</span>, <span class="st">"HUN"</span>, <span class="st">"IRL"</span>, <span class="st">"ITA"</span>, <span class="st">"LVA"</span>, <span class="st">"LTU"</span>, <span class="st">"LUX"</span>, <span class="st">"NLD"</span>, <span class="st">"POL"</span>, <span class="st">"PRT"</span>,</span>
+<span id="cb19-68"><a href="#cb19-68" aria-hidden="true" tabindex="-1"></a>            <span class="st">"ROU"</span>, <span class="st">"SVK"</span>, <span class="st">"SVN"</span>, <span class="st">"ESP"</span>, <span class="st">"SWE"</span>, <span class="st">"NOR"</span>, <span class="st">"CHE"</span>, <span class="st">"ISL"</span>, <span class="st">"GBR"</span>)</span>
+<span id="cb19-69"><a href="#cb19-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-70"><a href="#cb19-70" aria-hidden="true" tabindex="-1"></a>df_housing <span class="ot">&lt;-</span> df_raw <span class="sc">%&gt;%</span></span>
+<span id="cb19-71"><a href="#cb19-71" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(FREQ <span class="sc">==</span> <span class="st">"A"</span>, REF_AREA <span class="sc">%in%</span> europe,</span>
+<span id="cb19-72"><a href="#cb19-72" aria-hidden="true" tabindex="-1"></a>         MEASURE <span class="sc">%in%</span> <span class="fu">c</span>(<span class="st">"RPI"</span>, <span class="st">"HPI"</span>, <span class="st">"HPI_YDH"</span>, <span class="st">"HPI_RPI"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-73"><a href="#cb19-73" aria-hidden="true" tabindex="-1"></a>  <span class="fu">transmute</span>(<span class="at">iso     =</span> REF_AREA,</span>
+<span id="cb19-74"><a href="#cb19-74" aria-hidden="true" tabindex="-1"></a>            <span class="at">country =</span> <span class="fu">countrycode</span>(REF_AREA, <span class="at">origin =</span> <span class="st">"iso3c"</span>, <span class="at">destination =</span> <span class="st">"country.name"</span>),</span>
+<span id="cb19-75"><a href="#cb19-75" aria-hidden="true" tabindex="-1"></a>            <span class="at">measure =</span> MEASURE,</span>
+<span id="cb19-76"><a href="#cb19-76" aria-hidden="true" tabindex="-1"></a>            <span class="at">year    =</span> <span class="fu">as.integer</span>(TIME_PERIOD),</span>
+<span id="cb19-77"><a href="#cb19-77" aria-hidden="true" tabindex="-1"></a>            <span class="at">values  =</span> <span class="fu">round</span>(<span class="fu">as.numeric</span>(OBS_VALUE), <span class="dv">1</span>),</span>
+<span id="cb19-78"><a href="#cb19-78" aria-hidden="true" tabindex="-1"></a>            <span class="at">change  =</span> <span class="fu">round</span>(values <span class="sc">-</span> <span class="dv">100</span>, <span class="dv">1</span>)) <span class="sc">%&gt;%</span>  <span class="co"># % change since 2015</span></span>
+<span id="cb19-79"><a href="#cb19-79" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(values))</span>
+<span id="cb19-80"><a href="#cb19-80" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-81"><a href="#cb19-81" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(df_housing)</span>
+<span id="cb19-82"><a href="#cb19-82" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-83"><a href="#cb19-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-84"><a href="#cb19-84" aria-hidden="true" tabindex="-1"></a>Each row is one country, one indicator, one year:</span>
+<span id="cb19-85"><a href="#cb19-85" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-86"><a href="#cb19-86" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Column <span class="pp">|</span> Description <span class="pp">|</span></span>
+<span id="cb19-87"><a href="#cb19-87" aria-hidden="true" tabindex="-1"></a><span class="pp">|--------|-------------|</span></span>
+<span id="cb19-88"><a href="#cb19-88" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`country`</span> <span class="pp">|</span> Country name (derived from the OECD's ISO3 <span class="in">`REF_AREA`</span> code) <span class="pp">|</span></span>
+<span id="cb19-89"><a href="#cb19-89" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`measure`</span> <span class="pp">|</span> <span class="in">`RPI`</span> rent prices, <span class="in">`HPI`</span> nominal house prices, <span class="in">`HPI_YDH`</span> price-to-income ratio, <span class="in">`HPI_RPI`</span> price-to-rent ratio <span class="pp">|</span></span>
+<span id="cb19-90"><a href="#cb19-90" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`year`</span> <span class="pp">|</span> Year of observation <span class="pp">|</span></span>
+<span id="cb19-91"><a href="#cb19-91" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`values`</span> <span class="pp">|</span> Index, 2015 = 100 (as published) <span class="pp">|</span></span>
+<span id="cb19-92"><a href="#cb19-92" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`change`</span> <span class="pp">|</span> Percentage change since 2015 (<span class="in">`values - 100`</span>) <span class="pp">|</span></span>
 <span id="cb19-93"><a href="#cb19-93" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-94"><a href="#cb19-94" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(df_housing)</span>
-<span id="cb19-95"><a href="#cb19-95" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-96"><a href="#cb19-96" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-97"><a href="#cb19-97" aria-hidden="true" tabindex="-1"></a>Each row is one country, one indicator, one year:</span>
-<span id="cb19-98"><a href="#cb19-98" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-99"><a href="#cb19-99" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> Column <span class="pp">|</span> Description <span class="pp">|</span></span>
-<span id="cb19-100"><a href="#cb19-100" aria-hidden="true" tabindex="-1"></a><span class="pp">|--------|-------------|</span></span>
-<span id="cb19-101"><a href="#cb19-101" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`country`</span> <span class="pp">|</span> Country name (derived from the OECD's ISO3 <span class="in">`REF_AREA`</span> code) <span class="pp">|</span></span>
-<span id="cb19-102"><a href="#cb19-102" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`measure`</span> <span class="pp">|</span> <span class="in">`RPI`</span> rent prices, <span class="in">`HPI`</span> nominal house prices, <span class="in">`HPI_YDH`</span> price-to-income ratio, <span class="in">`HPI_RPI`</span> price-to-rent ratio <span class="pp">|</span></span>
-<span id="cb19-103"><a href="#cb19-103" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`year`</span> <span class="pp">|</span> Year of observation <span class="pp">|</span></span>
-<span id="cb19-104"><a href="#cb19-104" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`values`</span> <span class="pp">|</span> Index, 2015 = 100 (as published) <span class="pp">|</span></span>
-<span id="cb19-105"><a href="#cb19-105" aria-hidden="true" tabindex="-1"></a><span class="pp">|</span> <span class="in">`change`</span> <span class="pp">|</span> Percentage change since 2015 (<span class="in">`values - 100`</span>) <span class="pp">|</span></span>
-<span id="cb19-106"><a href="#cb19-106" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-107"><a href="#cb19-107" aria-hidden="true" tabindex="-1"></a>For the races we need one indicator at a time, from 2015 (where every country starts at 0%) onwards, ranked within each year, with Greece in red. A small helper does that for any of the four measures:</span>
+<span id="cb19-94"><a href="#cb19-94" aria-hidden="true" tabindex="-1"></a>For the races we need one indicator at a time, from 2015 (where every country starts at 0%) onwards, ranked within each year, with Greece in red. A small helper does that for any of the four measures:</span>
+<span id="cb19-95"><a href="#cb19-95" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-96"><a href="#cb19-96" aria-hidden="true" tabindex="-1"></a><span class="in">```{r race_data}</span></span>
+<span id="cb19-97"><a href="#cb19-97" aria-hidden="true" tabindex="-1"></a>race_data <span class="ot">&lt;-</span> <span class="cf">function</span>(df, which, <span class="at">highlight =</span> <span class="st">"Greece"</span>, <span class="at">from =</span> <span class="dv">2015</span>) {</span>
+<span id="cb19-98"><a href="#cb19-98" aria-hidden="true" tabindex="-1"></a>  d <span class="ot">&lt;-</span> df[df<span class="sc">$</span>measure <span class="sc">==</span> which <span class="sc">&amp;</span> df<span class="sc">$</span>year <span class="sc">&gt;=</span> from, ]</span>
+<span id="cb19-99"><a href="#cb19-99" aria-hidden="true" tabindex="-1"></a>  d<span class="sc">$</span>rank <span class="ot">&lt;-</span> <span class="fu">ave</span>(<span class="sc">-</span>d<span class="sc">$</span>change, d<span class="sc">$</span>year, <span class="at">FUN =</span> <span class="cf">function</span>(v) <span class="fu">rank</span>(v, <span class="at">ties.method =</span> <span class="st">"first"</span>))</span>
+<span id="cb19-100"><a href="#cb19-100" aria-hidden="true" tabindex="-1"></a>  d<span class="sc">$</span>color <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(d<span class="sc">$</span>country <span class="sc">%in%</span> highlight, <span class="st">"#E74C3C"</span>, <span class="st">"#B3B3B3"</span>)</span>
+<span id="cb19-101"><a href="#cb19-101" aria-hidden="true" tabindex="-1"></a>  d</span>
+<span id="cb19-102"><a href="#cb19-102" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-103"><a href="#cb19-103" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-104"><a href="#cb19-104" aria-hidden="true" tabindex="-1"></a>df_rent        <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>)      <span class="co"># rent prices</span></span>
+<span id="cb19-105"><a href="#cb19-105" aria-hidden="true" tabindex="-1"></a>df_house_price <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI"</span>)      <span class="co"># house prices</span></span>
+<span id="cb19-106"><a href="#cb19-106" aria-hidden="true" tabindex="-1"></a>df_income      <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI_YDH"</span>)  <span class="co"># house price to income</span></span>
+<span id="cb19-107"><a href="#cb19-107" aria-hidden="true" tabindex="-1"></a>df_price_rent  <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI_RPI"</span>)  <span class="co"># house price to rent</span></span>
 <span id="cb19-108"><a href="#cb19-108" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-109"><a href="#cb19-109" aria-hidden="true" tabindex="-1"></a><span class="in">```{r race_data}</span></span>
-<span id="cb19-110"><a href="#cb19-110" aria-hidden="true" tabindex="-1"></a>race_data <span class="ot">&lt;-</span> <span class="cf">function</span>(df, which, <span class="at">highlight =</span> <span class="st">"Greece"</span>, <span class="at">from =</span> <span class="dv">2015</span>) {</span>
-<span id="cb19-111"><a href="#cb19-111" aria-hidden="true" tabindex="-1"></a>  d <span class="ot">&lt;-</span> df[df<span class="sc">$</span>measure <span class="sc">==</span> which <span class="sc">&amp;</span> df<span class="sc">$</span>year <span class="sc">&gt;=</span> from, ]</span>
-<span id="cb19-112"><a href="#cb19-112" aria-hidden="true" tabindex="-1"></a>  d<span class="sc">$</span>rank <span class="ot">&lt;-</span> <span class="fu">ave</span>(<span class="sc">-</span>d<span class="sc">$</span>change, d<span class="sc">$</span>year, <span class="at">FUN =</span> <span class="cf">function</span>(v) <span class="fu">rank</span>(v, <span class="at">ties.method =</span> <span class="st">"first"</span>))</span>
-<span id="cb19-113"><a href="#cb19-113" aria-hidden="true" tabindex="-1"></a>  d<span class="sc">$</span>color <span class="ot">&lt;-</span> <span class="fu">ifelse</span>(d<span class="sc">$</span>country <span class="sc">%in%</span> highlight, <span class="st">"#E74C3C"</span>, <span class="st">"#B3B3B3"</span>)</span>
-<span id="cb19-114"><a href="#cb19-114" aria-hidden="true" tabindex="-1"></a>  d</span>
-<span id="cb19-115"><a href="#cb19-115" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb19-116"><a href="#cb19-116" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-117"><a href="#cb19-117" aria-hidden="true" tabindex="-1"></a>df_rent        <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>)      <span class="co"># rent prices</span></span>
-<span id="cb19-118"><a href="#cb19-118" aria-hidden="true" tabindex="-1"></a>df_house_price <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI"</span>)      <span class="co"># house prices</span></span>
-<span id="cb19-119"><a href="#cb19-119" aria-hidden="true" tabindex="-1"></a>df_income      <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI_YDH"</span>)  <span class="co"># house price to income</span></span>
-<span id="cb19-120"><a href="#cb19-120" aria-hidden="true" tabindex="-1"></a>df_price_rent  <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"HPI_RPI"</span>)  <span class="co"># house price to rent</span></span>
-<span id="cb19-121"><a href="#cb19-121" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-122"><a href="#cb19-122" aria-hidden="true" tabindex="-1"></a>title_rent        <span class="ot">&lt;-</span> <span class="st">"How much more expensive rents got since 2015 (%)"</span></span>
-<span id="cb19-123"><a href="#cb19-123" aria-hidden="true" tabindex="-1"></a>title_house_price <span class="ot">&lt;-</span> <span class="st">"How much more expensive houses got since 2015 (%)"</span></span>
-<span id="cb19-124"><a href="#cb19-124" aria-hidden="true" tabindex="-1"></a>title_price_rent  <span class="ot">&lt;-</span> <span class="st">"How much faster house prices grew than rents since 2015 (%)"</span></span>
-<span id="cb19-125"><a href="#cb19-125" aria-hidden="true" tabindex="-1"></a><span class="co"># "+13%" / "-3%"; rounding first (+ 0 turns -0 into 0) so -0.4 reads "+0%", never "-0%"</span></span>
-<span id="cb19-126"><a href="#cb19-126" aria-hidden="true" tabindex="-1"></a>pct <span class="ot">&lt;-</span> <span class="cf">function</span>(v) <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, <span class="fu">round</span>(v) <span class="sc">+</span> <span class="dv">0</span>)</span>
-<span id="cb19-127"><a href="#cb19-127" aria-hidden="true" tabindex="-1"></a>title_income      <span class="ot">&lt;-</span> <span class="st">"How much faster house prices grew than incomes since 2015 (%)"</span></span>
-<span id="cb19-128"><a href="#cb19-128" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-129"><a href="#cb19-129" aria-hidden="true" tabindex="-1"></a><span class="co"># data source as a footnote inside each plotly chart (it stays on the chart</span></span>
-<span id="cb19-130"><a href="#cb19-130" aria-hidden="true" tabindex="-1"></a><span class="co"># when it is downloaded as a PNG from the plotly toolbar): `b` is the bottom</span></span>
-<span id="cb19-131"><a href="#cb19-131" aria-hidden="true" tabindex="-1"></a><span class="co"># margin that makes room for it; the note sits at the bottom of that margin,</span></span>
-<span id="cb19-132"><a href="#cb19-132" aria-hidden="true" tabindex="-1"></a><span class="co"># in pixels, so it lands in the same place whatever the chart's height</span></span>
-<span id="cb19-133"><a href="#cb19-133" aria-hidden="true" tabindex="-1"></a>oecd_url <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ"</span>,</span>
-<span id="cb19-134"><a href="#cb19-134" aria-hidden="true" tabindex="-1"></a>                   <span class="st">"&amp;df[id]=DSD_AN_HOUSE_PRICES%40DF_HOUSE_PRICES&amp;df[ag]=OECD.ECO.MPD"</span>)</span>
-<span id="cb19-135"><a href="#cb19-135" aria-hidden="true" tabindex="-1"></a><span class="co"># chart height in pixels, set on the widget itself (width stays 100% of the</span></span>
-<span id="cb19-136"><a href="#cb19-136" aria-hidden="true" tabindex="-1"></a><span class="co"># page), so the chart always fills the box it is drawn in — no scroll bars.</span></span>
-<span id="cb19-137"><a href="#cb19-137" aria-hidden="true" tabindex="-1"></a><span class="co"># Returned inside a tagList: printed straight from a chunk, a widget's height</span></span>
-<span id="cb19-138"><a href="#cb19-138" aria-hidden="true" tabindex="-1"></a><span class="co"># is overridden by the chunk's figure size; inside a tagList it is kept</span></span>
-<span id="cb19-139"><a href="#cb19-139" aria-hidden="true" tabindex="-1"></a><span class="co"># The plotly toolbar goes down the right edge, so it never covers a long title</span></span>
-<span id="cb19-140"><a href="#cb19-140" aria-hidden="true" tabindex="-1"></a>sized <span class="ot">&lt;-</span> <span class="cf">function</span>(p, h) {</span>
-<span id="cb19-141"><a href="#cb19-141" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> plotly<span class="sc">::</span><span class="fu">layout</span>(p, <span class="at">modebar =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"v"</span>))</span>
-<span id="cb19-142"><a href="#cb19-142" aria-hidden="true" tabindex="-1"></a>  p<span class="sc">$</span>height <span class="ot">&lt;-</span> h</span>
-<span id="cb19-143"><a href="#cb19-143" aria-hidden="true" tabindex="-1"></a>  htmltools<span class="sc">::</span><span class="fu">tagList</span>(p)</span>
-<span id="cb19-144"><a href="#cb19-144" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb19-145"><a href="#cb19-145" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-146"><a href="#cb19-146" aria-hidden="true" tabindex="-1"></a>add_source <span class="ot">&lt;-</span> <span class="cf">function</span>(p, what, b) {</span>
-<span id="cb19-147"><a href="#cb19-147" aria-hidden="true" tabindex="-1"></a>  plotly<span class="sc">::</span><span class="fu">layout</span>(p,</span>
-<span id="cb19-148"><a href="#cb19-148" aria-hidden="true" tabindex="-1"></a>    <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">b =</span> b),</span>
-<span id="cb19-149"><a href="#cb19-149" aria-hidden="true" tabindex="-1"></a>    <span class="at">annotations =</span> <span class="fu">list</span>(<span class="fu">list</span>(</span>
-<span id="cb19-150"><a href="#cb19-150" aria-hidden="true" tabindex="-1"></a>      <span class="at">text =</span> <span class="fu">paste0</span>(<span class="st">"Source: &lt;a href='"</span>, oecd_url, <span class="st">"'&gt;OECD, Analytical house prices indicators&lt;/a&gt;"</span>,</span>
-<span id="cb19-151"><a href="#cb19-151" aria-hidden="true" tabindex="-1"></a>                    <span class="st">" ("</span>, what, <span class="st">")"</span>),</span>
-<span id="cb19-152"><a href="#cb19-152" aria-hidden="true" tabindex="-1"></a>      <span class="at">xref =</span> <span class="st">"paper"</span>, <span class="at">yref =</span> <span class="st">"paper"</span>, <span class="at">x =</span> <span class="dv">1</span>, <span class="at">y =</span> <span class="dv">0</span>, <span class="at">yshift =</span> <span class="sc">-</span>(b <span class="sc">-</span> <span class="dv">22</span>),</span>
-<span id="cb19-153"><a href="#cb19-153" aria-hidden="true" tabindex="-1"></a>      <span class="at">xanchor =</span> <span class="st">"right"</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>, <span class="at">showarrow =</span> <span class="cn">FALSE</span>,</span>
-<span id="cb19-154"><a href="#cb19-154" aria-hidden="true" tabindex="-1"></a>      <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">11</span>, <span class="at">color =</span> <span class="st">"#7F7F7F"</span>))))</span>
-<span id="cb19-155"><a href="#cb19-155" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb19-156"><a href="#cb19-156" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-157"><a href="#cb19-157" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-158"><a href="#cb19-158" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-159"><a href="#cb19-159" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-160"><a href="#cb19-160" aria-hidden="true" tabindex="-1"></a><span class="fu">## Greece at a glance</span></span>
-<span id="cb19-161"><a href="#cb19-161" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-162"><a href="#cb19-162" aria-hidden="true" tabindex="-1"></a>Before racing Greece against Europe, it helps to see its four indicators side by side, as a change against 2015 (the dotted zero line). House prices and rents both fell hard in the years of the crisis, but they recovered at very different speeds: the price-to-rent line shows how much faster house prices have climbed than rents, and — because incomes recovered more slowly still — the price-to-income line shows how much less affordable buying a home has become.</span>
-<span id="cb19-163"><a href="#cb19-163" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-164"><a href="#cb19-164" aria-hidden="true" tabindex="-1"></a><span class="in">```{r greece}</span></span>
-<span id="cb19-165"><a href="#cb19-165" aria-hidden="true" tabindex="-1"></a>labels_measure <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">RPI =</span> <span class="st">"Rent prices"</span>, <span class="at">HPI =</span> <span class="st">"House prices"</span>,</span>
-<span id="cb19-166"><a href="#cb19-166" aria-hidden="true" tabindex="-1"></a>                    <span class="at">HPI_YDH =</span> <span class="st">"Price to income"</span>, <span class="at">HPI_RPI =</span> <span class="st">"Price to rent"</span>)</span>
-<span id="cb19-167"><a href="#cb19-167" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-168"><a href="#cb19-168" aria-hidden="true" tabindex="-1"></a>df_greece <span class="ot">&lt;-</span> df_housing <span class="sc">%&gt;%</span></span>
-<span id="cb19-169"><a href="#cb19-169" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(country <span class="sc">==</span> <span class="st">"Greece"</span>, measure <span class="sc">%in%</span> <span class="fu">names</span>(labels_measure)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-170"><a href="#cb19-170" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">indicator =</span> labels_measure[measure])</span>
-<span id="cb19-171"><a href="#cb19-171" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-172"><a href="#cb19-172" aria-hidden="true" tabindex="-1"></a>df_greece_temp <span class="ot">&lt;-</span> df_greece[<span class="fu">order</span>(df_greece<span class="sc">$</span>measure, df_greece<span class="sc">$</span>year), <span class="fu">c</span>(<span class="st">"year"</span>, <span class="st">"indicator"</span>, <span class="st">"change"</span>)]</span>
-<span id="cb19-173"><a href="#cb19-173" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-174"><a href="#cb19-174" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_ly</span>(df_greece_temp,</span>
-<span id="cb19-175"><a href="#cb19-175" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="sc">~</span>year,</span>
-<span id="cb19-176"><a href="#cb19-176" aria-hidden="true" tabindex="-1"></a>        <span class="at">y =</span> <span class="sc">~</span>change,</span>
-<span id="cb19-177"><a href="#cb19-177" aria-hidden="true" tabindex="-1"></a>        <span class="at">color =</span> <span class="sc">~</span>indicator,</span>
-<span id="cb19-178"><a href="#cb19-178" aria-hidden="true" tabindex="-1"></a>        <span class="at">colors =</span> <span class="fu">c</span>(<span class="st">"#0082c8"</span>, <span class="st">"#E74C3C"</span>, <span class="st">"#3cb44b"</span>, <span class="st">"#f39c12"</span>),</span>
-<span id="cb19-179"><a href="#cb19-179" aria-hidden="true" tabindex="-1"></a>        <span class="at">type =</span> <span class="st">"scatter"</span>,</span>
-<span id="cb19-180"><a href="#cb19-180" aria-hidden="true" tabindex="-1"></a>        <span class="at">mode =</span> <span class="st">"lines+markers"</span>,</span>
-<span id="cb19-181"><a href="#cb19-181" aria-hidden="true" tabindex="-1"></a>        <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(<span class="st">"Year: "</span>, year, <span class="st">"&lt;br&gt;"</span>, indicator, <span class="st">": "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.1f%%"</span>, change)),</span>
-<span id="cb19-182"><a href="#cb19-182" aria-hidden="true" tabindex="-1"></a>        <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
-<span id="cb19-183"><a href="#cb19-183" aria-hidden="true" tabindex="-1"></a>        <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">10</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-184"><a href="#cb19-184" aria-hidden="true" tabindex="-1"></a>  plotly<span class="sc">::</span><span class="fu">layout</span>(<span class="at">title =</span> <span class="fu">list</span>(<span class="at">text =</span> <span class="st">"Greece: change in house pricing since 2015 (%)"</span>,</span>
-<span id="cb19-185"><a href="#cb19-185" aria-hidden="true" tabindex="-1"></a>                              <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>,</span>
-<span id="cb19-186"><a href="#cb19-186" aria-hidden="true" tabindex="-1"></a>                              <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
-<span id="cb19-187"><a href="#cb19-187" aria-hidden="true" tabindex="-1"></a>                 <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">t =</span> <span class="dv">80</span>),</span>
-<span id="cb19-188"><a href="#cb19-188" aria-hidden="true" tabindex="-1"></a>                 <span class="at">xaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"Year"</span>, <span class="at">tickangle =</span> <span class="sc">-</span><span class="dv">90</span>),</span>
-<span id="cb19-189"><a href="#cb19-189" aria-hidden="true" tabindex="-1"></a>                 <span class="at">yaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
-<span id="cb19-190"><a href="#cb19-190" aria-hidden="true" tabindex="-1"></a>                 <span class="at">legend =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"h"</span>, <span class="at">y =</span> <span class="sc">-</span><span class="fl">0.2</span>),</span>
-<span id="cb19-191"><a href="#cb19-191" aria-hidden="true" tabindex="-1"></a>                 <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>),</span>
-<span id="cb19-192"><a href="#cb19-192" aria-hidden="true" tabindex="-1"></a>                 <span class="at">shapes =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">type =</span> <span class="st">"line"</span>,</span>
-<span id="cb19-193"><a href="#cb19-193" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">x0 =</span> <span class="fu">min</span>(df_greece_temp<span class="sc">$</span>year),</span>
-<span id="cb19-194"><a href="#cb19-194" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">x1 =</span> <span class="fu">max</span>(df_greece_temp<span class="sc">$</span>year),</span>
-<span id="cb19-195"><a href="#cb19-195" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">y0 =</span> <span class="dv">0</span>, <span class="at">y1 =</span> <span class="dv">0</span>,</span>
-<span id="cb19-196"><a href="#cb19-196" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">line =</span> <span class="fu">list</span>(<span class="at">dash =</span> <span class="st">"dot"</span>, <span class="at">color =</span> <span class="st">"gray"</span>)))) <span class="sc">%&gt;%</span></span>
-<span id="cb19-197"><a href="#cb19-197" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_source</span>(<span class="st">"RPI, HPI, HPI_YDH, HPI_RPI"</span>, <span class="at">b =</span> <span class="dv">150</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-198"><a href="#cb19-198" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sized</span>(<span class="dv">520</span>)</span>
-<span id="cb19-199"><a href="#cb19-199" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-200"><a href="#cb19-200" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-201"><a href="#cb19-201" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-202"><a href="#cb19-202" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-203"><a href="#cb19-203" aria-hidden="true" tabindex="-1"></a>The code below generates a plot for each country, showing the change in rents, house prices, price-to-income and price-to-rent since 2015. Greece is plotted first, then every other country alphabetically.</span>
-<span id="cb19-204"><a href="#cb19-204" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-205"><a href="#cb19-205" aria-hidden="true" tabindex="-1"></a><span class="in">```{r all_countries}</span></span>
-<span id="cb19-206"><a href="#cb19-206" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-207"><a href="#cb19-207" aria-hidden="true" tabindex="-1"></a>labels_measure <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">RPI =</span> <span class="st">"Rent prices"</span>, <span class="at">HPI =</span> <span class="st">"House prices"</span>,</span>
-<span id="cb19-208"><a href="#cb19-208" aria-hidden="true" tabindex="-1"></a>                    <span class="at">HPI_YDH =</span> <span class="st">"Price to income"</span>, <span class="at">HPI_RPI =</span> <span class="st">"Price to rent"</span>)</span>
-<span id="cb19-209"><a href="#cb19-209" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-210"><a href="#cb19-210" aria-hidden="true" tabindex="-1"></a>country_plot <span class="ot">&lt;-</span> <span class="cf">function</span>(cname) {</span>
-<span id="cb19-211"><a href="#cb19-211" aria-hidden="true" tabindex="-1"></a>  d <span class="ot">&lt;-</span> df_housing <span class="sc">%&gt;%</span></span>
-<span id="cb19-212"><a href="#cb19-212" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(country <span class="sc">==</span> cname, measure <span class="sc">%in%</span> <span class="fu">names</span>(labels_measure)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-213"><a href="#cb19-213" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">indicator =</span> labels_measure[measure]) <span class="sc">%&gt;%</span></span>
-<span id="cb19-214"><a href="#cb19-214" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(measure, year) <span class="sc">%&gt;%</span></span>
-<span id="cb19-215"><a href="#cb19-215" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(year, indicator, change)</span>
-<span id="cb19-216"><a href="#cb19-216" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-217"><a href="#cb19-217" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_ly</span>(d,</span>
-<span id="cb19-218"><a href="#cb19-218" aria-hidden="true" tabindex="-1"></a>          <span class="at">x =</span> <span class="sc">~</span>year,</span>
-<span id="cb19-219"><a href="#cb19-219" aria-hidden="true" tabindex="-1"></a>          <span class="at">y =</span> <span class="sc">~</span>change,</span>
-<span id="cb19-220"><a href="#cb19-220" aria-hidden="true" tabindex="-1"></a>          <span class="at">color =</span> <span class="sc">~</span>indicator,</span>
-<span id="cb19-221"><a href="#cb19-221" aria-hidden="true" tabindex="-1"></a>          <span class="at">colors =</span> <span class="fu">c</span>(<span class="st">"#0082c8"</span>, <span class="st">"#E74C3C"</span>, <span class="st">"#3cb44b"</span>, <span class="st">"#f39c12"</span>),</span>
-<span id="cb19-222"><a href="#cb19-222" aria-hidden="true" tabindex="-1"></a>          <span class="at">type =</span> <span class="st">"scatter"</span>,</span>
-<span id="cb19-223"><a href="#cb19-223" aria-hidden="true" tabindex="-1"></a>          <span class="at">mode =</span> <span class="st">"lines+markers"</span>,</span>
-<span id="cb19-224"><a href="#cb19-224" aria-hidden="true" tabindex="-1"></a>          <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(<span class="st">"Year: "</span>, year, <span class="st">"&lt;br&gt;"</span>, indicator, <span class="st">": "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.1f%%"</span>, change)),</span>
-<span id="cb19-225"><a href="#cb19-225" aria-hidden="true" tabindex="-1"></a>          <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
-<span id="cb19-226"><a href="#cb19-226" aria-hidden="true" tabindex="-1"></a>          <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">8</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-227"><a href="#cb19-227" aria-hidden="true" tabindex="-1"></a>    plotly<span class="sc">::</span><span class="fu">layout</span>(<span class="at">title =</span> <span class="fu">list</span>(<span class="at">text =</span> <span class="fu">paste0</span>(cname, <span class="st">": change in house pricing since 2015 (%)"</span>),</span>
-<span id="cb19-228"><a href="#cb19-228" aria-hidden="true" tabindex="-1"></a>                                <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>,</span>
-<span id="cb19-229"><a href="#cb19-229" aria-hidden="true" tabindex="-1"></a>                                <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
-<span id="cb19-230"><a href="#cb19-230" aria-hidden="true" tabindex="-1"></a>                   <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">t =</span> <span class="dv">80</span>),</span>
-<span id="cb19-231"><a href="#cb19-231" aria-hidden="true" tabindex="-1"></a>                   <span class="at">xaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">""</span>, <span class="at">tickangle =</span> <span class="sc">-</span><span class="dv">90</span>),</span>
-<span id="cb19-232"><a href="#cb19-232" aria-hidden="true" tabindex="-1"></a>                   <span class="at">yaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
-<span id="cb19-233"><a href="#cb19-233" aria-hidden="true" tabindex="-1"></a>                   <span class="at">legend =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"h"</span>, <span class="at">y =</span> <span class="sc">-</span><span class="fl">0.2</span>),</span>
-<span id="cb19-234"><a href="#cb19-234" aria-hidden="true" tabindex="-1"></a>                   <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>),</span>
-<span id="cb19-235"><a href="#cb19-235" aria-hidden="true" tabindex="-1"></a>                   <span class="at">shapes =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">type =</span> <span class="st">"line"</span>,</span>
-<span id="cb19-236"><a href="#cb19-236" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">x0 =</span> <span class="fu">min</span>(d<span class="sc">$</span>year), <span class="at">x1 =</span> <span class="fu">max</span>(d<span class="sc">$</span>year),</span>
-<span id="cb19-237"><a href="#cb19-237" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">y0 =</span> <span class="dv">0</span>, <span class="at">y1 =</span> <span class="dv">0</span>,</span>
-<span id="cb19-238"><a href="#cb19-238" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">line =</span> <span class="fu">list</span>(<span class="at">dash =</span> <span class="st">"dot"</span>, <span class="at">color =</span> <span class="st">"gray"</span>)))) <span class="sc">%&gt;%</span></span>
-<span id="cb19-239"><a href="#cb19-239" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_source</span>(<span class="st">"RPI, HPI, HPI_YDH, HPI_RPI"</span>, <span class="at">b =</span> <span class="dv">150</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-240"><a href="#cb19-240" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sized</span>(<span class="dv">520</span>)</span>
-<span id="cb19-241"><a href="#cb19-241" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-109"><a href="#cb19-109" aria-hidden="true" tabindex="-1"></a>title_rent        <span class="ot">&lt;-</span> <span class="st">"How much more expensive rents got since 2015 (%)"</span></span>
+<span id="cb19-110"><a href="#cb19-110" aria-hidden="true" tabindex="-1"></a>title_house_price <span class="ot">&lt;-</span> <span class="st">"How much more expensive houses got since 2015 (%)"</span></span>
+<span id="cb19-111"><a href="#cb19-111" aria-hidden="true" tabindex="-1"></a>title_price_rent  <span class="ot">&lt;-</span> <span class="st">"How much faster house prices grew than rents since 2015 (%)"</span></span>
+<span id="cb19-112"><a href="#cb19-112" aria-hidden="true" tabindex="-1"></a><span class="co"># "+13%" / "-3%"; rounding first (+ 0 turns -0 into 0) so -0.4 reads "+0%", never "-0%"</span></span>
+<span id="cb19-113"><a href="#cb19-113" aria-hidden="true" tabindex="-1"></a>pct <span class="ot">&lt;-</span> <span class="cf">function</span>(v) <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, <span class="fu">round</span>(v) <span class="sc">+</span> <span class="dv">0</span>)</span>
+<span id="cb19-114"><a href="#cb19-114" aria-hidden="true" tabindex="-1"></a>title_income      <span class="ot">&lt;-</span> <span class="st">"How much faster house prices grew than incomes since 2015 (%)"</span></span>
+<span id="cb19-115"><a href="#cb19-115" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-116"><a href="#cb19-116" aria-hidden="true" tabindex="-1"></a><span class="co"># data source as a footnote inside each plotly chart (it stays on the chart</span></span>
+<span id="cb19-117"><a href="#cb19-117" aria-hidden="true" tabindex="-1"></a><span class="co"># when it is downloaded as a PNG from the plotly toolbar): `b` is the bottom</span></span>
+<span id="cb19-118"><a href="#cb19-118" aria-hidden="true" tabindex="-1"></a><span class="co"># margin that makes room for it; the note sits at the bottom of that margin,</span></span>
+<span id="cb19-119"><a href="#cb19-119" aria-hidden="true" tabindex="-1"></a><span class="co"># in pixels, so it lands in the same place whatever the chart's height</span></span>
+<span id="cb19-120"><a href="#cb19-120" aria-hidden="true" tabindex="-1"></a>oecd_url <span class="ot">&lt;-</span> <span class="fu">paste0</span>(<span class="st">"https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ"</span>,</span>
+<span id="cb19-121"><a href="#cb19-121" aria-hidden="true" tabindex="-1"></a>                   <span class="st">"&amp;df[id]=DSD_AN_HOUSE_PRICES%40DF_HOUSE_PRICES&amp;df[ag]=OECD.ECO.MPD"</span>)</span>
+<span id="cb19-122"><a href="#cb19-122" aria-hidden="true" tabindex="-1"></a><span class="co"># chart height in pixels, set on the widget itself (width stays 100% of the</span></span>
+<span id="cb19-123"><a href="#cb19-123" aria-hidden="true" tabindex="-1"></a><span class="co"># page), so the chart always fills the box it is drawn in — no scroll bars.</span></span>
+<span id="cb19-124"><a href="#cb19-124" aria-hidden="true" tabindex="-1"></a><span class="co"># Returned inside a tagList: printed straight from a chunk, a widget's height</span></span>
+<span id="cb19-125"><a href="#cb19-125" aria-hidden="true" tabindex="-1"></a><span class="co"># is overridden by the chunk's figure size; inside a tagList it is kept</span></span>
+<span id="cb19-126"><a href="#cb19-126" aria-hidden="true" tabindex="-1"></a><span class="co"># The plotly toolbar goes down the right edge, so it never covers a long title</span></span>
+<span id="cb19-127"><a href="#cb19-127" aria-hidden="true" tabindex="-1"></a>sized <span class="ot">&lt;-</span> <span class="cf">function</span>(p, h) {</span>
+<span id="cb19-128"><a href="#cb19-128" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> plotly<span class="sc">::</span><span class="fu">layout</span>(p, <span class="at">modebar =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"v"</span>))</span>
+<span id="cb19-129"><a href="#cb19-129" aria-hidden="true" tabindex="-1"></a>  p<span class="sc">$</span>height <span class="ot">&lt;-</span> h</span>
+<span id="cb19-130"><a href="#cb19-130" aria-hidden="true" tabindex="-1"></a>  htmltools<span class="sc">::</span><span class="fu">tagList</span>(p)</span>
+<span id="cb19-131"><a href="#cb19-131" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-132"><a href="#cb19-132" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-133"><a href="#cb19-133" aria-hidden="true" tabindex="-1"></a>add_source <span class="ot">&lt;-</span> <span class="cf">function</span>(p, what, b) {</span>
+<span id="cb19-134"><a href="#cb19-134" aria-hidden="true" tabindex="-1"></a>  plotly<span class="sc">::</span><span class="fu">layout</span>(p,</span>
+<span id="cb19-135"><a href="#cb19-135" aria-hidden="true" tabindex="-1"></a>    <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">b =</span> b),</span>
+<span id="cb19-136"><a href="#cb19-136" aria-hidden="true" tabindex="-1"></a>    <span class="at">annotations =</span> <span class="fu">list</span>(<span class="fu">list</span>(</span>
+<span id="cb19-137"><a href="#cb19-137" aria-hidden="true" tabindex="-1"></a>      <span class="at">text =</span> <span class="fu">paste0</span>(<span class="st">"Source: &lt;a href='"</span>, oecd_url, <span class="st">"'&gt;OECD, Analytical house prices indicators&lt;/a&gt;"</span>,</span>
+<span id="cb19-138"><a href="#cb19-138" aria-hidden="true" tabindex="-1"></a>                    <span class="st">" ("</span>, what, <span class="st">")"</span>),</span>
+<span id="cb19-139"><a href="#cb19-139" aria-hidden="true" tabindex="-1"></a>      <span class="at">xref =</span> <span class="st">"paper"</span>, <span class="at">yref =</span> <span class="st">"paper"</span>, <span class="at">x =</span> <span class="dv">1</span>, <span class="at">y =</span> <span class="dv">0</span>, <span class="at">yshift =</span> <span class="sc">-</span>(b <span class="sc">-</span> <span class="dv">22</span>),</span>
+<span id="cb19-140"><a href="#cb19-140" aria-hidden="true" tabindex="-1"></a>      <span class="at">xanchor =</span> <span class="st">"right"</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>, <span class="at">showarrow =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb19-141"><a href="#cb19-141" aria-hidden="true" tabindex="-1"></a>      <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">11</span>, <span class="at">color =</span> <span class="st">"#7F7F7F"</span>))))</span>
+<span id="cb19-142"><a href="#cb19-142" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-143"><a href="#cb19-143" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-144"><a href="#cb19-144" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-145"><a href="#cb19-145" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-146"><a href="#cb19-146" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-147"><a href="#cb19-147" aria-hidden="true" tabindex="-1"></a><span class="fu">## Greece at a glance</span></span>
+<span id="cb19-148"><a href="#cb19-148" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-149"><a href="#cb19-149" aria-hidden="true" tabindex="-1"></a>Before racing Greece against Europe, it helps to see its four indicators side by side, as a change against 2015 (the dotted zero line). House prices and rents both fell hard in the years of the crisis, but they recovered at very different speeds: the price-to-rent line shows how much faster house prices have climbed than rents, and — because incomes recovered more slowly still — the price-to-income line shows how much less affordable buying a home has become.</span>
+<span id="cb19-150"><a href="#cb19-150" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-151"><a href="#cb19-151" aria-hidden="true" tabindex="-1"></a><span class="in">```{r greece}</span></span>
+<span id="cb19-152"><a href="#cb19-152" aria-hidden="true" tabindex="-1"></a>labels_measure <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">RPI =</span> <span class="st">"Rent prices"</span>, <span class="at">HPI =</span> <span class="st">"House prices"</span>,</span>
+<span id="cb19-153"><a href="#cb19-153" aria-hidden="true" tabindex="-1"></a>                    <span class="at">HPI_YDH =</span> <span class="st">"Price to income"</span>, <span class="at">HPI_RPI =</span> <span class="st">"Price to rent"</span>)</span>
+<span id="cb19-154"><a href="#cb19-154" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-155"><a href="#cb19-155" aria-hidden="true" tabindex="-1"></a>df_greece <span class="ot">&lt;-</span> df_housing <span class="sc">%&gt;%</span></span>
+<span id="cb19-156"><a href="#cb19-156" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(country <span class="sc">==</span> <span class="st">"Greece"</span>, measure <span class="sc">%in%</span> <span class="fu">names</span>(labels_measure)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-157"><a href="#cb19-157" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">indicator =</span> labels_measure[measure])</span>
+<span id="cb19-158"><a href="#cb19-158" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-159"><a href="#cb19-159" aria-hidden="true" tabindex="-1"></a>df_greece_temp <span class="ot">&lt;-</span> df_greece[<span class="fu">order</span>(df_greece<span class="sc">$</span>measure, df_greece<span class="sc">$</span>year), <span class="fu">c</span>(<span class="st">"year"</span>, <span class="st">"indicator"</span>, <span class="st">"change"</span>)]</span>
+<span id="cb19-160"><a href="#cb19-160" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-161"><a href="#cb19-161" aria-hidden="true" tabindex="-1"></a><span class="fu">plot_ly</span>(df_greece_temp,</span>
+<span id="cb19-162"><a href="#cb19-162" aria-hidden="true" tabindex="-1"></a>        <span class="at">x =</span> <span class="sc">~</span>year,</span>
+<span id="cb19-163"><a href="#cb19-163" aria-hidden="true" tabindex="-1"></a>        <span class="at">y =</span> <span class="sc">~</span>change,</span>
+<span id="cb19-164"><a href="#cb19-164" aria-hidden="true" tabindex="-1"></a>        <span class="at">color =</span> <span class="sc">~</span>indicator,</span>
+<span id="cb19-165"><a href="#cb19-165" aria-hidden="true" tabindex="-1"></a>        <span class="at">colors =</span> <span class="fu">c</span>(<span class="st">"#0082c8"</span>, <span class="st">"#E74C3C"</span>, <span class="st">"#3cb44b"</span>, <span class="st">"#f39c12"</span>),</span>
+<span id="cb19-166"><a href="#cb19-166" aria-hidden="true" tabindex="-1"></a>        <span class="at">type =</span> <span class="st">"scatter"</span>,</span>
+<span id="cb19-167"><a href="#cb19-167" aria-hidden="true" tabindex="-1"></a>        <span class="at">mode =</span> <span class="st">"lines+markers"</span>,</span>
+<span id="cb19-168"><a href="#cb19-168" aria-hidden="true" tabindex="-1"></a>        <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(<span class="st">"Year: "</span>, year, <span class="st">"&lt;br&gt;"</span>, indicator, <span class="st">": "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.1f%%"</span>, change)),</span>
+<span id="cb19-169"><a href="#cb19-169" aria-hidden="true" tabindex="-1"></a>        <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
+<span id="cb19-170"><a href="#cb19-170" aria-hidden="true" tabindex="-1"></a>        <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">10</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-171"><a href="#cb19-171" aria-hidden="true" tabindex="-1"></a>  plotly<span class="sc">::</span><span class="fu">layout</span>(<span class="at">title =</span> <span class="fu">list</span>(<span class="at">text =</span> <span class="st">"Greece: change in house pricing since 2015 (%)"</span>,</span>
+<span id="cb19-172"><a href="#cb19-172" aria-hidden="true" tabindex="-1"></a>                              <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>,</span>
+<span id="cb19-173"><a href="#cb19-173" aria-hidden="true" tabindex="-1"></a>                              <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
+<span id="cb19-174"><a href="#cb19-174" aria-hidden="true" tabindex="-1"></a>                 <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">t =</span> <span class="dv">80</span>),</span>
+<span id="cb19-175"><a href="#cb19-175" aria-hidden="true" tabindex="-1"></a>                 <span class="at">xaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"Year"</span>, <span class="at">tickangle =</span> <span class="sc">-</span><span class="dv">90</span>),</span>
+<span id="cb19-176"><a href="#cb19-176" aria-hidden="true" tabindex="-1"></a>                 <span class="at">yaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
+<span id="cb19-177"><a href="#cb19-177" aria-hidden="true" tabindex="-1"></a>                 <span class="at">legend =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"h"</span>, <span class="at">y =</span> <span class="sc">-</span><span class="fl">0.2</span>),</span>
+<span id="cb19-178"><a href="#cb19-178" aria-hidden="true" tabindex="-1"></a>                 <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>),</span>
+<span id="cb19-179"><a href="#cb19-179" aria-hidden="true" tabindex="-1"></a>                 <span class="at">shapes =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">type =</span> <span class="st">"line"</span>,</span>
+<span id="cb19-180"><a href="#cb19-180" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">x0 =</span> <span class="fu">min</span>(df_greece_temp<span class="sc">$</span>year),</span>
+<span id="cb19-181"><a href="#cb19-181" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">x1 =</span> <span class="fu">max</span>(df_greece_temp<span class="sc">$</span>year),</span>
+<span id="cb19-182"><a href="#cb19-182" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">y0 =</span> <span class="dv">0</span>, <span class="at">y1 =</span> <span class="dv">0</span>,</span>
+<span id="cb19-183"><a href="#cb19-183" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">line =</span> <span class="fu">list</span>(<span class="at">dash =</span> <span class="st">"dot"</span>, <span class="at">color =</span> <span class="st">"gray"</span>)))) <span class="sc">%&gt;%</span></span>
+<span id="cb19-184"><a href="#cb19-184" aria-hidden="true" tabindex="-1"></a>  <span class="fu">add_source</span>(<span class="st">"RPI, HPI, HPI_YDH, HPI_RPI"</span>, <span class="at">b =</span> <span class="dv">150</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-185"><a href="#cb19-185" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sized</span>(<span class="dv">520</span>)</span>
+<span id="cb19-186"><a href="#cb19-186" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-187"><a href="#cb19-187" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-188"><a href="#cb19-188" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-189"><a href="#cb19-189" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-190"><a href="#cb19-190" aria-hidden="true" tabindex="-1"></a>The code below generates a plot for each country, showing the change in rents, house prices, price-to-income and price-to-rent since 2015. Greece is plotted first, then every other country alphabetically.</span>
+<span id="cb19-191"><a href="#cb19-191" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-192"><a href="#cb19-192" aria-hidden="true" tabindex="-1"></a><span class="in">```{r all_countries}</span></span>
+<span id="cb19-193"><a href="#cb19-193" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-194"><a href="#cb19-194" aria-hidden="true" tabindex="-1"></a>labels_measure <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">RPI =</span> <span class="st">"Rent prices"</span>, <span class="at">HPI =</span> <span class="st">"House prices"</span>,</span>
+<span id="cb19-195"><a href="#cb19-195" aria-hidden="true" tabindex="-1"></a>                    <span class="at">HPI_YDH =</span> <span class="st">"Price to income"</span>, <span class="at">HPI_RPI =</span> <span class="st">"Price to rent"</span>)</span>
+<span id="cb19-196"><a href="#cb19-196" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-197"><a href="#cb19-197" aria-hidden="true" tabindex="-1"></a>country_plot <span class="ot">&lt;-</span> <span class="cf">function</span>(cname) {</span>
+<span id="cb19-198"><a href="#cb19-198" aria-hidden="true" tabindex="-1"></a>  d <span class="ot">&lt;-</span> df_housing <span class="sc">%&gt;%</span></span>
+<span id="cb19-199"><a href="#cb19-199" aria-hidden="true" tabindex="-1"></a>    <span class="fu">filter</span>(country <span class="sc">==</span> cname, measure <span class="sc">%in%</span> <span class="fu">names</span>(labels_measure)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-200"><a href="#cb19-200" aria-hidden="true" tabindex="-1"></a>    <span class="fu">mutate</span>(<span class="at">indicator =</span> labels_measure[measure]) <span class="sc">%&gt;%</span></span>
+<span id="cb19-201"><a href="#cb19-201" aria-hidden="true" tabindex="-1"></a>    <span class="fu">arrange</span>(measure, year) <span class="sc">%&gt;%</span></span>
+<span id="cb19-202"><a href="#cb19-202" aria-hidden="true" tabindex="-1"></a>    <span class="fu">select</span>(year, indicator, change)</span>
+<span id="cb19-203"><a href="#cb19-203" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-204"><a href="#cb19-204" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_ly</span>(d,</span>
+<span id="cb19-205"><a href="#cb19-205" aria-hidden="true" tabindex="-1"></a>          <span class="at">x =</span> <span class="sc">~</span>year,</span>
+<span id="cb19-206"><a href="#cb19-206" aria-hidden="true" tabindex="-1"></a>          <span class="at">y =</span> <span class="sc">~</span>change,</span>
+<span id="cb19-207"><a href="#cb19-207" aria-hidden="true" tabindex="-1"></a>          <span class="at">color =</span> <span class="sc">~</span>indicator,</span>
+<span id="cb19-208"><a href="#cb19-208" aria-hidden="true" tabindex="-1"></a>          <span class="at">colors =</span> <span class="fu">c</span>(<span class="st">"#0082c8"</span>, <span class="st">"#E74C3C"</span>, <span class="st">"#3cb44b"</span>, <span class="st">"#f39c12"</span>),</span>
+<span id="cb19-209"><a href="#cb19-209" aria-hidden="true" tabindex="-1"></a>          <span class="at">type =</span> <span class="st">"scatter"</span>,</span>
+<span id="cb19-210"><a href="#cb19-210" aria-hidden="true" tabindex="-1"></a>          <span class="at">mode =</span> <span class="st">"lines+markers"</span>,</span>
+<span id="cb19-211"><a href="#cb19-211" aria-hidden="true" tabindex="-1"></a>          <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(<span class="st">"Year: "</span>, year, <span class="st">"&lt;br&gt;"</span>, indicator, <span class="st">": "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.1f%%"</span>, change)),</span>
+<span id="cb19-212"><a href="#cb19-212" aria-hidden="true" tabindex="-1"></a>          <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
+<span id="cb19-213"><a href="#cb19-213" aria-hidden="true" tabindex="-1"></a>          <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">8</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-214"><a href="#cb19-214" aria-hidden="true" tabindex="-1"></a>    plotly<span class="sc">::</span><span class="fu">layout</span>(<span class="at">title =</span> <span class="fu">list</span>(<span class="at">text =</span> <span class="fu">paste0</span>(cname, <span class="st">": change in house pricing since 2015 (%)"</span>),</span>
+<span id="cb19-215"><a href="#cb19-215" aria-hidden="true" tabindex="-1"></a>                                <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>,</span>
+<span id="cb19-216"><a href="#cb19-216" aria-hidden="true" tabindex="-1"></a>                                <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
+<span id="cb19-217"><a href="#cb19-217" aria-hidden="true" tabindex="-1"></a>                   <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">t =</span> <span class="dv">80</span>),</span>
+<span id="cb19-218"><a href="#cb19-218" aria-hidden="true" tabindex="-1"></a>                   <span class="at">xaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">""</span>, <span class="at">tickangle =</span> <span class="sc">-</span><span class="dv">90</span>),</span>
+<span id="cb19-219"><a href="#cb19-219" aria-hidden="true" tabindex="-1"></a>                   <span class="at">yaxis =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
+<span id="cb19-220"><a href="#cb19-220" aria-hidden="true" tabindex="-1"></a>                   <span class="at">legend =</span> <span class="fu">list</span>(<span class="at">orientation =</span> <span class="st">"h"</span>, <span class="at">y =</span> <span class="sc">-</span><span class="fl">0.2</span>),</span>
+<span id="cb19-221"><a href="#cb19-221" aria-hidden="true" tabindex="-1"></a>                   <span class="at">font =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>),</span>
+<span id="cb19-222"><a href="#cb19-222" aria-hidden="true" tabindex="-1"></a>                   <span class="at">shapes =</span> <span class="fu">list</span>(<span class="fu">list</span>(<span class="at">type =</span> <span class="st">"line"</span>,</span>
+<span id="cb19-223"><a href="#cb19-223" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">x0 =</span> <span class="fu">min</span>(d<span class="sc">$</span>year), <span class="at">x1 =</span> <span class="fu">max</span>(d<span class="sc">$</span>year),</span>
+<span id="cb19-224"><a href="#cb19-224" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">y0 =</span> <span class="dv">0</span>, <span class="at">y1 =</span> <span class="dv">0</span>,</span>
+<span id="cb19-225"><a href="#cb19-225" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">line =</span> <span class="fu">list</span>(<span class="at">dash =</span> <span class="st">"dot"</span>, <span class="at">color =</span> <span class="st">"gray"</span>)))) <span class="sc">%&gt;%</span></span>
+<span id="cb19-226"><a href="#cb19-226" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_source</span>(<span class="st">"RPI, HPI, HPI_YDH, HPI_RPI"</span>, <span class="at">b =</span> <span class="dv">150</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-227"><a href="#cb19-227" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sized</span>(<span class="dv">520</span>)</span>
+<span id="cb19-228"><a href="#cb19-228" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-229"><a href="#cb19-229" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-230"><a href="#cb19-230" aria-hidden="true" tabindex="-1"></a><span class="co"># Greece first, then every other country alphabetically</span></span>
+<span id="cb19-231"><a href="#cb19-231" aria-hidden="true" tabindex="-1"></a>countries <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Greece"</span>, <span class="fu">sort</span>(<span class="fu">setdiff</span>(<span class="fu">unique</span>(df_housing<span class="sc">$</span>country), <span class="st">"Greece"</span>)))</span>
+<span id="cb19-232"><a href="#cb19-232" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-233"><a href="#cb19-233" aria-hidden="true" tabindex="-1"></a>htmltools<span class="sc">::</span><span class="fu">tagList</span>(<span class="fu">lapply</span>(countries, country_plot))</span>
+<span id="cb19-234"><a href="#cb19-234" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-235"><a href="#cb19-235" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-236"><a href="#cb19-236" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-237"><a href="#cb19-237" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-238"><a href="#cb19-238" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-239"><a href="#cb19-239" aria-hidden="true" tabindex="-1"></a><span class="fu">## Building the visualisations</span></span>
+<span id="cb19-240"><a href="#cb19-240" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-241"><a href="#cb19-241" aria-hidden="true" tabindex="-1"></a><span class="fu">### Step 1 — bar chart race, ranked</span></span>
 <span id="cb19-242"><a href="#cb19-242" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-243"><a href="#cb19-243" aria-hidden="true" tabindex="-1"></a><span class="co"># Greece first, then every other country alphabetically</span></span>
-<span id="cb19-244"><a href="#cb19-244" aria-hidden="true" tabindex="-1"></a>countries <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="st">"Greece"</span>, <span class="fu">sort</span>(<span class="fu">setdiff</span>(<span class="fu">unique</span>(df_housing<span class="sc">$</span>country), <span class="st">"Greece"</span>)))</span>
-<span id="cb19-245"><a href="#cb19-245" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-246"><a href="#cb19-246" aria-hidden="true" tabindex="-1"></a>htmltools<span class="sc">::</span><span class="fu">tagList</span>(<span class="fu">lapply</span>(countries, country_plot))</span>
-<span id="cb19-247"><a href="#cb19-247" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-248"><a href="#cb19-248" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-249"><a href="#cb19-249" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-250"><a href="#cb19-250" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-251"><a href="#cb19-251" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-252"><a href="#cb19-252" aria-hidden="true" tabindex="-1"></a><span class="fu">## Building the visualisations</span></span>
-<span id="cb19-253"><a href="#cb19-253" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-254"><a href="#cb19-254" aria-hidden="true" tabindex="-1"></a><span class="fu">### Step 1 — bar chart race, ranked</span></span>
-<span id="cb19-255"><a href="#cb19-255" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-256"><a href="#cb19-256" aria-hidden="true" tabindex="-1"></a>The <span class="in">`frame`</span> argument of <span class="in">`plot_ly`</span> turns a bar chart into a play/pause animation stepping through each year, and plotting by <span class="in">`rank`</span> instead of country name makes the bars physically reorder every year. Greece is layered on top in red so it is always visible against the gray field. The same function draws four races: rents, house prices, and house prices relative to incomes and to rents.</span>
-<span id="cb19-257"><a href="#cb19-257" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-258"><a href="#cb19-258" aria-hidden="true" tabindex="-1"></a><span class="in">```{r bar_race}</span></span>
-<span id="cb19-259"><a href="#cb19-259" aria-hidden="true" tabindex="-1"></a>bar_race <span class="ot">&lt;-</span> <span class="cf">function</span>(d, title, what) {</span>
-<span id="cb19-260"><a href="#cb19-260" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_ly</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb19-261"><a href="#cb19-261" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_bars</span>(<span class="at">data =</span> d[d<span class="sc">$</span>color <span class="sc">==</span> <span class="st">"#B3B3B3"</span>, ],</span>
-<span id="cb19-262"><a href="#cb19-262" aria-hidden="true" tabindex="-1"></a>             <span class="at">x =</span> <span class="sc">~</span>rank, <span class="at">y =</span> <span class="sc">~</span>change, <span class="at">frame =</span> <span class="sc">~</span>year, <span class="at">ids =</span> <span class="sc">~</span>rank,</span>
-<span id="cb19-263"><a href="#cb19-263" aria-hidden="true" tabindex="-1"></a>             <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">color =</span> <span class="st">"#B3B3B3"</span>),</span>
-<span id="cb19-264"><a href="#cb19-264" aria-hidden="true" tabindex="-1"></a>             <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(country, <span class="st">" "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, change)), <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
-<span id="cb19-265"><a href="#cb19-265" aria-hidden="true" tabindex="-1"></a>             <span class="at">textposition =</span> <span class="st">"outside"</span>, <span class="at">textangle =</span> <span class="dv">90</span>, <span class="at">showlegend =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-266"><a href="#cb19-266" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_bars</span>(<span class="at">data =</span> d[d<span class="sc">$</span>color <span class="sc">%in%</span> <span class="st">"#E74C3C"</span>, ],</span>
-<span id="cb19-267"><a href="#cb19-267" aria-hidden="true" tabindex="-1"></a>             <span class="at">x =</span> <span class="sc">~</span>rank, <span class="at">y =</span> <span class="sc">~</span>change, <span class="at">frame =</span> <span class="sc">~</span>year, <span class="at">ids =</span> <span class="sc">~</span>rank,</span>
-<span id="cb19-268"><a href="#cb19-268" aria-hidden="true" tabindex="-1"></a>             <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">color =</span> <span class="st">"#E74C3C"</span>),</span>
-<span id="cb19-269"><a href="#cb19-269" aria-hidden="true" tabindex="-1"></a>             <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(country, <span class="st">" "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, change)), <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
-<span id="cb19-270"><a href="#cb19-270" aria-hidden="true" tabindex="-1"></a>             <span class="at">textposition =</span> <span class="st">"outside"</span>, <span class="at">textangle =</span> <span class="dv">90</span>, <span class="at">showlegend =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-271"><a href="#cb19-271" aria-hidden="true" tabindex="-1"></a>    <span class="fu">layout</span>(<span class="at">xaxis  =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"Rank"</span>, <span class="at">tickmode =</span> <span class="st">"array"</span>),</span>
-<span id="cb19-272"><a href="#cb19-272" aria-hidden="true" tabindex="-1"></a>           <span class="at">yaxis  =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
-<span id="cb19-273"><a href="#cb19-273" aria-hidden="true" tabindex="-1"></a>           <span class="at">title  =</span> <span class="fu">list</span>(<span class="at">text =</span> title, <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>, <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
-<span id="cb19-274"><a href="#cb19-274" aria-hidden="true" tabindex="-1"></a>           <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">l =</span> <span class="dv">50</span>, <span class="at">r =</span> <span class="dv">30</span>, <span class="at">t =</span> <span class="dv">70</span>),</span>
-<span id="cb19-275"><a href="#cb19-275" aria-hidden="true" tabindex="-1"></a>           <span class="at">font   =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>)) <span class="sc">%&gt;%</span></span>
-<span id="cb19-276"><a href="#cb19-276" aria-hidden="true" tabindex="-1"></a>    <span class="fu">animation_opts</span>(<span class="at">frame =</span> <span class="dv">1000</span>, <span class="at">transition =</span> <span class="dv">0</span>, <span class="at">easing =</span> <span class="st">"linear"</span>, <span class="at">redraw =</span> <span class="cn">TRUE</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-277"><a href="#cb19-277" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_source</span>(what, <span class="at">b =</span> <span class="dv">200</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb19-278"><a href="#cb19-278" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sized</span>(<span class="dv">620</span>)</span>
-<span id="cb19-279"><a href="#cb19-279" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb19-280"><a href="#cb19-280" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-281"><a href="#cb19-281" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_rent, title_rent, <span class="st">"rent prices, RPI"</span>)</span>
-<span id="cb19-282"><a href="#cb19-282" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_house_price, title_house_price, <span class="st">"house prices, HPI"</span>)</span>
-<span id="cb19-283"><a href="#cb19-283" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_income, title_income, <span class="st">"price-to-income ratio, HPI_YDH"</span>)</span>
-<span id="cb19-284"><a href="#cb19-284" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_price_rent, title_price_rent, <span class="st">"price-to-rent ratio, HPI_RPI"</span>)</span>
-<span id="cb19-285"><a href="#cb19-285" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-286"><a href="#cb19-286" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-287"><a href="#cb19-287" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-288"><a href="#cb19-288" aria-hidden="true" tabindex="-1"></a><span class="fu">### Step 2 — dark themed GIF with `gganimate`</span></span>
-<span id="cb19-289"><a href="#cb19-289" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-290"><a href="#cb19-290" aria-hidden="true" tabindex="-1"></a>A rendered GIF is easier to share than an interactive chart. <span class="in">`ggplot2`</span> + <span class="in">`gganimate`</span> recreates each of the four ranked races as a horizontal bar chart with a dark background, country labels and a large year watermark.</span>
-<span id="cb19-291"><a href="#cb19-291" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-292"><a href="#cb19-292" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif, eval=TRUE}</span></span>
-<span id="cb19-293"><a href="#cb19-293" aria-hidden="true" tabindex="-1"></a>race_gif <span class="ot">&lt;-</span> <span class="cf">function</span>(d, title, file) {</span>
-<span id="cb19-294"><a href="#cb19-294" aria-hidden="true" tabindex="-1"></a>  n_countries <span class="ot">&lt;-</span> <span class="fu">max</span>(d<span class="sc">$</span>rank)</span>
-<span id="cb19-295"><a href="#cb19-295" aria-hidden="true" tabindex="-1"></a>  hi  <span class="ot">&lt;-</span> <span class="fu">max</span>(d<span class="sc">$</span>change)</span>
-<span id="cb19-296"><a href="#cb19-296" aria-hidden="true" tabindex="-1"></a>  lo  <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="dv">0</span>, <span class="fu">min</span>(d<span class="sc">$</span>change))   <span class="co"># a few markets were below 2015 for a while</span></span>
-<span id="cb19-297"><a href="#cb19-297" aria-hidden="true" tabindex="-1"></a>  pad <span class="ot">&lt;-</span> (hi <span class="sc">-</span> lo) <span class="sc">*</span> <span class="fl">0.02</span></span>
-<span id="cb19-298"><a href="#cb19-298" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-299"><a href="#cb19-299" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(d, <span class="fu">aes</span>(<span class="at">x =</span> rank, <span class="at">y =</span> change, <span class="at">fill =</span> color, <span class="at">group =</span> country)) <span class="sc">+</span></span>
-<span id="cb19-300"><a href="#cb19-300" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_col</span>(<span class="at">width =</span> <span class="fl">0.85</span>, <span class="at">show.legend =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
-<span id="cb19-301"><a href="#cb19-301" aria-hidden="true" tabindex="-1"></a>    <span class="co"># country names left of the panel, value at the end of each bar</span></span>
-<span id="cb19-302"><a href="#cb19-302" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">y =</span> lo <span class="sc">-</span> pad, <span class="at">label =</span> country, <span class="at">color =</span> color),</span>
-<span id="cb19-303"><a href="#cb19-303" aria-hidden="true" tabindex="-1"></a>              <span class="at">hjust =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">3.8</span>, <span class="at">fontface =</span> <span class="st">"bold"</span>, <span class="at">show.legend =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
-<span id="cb19-304"><a href="#cb19-304" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">y =</span> <span class="fu">pmax</span>(change, <span class="dv">0</span>) <span class="sc">+</span> pad, <span class="at">label =</span> <span class="fu">pct</span>(change)),</span>
-<span id="cb19-305"><a href="#cb19-305" aria-hidden="true" tabindex="-1"></a>              <span class="at">hjust =</span> <span class="dv">0</span>, <span class="at">color =</span> <span class="st">"gray80"</span>, <span class="at">size =</span> <span class="fl">3.2</span>) <span class="sc">+</span></span>
-<span id="cb19-306"><a href="#cb19-306" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">color =</span> <span class="st">"#546E7A"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
-<span id="cb19-307"><a href="#cb19-307" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_fill_identity</span>() <span class="sc">+</span></span>
-<span id="cb19-308"><a href="#cb19-308" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_color_identity</span>() <span class="sc">+</span></span>
-<span id="cb19-309"><a href="#cb19-309" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_x_reverse</span>(<span class="at">breaks =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb19-310"><a href="#cb19-310" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> <span class="cf">function</span>(v) <span class="fu">paste0</span>(v, <span class="st">"%"</span>),</span>
-<span id="cb19-311"><a href="#cb19-311" aria-hidden="true" tabindex="-1"></a>                       <span class="at">expand =</span> <span class="fu">expansion</span>(<span class="at">mult =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.1</span>))) <span class="sc">+</span></span>
-<span id="cb19-312"><a href="#cb19-312" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(</span>
-<span id="cb19-313"><a href="#cb19-313" aria-hidden="true" tabindex="-1"></a>      <span class="at">data =</span> d <span class="sc">%&gt;%</span> dplyr<span class="sc">::</span><span class="fu">distinct</span>(year),</span>
-<span id="cb19-314"><a href="#cb19-314" aria-hidden="true" tabindex="-1"></a>      <span class="fu">aes</span>(<span class="at">x =</span> n_countries, <span class="at">y =</span> hi, <span class="at">label =</span> year),</span>
-<span id="cb19-315"><a href="#cb19-315" aria-hidden="true" tabindex="-1"></a>      <span class="at">inherit.aes =</span> <span class="cn">FALSE</span>,</span>
-<span id="cb19-316"><a href="#cb19-316" aria-hidden="true" tabindex="-1"></a>      <span class="at">hjust =</span> <span class="dv">1</span>, <span class="at">vjust =</span> <span class="dv">0</span>,</span>
-<span id="cb19-317"><a href="#cb19-317" aria-hidden="true" tabindex="-1"></a>      <span class="at">size =</span> <span class="dv">20</span>, <span class="at">color =</span> <span class="st">"white"</span>, <span class="at">alpha =</span> <span class="fl">0.15</span>,</span>
-<span id="cb19-318"><a href="#cb19-318" aria-hidden="true" tabindex="-1"></a>      <span class="at">fontface =</span> <span class="st">"bold"</span></span>
-<span id="cb19-319"><a href="#cb19-319" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
-<span id="cb19-320"><a href="#cb19-320" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_flip</span>(<span class="at">clip =</span> <span class="st">"off"</span>) <span class="sc">+</span></span>
-<span id="cb19-321"><a href="#cb19-321" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">title   =</span> title,</span>
-<span id="cb19-322"><a href="#cb19-322" aria-hidden="true" tabindex="-1"></a>         <span class="at">x       =</span> <span class="cn">NULL</span>,</span>
-<span id="cb19-323"><a href="#cb19-323" aria-hidden="true" tabindex="-1"></a>         <span class="at">y       =</span> <span class="st">"% vs 2015"</span>,</span>
-<span id="cb19-324"><a href="#cb19-324" aria-hidden="true" tabindex="-1"></a>         <span class="at">caption =</span> <span class="st">"Source: OECD Analytical house prices indicators  |  Greece highlighted in red"</span>) <span class="sc">+</span></span>
-<span id="cb19-325"><a href="#cb19-325" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
-<span id="cb19-326"><a href="#cb19-326" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(</span>
-<span id="cb19-327"><a href="#cb19-327" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.background    =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"#0F1923"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb19-328"><a href="#cb19-328" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.background   =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"#0F1923"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
-<span id="cb19-329"><a href="#cb19-329" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.major.x =</span> <span class="fu">element_line</span>(<span class="at">color =</span> <span class="st">"#1E2D3D"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>),</span>
-<span id="cb19-330"><a href="#cb19-330" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.major.y =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb19-331"><a href="#cb19-331" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.minor   =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb19-332"><a href="#cb19-332" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.text.x   =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#90A4AE"</span>, <span class="at">size =</span> <span class="dv">10</span>),</span>
-<span id="cb19-333"><a href="#cb19-333" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.text.y   =</span> <span class="fu">element_blank</span>(),</span>
-<span id="cb19-334"><a href="#cb19-334" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.title.x  =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#90A4AE"</span>, <span class="at">size =</span> <span class="dv">10</span>),</span>
-<span id="cb19-335"><a href="#cb19-335" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.title    =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"white"</span>, <span class="at">face =</span> <span class="st">"bold"</span>, <span class="at">size =</span> <span class="dv">12</span>,</span>
-<span id="cb19-336"><a href="#cb19-336" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">margin =</span> <span class="fu">margin</span>(<span class="dv">12</span>, <span class="dv">0</span>, <span class="dv">8</span>, <span class="dv">0</span>)),</span>
-<span id="cb19-337"><a href="#cb19-337" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.caption  =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#546E7A"</span>, <span class="at">size =</span> <span class="dv">8</span>, <span class="at">hjust =</span> <span class="dv">1</span>,</span>
-<span id="cb19-338"><a href="#cb19-338" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">margin =</span> <span class="fu">margin</span>(<span class="dv">8</span>, <span class="dv">0</span>, <span class="dv">8</span>, <span class="dv">0</span>)),</span>
-<span id="cb19-339"><a href="#cb19-339" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.margin   =</span> <span class="fu">margin</span>(<span class="dv">10</span>, <span class="dv">40</span>, <span class="dv">10</span>, <span class="dv">130</span>)) <span class="sc">+</span></span>
-<span id="cb19-340"><a href="#cb19-340" aria-hidden="true" tabindex="-1"></a>    <span class="fu">transition_states</span>(year, <span class="at">transition_length =</span> <span class="dv">0</span>, <span class="at">state_length =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
-<span id="cb19-341"><a href="#cb19-341" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ease_aes</span>(<span class="st">"cubic-in-out"</span>)</span>
-<span id="cb19-342"><a href="#cb19-342" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-343"><a href="#cb19-343" aria-hidden="true" tabindex="-1"></a>  <span class="fu">animate</span>(p,</span>
-<span id="cb19-344"><a href="#cb19-344" aria-hidden="true" tabindex="-1"></a>          <span class="at">nframes  =</span> <span class="dv">100</span>,</span>
-<span id="cb19-345"><a href="#cb19-345" aria-hidden="true" tabindex="-1"></a>          <span class="at">fps      =</span> <span class="dv">10</span>,</span>
-<span id="cb19-346"><a href="#cb19-346" aria-hidden="true" tabindex="-1"></a>          <span class="at">duration =</span> <span class="dv">20</span>,</span>
-<span id="cb19-347"><a href="#cb19-347" aria-hidden="true" tabindex="-1"></a>          <span class="at">width    =</span> <span class="dv">900</span>,</span>
-<span id="cb19-348"><a href="#cb19-348" aria-hidden="true" tabindex="-1"></a>          <span class="at">height   =</span> <span class="dv">900</span>,</span>
-<span id="cb19-349"><a href="#cb19-349" aria-hidden="true" tabindex="-1"></a>          <span class="at">units    =</span> <span class="st">"px"</span>,</span>
-<span id="cb19-350"><a href="#cb19-350" aria-hidden="true" tabindex="-1"></a>          <span class="at">res      =</span> <span class="dv">100</span>,   <span class="co"># set explicitly: when knitting, gganimate otherwise uses the chunk dpi</span></span>
-<span id="cb19-351"><a href="#cb19-351" aria-hidden="true" tabindex="-1"></a>          <span class="at">renderer =</span> <span class="fu">gifski_renderer</span>(file))</span>
-<span id="cb19-352"><a href="#cb19-352" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb19-353"><a href="#cb19-353" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-354"><a href="#cb19-354" aria-hidden="true" tabindex="-1"></a>gifs <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">rent        =</span> <span class="st">"greek_housing_race_rent.gif"</span>,</span>
-<span id="cb19-355"><a href="#cb19-355" aria-hidden="true" tabindex="-1"></a>          <span class="at">house_price =</span> <span class="st">"greek_housing_race_house_price.gif"</span>,</span>
-<span id="cb19-356"><a href="#cb19-356" aria-hidden="true" tabindex="-1"></a>          <span class="at">income      =</span> <span class="st">"greek_housing_race_income.gif"</span>,</span>
-<span id="cb19-357"><a href="#cb19-357" aria-hidden="true" tabindex="-1"></a>          <span class="at">price_rent  =</span> <span class="st">"greek_housing_race_price_rent.gif"</span>)</span>
-<span id="cb19-358"><a href="#cb19-358" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-359"><a href="#cb19-359" aria-hidden="true" tabindex="-1"></a><span class="co"># each GIF is drawn in its own chunk below: knitr shows only one animate()</span></span>
-<span id="cb19-360"><a href="#cb19-360" aria-hidden="true" tabindex="-1"></a><span class="co"># result per chunk</span></span>
-<span id="cb19-361"><a href="#cb19-361" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-362"><a href="#cb19-362" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-363"><a href="#cb19-363" aria-hidden="true" tabindex="-1"></a><span class="fu">#### Rents</span></span>
-<span id="cb19-364"><a href="#cb19-364" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-365"><a href="#cb19-365" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif0, eval=TRUE}</span></span>
-<span id="cb19-366"><a href="#cb19-366" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_rent, title_rent, gifs[[<span class="st">"rent"</span>]])</span>
-<span id="cb19-367"><a href="#cb19-367" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-368"><a href="#cb19-368" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-369"><a href="#cb19-369" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices</span></span>
-<span id="cb19-370"><a href="#cb19-370" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-371"><a href="#cb19-371" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif1, eval=TRUE}</span></span>
-<span id="cb19-372"><a href="#cb19-372" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_house_price, title_house_price, gifs[[<span class="st">"house_price"</span>]])</span>
-<span id="cb19-373"><a href="#cb19-373" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-243"><a href="#cb19-243" aria-hidden="true" tabindex="-1"></a>The <span class="in">`frame`</span> argument of <span class="in">`plot_ly`</span> turns a bar chart into a play/pause animation stepping through each year, and plotting by <span class="in">`rank`</span> instead of country name makes the bars physically reorder every year. Greece is layered on top in red so it is always visible against the gray field. The same function draws four races: rents, house prices, and house prices relative to incomes and to rents.</span>
+<span id="cb19-244"><a href="#cb19-244" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-245"><a href="#cb19-245" aria-hidden="true" tabindex="-1"></a><span class="in">```{r bar_race}</span></span>
+<span id="cb19-246"><a href="#cb19-246" aria-hidden="true" tabindex="-1"></a>bar_race <span class="ot">&lt;-</span> <span class="cf">function</span>(d, title, what) {</span>
+<span id="cb19-247"><a href="#cb19-247" aria-hidden="true" tabindex="-1"></a>  <span class="fu">plot_ly</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb19-248"><a href="#cb19-248" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_bars</span>(<span class="at">data =</span> d[d<span class="sc">$</span>color <span class="sc">==</span> <span class="st">"#B3B3B3"</span>, ],</span>
+<span id="cb19-249"><a href="#cb19-249" aria-hidden="true" tabindex="-1"></a>             <span class="at">x =</span> <span class="sc">~</span>rank, <span class="at">y =</span> <span class="sc">~</span>change, <span class="at">frame =</span> <span class="sc">~</span>year, <span class="at">ids =</span> <span class="sc">~</span>rank,</span>
+<span id="cb19-250"><a href="#cb19-250" aria-hidden="true" tabindex="-1"></a>             <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">color =</span> <span class="st">"#B3B3B3"</span>),</span>
+<span id="cb19-251"><a href="#cb19-251" aria-hidden="true" tabindex="-1"></a>             <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(country, <span class="st">" "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, change)), <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
+<span id="cb19-252"><a href="#cb19-252" aria-hidden="true" tabindex="-1"></a>             <span class="at">textposition =</span> <span class="st">"outside"</span>, <span class="at">textangle =</span> <span class="dv">90</span>, <span class="at">showlegend =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-253"><a href="#cb19-253" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_bars</span>(<span class="at">data =</span> d[d<span class="sc">$</span>color <span class="sc">%in%</span> <span class="st">"#E74C3C"</span>, ],</span>
+<span id="cb19-254"><a href="#cb19-254" aria-hidden="true" tabindex="-1"></a>             <span class="at">x =</span> <span class="sc">~</span>rank, <span class="at">y =</span> <span class="sc">~</span>change, <span class="at">frame =</span> <span class="sc">~</span>year, <span class="at">ids =</span> <span class="sc">~</span>rank,</span>
+<span id="cb19-255"><a href="#cb19-255" aria-hidden="true" tabindex="-1"></a>             <span class="at">marker =</span> <span class="fu">list</span>(<span class="at">color =</span> <span class="st">"#E74C3C"</span>),</span>
+<span id="cb19-256"><a href="#cb19-256" aria-hidden="true" tabindex="-1"></a>             <span class="at">text =</span> <span class="sc">~</span><span class="fu">paste0</span>(country, <span class="st">" "</span>, <span class="fu">sprintf</span>(<span class="st">"%+.0f%%"</span>, change)), <span class="at">hoverinfo =</span> <span class="st">"text"</span>,</span>
+<span id="cb19-257"><a href="#cb19-257" aria-hidden="true" tabindex="-1"></a>             <span class="at">textposition =</span> <span class="st">"outside"</span>, <span class="at">textangle =</span> <span class="dv">90</span>, <span class="at">showlegend =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-258"><a href="#cb19-258" aria-hidden="true" tabindex="-1"></a>    <span class="fu">layout</span>(<span class="at">xaxis  =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"Rank"</span>, <span class="at">tickmode =</span> <span class="st">"array"</span>),</span>
+<span id="cb19-259"><a href="#cb19-259" aria-hidden="true" tabindex="-1"></a>           <span class="at">yaxis  =</span> <span class="fu">list</span>(<span class="at">title =</span> <span class="st">"% vs 2015"</span>, <span class="at">ticksuffix =</span> <span class="st">"%"</span>),</span>
+<span id="cb19-260"><a href="#cb19-260" aria-hidden="true" tabindex="-1"></a>           <span class="at">title  =</span> <span class="fu">list</span>(<span class="at">text =</span> title, <span class="at">x =</span> <span class="fl">0.02</span>, <span class="at">xanchor =</span> <span class="st">"left"</span>, <span class="at">y =</span> <span class="fl">0.97</span>, <span class="at">yanchor =</span> <span class="st">"top"</span>),</span>
+<span id="cb19-261"><a href="#cb19-261" aria-hidden="true" tabindex="-1"></a>           <span class="at">margin =</span> <span class="fu">list</span>(<span class="at">l =</span> <span class="dv">50</span>, <span class="at">r =</span> <span class="dv">30</span>, <span class="at">t =</span> <span class="dv">70</span>),</span>
+<span id="cb19-262"><a href="#cb19-262" aria-hidden="true" tabindex="-1"></a>           <span class="at">font   =</span> <span class="fu">list</span>(<span class="at">size =</span> <span class="dv">13</span>, <span class="at">color =</span> <span class="st">"#404040"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb19-263"><a href="#cb19-263" aria-hidden="true" tabindex="-1"></a>    <span class="fu">animation_opts</span>(<span class="at">frame =</span> <span class="dv">1000</span>, <span class="at">transition =</span> <span class="dv">0</span>, <span class="at">easing =</span> <span class="st">"linear"</span>, <span class="at">redraw =</span> <span class="cn">TRUE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-264"><a href="#cb19-264" aria-hidden="true" tabindex="-1"></a>    <span class="fu">add_source</span>(what, <span class="at">b =</span> <span class="dv">200</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb19-265"><a href="#cb19-265" aria-hidden="true" tabindex="-1"></a>    <span class="fu">sized</span>(<span class="dv">620</span>)</span>
+<span id="cb19-266"><a href="#cb19-266" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-267"><a href="#cb19-267" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-268"><a href="#cb19-268" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_rent, title_rent, <span class="st">"rent prices, RPI"</span>)</span>
+<span id="cb19-269"><a href="#cb19-269" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_house_price, title_house_price, <span class="st">"house prices, HPI"</span>)</span>
+<span id="cb19-270"><a href="#cb19-270" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_income, title_income, <span class="st">"price-to-income ratio, HPI_YDH"</span>)</span>
+<span id="cb19-271"><a href="#cb19-271" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(df_price_rent, title_price_rent, <span class="st">"price-to-rent ratio, HPI_RPI"</span>)</span>
+<span id="cb19-272"><a href="#cb19-272" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-273"><a href="#cb19-273" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-274"><a href="#cb19-274" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-275"><a href="#cb19-275" aria-hidden="true" tabindex="-1"></a><span class="fu">### Step 2 — dark themed GIF with `gganimate`</span></span>
+<span id="cb19-276"><a href="#cb19-276" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-277"><a href="#cb19-277" aria-hidden="true" tabindex="-1"></a>A rendered GIF is easier to share than an interactive chart. <span class="in">`ggplot2`</span> + <span class="in">`gganimate`</span> recreates each of the four ranked races as a horizontal bar chart with a dark background, country labels and a large year watermark.</span>
+<span id="cb19-278"><a href="#cb19-278" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-279"><a href="#cb19-279" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif, eval=TRUE}</span></span>
+<span id="cb19-280"><a href="#cb19-280" aria-hidden="true" tabindex="-1"></a>race_gif <span class="ot">&lt;-</span> <span class="cf">function</span>(d, title, file) {</span>
+<span id="cb19-281"><a href="#cb19-281" aria-hidden="true" tabindex="-1"></a>  n_countries <span class="ot">&lt;-</span> <span class="fu">max</span>(d<span class="sc">$</span>rank)</span>
+<span id="cb19-282"><a href="#cb19-282" aria-hidden="true" tabindex="-1"></a>  hi  <span class="ot">&lt;-</span> <span class="fu">max</span>(d<span class="sc">$</span>change)</span>
+<span id="cb19-283"><a href="#cb19-283" aria-hidden="true" tabindex="-1"></a>  lo  <span class="ot">&lt;-</span> <span class="fu">min</span>(<span class="dv">0</span>, <span class="fu">min</span>(d<span class="sc">$</span>change))   <span class="co"># a few markets were below 2015 for a while</span></span>
+<span id="cb19-284"><a href="#cb19-284" aria-hidden="true" tabindex="-1"></a>  pad <span class="ot">&lt;-</span> (hi <span class="sc">-</span> lo) <span class="sc">*</span> <span class="fl">0.02</span></span>
+<span id="cb19-285"><a href="#cb19-285" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-286"><a href="#cb19-286" aria-hidden="true" tabindex="-1"></a>  p <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(d, <span class="fu">aes</span>(<span class="at">x =</span> rank, <span class="at">y =</span> change, <span class="at">fill =</span> color, <span class="at">group =</span> country)) <span class="sc">+</span></span>
+<span id="cb19-287"><a href="#cb19-287" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_col</span>(<span class="at">width =</span> <span class="fl">0.85</span>, <span class="at">show.legend =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb19-288"><a href="#cb19-288" aria-hidden="true" tabindex="-1"></a>    <span class="co"># country names left of the panel, value at the end of each bar</span></span>
+<span id="cb19-289"><a href="#cb19-289" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">y =</span> lo <span class="sc">-</span> pad, <span class="at">label =</span> country, <span class="at">color =</span> color),</span>
+<span id="cb19-290"><a href="#cb19-290" aria-hidden="true" tabindex="-1"></a>              <span class="at">hjust =</span> <span class="dv">1</span>, <span class="at">size =</span> <span class="fl">3.8</span>, <span class="at">fontface =</span> <span class="st">"bold"</span>, <span class="at">show.legend =</span> <span class="cn">FALSE</span>) <span class="sc">+</span></span>
+<span id="cb19-291"><a href="#cb19-291" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(<span class="fu">aes</span>(<span class="at">y =</span> <span class="fu">pmax</span>(change, <span class="dv">0</span>) <span class="sc">+</span> pad, <span class="at">label =</span> <span class="fu">pct</span>(change)),</span>
+<span id="cb19-292"><a href="#cb19-292" aria-hidden="true" tabindex="-1"></a>              <span class="at">hjust =</span> <span class="dv">0</span>, <span class="at">color =</span> <span class="st">"gray80"</span>, <span class="at">size =</span> <span class="fl">3.2</span>) <span class="sc">+</span></span>
+<span id="cb19-293"><a href="#cb19-293" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_hline</span>(<span class="at">yintercept =</span> <span class="dv">0</span>, <span class="at">color =</span> <span class="st">"#546E7A"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>) <span class="sc">+</span></span>
+<span id="cb19-294"><a href="#cb19-294" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_fill_identity</span>() <span class="sc">+</span></span>
+<span id="cb19-295"><a href="#cb19-295" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_color_identity</span>() <span class="sc">+</span></span>
+<span id="cb19-296"><a href="#cb19-296" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_x_reverse</span>(<span class="at">breaks =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb19-297"><a href="#cb19-297" aria-hidden="true" tabindex="-1"></a>    <span class="fu">scale_y_continuous</span>(<span class="at">labels =</span> <span class="cf">function</span>(v) <span class="fu">paste0</span>(v, <span class="st">"%"</span>),</span>
+<span id="cb19-298"><a href="#cb19-298" aria-hidden="true" tabindex="-1"></a>                       <span class="at">expand =</span> <span class="fu">expansion</span>(<span class="at">mult =</span> <span class="fu">c</span>(<span class="fl">0.02</span>, <span class="fl">0.1</span>))) <span class="sc">+</span></span>
+<span id="cb19-299"><a href="#cb19-299" aria-hidden="true" tabindex="-1"></a>    <span class="fu">geom_text</span>(</span>
+<span id="cb19-300"><a href="#cb19-300" aria-hidden="true" tabindex="-1"></a>      <span class="at">data =</span> d <span class="sc">%&gt;%</span> dplyr<span class="sc">::</span><span class="fu">distinct</span>(year),</span>
+<span id="cb19-301"><a href="#cb19-301" aria-hidden="true" tabindex="-1"></a>      <span class="fu">aes</span>(<span class="at">x =</span> n_countries, <span class="at">y =</span> hi, <span class="at">label =</span> year),</span>
+<span id="cb19-302"><a href="#cb19-302" aria-hidden="true" tabindex="-1"></a>      <span class="at">inherit.aes =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb19-303"><a href="#cb19-303" aria-hidden="true" tabindex="-1"></a>      <span class="at">hjust =</span> <span class="dv">1</span>, <span class="at">vjust =</span> <span class="dv">0</span>,</span>
+<span id="cb19-304"><a href="#cb19-304" aria-hidden="true" tabindex="-1"></a>      <span class="at">size =</span> <span class="dv">20</span>, <span class="at">color =</span> <span class="st">"white"</span>, <span class="at">alpha =</span> <span class="fl">0.15</span>,</span>
+<span id="cb19-305"><a href="#cb19-305" aria-hidden="true" tabindex="-1"></a>      <span class="at">fontface =</span> <span class="st">"bold"</span></span>
+<span id="cb19-306"><a href="#cb19-306" aria-hidden="true" tabindex="-1"></a>    ) <span class="sc">+</span></span>
+<span id="cb19-307"><a href="#cb19-307" aria-hidden="true" tabindex="-1"></a>    <span class="fu">coord_flip</span>(<span class="at">clip =</span> <span class="st">"off"</span>) <span class="sc">+</span></span>
+<span id="cb19-308"><a href="#cb19-308" aria-hidden="true" tabindex="-1"></a>    <span class="fu">labs</span>(<span class="at">title   =</span> title,</span>
+<span id="cb19-309"><a href="#cb19-309" aria-hidden="true" tabindex="-1"></a>         <span class="at">x       =</span> <span class="cn">NULL</span>,</span>
+<span id="cb19-310"><a href="#cb19-310" aria-hidden="true" tabindex="-1"></a>         <span class="at">y       =</span> <span class="st">"% vs 2015"</span>,</span>
+<span id="cb19-311"><a href="#cb19-311" aria-hidden="true" tabindex="-1"></a>         <span class="at">caption =</span> <span class="st">"Source: OECD Analytical house prices indicators  |  Greece highlighted in red"</span>) <span class="sc">+</span></span>
+<span id="cb19-312"><a href="#cb19-312" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme_minimal</span>(<span class="at">base_size =</span> <span class="dv">10</span>) <span class="sc">+</span></span>
+<span id="cb19-313"><a href="#cb19-313" aria-hidden="true" tabindex="-1"></a>    <span class="fu">theme</span>(</span>
+<span id="cb19-314"><a href="#cb19-314" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.background    =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"#0F1923"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
+<span id="cb19-315"><a href="#cb19-315" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.background   =</span> <span class="fu">element_rect</span>(<span class="at">fill =</span> <span class="st">"#0F1923"</span>, <span class="at">color =</span> <span class="cn">NA</span>),</span>
+<span id="cb19-316"><a href="#cb19-316" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.major.x =</span> <span class="fu">element_line</span>(<span class="at">color =</span> <span class="st">"#1E2D3D"</span>, <span class="at">linewidth =</span> <span class="fl">0.4</span>),</span>
+<span id="cb19-317"><a href="#cb19-317" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.major.y =</span> <span class="fu">element_blank</span>(),</span>
+<span id="cb19-318"><a href="#cb19-318" aria-hidden="true" tabindex="-1"></a>      <span class="at">panel.grid.minor   =</span> <span class="fu">element_blank</span>(),</span>
+<span id="cb19-319"><a href="#cb19-319" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.text.x   =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#90A4AE"</span>, <span class="at">size =</span> <span class="dv">10</span>),</span>
+<span id="cb19-320"><a href="#cb19-320" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.text.y   =</span> <span class="fu">element_blank</span>(),</span>
+<span id="cb19-321"><a href="#cb19-321" aria-hidden="true" tabindex="-1"></a>      <span class="at">axis.title.x  =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#90A4AE"</span>, <span class="at">size =</span> <span class="dv">10</span>),</span>
+<span id="cb19-322"><a href="#cb19-322" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.title    =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"white"</span>, <span class="at">face =</span> <span class="st">"bold"</span>, <span class="at">size =</span> <span class="dv">12</span>,</span>
+<span id="cb19-323"><a href="#cb19-323" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">margin =</span> <span class="fu">margin</span>(<span class="dv">12</span>, <span class="dv">0</span>, <span class="dv">8</span>, <span class="dv">0</span>)),</span>
+<span id="cb19-324"><a href="#cb19-324" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.caption  =</span> <span class="fu">element_text</span>(<span class="at">color =</span> <span class="st">"#546E7A"</span>, <span class="at">size =</span> <span class="dv">8</span>, <span class="at">hjust =</span> <span class="dv">1</span>,</span>
+<span id="cb19-325"><a href="#cb19-325" aria-hidden="true" tabindex="-1"></a>                                    <span class="at">margin =</span> <span class="fu">margin</span>(<span class="dv">8</span>, <span class="dv">0</span>, <span class="dv">8</span>, <span class="dv">0</span>)),</span>
+<span id="cb19-326"><a href="#cb19-326" aria-hidden="true" tabindex="-1"></a>      <span class="at">plot.margin   =</span> <span class="fu">margin</span>(<span class="dv">10</span>, <span class="dv">40</span>, <span class="dv">10</span>, <span class="dv">130</span>)) <span class="sc">+</span></span>
+<span id="cb19-327"><a href="#cb19-327" aria-hidden="true" tabindex="-1"></a>    <span class="fu">transition_states</span>(year, <span class="at">transition_length =</span> <span class="dv">0</span>, <span class="at">state_length =</span> <span class="dv">5</span>) <span class="sc">+</span></span>
+<span id="cb19-328"><a href="#cb19-328" aria-hidden="true" tabindex="-1"></a>    <span class="fu">ease_aes</span>(<span class="st">"cubic-in-out"</span>)</span>
+<span id="cb19-329"><a href="#cb19-329" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-330"><a href="#cb19-330" aria-hidden="true" tabindex="-1"></a>  <span class="fu">animate</span>(p,</span>
+<span id="cb19-331"><a href="#cb19-331" aria-hidden="true" tabindex="-1"></a>          <span class="at">nframes  =</span> <span class="dv">100</span>,</span>
+<span id="cb19-332"><a href="#cb19-332" aria-hidden="true" tabindex="-1"></a>          <span class="at">fps      =</span> <span class="dv">10</span>,</span>
+<span id="cb19-333"><a href="#cb19-333" aria-hidden="true" tabindex="-1"></a>          <span class="at">duration =</span> <span class="dv">20</span>,</span>
+<span id="cb19-334"><a href="#cb19-334" aria-hidden="true" tabindex="-1"></a>          <span class="at">width    =</span> <span class="dv">900</span>,</span>
+<span id="cb19-335"><a href="#cb19-335" aria-hidden="true" tabindex="-1"></a>          <span class="at">height   =</span> <span class="dv">900</span>,</span>
+<span id="cb19-336"><a href="#cb19-336" aria-hidden="true" tabindex="-1"></a>          <span class="at">units    =</span> <span class="st">"px"</span>,</span>
+<span id="cb19-337"><a href="#cb19-337" aria-hidden="true" tabindex="-1"></a>          <span class="at">res      =</span> <span class="dv">100</span>,   <span class="co"># set explicitly: when knitting, gganimate otherwise uses the chunk dpi</span></span>
+<span id="cb19-338"><a href="#cb19-338" aria-hidden="true" tabindex="-1"></a>          <span class="at">renderer =</span> <span class="fu">gifski_renderer</span>(file))</span>
+<span id="cb19-339"><a href="#cb19-339" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb19-340"><a href="#cb19-340" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-341"><a href="#cb19-341" aria-hidden="true" tabindex="-1"></a>gifs <span class="ot">&lt;-</span> <span class="fu">c</span>(<span class="at">rent        =</span> <span class="st">"greek_housing_race_rent.gif"</span>,</span>
+<span id="cb19-342"><a href="#cb19-342" aria-hidden="true" tabindex="-1"></a>          <span class="at">house_price =</span> <span class="st">"greek_housing_race_house_price.gif"</span>,</span>
+<span id="cb19-343"><a href="#cb19-343" aria-hidden="true" tabindex="-1"></a>          <span class="at">income      =</span> <span class="st">"greek_housing_race_income.gif"</span>,</span>
+<span id="cb19-344"><a href="#cb19-344" aria-hidden="true" tabindex="-1"></a>          <span class="at">price_rent  =</span> <span class="st">"greek_housing_race_price_rent.gif"</span>)</span>
+<span id="cb19-345"><a href="#cb19-345" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-346"><a href="#cb19-346" aria-hidden="true" tabindex="-1"></a><span class="co"># each GIF is drawn in its own chunk below: knitr shows only one animate()</span></span>
+<span id="cb19-347"><a href="#cb19-347" aria-hidden="true" tabindex="-1"></a><span class="co"># result per chunk</span></span>
+<span id="cb19-348"><a href="#cb19-348" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-349"><a href="#cb19-349" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-350"><a href="#cb19-350" aria-hidden="true" tabindex="-1"></a><span class="fu">#### Rents</span></span>
+<span id="cb19-351"><a href="#cb19-351" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-352"><a href="#cb19-352" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif0, eval=TRUE}</span></span>
+<span id="cb19-353"><a href="#cb19-353" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_rent, title_rent, gifs[[<span class="st">"rent"</span>]])</span>
+<span id="cb19-354"><a href="#cb19-354" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-355"><a href="#cb19-355" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-356"><a href="#cb19-356" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices</span></span>
+<span id="cb19-357"><a href="#cb19-357" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-358"><a href="#cb19-358" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif1, eval=TRUE}</span></span>
+<span id="cb19-359"><a href="#cb19-359" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_house_price, title_house_price, gifs[[<span class="st">"house_price"</span>]])</span>
+<span id="cb19-360"><a href="#cb19-360" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-361"><a href="#cb19-361" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-362"><a href="#cb19-362" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices against incomes</span></span>
+<span id="cb19-363"><a href="#cb19-363" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-364"><a href="#cb19-364" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif2, eval=TRUE}</span></span>
+<span id="cb19-365"><a href="#cb19-365" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_income, title_income, gifs[[<span class="st">"income"</span>]])</span>
+<span id="cb19-366"><a href="#cb19-366" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-367"><a href="#cb19-367" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-368"><a href="#cb19-368" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices against rents</span></span>
+<span id="cb19-369"><a href="#cb19-369" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-370"><a href="#cb19-370" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif3, eval=TRUE}</span></span>
+<span id="cb19-371"><a href="#cb19-371" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_price_rent, title_price_rent, gifs[[<span class="st">"price_rent"</span>]])</span>
+<span id="cb19-372"><a href="#cb19-372" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-373"><a href="#cb19-373" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb19-374"><a href="#cb19-374" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-375"><a href="#cb19-375" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices against incomes</span></span>
+<span id="cb19-375"><a href="#cb19-375" aria-hidden="true" tabindex="-1"></a><span class="at">&gt; **Note:** rendering the four GIFs takes several minutes and requires an internet connection to reach the OECD API. The GIFs are written to the working directory (</span><span class="in">`getwd()`</span><span class="at">).</span></span>
 <span id="cb19-376"><a href="#cb19-376" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-377"><a href="#cb19-377" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif2, eval=TRUE}</span></span>
-<span id="cb19-378"><a href="#cb19-378" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_income, title_income, gifs[[<span class="st">"income"</span>]])</span>
-<span id="cb19-379"><a href="#cb19-379" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-377"><a href="#cb19-377" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-378"><a href="#cb19-378" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-379"><a href="#cb19-379" aria-hidden="true" tabindex="-1"></a><span class="fu">## What the charts show</span></span>
 <span id="cb19-380"><a href="#cb19-380" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-381"><a href="#cb19-381" aria-hidden="true" tabindex="-1"></a><span class="fu">#### House prices against rents</span></span>
-<span id="cb19-382"><a href="#cb19-382" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-383"><a href="#cb19-383" aria-hidden="true" tabindex="-1"></a><span class="in">```{r gif3, eval=TRUE}</span></span>
-<span id="cb19-384"><a href="#cb19-384" aria-hidden="true" tabindex="-1"></a><span class="fu">race_gif</span>(df_price_rent, title_price_rent, gifs[[<span class="st">"price_rent"</span>]])</span>
-<span id="cb19-385"><a href="#cb19-385" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-386"><a href="#cb19-386" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-387"><a href="#cb19-387" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-388"><a href="#cb19-388" aria-hidden="true" tabindex="-1"></a><span class="at">&gt; **Note:** rendering the four GIFs takes several minutes and requires an internet connection to reach the OECD API. The GIFs are written to the working directory (</span><span class="in">`getwd()`</span><span class="at">).</span></span>
-<span id="cb19-389"><a href="#cb19-389" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-390"><a href="#cb19-390" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-391"><a href="#cb19-391" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-392"><a href="#cb19-392" aria-hidden="true" tabindex="-1"></a><span class="fu">## What the charts show</span></span>
+<span id="cb19-381"><a href="#cb19-381" aria-hidden="true" tabindex="-1"></a><span class="in">```{r facts, include=FALSE}</span></span>
+<span id="cb19-382"><a href="#cb19-382" aria-hidden="true" tabindex="-1"></a>last_year <span class="ot">&lt;-</span> <span class="fu">max</span>(df_housing<span class="sc">$</span>year)</span>
+<span id="cb19-383"><a href="#cb19-383" aria-hidden="true" tabindex="-1"></a>grc <span class="ot">&lt;-</span> <span class="cf">function</span>(m, y) df_housing<span class="sc">$</span>change[df_housing<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_housing<span class="sc">$</span>measure <span class="sc">==</span> m <span class="sc">&amp;</span> df_housing<span class="sc">$</span>year <span class="sc">==</span> y]</span>
+<span id="cb19-384"><a href="#cb19-384" aria-hidden="true" tabindex="-1"></a>grc_rent <span class="ot">&lt;-</span> df_rent[df_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span>, ]</span>
+<span id="cb19-385"><a href="#cb19-385" aria-hidden="true" tabindex="-1"></a>grc_rent_low_year <span class="ot">&lt;-</span> grc_rent<span class="sc">$</span>year[<span class="fu">which.min</span>(grc_rent<span class="sc">$</span>change)]</span>
+<span id="cb19-386"><a href="#cb19-386" aria-hidden="true" tabindex="-1"></a>grc_rent_rank     <span class="ot">&lt;-</span> df_rent<span class="sc">$</span>rank[df_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_rent<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
+<span id="cb19-387"><a href="#cb19-387" aria-hidden="true" tabindex="-1"></a>grc_income_rank   <span class="ot">&lt;-</span> df_income<span class="sc">$</span>rank[df_income<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_income<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
+<span id="cb19-388"><a href="#cb19-388" aria-hidden="true" tabindex="-1"></a>grc_house_rank    <span class="ot">&lt;-</span> df_house_price<span class="sc">$</span>rank[df_house_price<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_house_price<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
+<span id="cb19-389"><a href="#cb19-389" aria-hidden="true" tabindex="-1"></a>grc_prent_rank    <span class="ot">&lt;-</span> df_price_rent<span class="sc">$</span>rank[df_price_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_price_rent<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
+<span id="cb19-390"><a href="#cb19-390" aria-hidden="true" tabindex="-1"></a><span class="co"># countries with data in the last year (a few have not published it yet)</span></span>
+<span id="cb19-391"><a href="#cb19-391" aria-hidden="true" tabindex="-1"></a>n_last <span class="ot">&lt;-</span> <span class="cf">function</span>(d) <span class="fu">sum</span>(d<span class="sc">$</span>year <span class="sc">==</span> last_year)</span>
+<span id="cb19-392"><a href="#cb19-392" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb19-393"><a href="#cb19-393" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-394"><a href="#cb19-394" aria-hidden="true" tabindex="-1"></a><span class="in">```{r facts, include=FALSE}</span></span>
-<span id="cb19-395"><a href="#cb19-395" aria-hidden="true" tabindex="-1"></a>last_year <span class="ot">&lt;-</span> <span class="fu">max</span>(df_housing<span class="sc">$</span>year)</span>
-<span id="cb19-396"><a href="#cb19-396" aria-hidden="true" tabindex="-1"></a>grc <span class="ot">&lt;-</span> <span class="cf">function</span>(m, y) df_housing<span class="sc">$</span>change[df_housing<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_housing<span class="sc">$</span>measure <span class="sc">==</span> m <span class="sc">&amp;</span> df_housing<span class="sc">$</span>year <span class="sc">==</span> y]</span>
-<span id="cb19-397"><a href="#cb19-397" aria-hidden="true" tabindex="-1"></a>grc_rent <span class="ot">&lt;-</span> df_rent[df_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span>, ]</span>
-<span id="cb19-398"><a href="#cb19-398" aria-hidden="true" tabindex="-1"></a>grc_rent_low_year <span class="ot">&lt;-</span> grc_rent<span class="sc">$</span>year[<span class="fu">which.min</span>(grc_rent<span class="sc">$</span>change)]</span>
-<span id="cb19-399"><a href="#cb19-399" aria-hidden="true" tabindex="-1"></a>grc_rent_rank     <span class="ot">&lt;-</span> df_rent<span class="sc">$</span>rank[df_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_rent<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
-<span id="cb19-400"><a href="#cb19-400" aria-hidden="true" tabindex="-1"></a>grc_income_rank   <span class="ot">&lt;-</span> df_income<span class="sc">$</span>rank[df_income<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_income<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
-<span id="cb19-401"><a href="#cb19-401" aria-hidden="true" tabindex="-1"></a>grc_house_rank    <span class="ot">&lt;-</span> df_house_price<span class="sc">$</span>rank[df_house_price<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_house_price<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
-<span id="cb19-402"><a href="#cb19-402" aria-hidden="true" tabindex="-1"></a>grc_prent_rank    <span class="ot">&lt;-</span> df_price_rent<span class="sc">$</span>rank[df_price_rent<span class="sc">$</span>country <span class="sc">==</span> <span class="st">"Greece"</span> <span class="sc">&amp;</span> df_price_rent<span class="sc">$</span>year <span class="sc">==</span> last_year]</span>
-<span id="cb19-403"><a href="#cb19-403" aria-hidden="true" tabindex="-1"></a><span class="co"># countries with data in the last year (a few have not published it yet)</span></span>
-<span id="cb19-404"><a href="#cb19-404" aria-hidden="true" tabindex="-1"></a>n_last <span class="ot">&lt;-</span> <span class="cf">function</span>(d) <span class="fu">sum</span>(d<span class="sc">$</span>year <span class="sc">==</span> last_year)</span>
-<span id="cb19-405"><a href="#cb19-405" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-406"><a href="#cb19-406" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-407"><a href="#cb19-407" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In Greece, rents kept falling after 2015 and bottomed out in **`r grc_rent_low_year`** (**`r pct(min(grc_rent$change))`** against 2015). By `r last_year` they were **`r pct(grc("RPI", last_year))`**, while house prices were **`r pct(grc("HPI", last_year))`**: since 2015, buying has become far more expensive than renting.</span>
-<span id="cb19-408"><a href="#cb19-408" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>House prices also outran incomes: the price-to-income ratio was **`r pct(grc("HPI_YDH", last_year))`** against 2015, which puts Greece **`r scales::ordinal(grc_income_rank)`** of <span class="in">`r n_last(df_income)`</span> European countries in how much less affordable homes have become.</span>
-<span id="cb19-409"><a href="#cb19-409" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In the house price race Greece was **`r scales::ordinal(grc_house_rank)`** of `r n_last(df_house_price)`, and in the price-to-rent race **`r scales::ordinal(grc_prent_rank)`** of `r n_last(df_price_rent)` (**`r pct(grc("HPI_RPI", last_year))`**): since 2015, house prices in Greece have outgrown rents by that much.</span>
-<span id="cb19-410"><a href="#cb19-410" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In the rent race Greece was **`r scales::ordinal(grc_rent_rank)`** of <span class="in">`r n_last(df_rent)`</span> in <span class="in">`r last_year`</span>: rents rose less there than in most of Europe. The race ranks how much each market moved since 2015, not which country has the most expensive rents.</span>
-<span id="cb19-411"><a href="#cb19-411" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**A caveat for Greece:** the OECD rent index comes from the rents in consumer price statistics, which follow *all* tenancies, most of them on older contracts. Rents asked for new leases, the ones a person moving house actually faces, have risen much faster than this index shows — listing-based indices (e.g. Spitogatos or the Bank of Greece's analyses) are the place to look for those.</span>
-<span id="cb19-412"><a href="#cb19-412" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-413"><a href="#cb19-413" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-414"><a href="#cb19-414" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-415"><a href="#cb19-415" aria-hidden="true" tabindex="-1"></a><span class="fu">## Customising it</span></span>
+<span id="cb19-394"><a href="#cb19-394" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In Greece, rents kept falling after 2015 and bottomed out in **`r grc_rent_low_year`** (**`r pct(min(grc_rent$change))`** against 2015). By `r last_year` they were **`r pct(grc("RPI", last_year))`**, while house prices were **`r pct(grc("HPI", last_year))`**: since 2015, buying has become far more expensive than renting.</span>
+<span id="cb19-395"><a href="#cb19-395" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>House prices also outran incomes: the price-to-income ratio was **`r pct(grc("HPI_YDH", last_year))`** against 2015, which puts Greece **`r scales::ordinal(grc_income_rank)`** of <span class="in">`r n_last(df_income)`</span> European countries in how much less affordable homes have become.</span>
+<span id="cb19-396"><a href="#cb19-396" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In the house price race Greece was **`r scales::ordinal(grc_house_rank)`** of `r n_last(df_house_price)`, and in the price-to-rent race **`r scales::ordinal(grc_prent_rank)`** of `r n_last(df_price_rent)` (**`r pct(grc("HPI_RPI", last_year))`**): since 2015, house prices in Greece have outgrown rents by that much.</span>
+<span id="cb19-397"><a href="#cb19-397" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>In the rent race Greece was **`r scales::ordinal(grc_rent_rank)`** of <span class="in">`r n_last(df_rent)`</span> in <span class="in">`r last_year`</span>: rents rose less there than in most of Europe. The race ranks how much each market moved since 2015, not which country has the most expensive rents.</span>
+<span id="cb19-398"><a href="#cb19-398" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span>**A caveat for Greece:** the OECD rent index comes from the rents in consumer price statistics, which follow *all* tenancies, most of them on older contracts. Rents asked for new leases, the ones a person moving house actually faces, have risen much faster than this index shows — listing-based indices (e.g. Spitogatos or the Bank of Greece's analyses) are the place to look for those.</span>
+<span id="cb19-399"><a href="#cb19-399" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-400"><a href="#cb19-400" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-401"><a href="#cb19-401" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-402"><a href="#cb19-402" aria-hidden="true" tabindex="-1"></a><span class="fu">## Customising it</span></span>
+<span id="cb19-403"><a href="#cb19-403" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-404"><a href="#cb19-404" aria-hidden="true" tabindex="-1"></a><span class="fu">### Highlight a different country</span></span>
+<span id="cb19-405"><a href="#cb19-405" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-406"><a href="#cb19-406" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_highlight, eval=FALSE}</span></span>
+<span id="cb19-407"><a href="#cb19-407" aria-hidden="true" tabindex="-1"></a>df_rent <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>, <span class="at">highlight =</span> <span class="st">"Portugal"</span>)</span>
+<span id="cb19-408"><a href="#cb19-408" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-409"><a href="#cb19-409" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-410"><a href="#cb19-410" aria-hidden="true" tabindex="-1"></a><span class="fu">### Start the race from another year</span></span>
+<span id="cb19-411"><a href="#cb19-411" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-412"><a href="#cb19-412" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_from, eval=FALSE}</span></span>
+<span id="cb19-413"><a href="#cb19-413" aria-hidden="true" tabindex="-1"></a><span class="co"># e.g. since the pandemic; values stay "% vs 2015" (the OECD's base year)</span></span>
+<span id="cb19-414"><a href="#cb19-414" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(<span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>, <span class="at">from =</span> <span class="dv">2020</span>), title_rent, <span class="st">"rent prices, RPI"</span>)</span>
+<span id="cb19-415"><a href="#cb19-415" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
 <span id="cb19-416"><a href="#cb19-416" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-417"><a href="#cb19-417" aria-hidden="true" tabindex="-1"></a><span class="fu">### Highlight a different country</span></span>
+<span id="cb19-417"><a href="#cb19-417" aria-hidden="true" tabindex="-1"></a><span class="fu">### Change the animation speed</span></span>
 <span id="cb19-418"><a href="#cb19-418" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-419"><a href="#cb19-419" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_highlight, eval=FALSE}</span></span>
-<span id="cb19-420"><a href="#cb19-420" aria-hidden="true" tabindex="-1"></a>df_rent <span class="ot">&lt;-</span> <span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>, <span class="at">highlight =</span> <span class="st">"Portugal"</span>)</span>
-<span id="cb19-421"><a href="#cb19-421" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-422"><a href="#cb19-422" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-423"><a href="#cb19-423" aria-hidden="true" tabindex="-1"></a><span class="fu">### Start the race from another year</span></span>
-<span id="cb19-424"><a href="#cb19-424" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-425"><a href="#cb19-425" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_from, eval=FALSE}</span></span>
-<span id="cb19-426"><a href="#cb19-426" aria-hidden="true" tabindex="-1"></a><span class="co"># e.g. since the pandemic; values stay "% vs 2015" (the OECD's base year)</span></span>
-<span id="cb19-427"><a href="#cb19-427" aria-hidden="true" tabindex="-1"></a><span class="fu">bar_race</span>(<span class="fu">race_data</span>(df_housing, <span class="st">"RPI"</span>, <span class="at">from =</span> <span class="dv">2020</span>), title_rent, <span class="st">"rent prices, RPI"</span>)</span>
-<span id="cb19-428"><a href="#cb19-428" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-419"><a href="#cb19-419" aria-hidden="true" tabindex="-1"></a>The GIFs' timing is set by the <span class="in">`animate()`</span> call at the end of <span class="in">`race_gif()`</span>:</span>
+<span id="cb19-420"><a href="#cb19-420" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-421"><a href="#cb19-421" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_speed, eval=FALSE}</span></span>
+<span id="cb19-422"><a href="#cb19-422" aria-hidden="true" tabindex="-1"></a><span class="fu">animate</span>(p, <span class="at">nframes =</span> <span class="dv">50</span>, <span class="at">fps =</span> <span class="dv">5</span>, <span class="at">duration =</span> <span class="dv">10</span>, ...)   <span class="co"># faster / shorter</span></span>
+<span id="cb19-423"><a href="#cb19-423" aria-hidden="true" tabindex="-1"></a><span class="fu">animate</span>(p, <span class="at">nframes =</span> <span class="dv">200</span>, <span class="at">fps =</span> <span class="dv">20</span>, <span class="at">duration =</span> <span class="dv">30</span>, ...) <span class="co"># smoother / longer</span></span>
+<span id="cb19-424"><a href="#cb19-424" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
+<span id="cb19-425"><a href="#cb19-425" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-426"><a href="#cb19-426" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-427"><a href="#cb19-427" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-428"><a href="#cb19-428" aria-hidden="true" tabindex="-1"></a><span class="fu">## Further reading</span></span>
 <span id="cb19-429"><a href="#cb19-429" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-430"><a href="#cb19-430" aria-hidden="true" tabindex="-1"></a><span class="fu">### Change the animation speed</span></span>
-<span id="cb19-431"><a href="#cb19-431" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-432"><a href="#cb19-432" aria-hidden="true" tabindex="-1"></a>The GIFs' timing is set by the <span class="in">`animate()`</span> call at the end of <span class="in">`race_gif()`</span>:</span>
-<span id="cb19-433"><a href="#cb19-433" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-434"><a href="#cb19-434" aria-hidden="true" tabindex="-1"></a><span class="in">```{r custom_speed, eval=FALSE}</span></span>
-<span id="cb19-435"><a href="#cb19-435" aria-hidden="true" tabindex="-1"></a><span class="fu">animate</span>(p, <span class="at">nframes =</span> <span class="dv">50</span>, <span class="at">fps =</span> <span class="dv">5</span>, <span class="at">duration =</span> <span class="dv">10</span>, ...)   <span class="co"># faster / shorter</span></span>
-<span id="cb19-436"><a href="#cb19-436" aria-hidden="true" tabindex="-1"></a><span class="fu">animate</span>(p, <span class="at">nframes =</span> <span class="dv">200</span>, <span class="at">fps =</span> <span class="dv">20</span>, <span class="at">duration =</span> <span class="dv">30</span>, ...) <span class="co"># smoother / longer</span></span>
-<span id="cb19-437"><a href="#cb19-437" aria-hidden="true" tabindex="-1"></a><span class="in">```</span></span>
-<span id="cb19-438"><a href="#cb19-438" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-439"><a href="#cb19-439" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-440"><a href="#cb19-440" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-441"><a href="#cb19-441" aria-hidden="true" tabindex="-1"></a><span class="fu">## Further reading</span></span>
-<span id="cb19-442"><a href="#cb19-442" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-443"><a href="#cb19-443" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD Analytical house prices indicators</span><span class="co">](https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&amp;df[id]=DSD_AN_HOUSE_PRICES%40DF_HOUSE_PRICES&amp;df[ag]=OECD.ECO.MPD)</span> — the dataset in the OECD Data Explorer</span>
-<span id="cb19-444"><a href="#cb19-444" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD Affordable Housing Database</span><span class="co">](https://www.oecd.org/en/data/datasets/oecd-affordable-housing-database.html)</span> — housing costs as a share of income, tenure and social housing indicators</span>
-<span id="cb19-445"><a href="#cb19-445" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD SDMX API</span><span class="co">](https://gitlab.algobank.oecd.org/public-documentation/dotstat-migration/-/raw/main/OECD_Data_API_documentation.pdf)</span> — how to build data queries</span>
-<span id="cb19-446"><a href="#cb19-446" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">gganimate documentation</span><span class="co">](https://gganimate.com/)</span> — all transition types and rendering options</span>
-<span id="cb19-447"><a href="#cb19-447" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-448"><a href="#cb19-448" aria-hidden="true" tabindex="-1"></a>---</span>
-<span id="cb19-449"><a href="#cb19-449" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb19-450"><a href="#cb19-450" aria-hidden="true" tabindex="-1"></a>*Rendered with R `r getRversion()` · plotly · ggplot2 · gganimate · OECD SDMX API*</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
+<span id="cb19-430"><a href="#cb19-430" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD Analytical house prices indicators</span><span class="co">](https://data-explorer.oecd.org/vis?df[ds]=dsDisseminateFinalDMZ&amp;df[id]=DSD_AN_HOUSE_PRICES%40DF_HOUSE_PRICES&amp;df[ag]=OECD.ECO.MPD)</span> — the dataset in the OECD Data Explorer</span>
+<span id="cb19-431"><a href="#cb19-431" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD Affordable Housing Database</span><span class="co">](https://www.oecd.org/en/data/datasets/oecd-affordable-housing-database.html)</span> — housing costs as a share of income, tenure and social housing indicators</span>
+<span id="cb19-432"><a href="#cb19-432" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">OECD SDMX API</span><span class="co">](https://gitlab.algobank.oecd.org/public-documentation/dotstat-migration/-/raw/main/OECD_Data_API_documentation.pdf)</span> — how to build data queries</span>
+<span id="cb19-433"><a href="#cb19-433" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="co">[</span><span class="ot">gganimate documentation</span><span class="co">](https://gganimate.com/)</span> — all transition types and rendering options</span>
+<span id="cb19-434"><a href="#cb19-434" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-435"><a href="#cb19-435" aria-hidden="true" tabindex="-1"></a>---</span>
+<span id="cb19-436"><a href="#cb19-436" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-437"><a href="#cb19-437" aria-hidden="true" tabindex="-1"></a>*Rendered with R `r getRversion()` · plotly · ggplot2 · gganimate · OECD SDMX API*</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button" data-in-quarto-modal=""><i class="bi"></i></button></div>
 </div></div></div></div></div>
 </div> <!-- /content -->
 <footer class="footer">
