@@ -332,17 +332,29 @@ summary(m_nb)
 cat("\nEstimated dispersion parameter (theta):", round(m_nb$theta, 4), "\n")
 ```
 
-### 4.5 Poisson vs. Negative Binomial — Vuong Test via LRT
+### 4.5 Poisson vs. Negative Binomial — Likelihood Ratio Test
 
-Because the Poisson model is nested in the NB when $\alpha \to 0$, we compare them using a likelihood ratio test.
+The Negative Binomial model has one more parameter than the Poisson model, $\alpha$. With $\alpha = 0$ it is the Poisson model (`glm.nb()` reports $\theta = 1/\alpha$), so the two are nested and a likelihood ratio test can compare them:
+
+$$LR = 2\,(\ell_{\text{NB}} - \ell_{\text{Poisson}})$$
+
+Because $\alpha$ cannot be negative, the null hypothesis $\alpha = 0$ lies at the edge of its range. If it is true, the statistic is 0 about half of the time and follows $\chi^2_1$ otherwise, so the *p* value is half of the $\chi^2_1$ tail area (Lawless, 1987).
+
+`anova(m_pois, m_nb, test="LRT")` does not give this test. It subtracts the two residual deviances, which are measured from different saturated models, and it has 0 degrees of freedom because it does not count $\alpha$.
 
 ```{r nb_lrt}
-lrt_nb <- anova(m_pois, m_nb, test="LRT")
+lr_nb <- as.numeric(2 * (logLik(m_nb) - logLik(m_pois)))
+p_nb  <- pchisq(lr_nb, df=1, lower.tail=FALSE) / 2
+
 cat("AIC Poisson        :", round(AIC(m_pois), 2), "\n")
 cat("AIC Negative Binom :", round(AIC(m_nb),   2), "\n")
 cat("Log-likelihood Pois:", round(logLik(m_pois), 2), "\n")
 cat("Log-likelihood NB  :", round(logLik(m_nb),   2), "\n")
+cat("Likelihood ratio   :", round(lr_nb, 2), "\n")
+cat("p value            :", format.pval(p_nb, digits=3, eps=0.001), "\n")
 ```
+
+The test rejects the Poisson model (*LR* = `r round(lr_nb, 2)`, *p* < .001) and the AIC of the Negative Binomial model is `r round(AIC(m_pois) - AIC(m_nb), 2)` lower, so the counts are overdispersed. The ratio in section 4.3 did not show it: at `r round(dispersion_ratio, 4)` it was just below the cut-off of 1.5, which is only a rule of thumb. The coefficients of the two models are nearly the same; it is the standard errors that change. They are about 19% larger in the Negative Binomial model, because the Poisson model assumes less variance than the data have.
 
 ### 4.6 Incidence Rate Ratios (IRR)
 
@@ -494,3 +506,5 @@ McCullagh, P., & Nelder, J. A. (1989). *Generalized Linear Models* (2nd ed.). Ch
 Agresti, A. (2015). *Foundations of Linear and Generalized Linear Models*. Wiley.
 
 Venables, W. N., & Ripley, B. D. (2002). *Modern Applied Statistics with S* (4th ed.). Springer.
+
+Lawless, J. F. (1987). Negative binomial and mixed Poisson regression. *Canadian Journal of Statistics*, *15*(3), 209–225.
