@@ -1,0 +1,368 @@
+---
+title: "Gaussian Process Regression: CO₂ Again, With Error Bars That Grow"
+description: "Gaussian process regression in R, written by hand in a few lines and checked with kernlab, on NOAA's monthly CO₂ record: functions as random draws, kernels, conditioning on data, the marginal likelihood, adding kernels for trend, season and slow swings and taking them apart again, leave-one-out checks inside the data, forecasts of fifteen to twenty years from six starting dates, why the mean function and the kernel decide everything outside the data, what the error bars are worth, the cost, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from NOAA each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a curve that says how sure it is
+
+[Polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd) drew curves through the CO₂ record of Mauna Loa, and the curves parted ways as soon as they left the data. Each of them was drawn as a thin, confident line. Nothing in the method said: *here I do not know*.
+
+**Gaussian process regression** (GP) is built the other way round. It starts with **all** the functions that seem reasonable: smooth ones, or wavy ones, or ones that repeat every year. Then it looks at the data and keeps those that pass near the points. Where there are data, the remaining functions agree, and the error bars are narrow. Where there are none, they spread out, and the error bars **grow**.
+
+The model is completely described by two things: a **mean function** and a **kernel**, which says how similar the values at two times are expected to be. The whole calculation fits in ten lines of R. This page writes them, uses them on the CO₂ record, and checks whether the error bars can be believed. (Inside the data: yes. Outside: less than one would like.)
+
+```{r packages}
+library(ggplot2)
+library(kernlab)    # gausspr(), to check the code (and for everyday use)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+rmse <- function(a, b) sqrt(mean((a - b)^2))
+```
+
+---
+
+## 1. The data
+
+```{r download}
+raw <- read.csv("https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.csv", comment.char = "#")
+co2 <- data.frame(year = raw$decimal.date, t = raw$decimal.date - 2000, ppm = raw$average)
+past   <- subset(co2, year < 2007)            # what the model may see
+future <- subset(co2, year >= 2007)           # the test: nearly twenty years
+c(past = nrow(past), future = nrow(future))
+```
+
+The monthly means of CO₂ in parts per million (ppm), from NOAA (Lan & Keeling, 2026), as on the [polynomial page](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd): `r nrow(past)` months until the end of 2006 for learning, and `r nrow(future)` months since then for the test. `t` is the number of years since 2000.
+
+---
+
+## 2. The method step by step, with formulas
+
+### Step 1: a kernel is an opinion about functions
+
+The **squared exponential** (or radial) kernel says that the values at two times $t$ and $t'$ are similar if the times are close:
+
+$$k(t, t') = s^2 \exp\!\left(-\frac{(t - t')^2}{2\ell^2}\right)$$
+
+$s$ is how far the function strays from its mean, $\ell$ (the **length scale**) how far one must go until it has forgotten where it was. A Gaussian process with this kernel is a distribution over functions: the values at any set of times have a multivariate normal distribution, whose covariances are the kernel. So we can **draw** functions from it:
+
+```{r prior_draws}
+k_rbf <- function(a, b, s, l) s^2 * exp(-outer(a, b, "-")^2 / (2 * l^2))
+draw  <- function(K, n) t(chol(K + 1e-8 * diag(nrow(K)))) %*% matrix(rnorm(nrow(K) * n), ncol = n)
+x <- seq(0, 10, length.out = 150); set.seed(171)
+draws <- do.call(rbind, lapply(c(0.5, 2), function(l) { f <- draw(k_rbf(x, x, 1, l), 5); data.frame(x = rep(x, 5), f = as.vector(f), id = rep(1:5, each = length(x)), l = paste("length scale", l)) }))
+ggplot(draws, aes(x, f, group = id, colour = factor(id))) + geom_line(linewidth = 0.8) + facet_wrap(~ l) + guides(colour = "none") +
+  labs(title = "Functions drawn from a Gaussian process, before seeing any data", x = "t", y = "f(t)") + theme_bw()
+```
+
+### Step 2: condition on the data
+
+We observe $y_i = f(t_i) + \varepsilon_i$ with noise of variance $\sigma^2$. Data and unknown values are jointly normal, so the rule for conditional normal distributions gives everything. With $K$ the kernel matrix of the data, $k_*$ the vector of kernels between the data and a new time $t_*$:
+
+$$\hat f(t_*) = k_*^\top (K + \sigma^2 I)^{-1} y, \qquad \text{Var}\,f(t_*) = k(t_*, t_*) - k_*^\top (K + \sigma^2 I)^{-1} k_*$$
+
+The mean is a weighted sum of the data. The variance starts from the prior variance and is **reduced** by what the data say. It does not depend on $y$ at all, only on where the data are.
+
+```{r condition}
+gp_fit <- function(t, y, kern, sigma) { L <- chol(kern(t, t) + sigma^2 * diag(length(t))); list(t = t, L = L, a = backsolve(L, backsolve(L, y, transpose = TRUE)), kern = kern, sigma = sigma) }
+gp_predict <- function(m, new) { Ks <- m$kern(new, m$t); V <- backsolve(m$L, t(Ks), transpose = TRUE); list(mean = drop(Ks %*% m$a), sd = sqrt(pmax(diag(m$kern(new, new)) - colSums(V^2), 0))) }
+
+set.seed(172); t5 <- c(1, 2.2, 3, 6, 6.8); y5 <- sin(t5) + rnorm(5, 0, 0.1)
+toy  <- gp_fit(t5, y5, function(a, b) k_rbf(a, b, 1, 1), 0.1)
+pr   <- gp_predict(toy, x)
+Kxx  <- k_rbf(x, x, 1, 1); post <- Kxx - k_rbf(x, t5, 1, 1) %*% solve(k_rbf(t5, t5, 1, 1) + 0.01 * diag(5), k_rbf(t5, x, 1, 1))
+some <- pr$mean + draw(post + 1e-6 * diag(150), 5)
+ggplot(data.frame(x, m = pr$mean, lo = pr$mean - 1.96 * pr$sd, hi = pr$mean + 1.96 * pr$sd), aes(x, m)) + geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#2a78d6", alpha = 0.2) +
+  geom_line(data = data.frame(x = rep(x, 5), f = as.vector(some), id = rep(1:5, each = 150)), aes(x, f, group = id), colour = "grey60", linewidth = 0.4) +
+  geom_line(colour = "#2a78d6", linewidth = 1) + geom_point(data = data.frame(t5, y5), aes(t5, y5), size = 2.6) +
+  labs(title = "The same process after five observations", subtitle = "Blue: mean and 95% band. Grey: five functions that are still possible", x = "t", y = "f(t)") + theme_bw()
+check <- gausspr(matrix(t5), y5, kernel = "rbfdot", kpar = list(sigma = 1 / 2), var = 0.01, scaled = FALSE, fit = FALSE)      # kernlab's sigma is 1/(2 l^2)
+max(abs(predict(check, matrix(x)) - pr$mean))
+```
+
+Between the points and beyond the last one, the functions disagree and the band opens. Far away the mean returns to the prior mean (0) and the band to the prior SD. `kernlab` gives the same curve.
+
+### Step 3: learn the kernel from the data
+
+Where do $s$, $\ell$ and $\sigma$ come from? From the **marginal likelihood**, the probability of the data with all possible functions averaged:
+
+$$\log p(y) = -\tfrac12\, y^\top (K + \sigma^2 I)^{-1} y - \tfrac12 \log|K + \sigma^2 I| - \tfrac n2 \log 2\pi$$
+
+The first term rewards fit, the second punishes a kernel that could explain anything. No cross-validation is needed for this trade-off.
+
+### Step 4: kernels can be added
+
+The sum of two independent processes is a process whose kernel is the **sum** of the kernels. So we build a model from parts, each with its meaning (Roberts et al., 2013, show this for time series).
+
+---
+
+## 3. A kernel for CO₂
+
+Rasmussen and Williams (2006) used this very record as an example. We use a simplified version of their kernel, with four parts:
+
+| Part | Kernel | Meaning |
+|---|---|---|
+| **trend** | $s_1^2 \exp(-r^2 / 2\ell_1^2)$ | a smooth change over decades |
+| **season** | $s_2^2 \exp(-r^2/2\ell_2^2 - 2\sin^2(\pi r)/p^2)$ | repeats every year; its shape may change slowly |
+| **swings** | $s_3^2 \exp(-r/\ell_3)$ | irregular, some months to years, such as El Niño |
+| **noise** | $\sigma^2$ on the diagonal | single months |
+
+($r = |t - t'|$ in years.)
+
+```{r kernel}
+part <- function(a, b, th, which) {
+  r <- abs(outer(a, b, "-"))
+  switch(which, trend = th[["s1"]]^2 * exp(-r^2 / (2 * th[["l1"]]^2)),
+         season = th[["s2"]]^2 * exp(-r^2 / (2 * th[["l2"]]^2) - 2 * sin(pi * r)^2 / th[["p"]]^2),
+         swings = th[["s3"]]^2 * exp(-r / th[["l3"]]))
+}
+kernel <- function(a, b, th, parts) Reduce(`+`, lapply(parts, function(w) part(a, b, th, w)))
+
+parts_A <- c("trend", "season", "swings")          # version A
+parts_B <- c("season", "swings")                   # version B, with a mean function
+H <- function(t) cbind(1, t, t^2)                  # the columns of that mean function
+
+# marginal likelihood; H: columns of a mean function with unknown coefficients (estimated by generalized least squares)
+neg_ml <- function(log_th, t, y, parts, H = NULL) {
+  th <- as.list(exp(log_th)); K <- kernel(t, t, th, parts); diag(K) <- diag(K) + th$sigma^2
+  L <- try(chol(K), silent = TRUE); if (inherits(L, "try-error")) return(1e6)
+  z <- backsolve(L, y, transpose = TRUE)
+  if (!is.null(H)) { A <- backsolve(L, H, transpose = TRUE); z <- qr.resid(qr(A), z) }
+  sum(log(diag(L))) + sum(z^2) / 2 + length(y) / 2 * log(2 * pi)
+}
+```
+
+### Version A: no mean, everything in the kernel
+
+The common default: subtract the overall mean and let the kernel do the rest.
+
+```{r fit_zero}
+start_A <- log(c(s1 = 60, l1 = 60, s2 = 3, l2 = 100, p = 1.3, s3 = 0.8, l3 = 2, sigma = 0.2))
+opt_A <- optim(start_A, neg_ml, t = past$t, y = past$ppm - mean(past$ppm), parts = parts_A, method = "BFGS", control = list(maxit = 80))
+th_A  <- as.list(exp(opt_A$par))
+round(unlist(th_A), 2)
+```
+
+The length scale of the trend is `r f1(th_A$l1)` years, the season keeps its shape for a long time ($\ell_2$ = `r f1(th_A$l2)` years), the swings have an SD of `r f2(th_A$s3)` ppm and the noise of single months is `r f2(th_A$sigma)` ppm.
+
+### Version B: a quadratic mean, and the kernel for the rest
+
+We know something that the kernel does not: the rise has been speeding up for a century. Give the process a **mean function** $\beta_0 + \beta_1 t + \beta_2 t^2$ with unknown coefficients, and the kernels of the season and of the swings for the deviations from it:
+
+```{r fit_quadratic}
+start_B <- log(c(s2 = 3, l2 = 100, p = 1.3, s3 = 0.8, l3 = 2, sigma = 0.2))
+opt_B <- optim(start_B, neg_ml, t = past$t, y = past$ppm, parts = parts_B, H = H(past$t), method = "BFGS", control = list(maxit = 80))
+th_B  <- as.list(exp(opt_B$par))
+round(unlist(th_B), 2)
+```
+
+The prediction now has one more source of uncertainty, the coefficients of the mean. This is *universal kriging*, and it is generalized least squares for the $\beta$'s plus the GP for the residuals:
+
+```{r predict_functions}
+gp <- function(t, y, th, parts, H = NULL, new, H_new = NULL) {
+  K <- kernel(t, t, th, parts); diag(K) <- diag(K) + th$sigma^2; L <- chol(K)
+  z <- backsolve(L, y, transpose = TRUE); Ks <- kernel(new, t, th, parts); V <- backsolve(L, t(Ks), transpose = TRUE)
+  v <- rowSums(sapply(parts, function(w) diag(part(new, new, th, w)))) - colSums(V^2)
+  if (is.null(H)) return(list(mean = drop(crossprod(V, z)), sd = sqrt(pmax(v, 0) + th$sigma^2)))
+  A <- backsolve(L, H, transpose = TRUE); XtX <- solve(crossprod(A)); beta <- XtX %*% crossprod(A, z)
+  R <- H_new - crossprod(V, A)                                                       # what the mean adds that the data cannot fix
+  list(mean = drop(H_new %*% beta + crossprod(V, z - A %*% beta)), sd = sqrt(pmax(v, 0) + rowSums((R %*% XtX) * R) + th$sigma^2), beta = drop(beta), beta_se = sqrt(diag(XtX)))
+}
+```
+
+---
+
+## 4. Inside the data
+
+How well do the two versions predict single months of the past? Leave each month out and predict it from all the others. For a GP that needs no refitting. With $Q = K_y^{-1} - K_y^{-1}H(H^\top K_y^{-1}H)^{-1}H^\top K_y^{-1}$, where $K_y = K + \sigma^2 I$ and $H$ holds the columns of the mean function (without a mean function $Q = K_y^{-1}$):
+
+$$y_i - \hat y_{-i} = \frac{[Qy]_i}{Q_{ii}}, \qquad \text{Var}_{-i} = \frac{1}{Q_{ii}}$$
+
+```{r loo}
+loo <- function(t, y, th, parts, H = NULL) {
+  K <- kernel(t, t, th, parts); diag(K) <- diag(K) + th$sigma^2; Q <- solve(K)
+  if (!is.null(H)) { KH <- Q %*% H; Q <- Q - KH %*% solve(crossprod(H, KH), t(KH)) }
+  data.frame(err = drop(Q %*% y) / diag(Q), sd = 1 / sqrt(diag(Q)))
+}
+loo_A <- loo(past$t, past$ppm - mean(past$ppm), th_A, parts_A)
+loo_B <- loo(past$t, past$ppm, th_B, parts_B, H(past$t))
+inside <- sapply(list(A = loo_A, B = loo_B), function(l) c(RMSE = sqrt(mean(l$err^2)), coverage_95 = mean(abs(l$err) < 1.96 * l$sd), coverage_50 = mean(abs(l$err) < 0.674 * l$sd)))
+round(inside, 3)
+c(log_marginal_likelihood_A = -opt_A$value, log_marginal_likelihood_B = -opt_B$value)
+```
+
+Single months are predicted to within `r f2(inside["RMSE", "A"])` ppm by version A and `r f2(inside["RMSE", "B"])` ppm by version B, and the 95% intervals contain `r pct(inside["coverage_95", "A"])` and `r pct(inside["coverage_95", "B"])` of them. **Inside the data the two versions are the same, and their error bars can be believed.** Only the marginal likelihood sees a difference (`r f1(-opt_B$value)` for B against `r f1(-opt_A$value)` for A).
+
+---
+
+## 5. The test: twenty years later
+
+```{r forecast_scores}
+pA <- gp(past$t, past$ppm - mean(past$ppm), th_A, parts_A, new = future$t); pA$mean <- pA$mean + mean(past$ppm)
+pB <- gp(past$t, past$ppm, th_B, parts_B, H(past$t), future$t, H(future$t))
+quad <- lm(ppm ~ t + I(t^2) + sin(2 * pi * t) + cos(2 * pi * t) + sin(4 * pi * t) + cos(4 * pi * t), data = past)      # the polynomial page, with a season
+pQ <- predict(quad, future, interval = "prediction")
+score <- function(m, lo, hi) c(RMSE = rmse(m, future$ppm), coverage_95 = mean(future$ppm >= lo & future$ppm <= hi), mean_width = mean(hi - lo))
+scores <- rbind(`A: zero-mean GP` = score(pA$mean, pA$mean - 1.96 * pA$sd, pA$mean + 1.96 * pA$sd), `B: GP with a quadratic mean` = score(pB$mean, pB$mean - 1.96 * pB$sd, pB$mean + 1.96 * pB$sd),
+                `quadratic regression + season (lm)` = score(pQ[, 1], pQ[, 2], pQ[, 3]))
+round(scores, 3)
+```
+
+```{r forecast_chart, fig.height = 6}
+fc <- rbind(data.frame(year = future$year, m = pA$mean, lo = pA$mean - 1.96 * pA$sd, hi = pA$mean + 1.96 * pA$sd, model = "A: zero-mean GP"),
+            data.frame(year = future$year, m = pB$mean, lo = pB$mean - 1.96 * pB$sd, hi = pB$mean + 1.96 * pB$sd, model = "B: GP with a quadratic mean"),
+            data.frame(year = future$year, m = pQ[, 1], lo = pQ[, 2], hi = pQ[, 3], model = "quadratic regression + season"))
+fc$obs <- rep(future$ppm, 3)
+ggplot(fc, aes(year)) + geom_ribbon(aes(ymin = lo - obs, ymax = hi - obs), fill = "#2a78d6", alpha = 0.25) + geom_line(aes(y = m - obs), colour = "#2a78d6", linewidth = 0.6) +
+  geom_hline(yintercept = 0, colour = "#eb6834", linetype = "dashed") + facet_wrap(~ model, ncol = 1) +
+  labs(title = "Forecast from 2006 minus what was measured", subtitle = "Band: 95%. A good band contains the dashed zero line nearly always", x = NULL, y = "ppm") + theme_bw()
+```
+
+- **A, the zero-mean GP**, is too low, by more and more: RMSE `r f1(scores[1, "RMSE"])` ppm. Its band grows, as promised, and is still **too narrow**: it contains only `r pct(scores[1, "coverage_95"])` of the months, instead of 95%. Far from the data the trend kernel pulls the function back to the mean of 1958–2006. Nobody asked for that opinion; it came with the zero mean.
+- **B, with a quadratic mean**, has an RMSE of `r f1(scores[2, "RMSE"])` ppm, and a band that contains `r pct(scores[2, "coverage_95"])`.
+- **Quadratic regression with a season** has `r f1(scores[3, "RMSE"])` ppm. Its band has a nearly constant width of about `r f1(scores[3, "mean_width"])` ppm and contains `r pct(scores[3, "coverage_95"])`: least squares believes that its residuals are independent, and shows no growing doubt.
+
+It looks like a triumph for version B. But 238 months in a row are not 238 tests: if the forecast is right in 2015 it is likely to be right in 2016. It is closer to **one** test.
+
+### Was that luck? Six starting dates
+
+So we repeat it. Stop the clock at six different dates, learn the kernel from the months before, and forecast the next 15 years:
+
+```{r rolling}
+origins <- c(1980, 1985, 1990, 1995, 2000, 2007)
+rolling <- do.call(rbind, lapply(origins, function(o) {
+  early <- subset(co2, year < o); late <- subset(co2, year >= o & year < o + 15)
+  if (o == 2007) { a <- th_A; b <- th_B } else {
+    a <- as.list(exp(optim(start_A, neg_ml, t = early$t, y = early$ppm - mean(early$ppm), parts = parts_A, method = "BFGS", control = list(maxit = 80))$par))
+    b <- as.list(exp(optim(start_B, neg_ml, t = early$t, y = early$ppm, parts = parts_B, H = H(early$t), method = "BFGS", control = list(maxit = 80))$par)) }
+  gA <- gp(early$t, early$ppm - mean(early$ppm), a, parts_A, new = late$t); gA$mean <- gA$mean + mean(early$ppm)
+  gB <- gp(early$t, early$ppm, b, parts_B, H(early$t), late$t, H(late$t))
+  q  <- predict(update(quad, data = early), late, interval = "prediction")
+  cov <- function(m, s) mean(abs(m - late$ppm) < 1.96 * s)
+  data.frame(start = o, trend_scale_A = a$l1, rmse_A = rmse(gA$mean, late$ppm), rmse_B = rmse(gB$mean, late$ppm), rmse_lm = rmse(q[, 1], late$ppm),
+             cover_A = cov(gA$mean, gA$sd), cover_B = cov(gB$mean, gB$sd), cover_lm = mean(late$ppm > q[, 2] & late$ppm < q[, 3]))
+}))
+print(round(rolling, 2), row.names = FALSE)
+```
+
+```{r rolling_numbers, echo=FALSE}
+ro <- function(y, v) rolling[[v]][rolling$start == y]
+```
+
+The triumph is gone:
+
+- **B** is excellent from 1995 on (RMSE between `r f1(min(rolling$rmse_B[4:6]))` and `r f1(max(rolling$rmse_B[4:6]))` ppm). Started in 1985 or 1990 it is `r f1(ro(1985, "rmse_B"))` and `r f1(ro(1990, "rmse_B"))` ppm off, and its 95% bands contain `r pct(ro(1985, "cover_B"))` and `r pct(ro(1990, "cover_B"))` of the months. The quadratic learned from a rise that was speeding up quickly, and in the early 1990s the rise slowed down for some years.
+- **A** is better in those two cases (`r f1(ro(1985, "rmse_A"))` and `r f1(ro(1990, "rmse_A"))` ppm). But after the slowdown it has learned a short length scale for the trend (`r f1(ro(1995, "trend_scale_A"))` years from the data until 1994, `r f1(ro(1990, "trend_scale_A"))` from the data until 1989) and runs back to the mean at once: `r f1(ro(1995, "rmse_A"))` ppm off.
+- **No model** has a 95% band with about 95% coverage at all six dates. The coverage goes from `r pct(min(rolling$cover_B))` to `r pct(max(rolling$cover_B))` for B and from `r pct(min(rolling$cover_A))` to `r pct(max(rolling$cover_A))` for A.
+
+So what are the error bars of a GP worth? **Inside the data they are honest. Outside they are honest only if the kernel and the mean function are right**, and the data of the past cannot prove that: in section 4 the leave-one-out errors of the two versions were the same. The bands count the functions that the model considers possible. A future that the model forbids is not counted, however wide the band.
+
+---
+
+## 6. Taking the curve apart
+
+The sum of kernels can be taken apart again: the posterior mean of each part is its own kernel, multiplied by the same weights. Here with the whole record:
+
+```{r decompose, fig.height = 6}
+K <- kernel(co2$t, co2$t, th_B, parts_B); diag(K) <- diag(K) + th_B$sigma^2
+beta_all <- solve(crossprod(H(co2$t), solve(K, H(co2$t))), crossprod(H(co2$t), solve(K, co2$ppm)))
+weights_all <- solve(K, co2$ppm - H(co2$t) %*% beta_all)
+comp <- rbind(data.frame(year = co2$year, v = drop(H(co2$t) %*% beta_all), part = "quadratic mean"),
+              data.frame(year = co2$year, v = drop(part(co2$t, co2$t, th_B, "season") %*% weights_all), part = "season"),
+              data.frame(year = co2$year, v = drop(part(co2$t, co2$t, th_B, "swings") %*% weights_all), part = "swings"))
+comp$part <- factor(comp$part, levels = unique(comp$part))
+ggplot(comp, aes(year, v)) + geom_line(colour = "#2a78d6", linewidth = 0.5) + facet_wrap(~ part, ncol = 1, scales = "free_y") +
+  labs(title = "The three parts of the fitted function", x = NULL, y = "ppm") + theme_bw()
+swing <- subset(comp, part == "swings"); amp <- tapply(subset(comp, part == "season")$v, floor(co2$year), function(v) diff(range(v)))
+c(amplitude_of_the_season_1960 = amp[["1960"]], amplitude_2020 = amp[["2020"]], largest_swing = swing$v[which.max(abs(swing$v))], in_year = swing$year[which.max(abs(swing$v))])
+```
+
+- The **seasonal wave** grew from `r f1(amp[["1960"]])` ppm in 1960 to `r f1(amp[["2020"]])` in 2020 (from the lowest to the highest month). Fixed sine waves cannot show that.
+- The **swings** reach `r f1(max(abs(swing$v)))` ppm, in `r floor(swing$year[which.max(abs(swing$v))])`, and then fall back within a few years. That is the slowdown which threw both forecasts of section 5 off the track.
+
+---
+
+## 7. Things to keep in mind
+
+- **The kernel is the model.** Length scales are what you report and defend. Try others (Matérn instead of the squared exponential, which is often too smooth).
+- **The mean function** matters little inside the data and a great deal outside. Test forecasts from **several** starting dates, not one.
+- **Standardise** the predictors; with several, give each its own length scale (*automatic relevance determination*).
+- **The cost** grows with $n^3$. A few thousand rows are comfortable; beyond that use approximations (inducing points, nearest neighbours, state space).
+- **The marginal likelihood can have several maxima.** Start from several points. With few data the length scale may run to an absurd value: put a prior on it.
+- **Plugging in the estimates** of the kernel's parameters ignores their uncertainty, and the bands are a bit too narrow. Full Bayesian versions average over them.
+- **Other names**: *kriging* in geostatistics, smoothing splines (a GP with a special kernel), Bayesian linear regression (a GP with a linear kernel), [support vector regression](EXAMPLE_SUPPORT_VECTOR_REGRESSION.Rmd) with the same kernel but without probabilities.
+- **Not normal outcomes** (counts, yes or no) need approximations: `mgcv` with `bs = "gp"`, `brms` with `gp()`.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the mean function, the kernel with its parameters in understandable units, how they were estimated, the accuracy on unseen data, and the coverage of the intervals. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Model = rownames(scores), rmse = f2(scores[, "RMSE"]), cov = pct(scores[, "coverage_95"]), width = f1(scores[, "mean_width"]))
+```
+
+**Method** (data analysis):
+
+> Monthly mean CO₂ concentrations at Mauna Loa from 1958 to 2006 (*N* = `r nrow(past)`; Lan & Keeling, 2026) were modelled with Gaussian process regression (Rasmussen & Williams, 2006). The mean function was quadratic in time with unknown coefficients; the covariance function was the sum of a periodic kernel with a slowly changing shape (period one year), an exponential kernel, and noise. The parameters of the kernel were estimated by maximising the marginal likelihood. A model with a constant mean and an additional squared exponential kernel, and a quadratic regression with seasonal terms, served for comparison. The models were evaluated by leave-one-out prediction of the months until 2006, on the `r nrow(future)` months since 2007, and on 15-year forecasts from six starting dates between 1980 and 2007 (parameters re-estimated each time), with the root mean squared error (RMSE) and the coverage of 95% prediction intervals. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> The Gaussian process with a quadratic mean predicted the months since 2007 with an RMSE of `r f2(scores[2, "RMSE"])` ppm, and its 95% intervals contained `r pct(scores[2, "coverage_95"])` of the measurements (Table 1). With a constant mean the RMSE was `r f2(scores[1, "RMSE"])` ppm and the coverage `r pct(scores[1, "coverage_95"])`. In leave-one-out prediction of the months until 2006 the two models had the same RMSE (`r f2(inside["RMSE", "A"])` ppm) and a coverage of `r pct(inside["coverage_95", "B"])`. The advantage of the quadratic mean was not stable: in 15-year forecasts from six starting dates its RMSE ranged from `r f1(min(rolling$rmse_B))` to `r f1(max(rolling$rmse_B))` ppm and its coverage from `r pct(min(rolling$cover_B))` to `r pct(max(rolling$cover_B))`; with a constant mean the ranges were `r f1(min(rolling$rmse_A))` to `r f1(max(rolling$rmse_A))` ppm and `r pct(min(rolling$cover_A))` to `r pct(max(rolling$cover_A))`. In the model of the full record the seasonal amplitude was `r f1(amp[["1960"]])` ppm in 1960 and `r f1(amp[["2020"]])` ppm in 2020. The estimated length scales were `r formatC(th_B$l2, format = "f", digits = 0)` years for the shape of the season and `r f1(th_B$l3)` years for the irregular swings.
+
+**Table 1**
+
+*Forecasts of Monthly CO₂ Since 2007 From the Record Until 2006*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Model", "RMSE (ppm)", "Coverage of 95% intervals", "Mean width (ppm)"), align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* `r nrow(future)` months.
+
+**Points to remember:**
+
+- State the mean function and the kernel, and what each part stands for.
+- Give length scales in the units of the predictor.
+- Check coverage, not only accuracy, and say whether it was inside or outside the data.
+- Mark forecasts beyond the data as depending on the mean function and the kernel.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | Smooth unknown functions, up to a few thousand rows, and a need for uncertainty |
+| **The model** | $f \sim \text{GP}(m, k)$; $y = f + \varepsilon$ |
+| **Prediction** | $k_*^\top(K + \sigma^2I)^{-1}y$, with variance $k_{**} - k_*^\top(K + \sigma^2I)^{-1}k_*$ |
+| **Kernel parameters** | Maximum of the marginal likelihood |
+| **Building** | Add kernels for trend, season, swings; take the fit apart again |
+| **How (R)** | Ten lines of code, or `kernlab::gausspr()`, `mgcv::gam(s(x, bs = "gp"))`, `brms::brm(y ~ gp(x))` |
+| **Check** | Leave-one-out errors and coverage; forecasts from several starting dates |
+| **Danger** | Extrapolation follows the mean function and the kernel, and the bands believe both |
+| **Related pages** | [Polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd), [splines and GAMs](EXAMPLE_SPLINES_GAM.Rmd), [support vector regression](EXAMPLE_SUPPORT_VECTOR_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Lan, X., & Keeling, R. (2026). *Monthly mean CO₂ at Mauna Loa Observatory* [Data set]. NOAA Global Monitoring Laboratory and Scripps Institution of Oceanography. https://gml.noaa.gov/ccgg/trends/
+
+Rasmussen, C. E., & Williams, C. K. I. (2006). *Gaussian processes for machine learning*. MIT Press. https://doi.org/10.7551/mitpress/3206.001.0001
+
+Roberts, S., Osborne, M., Ebden, M., Reece, S., Gibson, N., & Aigrain, S. (2013). Gaussian processes for time-series modelling. *Philosophical Transactions of the Royal Society A*, *371*(1984), Article 20110550. https://doi.org/10.1098/rsta.2011.0550

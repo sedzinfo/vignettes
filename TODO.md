@@ -64,7 +64,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Gradient boosting: EXAMPLE_GRADIENT_BOOSTING
 - [x] Support vector regression: EXAMPLE_SUPPORT_VECTOR_REGRESSION
 - [x] k-nearest neighbours: EXAMPLE_K_NEAREST_NEIGHBOURS
-- [ ] Gaussian process
+- [x] Gaussian process: EXAMPLE_GAUSSIAN_PROCESS
 - [ ] Neural network (EXAMPLE_MNIST covers classification only)
 
 ## Causal and other
