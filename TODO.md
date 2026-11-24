@@ -16,7 +16,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Nonlinear least squares: EXAMPLE_NONLINEAR_LEAST_SQUARES
 - [x] Isotonic: EXAMPLE_ISOTONIC_REGRESSION
 - [x] LOESS: EXAMPLE_LOESS
-- [ ] Splines / GAM
+- [x] Splines / GAM: EXAMPLE_SPLINES_GAM
 - [ ] Multivariate (several outcomes)
 - [ ] Seemingly unrelated regression (SUR)
 
