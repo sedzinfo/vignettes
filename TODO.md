@@ -54,7 +54,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 ## Dependent data
 - [x] Multilevel / mixed: EXAMPLE_MULTILEVEL
 - [x] GEE: EXAMPLE_GEE
-- [ ] Panel fixed / random effects
+- [x] Panel fixed / random effects: EXAMPLE_PANEL_DATA
 - [ ] Time-series regression (ARIMAX)
 - [ ] Spatial regression
 

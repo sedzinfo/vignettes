@@ -1,0 +1,325 @@
+---
+title: "Panel Data, Fixed and Random Effects: Do Beer Taxes Save Lives on the Road?"
+description: "Panel regression in R with plm and fixest, on traffic deaths and beer taxes in 48 US states over seven years: why the pooled regression has the wrong sign, the within transformation and dummy variables by hand, state and year fixed effects, random effects and partial demeaning, the Hausman test and Mundlak's within-between model, cluster-robust standard errors, how little variation is left, influential states, first differences and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: higher taxes, more deaths?
+
+Drunk drivers kill. If beer is more expensive, people drink less of it, and there should be fewer deaths on the road. In the United States every state sets its own tax on beer. So compare the states: do those with higher taxes have fewer deaths?
+
+They have **more**. A simple regression finds that a higher beer tax goes with **more** deaths on the road, and the result is highly significant. Nobody believes that taxes kill. The states differ in a hundred other ways: in the South, for example, beer taxes are high, roads are rural, and distances are long.
+
+We cannot measure all these differences. But we have something better than one year of data. We have the **same 48 states, seven years in a row**. Such data are called a **panel**. Instead of comparing states with each other, compare **each state with itself**: in the years after a state changed its tax, did its deaths change? Whatever makes a state special, if it stays the same over the years, it drops out of this comparison, measured or not. That is the idea of **fixed effects**.
+
+```{r packages}
+library(plm)        # plm(): panel models
+library(fixest)     # feols(): fast fixed effects with clustered standard errors
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data were collected by Christopher Ruhm (1996) and became famous through the textbook of Stock and Watson. They are in the R package `AER`, and as a CSV file in the *Rdatasets* collection:
+
+```{r download}
+raw  <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/AER/Fatalities.csv")
+road <- with(raw, data.frame(state, year, rate = fatal / pop * 10000, tax = beertax, unemp, income = log(income), miles = miles / 1000,
+                             drink_age = drinkage, strict = as.integer(jail == "yes" | service == "yes")))
+c(rows = nrow(road), states = length(unique(road$state)), years = length(unique(road$year)))
+summary(road[, c("rate", "tax")])
+```
+
+`rate` is the number of traffic deaths per 10,000 inhabitants and year, `tax` the tax on a case of beer in dollars (at the prices of 1988). `unemp` (unemployment, %), `income` (log of the income per head), `miles` (thousand miles driven per driver), `drink_age` (minimum legal drinking age) and `strict` (a jail sentence or community service for a first offence) come later. The panel is **balanced**: 48 states, 1982 to 1988.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 5}
+pooled <- lm(rate ~ tax, data = road)
+means  <- aggregate(cbind(rate, tax) ~ state, data = road, FUN = mean)
+some   <- c("ga", "nd", "sc", "nm", "fl", "nc", "wy", "ut")
+ggplot(road, aes(tax, rate)) +
+  geom_point(alpha = 0.25, size = 1, colour = "grey40") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834", linewidth = 1) +
+  geom_line(data = subset(road, state %in% some), aes(group = state), colour = "#2a78d6", linewidth = 0.9) +
+  geom_text(data = subset(road, state %in% some & year == 1988), aes(label = toupper(state)), size = 3, hjust = -0.3, colour = "#2a78d6") +
+  labs(title = "Beer tax and traffic deaths", subtitle = "Orange: all the points together. Blue: the path of eight states from 1982 to 1988",
+       x = "tax on a case of beer (dollars)", y = "deaths per 10,000 people and year") + theme_bw()
+
+sd_tax <- c(total = sd(road$tax), between_states = sd(means$tax), within_states = sd(road$tax - ave(road$tax, road$state)))
+round(sd_tax, 3)
+```
+
+The orange line rises. But nearly all the variation of the tax is **between** states: the SD of the states' mean taxes is `r f2(sd_tax[["between_states"]])` dollars, and the SD of a state's tax around its own mean only `r f3(sd_tax[["within_states"]])`. A state's tax hardly moves in seven years. Remember this number. It decides how much the panel can tell us.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the state's own level
+
+$$\text{rate}_{it} = \beta\,\text{tax}_{it} + \alpha_i + \varepsilon_{it}$$
+
+$i$ is the state, $t$ the year. $\alpha_i$ contains **everything** about state $i$ that does not change: its roads, its religion, its distances, its habits. The pooled regression leaves $\alpha_i$ in the error. If $\alpha_i$ is correlated with the tax, the estimate is biased.
+
+### Step 2: fixed effects, the within transformation
+
+Subtract from each variable the **mean of its state**. $\alpha_i$ is the same every year, so it is equal to its own mean and disappears:
+
+$$\text{rate}_{it} - \overline{\text{rate}}_i = \beta\,(\text{tax}_{it} - \overline{\text{tax}}_i) + (\varepsilon_{it} - \bar\varepsilon_i)$$
+
+OLS on the demeaned data is the **within** or fixed-effects estimator. It is exactly the same as OLS with a dummy variable for each state:
+
+```{r by_hand}
+demean  <- function(v, g) v - ave(v, g)
+within  <- lm(demean(rate, state) ~ 0 + demean(tax, state), data = road)
+dummies <- lm(rate ~ tax + factor(state), data = road)
+fe      <- plm(rate ~ tax, data = road, index = c("state", "year"), model = "within")
+c(demeaned = coef(within)[[1]], dummies = coef(dummies)[["tax"]], plm = coef(fe)[["tax"]])
+```
+
+### Step 3: fixed effects for the years, too
+
+Cars became safer everywhere in the 1980s. A **year effect** $\gamma_t$ takes out whatever changed for all the states together:
+
+$$\text{rate}_{it} = \beta\,\text{tax}_{it} + \alpha_i + \gamma_t + \varepsilon_{it}$$
+
+Now $\beta$ compares the **changes** of a state with the changes of the others in the same years.
+
+### Step 4: random effects
+
+If the $\alpha_i$ were **unrelated** to the tax, we could treat them as random draws, $\alpha_i \sim N(0, \sigma_\alpha^2)$, as in a [multilevel model](EXAMPLE_MULTILEVEL.Rmd). The estimator is generalized least squares, and it works by **partial** demeaning: subtract only a fraction $\theta$ of the mean,
+
+$$y_{it} - \theta \bar y_i, \qquad \theta = 1 - \sqrt{\frac{\sigma_\varepsilon^2}{\sigma_\varepsilon^2 + T\sigma_\alpha^2}}$$
+
+With $\theta = 0$ it is the pooled regression, with $\theta = 1$ fixed effects. It uses the comparisons between states as well, so it is more precise, **if** the assumption holds. Here it clearly does not.
+
+| | Pooled OLS | Random effects | Fixed effects |
+|---|---|---|---|
+| Uses | all comparisons alike | a weighted mix of within and between | only within |
+| Assumes about $\alpha_i$ | not there | there, but unrelated to $x$ | anything |
+| Predictors that never change | yes | yes | **drop out** |
+| Precision | – | higher | lower |
+
+---
+
+## 4. Fitting the models and reading the output
+
+```{r fits}
+panel <- pdata.frame(road, index = c("state", "year"))
+pool  <- plm(rate ~ tax, data = panel, model = "pooling")
+betw  <- plm(rate ~ tax, data = panel, model = "between")               # regression of the state means
+re    <- plm(rate ~ tax, data = panel, model = "random")
+tw    <- plm(rate ~ tax, data = panel, model = "within", effect = "twoways")
+cl    <- function(m) sqrt(vcovHC(m, type = "HC1", cluster = "group")["tax", "tax"])
+tab <- rbind(`pooled OLS`             = c(coef(pool)[["tax"]], sqrt(vcov(pool)["tax", "tax"]), cl(pool)),
+             `between states`         = c(coef(betw)[["tax"]], sqrt(vcov(betw)["tax", "tax"]), NA),
+             `random effects`         = c(coef(re)[["tax"]], sqrt(vcov(re)["tax", "tax"]), cl(re)),
+             `state fixed effects`    = c(coef(fe)[["tax"]], sqrt(vcov(fe)["tax", "tax"]), cl(fe)),
+             `state and year effects` = c(coef(tw)[["tax"]], sqrt(vcov(tw)["tax", "tax"]), cl(tw)))
+colnames(tab) <- c("b", "SE (usual)", "SE (clustered)")
+round(tab, 3)
+theta <- re$ercomp$theta[[1]]
+```
+
+```{r fits_chart}
+td <- data.frame(model = factor(rownames(tab), levels = rev(rownames(tab))), b = tab[, 1], se = ifelse(is.na(tab[, 3]), tab[, 2], tab[, 3]))
+ggplot(td, aes(b, model)) + geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = b - 1.96 * se, xmax = b + 1.96 * se), colour = "#2a78d6", linewidth = 0.9) +
+  labs(title = "The same data, five models", subtitle = "95% intervals (clustered by state where possible)", x = "deaths per 10,000 people for one dollar more tax", y = NULL) + theme_bw()
+```
+
+- **Pooled**: +`r f2(tab[1, 1])`. One dollar more tax goes with `r f2(tab[1, 1])` **more** deaths per 10,000 people. The **between** regression, of the 48 state means, gives the same.
+- **State fixed effects**: `r f2(tab[4, 1])`. The sign has turned. When a state's tax is a dollar higher **than its own average**, it has `r f2(abs(tab[4, 1]))` deaths **fewer** per 10,000 people, with a mean rate of `r f2(mean(road$rate))`. (It is [Simpson's paradox](EXAMPLE_PARADOX.Rmd), in a panel.)
+- **With year effects**: `r f2(tab[5, 1])`.
+- **Random effects**: `r f2(tab[3, 1])`, with $\theta$ = `r f2(theta)`. A mixture of the two comparisons, with opposite signs, which answers neither question.
+
+No state changed its tax by a dollar. For a realistic 10 cents, the fixed-effects estimate is `r f3(tab[5, 1] / 10)` deaths per 10,000, about `r pct(abs(tab[5, 1] / 10 / mean(road$rate)), 1)` of the rate.
+
+### The standard errors
+
+The errors of a state in different years are related: a bad year is followed by a bad year. The usual standard errors count seven independent years. **Clustered** standard errors allow any correlation within a state:
+
+```{r serial}
+bg <- pbgtest(fe)
+bg$p.value
+ratio <- tab[5, 3] / tab[5, 2]
+ratio
+```
+
+The Breusch–Godfrey test finds serial correlation, *p* `r pval(bg$p.value)`. With clustering, the standard error is `r f1(ratio)` times as large, and the 95% interval of the last model is [`r f2(tab[5, 1] - 1.96 * tab[5, 3])`, `r f2(tab[5, 1] + 1.96 * tab[5, 3])`]. It just includes zero. Bertrand et al. (2004) showed how often panel studies without this correction find effects that do not exist.
+
+---
+
+## 5. Fixed or random? Hausman and Mundlak
+
+The **Hausman test** compares the two estimates. If the $\alpha_i$ are unrelated to the tax, both are consistent and should be close:
+
+```{r hausman}
+hausman <- phtest(fe, re)
+hausman
+```
+
+$\chi^2$(1) = `r f1(hausman$statistic)`, *p* `r pval(hausman$p.value)`: they differ, so the random-effects assumption fails. The test is popular, and it leaves one with a choice between two models.
+
+**Mundlak** (1978) had a better idea. Use random effects, and add the **state mean** of the predictor:
+
+$$\text{rate}_{it} = \beta_W\,(\text{tax}_{it} - \overline{\text{tax}}_i) + \beta_B\,\overline{\text{tax}}_i + \alpha_i + \varepsilon_{it}$$
+
+```{r mundlak}
+road$tax_mean   <- ave(road$tax, road$state)
+road$tax_within <- road$tax - road$tax_mean
+mundlak <- plm(rate ~ tax_within + tax_mean, data = pdata.frame(road, index = c("state", "year")), model = "random")
+round(coef(summary(mundlak))[, 1:2], 3)
+```
+
+One model, two coefficients. The **within** effect (`r f2(coef(mundlak)[["tax_within"]])`) is exactly that of fixed effects, and the **between** difference (`r f2(coef(mundlak)[["tax_mean"]])`) is that of the state means. Nothing is hidden, predictors that never change can stay in, and the difference between the two coefficients **is** the Hausman test. This *within-between* model is what Bell and Jones (2015) recommend instead of the choice between fixed and random.
+
+---
+
+## 6. Predictors that change
+
+Fixed effects protect against everything that is **constant**. They do not protect against what changes at the same time as the tax. The economy does: in good years people drive and drink more.
+
+```{r controls}
+road$legal <- cut(road$drink_age, c(0, 20, 21, 30), right = FALSE, labels = c("under 20", "20", "21"))
+full <- feols(rate ~ tax + legal + strict + miles + unemp + income | state + year, data = road, cluster = ~ state)
+sf <- coeftable(full); cif <- confint(full)
+round(sf, 3)
+c(n = full$nobs, within_R2 = fitstat(full, "wr2")[[1]])
+```
+
+With the drinking age, strict punishment, the miles driven, unemployment and income, the effect of the tax is `r f2(sf["tax", 1])`, 95% CI [`r f2(cif["tax", 1])`, `r f2(cif["tax", 2])`]. The clear results are those of the economy: a rise of unemployment by one point goes with `r f2(abs(sf["unemp", 1]))` deaths **fewer** per 10,000, a rise of income with more. The legal measures show nothing that can be told from zero.
+
+---
+
+## 7. How much does it rest on?
+
+### A few states
+
+```{r leave_one_out}
+states <- unique(road$state)
+loo <- sapply(states, function(s) coef(feols(rate ~ tax | state + year, data = subset(road, state != s)))[["tax"]])
+range(loo); loo[order(abs(loo - tab[5, 1]), decreasing = TRUE)[1:4]]
+changes <- sapply(split(road$tax, road$state), function(v) max(v) - min(v))
+sum(changes > 0.15)
+names(changes)[changes > 0.15]
+```
+
+Leaving out one state at a time moves the estimate between `r f2(min(loo))` and `r f2(max(loo))`. Only `r sum(changes > 0.15)` states changed their (inflation-adjusted) tax by more than 15 cents over the seven years. All the others contribute small drifts, mostly from inflation. The panel has `r nrow(road)` rows, and the question of beer taxes is decided by a handful of them.
+
+### First differences
+
+Another way to remove $\alpha_i$: subtract the **year before** instead of the mean.
+
+```{r differences}
+fd <- plm(rate ~ tax, data = panel, model = "fd")
+long_diff <- merge(subset(road, year == 1982), subset(road, year == 1988), by = "state")
+ld <- lm(I(rate.y - rate.x) ~ I(tax.y - tax.x), data = long_diff)
+rbind(first_differences = c(coef(fd)[["tax"]], sqrt(vcovHC(fd)["tax", "tax"])), `1988 minus 1982` = coef(summary(ld))[2, 1:2])
+```
+
+The first differences give `r f2(coef(fd)[["tax"]])`, and the change from 1982 to 1988 gives `r f2(coef(ld)[[2]])`. If the model were exactly right, they would agree. That the answer changes with the length of the difference suggests that the effect takes time, or that the model misses something. A reader should know this.
+
+---
+
+## 8. Things to keep in mind
+
+- **What fixed effects do**: they remove all the constant differences between units, measured or not. **What they do not do**: remove what changes over time, reverse causation (a state with many deaths raises its tax), or measurement error (which becomes worse, because most of the true variation has been removed).
+- **The estimate is about changes**, within the range of the changes that occurred. It says nothing about a state with a tax three dollars higher.
+- **Predictors that do not change** (region, religion) drop out. If they are your question, use the between part of a Mundlak model, and do not call it an effect.
+- **Cluster** the standard errors by unit. With fewer than 40 or 50 units use a wild bootstrap or another small-sample method.
+- **Lags.** If last year's outcome belongs in the model, the within estimator is biased in short panels (Nickell bias), and special estimators are needed.
+- **Treatments that start at different times** in different units, analysed with two-way fixed effects, can give misleading averages. See the literature on staggered difference-in-differences.
+- **Random effects are not wrong** in general. In experiments, and for predictions of units, they are the right tool. The test is whether the unit effects are related to the predictor.
+- **Same mathematics, other names**: econometrics says *fixed and random effects*, psychology *within-person and between-person*, statistics *group-mean centring*.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the units and times, the fixed effects, the kind of standard errors, the within variation of the predictor, and the alternatives. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Model = c("Pooled OLS", "Random effects", "State fixed effects", "State and year fixed effects", "… with covariates"),
+  b = f2(c(tab[c(1, 3, 4, 5), 1], sf["tax", 1])), SE = f2(c(tab[c(1, 3, 4, 5), 3], sf["tax", 2])),
+  CI = paste0("[", f2(c(tab[c(1, 3, 4, 5), 1] - 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 1])), ", ", f2(c(tab[c(1, 3, 4, 5), 1] + 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 2])), "]"))
+```
+
+**Method** (data analysis):
+
+> We analysed the traffic fatality rate (deaths per 10,000 inhabitants) and the beer tax of 48 US states from 1982 to 1988 (*N* = `r nrow(road)`; Ruhm, 1996). Because states differ in many unmeasured ways, we used linear regression with fixed effects for states and years, with standard errors clustered by state. For comparison we report pooled and random-effects estimates; the assumption that the state effects are unrelated to the tax was tested with the Hausman (1978) test. A further model added the drinking age, mandatory punishment, miles driven, unemployment and log income. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages plm (Croissant & Millo, 2008) and fixest.
+
+**Results:**
+
+> In the pooled data higher taxes went with more deaths, *b* = `r f2(tab[1, 1])` per dollar, whereas within states they went with fewer, *b* = `r f2(tab[4, 1])` (Table 1). The Hausman test rejected the random-effects model, χ²(1) = `r f1(hausman$statistic)`, *p* `r pval(hausman$p.value)`. With state and year effects the estimate was `r f2(tab[5, 1])`, clustered *SE* = `r f2(tab[5, 3])`, 95% CI [`r f2(tab[5, 1] - 1.96 * tab[5, 3])`, `r f2(tab[5, 1] + 1.96 * tab[5, 3])`], and with covariates `r f2(sf["tax", 1])`, 95% CI [`r f2(cif["tax", 1])`, `r f2(cif["tax", 2])`]. The within-state standard deviation of the tax was only `r f3(sd_tax[["within_states"]])` dollars, and `r sum(changes > 0.15)` states changed it by more than 15 cents, so the estimates rest on few changes.
+
+**Table 1**
+
+*Beer Tax (Dollars per Case) and Traffic Deaths per 10,000 Inhabitants*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Model", "*b*", "*SE*", "95% CI"), align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(road)` (48 states, 7 years; `r full$nobs` in the last model). Standard errors clustered by state.
+
+**Points to remember:**
+
+- Say which comparisons identify the coefficient (within units, within years).
+- Report how much the predictor varies within units.
+- Cluster the standard errors.
+- Show the pooled estimate too, if it differs: the difference is part of the story.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | The same units at several times, and unmeasured differences between units |
+| **Fixed effects** | Demean by unit (or a dummy for each): only changes within units count |
+| **Random effects** | Partial demeaning; needs unit effects unrelated to the predictors |
+| **Within-between (Mundlak)** | Both coefficients in one model |
+| **How (R)** | `plm(y ~ x, index = c("unit", "time"), model = "within")`; `fixest::feols(y ~ x | unit + time, cluster = ~ unit)` |
+| **Test** | Hausman, or compare the within and between coefficients |
+| **Standard errors** | Clustered by unit |
+| **Not solved** | Time-varying confounders, reverse causation, measurement error |
+| **Related pages** | [Multilevel models](EXAMPLE_MULTILEVEL.Rmd), [GEE](EXAMPLE_GEE.Rmd), [paradoxes](EXAMPLE_PARADOX.Rmd) |
+
+---
+
+## References
+
+Bell, A., & Jones, K. (2015). Explaining fixed effects: Random effects modeling of time-series cross-sectional and panel data. *Political Science Research and Methods*, *3*(1), 133–153. https://doi.org/10.1017/psrm.2014.7
+
+Bertrand, M., Duflo, E., & Mullainathan, S. (2004). How much should we trust differences-in-differences estimates? *The Quarterly Journal of Economics*, *119*(1), 249–275. https://doi.org/10.1162/003355304772839588
+
+Croissant, Y., & Millo, G. (2008). Panel data econometrics in R: The plm package. *Journal of Statistical Software*, *27*(2), 1–43. https://doi.org/10.18637/jss.v027.i02
+
+Hausman, J. A. (1978). Specification tests in econometrics. *Econometrica*, *46*(6), 1251–1271. https://doi.org/10.2307/1913827
+
+Mundlak, Y. (1978). On the pooling of time series and cross section data. *Econometrica*, *46*(1), 69–85. https://doi.org/10.2307/1913646
+
+Ruhm, C. J. (1996). Alcohol policies and highway vehicle fatalities. *Journal of Health Economics*, *15*(4), 435–454. https://doi.org/10.1016/S0167-6296(96)00490-0
