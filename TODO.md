@@ -56,7 +56,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] GEE: EXAMPLE_GEE
 - [x] Panel fixed / random effects: EXAMPLE_PANEL_DATA
 - [x] Time-series regression (ARIMAX): EXAMPLE_ARIMAX
-- [ ] Spatial regression
+- [x] Spatial regression: EXAMPLE_SPATIAL_REGRESSION
 
 ## Machine learning
 - [x] Regression trees: EXAMPLE_DECISION_TREE

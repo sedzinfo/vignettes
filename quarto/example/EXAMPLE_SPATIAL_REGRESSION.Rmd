@@ -1,0 +1,337 @@
+---
+title: "Spatial Regression: Do Regions Catch Unemployment From Their Neighbours?"
+description: "Spatial regression in R with spdep and spatialreg, on unemployment, education and income in about 230 European regions (Eurostat, 2019): neighbours and weights, Moran's I, what spatial correlation does to least squares, the spatial lag and the spatial error model by hand, Lagrange multiplier tests, direct and indirect impacts, the spatial Durbin model, what remains once countries are in the model, sensitivity to the weights, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from Eurostat each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the map is not random
+
+Look at a map of unemployment in Europe, and the colours come in patches. Regions with many unemployed lie next to each other, and so do those with few. A region of southern Spain looks like the region beside it, whatever its schools and its income.
+
+This matters for two reasons. **Statistically**, regions are not independent observations: neighbours repeat each other's information, and the standard errors of ordinary regression are too small. **Substantively**, the patches may be a result in themselves. Perhaps unemployment **spreads**: people commute across the border, firms sell to the region next door, and a closed factory hurts both sides.
+
+**Spatial regression** puts the neighbours into the model. This page fits the two classic models, shows how to read them (their coefficients are **not** the effects), and asks at the end what the patches really are.
+
+```{r packages}
+library(jsonlite)     # Eurostat answers in JSON
+library(sf)           # maps
+library(spdep)        # neighbours, Moran's I, Lagrange multiplier tests
+library(spatialreg)   # spatial regression models
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+Eurostat publishes statistics for the NUTS-2 regions of Europe, and the maps that belong to them. Both are free and need no login. We use 2019, the last year before the pandemic.
+
+```{r download}
+eurostat <- function(code, query) {
+  j <- fromJSON(paste0("https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/", code, "?format=JSON&lang=EN&geoLevel=nuts2&time=2019&", query))
+  place <- unlist(j$dimension$geo$category$index); value <- unlist(j$value)
+  data.frame(NUTS_ID = names(place), value = unname(value[match(as.character(place), names(value))]))
+}
+unemp  <- eurostat("lfst_r_lfu3rt", "sex=T&age=Y15-74")                          # unemployment rate (%)
+degree <- eurostat("edat_lfse_04", "sex=T&age=Y25-64&isced11=ED5-8")             # adults with tertiary education (%)
+gdp    <- eurostat("nama_10r_2gdp", "unit=PPS_EU27_2020_HAB")                    # GDP per head, purchasing power standards
+map    <- st_read("https://gisco-services.ec.europa.eu/distribution/v2/nuts/geojson/NUTS_RG_20M_2016_4326_LEVL_2.geojson", quiet = TRUE)
+
+map$unemp  <- unemp$value[match(map$NUTS_ID, unemp$NUTS_ID)]
+map$degree <- degree$value[match(map$NUTS_ID, degree$NUTS_ID)]
+map$gdp    <- gdp$value[match(map$NUTS_ID, gdp$NUTS_ID)]
+map <- st_transform(subset(map, !is.na(unemp) & !is.na(degree) & !is.na(gdp) & CNTR_CODE != "TR"), 3035)      # a projection in metres
+xy  <- st_coordinates(suppressWarnings(st_centroid(map)))
+europe <- map[xy[, 1] > 2.5e6 & xy[, 2] > 1.3e6, ]                               # without the islands far away (Canaries, Azores, overseas)
+xy  <- st_coordinates(suppressWarnings(st_centroid(europe)))
+d   <- st_drop_geometry(europe)
+d$log_u <- log(d$unemp); d$log_gdp <- log(d$gdp / 30000); d$deg10 <- (d$degree - 33) / 10
+c(regions = nrow(d), countries = length(unique(d$CNTR_CODE)))
+round(sapply(d[, c("unemp", "degree", "gdp")], function(v) c(min = min(v), median = median(v), max = max(v))), 1)
+```
+
+There are `r nrow(d)` regions of `r length(unique(d$CNTR_CODE))` countries. The unemployment rate goes from `r f1(min(d$unemp))`% to `r f1(max(d$unemp))`%. Because it is skewed, we use its logarithm. `deg10` is the share of adults with a degree, in steps of 10 points from 33%, and `log_gdp` the log of the income per head, relative to 30,000.
+
+---
+
+## 2. Look at the map
+
+```{r look, fig.height = 5.5}
+ggplot(europe) + geom_sf(aes(fill = unemp), colour = "white", linewidth = 0.1) +
+  scale_fill_viridis_c(option = "B", direction = -1, trans = "log", breaks = c(2, 4, 8, 16), name = "%") +
+  coord_sf(xlim = c(2.5e6, 6e6), ylim = c(1.4e6, 5.3e6)) +
+  labs(title = "Unemployment in the regions of Europe, 2019") + theme_bw() + theme(axis.text = element_blank(), axis.ticks = element_blank(), panel.grid = element_blank())
+```
+
+### Who is whose neighbour?
+
+A spatial model needs a definition of neighbours, the **weights matrix** $W$. Regions that share a border is one choice, but islands have none. We take the **five nearest** regions (by the distance of their centres), and give each the weight 1/5. The rows of $W$ sum to 1, so $Wy$ is the **mean of the neighbours** of each region, the *spatial lag* of $y$.
+
+```{r weights}
+W <- nb2listw(knn2nb(knearneigh(xy, k = 5)), style = "W")
+d$lag_u <- lag.listw(W, d$log_u)                        # the mean of the five neighbours
+moran <- moran.test(d$log_u, W)
+moran$estimate[["Moran I statistic"]]
+```
+
+```{r moran_chart}
+ggplot(d, aes(log_u, lag_u)) + geom_point(alpha = 0.6, colour = "#2a78d6") + geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") +
+  labs(title = "Each region and the mean of its five neighbours", x = "log unemployment of the region", y = "mean of its neighbours") + theme_bw()
+```
+
+**Moran's I** is a correlation between a region and its neighbours: the slope of the line in this chart. It is `r f2(moran$estimate[["Moran I statistic"]])`, where 0 would be no pattern. Unemployment is as clustered as it can be.
+
+---
+
+## 3. What it does to least squares
+
+```{r ols}
+ols <- lm(log_u ~ deg10 + log_gdp, data = d)
+round(coef(summary(ols)), 3)
+mr <- lm.morantest(ols, W)
+c(Moran_I_of_the_residuals = mr$estimate[[1]], p = mr$p.value[[1]])
+```
+
+OLS finds that richer regions have less unemployment (`r f2(coef(ols)[["log_gdp"]])`: 10% more income, `r f1(abs(10 * coef(ols)[["log_gdp"]]))`% less unemployment) and, oddly, that regions with **more** graduates have more of it, once income is held constant. Both are "highly significant". But the **residuals** have a Moran's I of `r f2(mr$estimate[[1]])`: the model has explained almost nothing of the map. The `r nrow(d)` regions are not `r nrow(d)` independent pieces of information, and neither result can be trusted.
+
+---
+
+## 4. The two classic models, with formulas
+
+### The spatial lag model (SAR)
+
+$$y = \rho W y + X\beta + \varepsilon$$
+
+The unemployment of the neighbours is a **cause** of the region's own. It is a story of contagion, and a circle: my neighbour's unemployment depends on mine, too. Solved for $y$:
+
+$$y = (I - \rho W)^{-1}(X\beta + \varepsilon)$$
+
+A change in one region travels to its neighbours, to their neighbours, and back.
+
+### The spatial error model (SEM)
+
+$$y = X\beta + u, \qquad u = \lambda W u + \varepsilon$$
+
+Here the neighbours do not act on each other. They share **unmeasured** things, such as history, industry, and laws, which are in the error. OLS is unbiased, and only its standard errors are wrong. It is the spatial cousin of [GLS with autocorrelated errors](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd).
+
+### Why not just put $Wy$ into `lm()`?
+
+Because of the circle. $Wy$ is correlated with the error. Maximum likelihood takes it into account with one extra term, the log of the determinant of $I - \rho W$:
+
+$$\log L = -\frac{n}{2}\log(2\pi\sigma^2) + \log|I - \rho W| - \frac{1}{2\sigma^2}\lVert y - \rho Wy - X\beta \rVert^2$$
+
+For a given $\rho$, $\beta$ is an ordinary regression of $y - \rho Wy$ on $X$. So we need to search over $\rho$ only:
+
+```{r by_hand}
+y <- d$log_u; X <- model.matrix(ols); n <- nrow(X)
+Wm <- listw2mat(W); Wy <- drop(Wm %*% y); ev <- eigen(Wm, only.values = TRUE)$values
+profile_ll <- function(rho) {
+  e <- lm.fit(X, y - rho * Wy)$residuals
+  -n / 2 * (log(2 * pi * mean(e^2)) + 1) + sum(Re(log(as.complex(1 - rho * ev))))
+}
+rho_hat <- optimize(profile_ll, c(-0.9, 0.99), maximum = TRUE)$maximum
+sar <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W)
+naive <- lm(log_u ~ deg10 + log_gdp + lag_u, data = d)
+rbind(by_hand = c(rho = rho_hat, lm.fit(X, y - rho_hat * Wy)$coefficients), lagsarlm = c(sar$rho, sar$coefficients), `wrong: lm with the lag` = coef(naive)[c(4, 1:3)])
+```
+
+---
+
+## 5. Fitting the models and reading the output
+
+```{r fits}
+sem  <- errorsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W)
+sdm  <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W, Durbin = TRUE)      # with the neighbours' X as well
+tab <- rbind(OLS = c(coef(summary(ols))[2, 1:2], coef(summary(ols))[3, 1:2], NA, AIC(ols)),
+             `spatial lag` = c(summary(sar)$Coef[2, 1:2], summary(sar)$Coef[3, 1:2], sar$rho, AIC(sar)),
+             `spatial error` = c(summary(sem)$Coef[2, 1:2], summary(sem)$Coef[3, 1:2], sem$lambda, AIC(sem)),
+             `spatial Durbin` = c(summary(sdm)$Coef[2, 1:2], summary(sdm)$Coef[3, 1:2], sdm$rho, AIC(sdm)))
+colnames(tab) <- c("deg10", "SE", "log_gdp", "SE", "rho or lambda", "AIC")
+round(tab, 3)
+resid_I <- c(OLS = mr$estimate[[1]], lag = moran.test(residuals(sar), W)$estimate[[1]], error = moran.test(residuals(sem), W)$estimate[[1]])
+round(resid_I, 3)
+```
+
+- From OLS to the lag model the AIC falls by `r f1(tab["OLS", "AIC"] - tab["spatial lag", "AIC"])` points, with **one** more parameter. The residuals have no spatial pattern left (Moran's I `r f2(resid_I[["lag"]])` and `r f2(resid_I[["error"]])`).
+- $\rho$ = `r f2(sar$rho)` and $\lambda$ = `r f2(sem$lambda)`: very strong dependence.
+- The strange result about the graduates is gone (for now: see section 7). The coefficient is `r f2(tab["spatial lag", 1])` instead of `r f2(tab["OLS", 1])`, with a *z* of `r f1(summary(sar)$Coef[2, 3])`.
+- That of income is smaller: `r f2(tab["spatial lag", 3])` (lag) and `r f2(tab["spatial error", 3])` (error). But **the coefficients of the lag model are not effects**, as section 6 shows.
+
+### Lag or error? The Lagrange multiplier tests
+
+```{r lm_tests}
+rs <- lm.RStests(ols, W, test = c("RSerr", "RSlag", "adjRSerr", "adjRSlag"))
+rs_tab <- t(sapply(rs, function(t) c(statistic = unname(t$statistic), p = unname(t$p.value))))
+round(rs_tab, 4)
+```
+
+Both simple tests are huge, because each also reacts to the other kind of dependence. The **adjusted** (robust) versions correct for this (Anselin et al., 1996). Here both are significant, the error version more clearly (`r f1(rs_tab["adjRSerr", 1])` against `r f1(rs_tab["adjRSlag", 1])`). The AICs of the two models are `r f1(AIC(sar))` and `r f1(AIC(sem))`. The data do not decide between the two stories, and this is the usual outcome.
+
+---
+
+## 6. Effects in the lag model: direct and indirect
+
+In the lag model a change of $x$ in one region changes the unemployment of **all** regions, through $(I - \rho W)^{-1} = I + \rho W + \rho^2W^2 + \dots$. LeSage and Pace (2009) split the effect of $x$ into
+
+- the **direct** effect: on the region itself, with the echo that comes back through the neighbours;
+- the **indirect** effect (*spillover*): on all the others together.
+
+```{r impacts}
+S <- solve(diag(n) - sar$rho * Wm)                              # (I - rho W)^-1
+by_hand <- sapply(c("deg10", "log_gdp"), function(v) { M <- S * sar$coefficients[[v]]; c(direct = mean(diag(M)), total = mean(rowSums(M))) })
+by_hand <- rbind(by_hand, indirect = by_hand["total", ] - by_hand["direct", ])
+round(by_hand, 3)
+set.seed(141)
+imp <- summary(impacts(sar, listw = W, R = 1000), zstats = TRUE, short = TRUE)
+round(cbind(direct = imp$res$direct, indirect = imp$res$indirect, total = imp$res$total), 3)
+imp_ci <- t(sapply(c(direct = "direct_sum", indirect = "indirect_sum", total = "total_sum"), function(k) imp[[k]]$quantiles[2, c("2.5%", "97.5%")]))
+round(imp_ci, 2)
+```
+
+The coefficient of log income is `r f2(sar$coefficients[["log_gdp"]])`. The **direct** effect is `r f2(by_hand["direct", "log_gdp"])`, and the **total** `r f2(by_hand["total", "log_gdp"])`, 95% CI [`r f2(imp_ci["total", 1])`, `r f2(imp_ci["total", 2])`]: if **all** the regions became 10% richer, unemployment would be `r f1(abs(10 * by_hand["total", "log_gdp"]))`% lower. Most of this, says the model, is spillover. But the split is a **consequence of the formula**: in a lag model the ratio of the indirect to the direct effect is the same for every predictor, whatever the data. It is a strong claim, and it rests on $\rho$ being contagion.
+
+---
+
+## 7. What are the patches? Countries
+
+Look again at the map. The edges of the patches are often **national borders**. Unemployment depends on the labour laws, the wages and the economy of the country. So give every country its own level:
+
+```{r countries}
+ols_c <- lm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d)
+mc    <- lm.morantest(ols_c, W)
+sar_c <- lagsarlm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d, listw = W)
+sem_c <- errorsarlm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d, listw = W)
+comp <- rbind(`OLS` = c(coef(ols)[2:3], mr$estimate[[1]], AIC(ols)), `spatial lag` = c(sar$coefficients[2:3], resid_I[["lag"]], AIC(sar)),
+              `OLS + countries` = c(coef(ols_c)[2:3], mc$estimate[[1]], AIC(ols_c)), `spatial lag + countries` = c(sar_c$coefficients[2:3], moran.test(residuals(sar_c), W)$estimate[[1]], AIC(sar_c)))
+colnames(comp) <- c("deg10", "log_gdp", "Moran's I of the residuals", "AIC")
+round(comp, 2)
+c(rho_without_countries = sar$rho, rho_with_countries = sar_c$rho)
+```
+
+With country effects, plain OLS leaves a Moran's I of `r f2(mc$estimate[[1]])`, instead of `r f2(mr$estimate[[1]])`. The $\rho$ of the lag model falls from `r f2(sar$rho)` to `r f2(sar_c$rho)`, and the AIC by another `r f1(AIC(sar) - AIC(ols_c))` points for the simple model with countries. **Most of the "contagion" was the country.** Within countries, unemployment falls with income (`r f2(coef(ols_c)[["log_gdp"]])`), and what is left of the neighbours is small. And the positive coefficient of the graduates is back (`r f2(coef(ols_c)[["deg10"]])`, *t* = `r f1(coef(summary(ols_c))["deg10", 3])`): the spatial models had hidden it. Within a country, regions with more graduates than their income suggests have a little more unemployment. The big cities may be part of it, but these data cannot say.
+
+```{r border}
+pairs <- data.frame(i = rep(seq_len(n), each = 5), j = unlist(W$neighbours))
+pairs$same <- d$CNTR_CODE[pairs$i] == d$CNTR_CODE[pairs$j]
+gap <- tapply(abs(d$log_u[pairs$i] - d$log_u[pairs$j]), pairs$same, mean)
+gap
+set.seed(142)
+random_gap <- mean(abs(d$log_u - sample(d$log_u)))
+random_gap
+```
+
+Neighbours in the **same** country differ by `r f2(gap[["TRUE"]])` on the log scale, neighbours **across a border** by `r f2(gap[["FALSE"]])`, and two random regions by `r f2(random_gap)`. The border explains a good part of the pattern, but not all of it: neighbours across a border are still more alike than strangers (compare Overman & Puga, 2002).
+
+This is the general problem of spatial regression: **a spatial lag absorbs whatever is missing and has a shape on the map.** Gibbons and Overman (2012) called much of the field "mostly pointless" for this reason. A spatial model is a good way to get honest standard errors and to see that something is missing. It is a weak way to prove that things spread.
+
+---
+
+## 8. Does the definition of neighbours matter?
+
+```{r sensitivity}
+make_W <- list(`4 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 4))), `5 nearest` = W, `8 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 8))),
+               `within 300 km` = nb2listw(dnearneigh(xy, 0, 300000), zero.policy = TRUE))
+sens <- t(sapply(make_W, function(w) { m <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = w, zero.policy = TRUE); c(rho = m$rho, m$coefficients[2:3], AIC = AIC(m)) }))
+round(sens, 3)
+```
+
+The definition changes the numbers a little and the story not at all. Report more than one.
+
+---
+
+## 9. Things to keep in mind
+
+- **Start with the map and Moran's I of the residuals.** If there is no pattern left, no spatial model is needed.
+- **First add what is missing** (countries, cities, coasts), then model what remains.
+- **Lag for interaction, error for nuisance.** Choose by theory. The tests rarely decide.
+- **Never read the coefficients of a lag or Durbin model as effects.** Use impacts.
+- **$W$ is chosen, not estimated.** Say how, and try others.
+- **Areas are arbitrary.** Results can change with other borders or a finer division (the *modifiable areal unit problem*), and nothing follows for persons (the ecological fallacy, see [beta regression](EXAMPLE_BETA.Rmd)).
+- **Points instead of areas** (sensors, houses): geostatistics, kriging or a smooth of the coordinates, `mgcv::gam(y ~ x + s(lon, lat))`.
+- **Robust alternative**: OLS with standard errors that allow for spatial correlation (Conley), if only the standard errors are the problem.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the units, the weights matrix, Moran's I before and after, the models and how they were chosen, impacts instead of coefficients for lag models, and the sensitivity to the weights. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Model = c("OLS", "Spatial lag", "Spatial error", "OLS with country effects"),
+  deg = paste0(f2(c(tab[1:3, 1], coef(ols_c)[[2]])), " (", f2(c(tab[1:3, 2], coef(summary(ols_c))[2, 2])), ")"),
+  gdp = paste0(f2(c(tab[1:3, 3], coef(ols_c)[[3]])), " (", f2(c(tab[1:3, 4], coef(summary(ols_c))[3, 2])), ")"),
+  rho = c("—", f2(c(sar$rho, sem$lambda)), "—"), I = f2(c(mr$estimate[[1]], resid_I[["lag"]], resid_I[["error"]], mc$estimate[[1]])), AIC = f1(c(AIC(ols), AIC(sar), AIC(sem), AIC(ols_c))))
+```
+
+**Method** (data analysis):
+
+> We analysed the log unemployment rate (15–74 years, 2019) of `r nrow(d)` NUTS-2 regions of `r length(unique(d$CNTR_CODE))` European countries (Eurostat, 2024) with the share of adults with tertiary education and the log of GDP per head as predictors. Neighbours were the five nearest regions, with row-standardised weights. Spatial dependence was assessed with Moran's *I*, and Lagrange multiplier tests (Anselin et al., 1996) compared a spatial lag and a spatial error model, estimated by maximum likelihood. For the lag model we report direct and total impacts (LeSage & Pace, 2009). Models with country effects and with other definitions of neighbours served as checks. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages spdep and spatialreg (Bivand & Piras, 2015).
+
+**Results:**
+
+> Unemployment was strongly clustered, Moran's *I* = `r f2(moran$estimate[[1]])`, as were the residuals of the OLS model, *I* = `r f2(mr$estimate[[1]])`, *p* `r pval(mr$p.value[[1]])`. Both spatial models fitted better (Table 1; ρ = `r f2(sar$rho)`, λ = `r f2(sem$lambda)`), and the robust Lagrange multiplier tests did not clearly favour one of them (error: `r f1(rs_tab["adjRSerr", 1])`, lag: `r f1(rs_tab["adjRSlag", 1])`). In the lag model the total impact of log GDP was `r f2(by_hand["total", "log_gdp"])`, 95% CI [`r f2(imp_ci["total", 1])`, `r f2(imp_ci["total", 2])`] (direct `r f2(by_hand["direct", "log_gdp"])`). With country effects, OLS left little spatial correlation in the residuals, *I* = `r f2(mc$estimate[[1]])`, had a lower AIC than the spatial models, and gave a coefficient of `r f2(coef(ols_c)[["log_gdp"]])` for log GDP: much of the spatial dependence is differences between countries.
+
+**Table 1**
+
+*Regression Models of Log Unemployment in European Regions*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Model", "Tertiary education (10 points)", "Log GDP per head", "ρ or λ", "Moran's *I* of residuals", "AIC"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(d)`. Coefficients with standard errors in parentheses. Coefficients of the spatial lag model are not marginal effects.
+
+**Points to remember:**
+
+- Describe $W$ exactly.
+- Report Moran's *I* of the residuals of every model.
+- Report impacts for lag and Durbin models.
+- Say which story you assume, interaction or shared causes, and why.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | Observations have places, and neighbours resemble each other beyond the predictors |
+| **Detect** | Map, Moran's I of the residuals |
+| **Lag model** | $y = \rho Wy + X\beta + \varepsilon$: neighbours act on each other |
+| **Error model** | $u = \lambda Wu + \varepsilon$: neighbours share what is missing |
+| **How (R)** | `spdep::nb2listw()`, `spatialreg::lagsarlm()`, `errorsarlm()`, `impacts()` |
+| **Reading it** | Lag: direct, indirect and total impacts. Error: ordinary coefficients |
+| **First** | Add the missing predictors (here: countries) |
+| **Report** | The weights, and what happens with others |
+| **Related pages** | [Generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd), [beta regression](EXAMPLE_BETA.Rmd), [panel data](EXAMPLE_PANEL_DATA.Rmd) |
+
+---
+
+## References
+
+Anselin, L., Bera, A. K., Florax, R., & Yoon, M. J. (1996). Simple diagnostic tests for spatial dependence. *Regional Science and Urban Economics*, *26*(1), 77–104. https://doi.org/10.1016/0166-0462(95)02111-6
+
+Bivand, R., & Piras, G. (2015). Comparing implementations of estimation methods for spatial econometrics. *Journal of Statistical Software*, *63*(18), 1–36. https://doi.org/10.18637/jss.v063.i18
+
+Eurostat. (2024). *Unemployment rates by NUTS 2 region* [lfst_r_lfu3rt], *population by educational attainment* [edat_lfse_04], and *GDP at current market prices by NUTS 2 region* [nama_10r_2gdp] [Data sets]. https://ec.europa.eu/eurostat/data/database
+
+Gibbons, S., & Overman, H. G. (2012). Mostly pointless spatial econometrics? *Journal of Regional Science*, *52*(2), 172–191. https://doi.org/10.1111/j.1467-9787.2012.00760.x
+
+LeSage, J., & Pace, R. K. (2009). *Introduction to spatial econometrics*. CRC Press. https://doi.org/10.1201/9781420064254
+
+Overman, H. G., & Puga, D. (2002). Unemployment clusters across Europe's regions and countries. *Economic Policy*, *17*(34), 115–148. https://doi.org/10.1111/1468-0327.00085
