@@ -49,7 +49,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 ## Survival
 - [x] Cox: EXAMPLE_COX
 - [x] Weibull / accelerated failure time: EXAMPLE_WEIBULL_AFT
-- [ ] Competing risks (Fine–Gray)
+- [x] Competing risks (Fine–Gray): EXAMPLE_COMPETING_RISKS
 
 ## Dependent data
 - [x] Multilevel / mixed: EXAMPLE_MULTILEVEL

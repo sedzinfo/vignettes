@@ -1,0 +1,308 @@
+---
+title: "Competing Risks (Fine–Gray): Will It Be Cancer, or Something Else First?"
+description: "Competing risks regression in R with survival and cmprsk, on 1,384 people with a blood disorder that may turn into cancer (Mayo Clinic): why one minus Kaplan-Meier is wrong, cumulative incidence by hand, cause-specific hazards with Cox models, the Fine-Gray subdistribution hazard, when the two give opposite answers and what each is for, predicted risks, checks and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page runs in seconds
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: two ways to leave
+
+Monoclonal gammopathy (MGUS) is a condition of the blood that many older people have without knowing. It does no harm by itself, but in some it turns into a **cancer** of the plasma cells (PCM, for example multiple myeloma). Doctors at the Mayo Clinic followed 1,384 patients for up to 35 years (Kyle et al., 2002).
+
+A patient asks: **what is my risk of getting the cancer?** The difficulty is that the patients are old. Their average age at diagnosis is 70, and many die of something else first. A person who has died of a heart attack will never get the cancer.
+
+When one event makes another impossible, they are **competing risks**. Common survival methods treat a death as *censoring*, as if the person had only been lost from sight and might still get the cancer later. That gives a risk for a world in which nobody dies of anything else. It is far too high, and it is a frequent mistake in medical papers.
+
+This page shows the right way to describe the risk, and the two regressions for it: **cause-specific** hazards, and the **Fine–Gray** model. They can give **opposite** answers about the same predictor, and both can be right.
+
+```{r packages}
+library(survival)   # survfit(), coxph(), finegray(); the data (comes with R)
+library(cmprsk)     # crr(): the Fine-Gray model, as in the original paper
+library(ggplot2)
+
+event_colours <- c(`cancer (PCM)` = "#eb6834", `death without cancer` = "#2a78d6")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data come with R, in the package `survival`:
+
+```{r data}
+mgus <- subset(mgus2, !is.na(mspike))
+mgus$time  <- with(mgus, ifelse(pstat == 1, ptime, futime)) / 12                      # years until the first event, or the end
+mgus$event <- factor(with(mgus, ifelse(pstat == 1, 1, 2 * death)), 0:2, c("censored", "PCM", "death"))
+mgus <- subset(mgus, time > 0)
+mgus$age10 <- (mgus$age - 70) / 10; mgus$male <- as.integer(mgus$sex == "M")
+nrow(mgus)
+table(mgus$event)
+c(mean_age = mean(mgus$age), longest_follow_up = max(mgus$time))
+```
+
+Each patient has **one** first event: the cancer (`PCM`), or `death` without it, or neither until the end of the study (`censored`). `age10` is the age at diagnosis in decades from 70, `male` the sex, and `mspike` the size of the abnormal protein in the blood (grams per decilitre), which is known to predict the cancer. Of `r num(nrow(mgus))` patients, `r sum(mgus$event == "PCM")` got the cancer, `r sum(mgus$event == "death")` died without it.
+
+---
+
+## 2. One minus Kaplan–Meier is wrong
+
+The tempting calculation: call the cancer the event, treat deaths as censored, and take one minus the Kaplan–Meier curve.
+
+```{r naive}
+km  <- survfit(Surv(time, event == "PCM") ~ 1, data = mgus)          # deaths treated as censored: wrong
+cif <- survfit(Surv(time, event) ~ 1, data = mgus)                   # event is a factor with several outcomes: right
+at  <- c(5, 10, 20, 25)
+risk <- rbind(`1 - Kaplan-Meier`        = 1 - summary(km, times = at)$surv,
+              `cumulative incidence`    = summary(cif, times = at)$pstate[, 2],
+              `death without cancer`    = summary(cif, times = at)$pstate[, 3])
+colnames(risk) <- paste(at, "years"); round(risk, 3)
+```
+
+```{r naive_chart}
+curves <- rbind(data.frame(time = km$time, risk = 1 - km$surv, what = "1 − Kaplan–Meier (deaths as censored)"),
+                data.frame(time = cif$time, risk = cif$pstate[, 2], what = "cumulative incidence of the cancer"))
+ggplot(curves, aes(time, risk, colour = what)) + geom_step(linewidth = 1) +
+  scale_colour_manual(values = c("grey55", "#eb6834"), name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  coord_cartesian(xlim = c(0, 30)) + labs(title = "Two answers to: what is the risk of the cancer?", x = "years since diagnosis", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+After 25 years the first method says `r pct(risk[1, 4])`, and the truth about these patients is `r pct(risk[2, 4])`. The difference is the patients who died: `r pct(risk[3, 4])` of them in 25 years. Kaplan–Meier assumes that they would have got the cancer at the same rate as the survivors, if they had only lived. They did not live. The Kaplan–Meier answer is about an imaginary world, and even there only if those who died and those who did not had the same risk, which nobody can check.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: cause-specific hazards
+
+For each event $k$ there is a hazard: the rate of this event among those who have had **none** of them yet,
+
+$$h_k(t) = \text{rate of event } k \text{ at } t, \text{ given no event before } t$$
+
+### Step 2: cumulative incidence
+
+The **cumulative incidence** of event $k$ is the probability of having had it by time $t$:
+
+$$F_k(t) = \int_0^t S(u)\, h_k(u)\, du$$
+
+where $S(u)$ is the probability of still being free of **any** event. At each moment, the share still free, times the rate of event $k$. So the risk of the cancer depends on **both** hazards: a high rate of death empties the pool. The sum of all the cumulative incidences and of those still free is 1.
+
+By hand (the **Aalen–Johansen** estimate):
+
+```{r by_hand}
+times <- sort(unique(mgus$time)); S <- 1; F1 <- F2 <- 0; out <- NULL
+for (t in times) {
+  at_risk <- sum(mgus$time >= t)
+  d1 <- sum(mgus$time == t & mgus$event == "PCM"); d2 <- sum(mgus$time == t & mgus$event == "death")
+  F1 <- F1 + S * d1 / at_risk; F2 <- F2 + S * d2 / at_risk        # the share still free just before t, times the two rates
+  S  <- S * (1 - (d1 + d2) / at_risk)
+  out <- rbind(out, c(t, F1, F2, S))
+}
+i <- max(which(out[, 1] <= 20))
+c(by_hand = out[i, 2], survfit = summary(cif, times = 20)$pstate[, 2], sum_of_all_three = sum(out[i, 2:4]))
+```
+
+### Step 3: two kinds of regression
+
+**Cause-specific.** A Cox model for each event, with the other event as censoring. Its hazard ratios are about **rates among those still free**: how does $x$ act on the process?
+
+**Fine–Gray.** A model directly for the cumulative incidence. Fine and Gray (1999) defined a *subdistribution* hazard, whose relation to $F_k$ is the usual one, $1 - F_k(t) = \exp\{-\int_0^t \tilde h_k(u)\,du\}$, and put a proportional model on it:
+
+$$\tilde h_k(t \mid x) = \tilde h_{k0}(t)\, e^{x^\top\beta}$$
+
+The trick is **who is at risk**: in the subdistribution, those who died **stay in the risk set**, for ever, with no chance of the event. It sounds absurd, and it is a bookkeeping device. If many die early, they stay in the denominator and keep the risk low, as it is in reality. If $\beta > 0$, the cumulative incidence is higher. That is all its coefficients say; they are not effects on a rate among people who could have the event.
+
+### Step 4: with censoring
+
+People who die stay in the risk set, but for how long would they have been followed? Fine and Gray give them a weight that falls with time, the probability of not yet having been censored. `finegray()` builds the data set with these weights, and an ordinary Cox model with weights does the rest.
+
+---
+
+## 4. The regressions
+
+```{r fits}
+cs_pcm   <- coxph(Surv(time, event == "PCM")   ~ age10 + male + mspike, data = mgus)        # cause-specific: the cancer
+cs_death <- coxph(Surv(time, event == "death") ~ age10 + male + mspike, data = mgus)        # cause-specific: death
+
+fg_data  <- finegray(Surv(time, event) ~ ., data = mgus, etype = "PCM")                     # the weighted data set
+fg_pcm   <- coxph(Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike, weights = fgwt, data = fg_data)
+fg_dead  <- finegray(Surv(time, event) ~ ., data = mgus, etype = "death")
+fg_death <- coxph(Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike, weights = fgwt, data = fg_dead)
+crr_pcm  <- crr(mgus$time, as.integer(mgus$event) - 1, as.matrix(mgus[, c("age10", "male", "mspike")]), failcode = 1, cencode = 0)
+c(rows_before = nrow(mgus), rows_after_finegray = nrow(fg_data))
+round(rbind(finegray_coxph = coef(fg_pcm), crr = crr_pcm$coef), 4)
+```
+
+The two programs for the Fine–Gray model agree. Now all the hazard ratios in one table:
+
+```{r table}
+hr <- function(m) { ci <- exp(confint(m)); cbind(HR = exp(coef(m)), low = ci[, 1], high = ci[, 2]) }
+all_hr <- rbind(data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "cancer", model = "cause-specific", hr(cs_pcm)),
+                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "cancer", model = "Fine–Gray", hr(fg_pcm)),
+                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "death", model = "cause-specific", hr(cs_death)),
+                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "death", model = "Fine–Gray", hr(fg_death)))
+print(transform(all_hr, HR = round(HR, 2), low = round(low, 2), high = round(high, 2)), row.names = FALSE)
+get <- function(term, event, model, col = "HR") all_hr[all_hr$term == term & all_hr$event == event & all_hr$model == model, col]
+```
+
+```{r hr_chart}
+all_hr$label <- factor(all_hr$term, levels = rev(unique(all_hr$term)))
+ggplot(all_hr, aes(HR, label, colour = model)) + geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = low, xmax = high), position = position_dodge(width = 0.5), linewidth = 0.8) +
+  facet_wrap(~ event) + scale_x_log10(breaks = c(0.6, 0.8, 1, 1.5, 2, 3)) +
+  scale_colour_manual(values = c(`cause-specific` = "#2a78d6", `Fine–Gray` = "#eb6834"), name = NULL) +
+  labs(title = "Hazard ratios from the two models", x = "hazard ratio (log scale)", y = NULL) + theme_bw() + theme(legend.position = "bottom")
+```
+
+Read **age** in the panel of the cancer.
+
+- **Cause-specific:** HR = `r f2(get("age (10 years)", "cancer", "cause-specific"))`, 95% CI [`r f2(get("age (10 years)", "cancer", "cause-specific", "low"))`, `r f2(get("age (10 years)", "cancer", "cause-specific", "high"))`]. Among people who are alive and free of cancer, the **rate** is if anything a little higher in older ones.
+- **Fine–Gray:** HR = `r f2(get("age (10 years)", "cancer", "Fine–Gray"))`, [`r f2(get("age (10 years)", "cancer", "Fine–Gray", "low"))`, `r f2(get("age (10 years)", "cancer", "Fine–Gray", "high"))`]. The **risk** of ever getting it is clearly **lower** in older people.
+
+Both are right. Ten years more multiply the rate of **death** by `r f2(get("age (10 years)", "death", "cause-specific"))`. Older people are not protected from the cancer. They have less time to get it.
+
+The protein (`mspike`) acts on the cancer itself: `r f2(get("M-spike (g/dl)", "cancer", "cause-specific"))` and `r f2(get("M-spike (g/dl)", "cancer", "Fine–Gray"))` are nearly the same, because it hardly changes the rate of death (`r f2(get("M-spike (g/dl)", "death", "cause-specific"))`). In the Fine–Gray model for **death** its ratio is `r f2(get("M-spike (g/dl)", "death", "Fine–Gray"))`: a larger protein "protects" from dying without cancer. Not because it keeps people alive, but because more of them get the cancer first.
+
+---
+
+## 5. Which one to use?
+
+| Question | Model |
+|---|---|
+| **Why** does it happen? Does $x$ act on the biological process? (etiology, effect of a treatment on the disease) | Cause-specific hazards, for **all** the events |
+| **How many** will have it? What is the risk of this patient? (prognosis, planning, costs) | Cumulative incidence; Fine–Gray, or predictions from the cause-specific models together |
+
+Latouche et al. (2013) recommend to report **both**: the cause-specific hazards of all the events, and the cumulative incidences. One without the others can mislead, as the two results for age show. In particular, never report a Fine–Gray ratio as an effect on the disease.
+
+---
+
+## 6. Predicted risks
+
+The two routes to the risk of one patient: from the Fine–Gray model directly, and from the two cause-specific models, put together with the formula of step 2 (a *multi-state* model; `survfit()` does it).
+
+```{r predictions}
+new <- data.frame(age10 = c(-1, 1, -1, 1), male = 1, mspike = c(0.5, 0.5, 2, 2))
+new$who <- c("60 years, M-spike 0.5", "80 years, M-spike 0.5", "60 years, M-spike 2", "80 years, M-spike 2")
+sf_fg <- survfit(fg_pcm, newdata = new)
+multi <- coxph(Surv(time, event) ~ age10 + male + mspike, data = mgus, id = id)               # both cause-specific models at once
+sf_cs <- survfit(multi, newdata = new)
+risk_at <- function(t) data.frame(who = new$who, FineGray = 1 - summary(sf_fg, times = t)$surv[1, ],
+                                  cause_specific = summary(sf_cs, times = t)$pstate[1, , 2], death_first = summary(sf_cs, times = t)$pstate[1, , 3])
+r20 <- risk_at(20)
+print(cbind(who = r20$who, round(r20[, -1], 3)), row.names = FALSE)
+```
+
+```{r predictions_chart}
+pd <- do.call(rbind, lapply(1:4, function(j) rbind(
+  data.frame(who = new$who[j], time = sf_cs$time, p = sf_cs$pstate[, j, 2], event = "cancer (PCM)"),
+  data.frame(who = new$who[j], time = sf_cs$time, p = sf_cs$pstate[, j, 3], event = "death without cancer"))))
+pd$who <- factor(pd$who, levels = new$who)
+ggplot(pd, aes(time, p, fill = event)) + geom_area(alpha = 0.75) + facet_wrap(~ who) +
+  scale_fill_manual(values = event_colours, name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) + coord_cartesian(xlim = c(0, 25)) +
+  labs(title = "Four men: what will have happened?", subtitle = "The rest, up to 100%, is alive without cancer", x = "years since diagnosis", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+A man of 60 with a large protein has a 20-year risk of the cancer of `r pct(r20$cause_specific[3], 0)`; a man of 80 with the same protein, `r pct(r20$cause_specific[4], 0)`, because `r pct(r20$death_first[4], 0)` of such men die of something else within 20 years. The two routes agree to within `r f1(100 * max(abs(r20$FineGray - r20$cause_specific)))` points.
+
+---
+
+## 7. Checking the model
+
+```{r zph}
+rbind(cause_specific_PCM = cox.zph(cs_pcm)$table[, "p"], cause_specific_death = cox.zph(cs_death)$table[, "p"], fine_gray_PCM = cox.zph(fg_pcm)$table[, "p"])
+```
+
+Proportional hazards can be checked for each model in the usual way. If the cause-specific hazards are proportional, the subdistribution hazards in general **cannot** be, and the other way round: the two models cannot both be exactly right. In practice both are approximations. That is what we see. For the cause-specific hazard of the **cancer** no predictor fails. For **death**, age does: its effect on mortality changes over 30 years of follow-up, as one would expect. And in the **Fine–Gray** model age fails as well: the subdistribution hazard mixes the two processes, and the competing deaths of the old come at other times than those of the young. Its single ratio for age is an average over the follow-up. For the risks of section 6, where this could matter, the two routes gave similar answers.
+
+---
+
+## 8. Things to keep in mind
+
+- **Decide what the events are before the analysis**, and make them complete: everybody has exactly one first event, or is censored.
+- **Censoring and competing events are not the same.** A censored person may still have the event, outside our view. A person with a competing event may not.
+- **Combined endpoints** (cancer **or** death) avoid the problem, and answer another question.
+- **Few events.** With `r sum(mgus$event == "PCM")` cancers there is room for a few predictors only.
+- **The Fine–Gray hazard ratio is not a ratio of risks** either. An HR of 0.83 does not mean 17% less risk; report the cumulative incidences.
+- **Time-dependent predictors** do not work in Fine–Gray models: after a death they have no value.
+- **In trials**, a treatment that kills people early can "reduce" the incidence of everything else. Always look at all the causes.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the events and their numbers, cumulative incidences, the cause-specific hazard ratios of all the events, and, for prognosis, the subdistribution hazard ratios, clearly labelled. The numbers come from the R objects:
+
+```{r apa_numbers}
+cell <- function(e, m) sapply(c("age (10 years)", "male", "M-spike (g/dl)"), function(t) paste0(f2(get(t, e, m)), " [", f2(get(t, e, m, "low")), ", ", f2(get(t, e, m, "high")), "]"))
+apa_table <- data.frame(Predictor = c("Age (10 years)", "Male", "M-spike (g/dl)"), a = cell("cancer", "cause-specific"), b = cell("death", "cause-specific"), c = cell("cancer", "Fine–Gray"), row.names = NULL)
+```
+
+**Method** (data analysis):
+
+> We followed `r num(nrow(mgus))` patients with monoclonal gammopathy (Kyle et al., 2002) until progression to a plasma cell malignancy, death without it, or the end of the study. Death was treated as a competing event. Cumulative incidences were estimated with the Aalen–Johansen method. Cause-specific hazards of both events were analysed with Cox models, and the cumulative incidence of malignancy with the Fine–Gray subdistribution hazard model (Fine & Gray, 1999); predictors were age, sex and the size of the M-spike. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages survival and cmprsk.
+
+**Results:**
+
+> During follow-up `r sum(mgus$event == "PCM")` patients progressed to a malignancy and `r sum(mgus$event == "death")` died without it. The cumulative incidence of malignancy was `r pct(risk[2, 2])` after 10 and `r pct(risk[2, 3])` after 20 years (one minus the Kaplan–Meier estimate, which treats deaths as censored, would be `r pct(risk[1, 3])` after 20 years), and that of death without malignancy `r pct(risk[3, 3])` after 20 years. A larger M-spike was associated with a higher rate of malignancy, cause-specific *HR* = `r f2(get("M-spike (g/dl)", "cancer", "cause-specific"))`, 95% CI [`r f2(get("M-spike (g/dl)", "cancer", "cause-specific", "low"))`, `r f2(get("M-spike (g/dl)", "cancer", "cause-specific", "high"))`]. Older patients had a slightly higher rate, *HR* = `r f2(get("age (10 years)", "cancer", "cause-specific"))` per 10 years, 95% CI [`r f2(get("age (10 years)", "cancer", "cause-specific", "low"))`, `r f2(get("age (10 years)", "cancer", "cause-specific", "high"))`], but a lower cumulative incidence, subdistribution *HR* = `r f2(get("age (10 years)", "cancer", "Fine–Gray"))`, 95% CI [`r f2(get("age (10 years)", "cancer", "Fine–Gray", "low"))`, `r f2(get("age (10 years)", "cancer", "Fine–Gray", "high"))`], because of their higher mortality (Table 1).
+
+**Table 1**
+
+*Competing Risks Models of Malignancy and Death*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "Malignancy: cause-specific *HR*", "Death: cause-specific *HR*", "Malignancy: subdistribution *HR*"), align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(nrow(mgus))`. Hazard ratios with 95% confidence intervals.
+
+**Points to remember:**
+
+- Never report one minus Kaplan–Meier as a risk when there are competing events.
+- Report the numbers of all the events.
+- Give the cause-specific hazard ratios of **all** the events.
+- Call Fine–Gray ratios *subdistribution* hazard ratios, and use them for risk, not for causes.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | A first event of several kinds, where one prevents the others |
+| **Describe with** | Cumulative incidence: `survfit(Surv(time, event) ~ 1)`, with `event` a factor whose first level is censoring |
+| **Not with** | 1 − Kaplan–Meier (too high) |
+| **Rates** | Cause-specific Cox models, one per event |
+| **Risks** | Fine–Gray: `finegray()` + `coxph(..., weights = fgwt)`, or `cmprsk::crr()` |
+| **They differ when** | A predictor acts on the competing event |
+| **Predicted risk** | From all the cause-specific models together, or from Fine–Gray |
+| **Related pages** | [Cox](EXAMPLE_COX.Rmd), [Weibull and AFT](EXAMPLE_WEIBULL_AFT.Rmd) |
+
+---
+
+## References
+
+Austin, P. C., Lee, D. S., & Fine, J. P. (2016). Introduction to the analysis of survival data in the presence of competing risks. *Circulation*, *133*(6), 601–609. https://doi.org/10.1161/CIRCULATIONAHA.115.017719
+
+Fine, J. P., & Gray, R. J. (1999). A proportional hazards model for the subdistribution of a competing risk. *Journal of the American Statistical Association*, *94*(446), 496–509. https://doi.org/10.1080/01621459.1999.10474144
+
+Kyle, R. A., Therneau, T. M., Rajkumar, S. V., Offord, J. R., Larson, D. R., Plevak, M. F., & Melton, L. J., III. (2002). A long-term study of prognosis in monoclonal gammopathy of undetermined significance. *The New England Journal of Medicine*, *346*(8), 564–569. https://doi.org/10.1056/NEJMoa01133202
+
+Latouche, A., Allignol, A., Beyersmann, J., Labopin, M., & Fine, J. P. (2013). A competing risks analysis should report results on all cause-specific hazards and cumulative incidence functions. *Journal of Clinical Epidemiology*, *66*(6), 648–653. https://doi.org/10.1016/j.jclinepi.2012.09.017
+
+Lau, B., Cole, S. R., & Gange, S. J. (2009). Competing risk regression models for epidemiologic data. *American Journal of Epidemiology*, *170*(2), 244–256. https://doi.org/10.1093/aje/kwp107
