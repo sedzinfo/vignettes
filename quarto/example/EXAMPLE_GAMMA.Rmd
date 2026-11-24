@@ -1,0 +1,374 @@
+---
+title: "Gamma Regression: What Makes a Hospital Stay Expensive?"
+description: "Gamma regression with a log link in R, on the cost of 4,100 hospital stays for heart failure in one county of New York State (SPARCS 2021): positive, skewed outcomes with a constant coefficient of variation, cost ratios, the deviance and the dispersion, gamma against least squares on dollars and on logs with smearing, the modified Park test for the variance, robust standard errors, residuals, predicted costs and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the same illness, very different bills
+
+Heart failure is one of the most common reasons for a hospital stay. Some stays cost 5,000 dollars, some 100,000. What makes them expensive: how ill the patient is, the age, or the hospital?
+
+Costs are **always positive** and **skewed**: most are moderate and a few are enormous. And they have a third property, which is the key to this page: **the higher the average, the larger the spread**. Severe cases cost more on average, and their costs also vary more. Ordinary regression assumes the same spread everywhere, and adds dollars where the effects are really percentages.
+
+**Gamma regression** is a generalized linear model made for such outcomes. The mean is modelled on a log scale, so effects are **ratios** ("1.4 times as expensive"), and the standard deviation grows in proportion to the mean.
+
+```{r packages}
+library(ggplot2)
+library(sandwich)   # vcovHC(): robust standard errors
+library(lmtest)     # coeftest(), coefci()
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+New York State publishes every hospital stay, without names, in the SPARCS data. They are free, and the portal answers queries, so we ask only for what we need: the stays for heart failure (diagnosis group 194) in the hospitals of Suffolk County in 2021.
+
+```{r download}
+query <- paste0("https://health.data.ny.gov/resource/tg3i-cinn.csv?",
+                "$select=facility_name,age_group,gender,length_of_stay,apr_severity_of_illness,total_costs",
+                "&$where=apr_drg_code='194' and hospital_county='Suffolk'",
+                "&$order=facility_name,total_costs&$limit=10000")
+raw <- read.csv(URLencode(query))
+stays <- subset(raw, total_costs > 0 & age_group %in% c("30 to 49", "50 to 69", "70 or Older") &
+                     apr_severity_of_illness %in% c("Minor", "Moderate", "Major", "Extreme"))
+stays <- with(stays, data.frame(
+  cost     = total_costs,
+  severity = factor(apr_severity_of_illness, levels = c("Minor", "Moderate", "Major", "Extreme")),
+  age      = factor(age_group, levels = c("30 to 49", "50 to 69", "70 or Older")),
+  male     = as.integer(gender == "M"),
+  days     = suppressWarnings(as.numeric(length_of_stay)),
+  hospital = facility_name))
+small <- names(which(table(stays$hospital) < 100))                       # hospitals with few stays go together
+stays$hospital <- factor(ifelse(stays$hospital %in% small, "Other", stays$hospital))
+stays$hospital <- relevel(stays$hospital, ref = names(which.max(table(stays$hospital))))
+nrow(stays)
+summary(stays$cost)
+```
+
+There are `r num(nrow(stays))` stays in `r nlevels(stays$hospital)` hospitals (those with fewer than 100 stays are put together). `cost` is the hospital's estimate of what the stay cost, not the price on the bill. `severity` is how ill the patient was **for a patient with this diagnosis**, in four classes assigned by a standard algorithm from the diagnoses.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 6}
+pa <- ggplot(stays, aes(pmin(cost, 80000) / 1000)) +
+  geom_histogram(binwidth = 2, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  labs(title = "Cost of a stay (80 = 80 or more)", x = "thousand dollars", y = "stays") + theme_bw()
+spread <- do.call(rbind, lapply(split(stays$cost, stays$severity), function(v) data.frame(n = length(v), mean = mean(v), sd = sd(v), cv = sd(v) / mean(v))))
+cell <- aggregate(cost ~ severity + hospital, data = stays, FUN = function(v) c(mean = mean(v), sd = sd(v), n = length(v)))
+cell <- data.frame(severity = cell$severity, mean = cell$cost[, "mean"], sd = cell$cost[, "sd"], n = cell$cost[, "n"])
+cell <- subset(cell, n >= 20)
+pb <- ggplot(cell, aes(mean / 1000, sd / 1000, colour = severity)) +
+  geom_abline(slope = mean(spread$cv), linetype = "dashed", colour = "grey50") +
+  geom_point(aes(size = n)) + scale_size_area(max_size = 5, guide = "none") +
+  scale_colour_viridis_d(end = 0.9, name = NULL) +
+  labs(title = "Mean and standard deviation in each hospital and severity class",
+       x = "mean (thousand dollars)", y = "SD (thousand dollars)") + theme_bw() + theme(legend.position = "bottom")
+patchwork::wrap_plots(pa, pb, ncol = 1, heights = c(1, 1.3))
+round(spread, 2)
+```
+
+The SD grows with the mean, about in proportion. The ratio of the two, the **coefficient of variation** (CV), is `r f2(spread$cv[1])` for minor and `r f2(spread$cv[4])` for extreme cases. The mean goes from `r f0(spread$mean[1])` to `r f0(spread$mean[4])` dollars.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the gamma distribution
+
+A gamma variable is positive and skewed to the right. We write it with its mean $\mu$ and a shape $\nu$:
+
+$$E(y) = \mu, \qquad \text{Var}(y) = \frac{\mu^2}{\nu} = \phi\,\mu^2, \qquad \phi = \frac{1}{\nu}$$
+
+The variance is proportional to the **square** of the mean, so the SD is proportional to the mean, and the CV is $\sqrt\phi$ for everybody. With $\nu = 1$ it is the exponential distribution, and with a large $\nu$ it looks like a normal one.
+
+```{r gamma_shapes}
+grid <- seq(0.1, 60, by = 0.1)
+shapes <- do.call(rbind, lapply(c(1, 2, 5, 20), function(nu) data.frame(y = grid, d = dgamma(grid, shape = nu, scale = 20 / nu), shape = paste0("ν = ", nu, ", CV = ", f2(1 / sqrt(nu))))))
+shapes$shape <- factor(shapes$shape, levels = unique(shapes$shape))
+ggplot(shapes, aes(y, d, colour = shape)) +
+  geom_line(linewidth = 0.9) + scale_colour_viridis_d(end = 0.9, name = NULL) +
+  labs(title = "Gamma distributions with a mean of 20", x = "y", y = "density") + theme_bw() + theme(legend.position = "bottom")
+```
+
+### Step 2: the log link
+
+$$\log \mu_i = x_i^\top\beta \quad\Leftrightarrow\quad \mu_i = e^{\beta_0} \times e^{\beta_1 x_{i1}} \times \dots$$
+
+Predictors **multiply**. $e^{\beta_j}$ is the ratio of the mean costs for one unit more of $x_j$. (The textbook link of the gamma is the inverse, $1/\mu$. It is rarely used, because it does not keep the mean positive and has no simple meaning.)
+
+### Step 3: this is not the same as a regression of log(cost)
+
+Least squares on $\log y$ models $E(\log y)$. Gamma regression models $\log E(y)$. The first compares **typical** (geometric mean) costs, the second compares **mean** costs. If the spread differs between groups the two can disagree. For budgets one needs the mean.
+
+### Step 4: the estimates
+
+The $\beta$'s do not depend on $\phi$. They solve
+
+$$\sum_i \frac{y_i - \mu_i}{\mu_i}\, x_i = 0$$
+
+The **relative** errors $(y - \mu)/\mu$ are balanced against each predictor. A 10% error counts the same for a cheap and for an expensive stay. All that the estimates need is that the mean model is right. The variance assumption decides only their precision and standard errors.
+
+```{r by_hand}
+X <- model.matrix(~ severity + age + male + hospital, data = stays); y <- stays$cost
+beta <- c(log(mean(y)), rep(0, ncol(X) - 1))
+for (it in 1:30) {                                             # Fisher scoring: regress the relative error on X, and step
+  mu   <- exp(drop(X %*% beta))
+  step <- solve(crossprod(X), crossprod(X, (y - mu) / mu))
+  beta <- beta + drop(step)
+  if (max(abs(step)) < 1e-10) break
+}
+fit <- glm(cost ~ severity + age + male + hospital, family = Gamma(link = "log"), data = stays)
+c(iterations = it, largest_difference = max(abs(beta - coef(fit))))
+```
+
+With the log link, Fisher scoring is nothing but a repeated ordinary regression of the relative errors.
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+sm <- summary(fit)
+round(sm$coefficients[1:7, ], 3)                                  # the hospitals are in section 5
+c(dispersion = sm$dispersion, CV = sqrt(sm$dispersion), null_deviance = fit$null.deviance, deviance = fit$deviance, df = fit$df.residual)
+```
+
+```{r robust}
+V      <- vcovHC(fit, type = "HC0")                              # sandwich: valid when the variance is not mu^2
+robust <- coeftest(fit, vcov = V)
+ci     <- exp(coefci(fit, vcov. = V))
+ratio  <- exp(coef(fit))
+key    <- c("severityModerate", "severityMajor", "severityExtreme", "age50 to 69", "age70 or Older", "male")
+round(cbind(ratio = ratio[key], low = ci[key, 1], high = ci[key, 2], SE_usual = sm$coefficients[key, 2], SE_robust = robust[key, 2]), 3)
+```
+
+- **`(Intercept)`**: $e^{`r f2(coef(fit)[[1]])`}$ = `r f0(exp(coef(fit)[[1]]))` dollars, the mean cost of the reference case: minor severity, 30 to 49 years, a woman, at the largest hospital.
+- **Severity**: extreme cases cost **`r f2(ratio[["severityExtreme"]])` times** as much as minor ones, 95% CI [`r f2(ci["severityExtreme", 1])`, `r f2(ci["severityExtreme", 2])`], in patients of the same age and sex and at the same hospital.
+- **Age and sex** matter little once severity is known: people of 70 or more cost `r f2(ratio[["age70 or Older"]])` times as much as those of 30 to 49, [`r f2(ci["age70 or Older", 1])`, `r f2(ci["age70 or Older", 2])`], men `r f2(ratio[["male"]])` times as much as women.
+- **`Dispersion`** = `r f2(sm$dispersion)` estimates $\phi$, so the CV around the mean is $\sqrt{`r f2(sm$dispersion)`}$ = `r f2(sqrt(sm$dispersion))`.
+- **Deviance**: the model explains `r pct(1 - fit$deviance / fit$null.deviance)` of the null deviance. Unlike a binomial deviance for grouped data, the residual deviance is **not** a test of fit, because $\phi$ is estimated.
+
+### Testing whole factors
+
+Because the dispersion is estimated, use *F* tests, not $\chi^2$ tests:
+
+```{r f_tests}
+drops <- drop1(fit, test = "F")
+drops
+```
+
+Age as a whole is significant, *p* `r pval(drops["age", "Pr(>F)"])`, although neither age group differs clearly from the youngest: the oldest patients cost `r pct(1 - ratio[["age70 or Older"]] / ratio[["age50 to 69"]])` less than those of 50 to 69. With `r num(nrow(stays))` stays, small differences are significant.
+
+---
+
+## 5. The hospitals
+
+```{r hospitals}
+hosp <- grep("^hospital", names(coef(fit)), value = TRUE)
+hosp_data <- data.frame(hospital = sub("^hospital", "", hosp), ratio = ratio[hosp], low = ci[hosp, 1], high = ci[hosp, 2])
+hosp_data$short <- sub(" of Port Jefferson New York Inc", "", hosp_data$hospital)
+hosp_data$short <- factor(hosp_data$short, levels = hosp_data$short[order(hosp_data$ratio)])
+
+ggplot(hosp_data, aes(ratio, short)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(aes(xmin = low, xmax = high), colour = "#2a78d6", linewidth = 0.8) +
+  scale_x_log10(breaks = c(0.4, 0.5, 0.6, 0.8, 1)) +
+  labs(title = "Cost of a stay compared with the largest hospital",
+       subtitle = paste0("Reference: ", levels(stays$hospital)[1], ". Same severity, age and sex"),
+       x = "ratio of mean costs (log scale)", y = NULL) +
+  theme_bw() + theme(plot.title.position = "plot")
+```
+
+Among patients of the same severity class, age group and sex, the mean cost at the other hospitals is `r f2(min(hosp_data$ratio))` to `r f2(max(hosp_data$ratio))` times that of the university hospital, which is the reference. A difference in **cost** is not a difference in efficiency: the classes are coarse, a university hospital gets the complicated cases within each class, and the costs are estimated from each hospital's own accounts.
+
+---
+
+## 6. Gamma against the alternatives
+
+```{r alternatives}
+ols     <- lm(cost ~ severity + age + male + hospital, data = stays)
+logs    <- lm(log(cost) ~ severity + age + male + hospital, data = stays)
+smear   <- mean(exp(resid(logs)))                                                  # one smearing factor for all
+smear_s <- tapply(exp(resid(logs)), stays$severity, mean)                          # one for each severity class
+pred <- data.frame(severity = stays$severity, observed = stays$cost, gamma = fitted(fit), OLS = fitted(ols),
+                   logs_naive = exp(fitted(logs)), logs_smeared = exp(fitted(logs)) * smear,
+                   logs_smeared_by_severity = exp(fitted(logs)) * smear_s[as.character(stays$severity)])
+means <- aggregate(. ~ severity, data = pred, FUN = mean)
+print(cbind(severity = as.character(means$severity), round(means[, -1])), row.names = FALSE)
+smear_s
+```
+
+- **Gamma** comes close to the mean of each severity class, without any correction: the differences are at most `r pct(max(abs(means$gamma / means$observed - 1)), 1)`. (They are not exactly zero, because the model balances the **relative** errors of step 4, not the errors in dollars.)
+- **Exponentiating** the predictions of the log model gives costs that are **too low everywhere** (`r f0(means$logs_naive[4])` instead of `r f0(means$observed[4])` for extreme cases).
+- **One smearing factor** repairs the average, and not the classes: the spread of the logs grows with severity, so the factor should be `r f2(smear_s[[1]])` for minor and `r f2(smear_s[[4]])` for extreme cases. The log model would need a model for the spread as well.
+- **OLS on dollars** gets the class means right. But it adds the same number of dollars for a hospital to a minor and to an extreme case.
+
+### Which variance? The modified Park test
+
+Is the variance proportional to $\mu^2$, as the gamma assumes? Regress the log of the squared residuals on the log of the mean, with a gamma GLM (Manning & Mullahy, 2001). The slope is the **power** of the mean: 0 for the normal, 1 for Poisson-like, 2 for the gamma, 3 for the inverse Gaussian.
+
+```{r park}
+park <- glm((stays$cost - fitted(fit))^2 ~ log(fitted(fit)), family = Gamma("log"), control = list(maxit = 100))
+park_slope <- coef(park)[[2]]; park_se <- sqrt(vcovHC(park, type = "HC0")[2, 2])
+c(power = park_slope, SE = park_se)
+
+invg  <- glm(cost ~ severity + age + male + hospital, family = inverse.gaussian("log"), data = stays, start = coef(fit))
+aic_log <- AIC(logs) + 2 * sum(log(stays$cost))                   # on the scale of dollars, to compare
+c(gamma = AIC(fit), inverse_gaussian = AIC(invg), log_normal = aic_log, normal = AIC(ols))
+```
+
+The power is `r f2(park_slope)` (robust *SE* `r f2(park_se)`): larger than 2, towards the 3 of the inverse Gaussian. The AIC agrees: the log-normal and the inverse Gaussian describe the **distribution** of the costs better than the gamma, and the normal distribution is hopeless. So the gamma is not the true distribution of these costs. Does it matter for the ratios?
+
+```{r stability}
+weights_check <- cbind(gamma = exp(coef(fit))[key], inverse_gaussian = exp(coef(invg))[key],
+                       poisson_type = exp(coef(glm(cost ~ severity + age + male + hospital, family = quasipoisson("log"), data = stays)))[key],
+                       logs = exp(coef(logs))[key])
+round(weights_check, 2)
+```
+
+Hardly. The three models for the mean agree on the ratios to within a few percent, because they share the same model for the **mean** and differ only in how much weight the expensive stays get. The log model, which compares geometric means, gives a smaller ratio for extreme severity (`r f2(weights_check["severityExtreme", "logs"])`). This is the practical lesson: **choose the link and the mean model with care, use robust standard errors, and do not worry too much about the exact variance.**
+
+---
+
+## 7. Checking the model
+
+```{r residuals, fig.height = 6}
+chk <- data.frame(mu = fitted(fit), dev = rstandard(fit, type = "deviance"))
+chk$q <- qqnorm(chk$dev, plot.it = FALSE)$x
+pa <- ggplot(chk, aes(mu / 1000, dev)) + geom_hline(yintercept = 0, colour = "grey60") + geom_point(alpha = 0.15, size = 0.8) +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") +
+  labs(title = "Deviance residuals against the fitted mean", x = "fitted mean (thousand dollars)", y = "residual") + theme_bw()
+pb <- ggplot(chk, aes(q, dev)) + geom_abline(colour = "grey60") + geom_point(colour = "#2a78d6", alpha = 0.4, size = 0.9) +
+  labs(title = "Normal Q-Q plot of the deviance residuals", x = "normal quantile", y = "residual") + theme_bw()
+patchwork::wrap_plots(pa, pb, ncol = 1)
+
+tenth <- cut(fitted(fit), quantile(fitted(fit), 0:10 / 10), include.lowest = TRUE, labels = 1:10)
+cal <- data.frame(predicted = tapply(fitted(fit), tenth, mean), observed = tapply(stays$cost, tenth, mean))
+cal$ratio <- cal$observed / cal$predicted
+round(cal, 2)
+worst <- order(-cooks.distance(fit))[1:3]
+stays[worst, c("cost", "severity", "age", "days")]
+```
+
+Deviance residuals of a good gamma model are roughly normal. Ours have a heavier right tail: some stays are far more expensive than even a gamma distribution allows. The **mean** is right, which the calibration shows: in tenths of the predicted cost, the ratio of observed to predicted is between `r f2(min(cal$ratio))` and `r f2(max(cal$ratio))`. The most influential stays are listed; the most expensive cost `r f0(max(stays$cost))` dollars. Without the top ten, the ratio for extreme severity changes to
+
+```{r without_top}
+top10 <- order(-stays$cost)[1:10]
+exp(coef(update(fit, data = stays[-top10, ]))[["severityExtreme"]])
+```
+
+from `r f2(ratio[["severityExtreme"]])`.
+
+---
+
+## 8. Predicted costs
+
+```{r predictions}
+new <- expand.grid(severity = levels(stays$severity), age = "70 or Older", male = 0, hospital = levels(stays$hospital)[1:2])
+eta <- predict(fit, new, type = "link"); Xn <- model.matrix(delete.response(terms(fit)), new, xlev = fit$xlevels)
+se  <- sqrt(rowSums((Xn %*% V) * Xn))
+new$cost <- exp(eta); new$low <- exp(eta - 1.96 * se); new$high <- exp(eta + 1.96 * se)
+print(cbind(new[, c("severity", "hospital")], round(new[, c("cost", "low", "high")])), row.names = FALSE)
+```
+
+The intervals are for the **mean** cost of such patients. For **one** patient the range is much wider: with a CV of `r f2(sqrt(sm$dispersion))`, a gamma distribution with a mean of 20,000 dollars has 95% of its values between `r f0(qgamma(0.025, 1 / sm$dispersion, scale = 20000 * sm$dispersion))` and `r f0(qgamma(0.975, 1 / sm$dispersion, scale = 20000 * sm$dispersion))`.
+
+---
+
+## 9. Things to keep in mind
+
+- **Positive outcomes only.** A gamma variable is never zero. With real zeros, use a [two-part model](EXAMPLE_HURDLE_TWO_PART.Rmd) or Tweedie regression.
+- **Log link**, unless you have a reason. Ratios are easy to explain.
+- **Robust standard errors** cost nothing and protect against a wrong variance. Here the usual and the robust ones are similar for most terms.
+- **Do not adjust for what lies between.** The length of the stay is the main **way** in which severity costs money. With `days` in the model, the coefficient of severity would be the cost of severity **at the same length of stay**, which is another question.
+- **Clusters.** Patients of one hospital are alike. We gave each hospital its own level. For many hospitals, a mixed model (`lme4::glmer` with a gamma family, or `glmmTMB`).
+- **Durations, sizes, amounts of rain on wet days, reaction times** are other typical gamma outcomes.
+- **Gamma or log-normal?** For large samples and a question about means, the gamma GLM. For prediction intervals of single cases, the distribution that fits best.
+- **Not a causal model.** Patients are not assigned to hospitals at random.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the distribution and link, the reference categories, ratios with intervals, the kind of standard errors, and a check of the variance assumption. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(
+  Predictor = c("Severity: moderate", "Severity: major", "Severity: extreme", "Age 50–69", "Age 70 or older", "Male"),
+  b  = f2(coef(fit)[key]), SE = f3(robust[key, 2]), z = f2(robust[key, 3]),
+  p  = sapply(robust[key, 4], function(p) sub("^= ", "", pval(p))),
+  ratio = paste0(f2(ratio[key]), " [", f2(ci[key, 1]), ", ", f2(ci[key, 2]), "]"))
+F_sev <- drops["severity", ]; F_hosp <- drops["hospital", ]
+```
+
+**Method** (data analysis):
+
+> The costs of `r num(nrow(stays))` hospital stays for heart failure in Suffolk County, New York, in 2021 (New York State Department of Health, 2023) were positive and right-skewed (*M* = `r f0(mean(stays$cost))`, *Mdn* = `r f0(median(stays$cost))`, *SD* = `r f0(sd(stays$cost))` dollars). We used a generalized linear model with a gamma distribution and a log link, with severity of illness (reference: minor), age group (reference: 30–49), sex and hospital as predictors. Exponentiated coefficients are ratios of mean costs. Standard errors are heteroscedasticity-robust. The variance function was examined with the modified Park test (Manning & Mullahy, 2001). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> Costs increased with severity, *F*(`r F_sev$Df`, `r num(fit$df.residual)`) = `r f1(F_sev$"F value")`, *p* `r pval(F_sev$"Pr(>F)")`: stays with extreme severity cost `r f2(ratio[["severityExtreme"]])` times as much as those with minor severity, 95% CI [`r f2(ci["severityExtreme", 1])`, `r f2(ci["severityExtreme", 2])`] (Table 1). Costs also differed between hospitals, *F*(`r F_hosp$Df`, `r num(fit$df.residual)`) = `r f1(F_hosp$"F value")`, *p* `r pval(F_hosp$"Pr(>F)")`. Age had a small effect, *F*(`r drops["age", "Df"]`, `r num(fit$df.residual)`) = `r f1(drops["age", "F value"])`, *p* `r pval(drops["age", "Pr(>F)"])`, and sex none, *F*(`r drops["male", "Df"]`, `r num(fit$df.residual)`) = `r f1(drops["male", "F value"])`, *p* `r pval(drops["male", "Pr(>F)"])`. The model explained `r pct(1 - fit$deviance / fit$null.deviance)` of the deviance. The variance increased with the mean to the power `r f2(park_slope)`, somewhat more than the 2 of the gamma distribution; models with other variance functions gave nearly the same ratios.
+
+**Table 1**
+
+*Gamma Regression of the Cost of a Hospital Stay for Heart Failure*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "*z*", "*p*", "Cost ratio [95% CI]"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(nrow(stays))`. Log link, robust standard errors. Also adjusted for hospital (`r nlevels(stays$hospital)` levels). Dispersion = `r f2(sm$dispersion)`.
+
+**Points to remember:**
+
+- Name the distribution **and** the link.
+- Report ratios of means, with intervals, and the reference categories.
+- Say how you checked the variance, and that the standard errors are robust.
+- Give predicted means in the original unit.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | A positive, skewed outcome whose SD grows with the mean: costs, durations, sizes |
+| **The model** | $\log E(y) = x^\top\beta$, $\text{Var}(y) = \phi\,\mu^2$ |
+| **How (R)** | `glm(y ~ x, family = Gamma(link = "log"))` |
+| **Reading it** | $e^{\beta}$: ratio of means |
+| **Dispersion** | $\phi$; the CV is $\sqrt\phi$ |
+| **Tests** | *F* tests (`drop1(fit, test = "F")`), robust standard errors |
+| **Against log(y)** | $\log E(y)$, not $E(\log y)$: no smearing needed |
+| **Checks** | Modified Park test, deviance residuals, calibration by tenths |
+| **Related pages** | [Two-part models](EXAMPLE_HURDLE_TWO_PART.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd), [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd) |
+
+---
+
+## References
+
+Manning, W. G., & Mullahy, J. (2001). Estimating log models: To transform or not to transform? *Journal of Health Economics*, *20*(4), 461–494. https://doi.org/10.1016/S0167-6296(01)00086-8
+
+McCullagh, P., & Nelder, J. A. (1989). *Generalized linear models* (2nd ed.). Chapman & Hall.
+
+New York State Department of Health. (2023). *Hospital inpatient discharges (SPARCS de-identified): 2021* [Data set]. Health Data NY. https://health.data.ny.gov/d/tg3i-cinn

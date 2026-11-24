@@ -41,7 +41,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Poisson: EXAMPLE_GENERALIZED
 - [x] Negative binomial: EXAMPLE_GENERALIZED
 - [x] Zero-inflated Poisson / negative binomial: EXAMPLE_ZERO_INFLATED
-- [ ] Gamma
+- [x] Gamma: EXAMPLE_GAMMA
 - [ ] Beta
 - [ ] Inverse Gaussian
 - [ ] Tweedie
