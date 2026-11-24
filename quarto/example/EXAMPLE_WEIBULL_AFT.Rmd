@@ -1,0 +1,349 @@
+---
+title: "Weibull and Accelerated Failure Time Models: How Long Will a Motor Last?"
+description: "Parametric survival regression in R with survival::survreg(), on the classic accelerated life test of motor insulation (Nelson and Hahn, 1972): the Weibull distribution and its hazard, the accelerated failure time model by hand with censored data, the Arrhenius relation, Weibull against log-normal, log-logistic and exponential, extrapolation to working temperature with intervals, proportional hazards and time ratios from one model next to Cox, checks and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page runs in seconds; the second data set is downloaded each time
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: five years in a few months
+
+The insulation of an electric motor ages with heat, and one day the motor fails. A motor is meant to run at 130 °C for years. Nobody wants to wait for years to know how long. So engineers test motors at **higher** temperatures, where they fail sooner, and calculate back. This is an **accelerated life test**.
+
+Nelson and Hahn (1972) published a famous one: 40 motors at 150, 170, 190 and 220 °C. When the test was stopped, many had not failed, and at 150 °C **none** had. The question has three parts. How does life depend on the temperature? What is the distribution of the lifetimes? And what does it say about 130 °C, **where nothing was measured**?
+
+The answer needs a model with a full distribution. The [Cox model](EXAMPLE_COX.Rmd) leaves the baseline open, and so it cannot say anything about times or temperatures outside the data. A **parametric** survival model can, at the price of an assumption. The **accelerated failure time** (AFT) model got its name here: the predictors make time itself run faster or slower.
+
+```{r packages}
+library(survival)   # survreg(): parametric survival regression (comes with R, as do the data)
+library(ggplot2)
+
+dist_colours <- c(weibull = "#2a78d6", lognormal = "#eb6834", loglogistic = "#1baf7a", exponential = "#eda100")
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data come with R, in the package `survival`:
+
+```{r data}
+motors <- as.data.frame(imotor)
+motors$x <- 1000 / (motors$temp + 273.16)             # 1000 divided by the absolute temperature (Kelvin): see step 3
+table(temperature = motors$temp, failed = motors$status)
+aggregate(time ~ temp, data = motors, FUN = max)      # when the test of each group was stopped (hours)
+```
+
+`time` is in hours, `status` is 1 for a failure and 0 for a motor that was still running when the test of its group ended (**censored**). Of `r nrow(motors)` motors `r sum(motors$status)` failed. (Failures were found at inspections, so several have the same time. We take the times as they are.)
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ggplot(motors, aes(temp, time, colour = factor(status), shape = factor(status))) +
+  geom_jitter(width = 1.5, height = 0, size = 2.6) +
+  scale_y_log10(breaks = c(300, 1000, 3000, 10000, 30000, 100000)) +
+  scale_colour_manual(values = c(`0` = "grey55", `1` = "#eb6834"), labels = c("still running", "failed"), name = NULL) +
+  scale_shape_manual(values = c(`0` = 2, `1` = 16), labels = c("still running", "failed"), name = NULL) +
+  coord_cartesian(xlim = c(125, 225), ylim = c(300, 100000)) +
+  labs(title = "40 motors", x = "temperature (°C)", y = "hours (log scale)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The hotter, the sooner. At 220 °C half of the motors failed within 504 hours; at 150 °C all were running after 8,064. On the log scale the relation looks like a line, and the spread looks similar at each temperature. Both are assumptions of the model that follows.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the Weibull distribution
+
+Weibull (1951) proposed a distribution for the strength of materials that has been used for lifetimes ever since. Its survival function and hazard are
+
+$$S(t) = \exp\!\left[-\left(\frac{t}{\eta}\right)^{k}\right], \qquad h(t) = \frac{k}{\eta}\left(\frac{t}{\eta}\right)^{k-1}$$
+
+$\eta$ is the **scale**, the time at which 63% have failed. $k$ is the **shape**: with $k > 1$ the hazard rises (wear), with $k < 1$ it falls (the weak ones go first), and with $k = 1$ it is constant (the exponential distribution: no memory).
+
+```{r shapes}
+grid <- seq(0.02, 3, by = 0.02)
+shapes <- do.call(rbind, lapply(c(0.7, 1, 1.5, 3), function(k) data.frame(t = grid, h = k * grid^(k - 1), shape = paste("k =", k))))
+ggplot(shapes, aes(t, h, colour = shape)) + geom_line(linewidth = 1) + coord_cartesian(ylim = c(0, 5)) +
+  scale_colour_viridis_d(end = 0.9, name = NULL) + labs(title = "The hazard of the Weibull distribution (η = 1)", x = "time", y = "hazard") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+### Step 2: predictors stretch time
+
+$$\log T = \beta_0 + \beta_1 x + \sigma W$$
+
+$\log T$ is a line plus an error. If $T$ is Weibull, $W$ has the *smallest extreme value* distribution, and $\sigma = 1/k$. With a normal $W$, $T$ is log-normal; with a logistic $W$, log-logistic. In all of them, one unit more of $x$ multiplies **every** quantile of the lifetime by $e^{\beta_1}$, the **time ratio**. Life at 190 °C is life at 170 °C in fast motion.
+
+### Step 3: why $1/T$? The Arrhenius relation
+
+Chemistry says that the speed of a reaction depends on the absolute temperature as $e^{-E/(kT)}$. If ageing is such a reaction, the log of the lifetime is a straight line in **1 / absolute temperature**. This is knowledge from outside the data, and the only thing that makes an extrapolation to 130 °C reasonable. (We use 1000/K, so the numbers are easy to read.)
+
+### Step 4: maximum likelihood with censoring
+
+A failure at time $t$ contributes the **density** $f(t)$, a motor still running at time $t$ contributes the **survival** probability $S(t)$:
+
+$$\log L = \sum_{\text{failed}} \log f(t_i) + \sum_{\text{running}} \log S(t_i)$$
+
+By hand, with R's Weibull functions (`dweibull`, `pweibull`):
+
+```{r by_hand}
+minus_loglik <- function(par) {                              # intercept, slope, log(sigma)
+  eta <- exp(par[1] + par[2] * motors$x); k <- 1 / exp(par[3])
+  -sum(ifelse(motors$status == 1, dweibull(motors$time, k, eta, log = TRUE), pweibull(motors$time, k, eta, lower.tail = FALSE, log.p = TRUE)))
+}
+hand <- optim(c(-12, 9, -1), minus_loglik, control = list(maxit = 5000, reltol = 1e-14))
+hand <- optim(hand$par, minus_loglik, control = list(maxit = 5000, reltol = 1e-14))
+fit  <- survreg(Surv(time, status) ~ x, data = motors, dist = "weibull")
+rbind(by_hand = c(hand$par[1:2], sigma = exp(hand$par[3]), logLik = -hand$value), survreg = c(coef(fit), fit$scale, logLik(fit)))
+```
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+summary(fit)
+b <- coef(fit); s <- summary(fit)$table; k <- 1 / fit$scale
+ratio10 <- exp(b[["x"]] * (1000 / (150 + 273.16) - 1000 / (160 + 273.16)))         # from 160 to 150 degrees
+```
+
+- **`x`** = `r f2(b[["x"]])`: the slope of the Arrhenius line. Easier to say: going from 160 to 150 °C multiplies the lifetime by `r f2(ratio10)`. An old rule of engineers says that 10 degrees less double the life.
+- **`Scale`** = `r f2(fit$scale)` is $\sigma$, so the **shape** is $k = 1/\sigma$ = `r f2(k)`: well above 1. The hazard rises steeply: the insulation **wears out**.
+- **`Log(scale)`**: its test asks whether $\sigma = 1$, that is whether the exponential distribution would do. *p* `r pval(s["Log(scale)", "p"])`: it would not.
+- **`Loglik`, `Chisq`**: the likelihood-ratio test of all the predictors.
+- Do not confuse the `scale` of `survreg` ($\sigma$) with the scale of the Weibull distribution ($\eta = e^{\beta_0 + \beta_1 x}$).
+
+### Quantiles
+
+The time by which a share $p$ of the motors has failed:
+
+$$t_p = \exp\big(\beta_0 + \beta_1 x + \sigma\, w_p\big), \qquad w_p = \log[-\log(1 - p)]$$
+
+```{r quantiles}
+at <- data.frame(temp = c(130, 150, 170, 190, 220)); at$x <- 1000 / (at$temp + 273.16)
+q <- predict(fit, at, type = "quantile", p = c(0.1, 0.5, 0.9))
+colnames(q) <- c("10%", "50%", "90%")
+round(cbind(temp = at$temp, q))
+```
+
+---
+
+## 5. Which distribution?
+
+```{r distributions}
+dists <- names(dist_colours)
+fits <- lapply(dists, function(d) survreg(Surv(time, status) ~ x, data = motors, dist = d)); names(fits) <- dists
+at130 <- data.frame(x = 1000 / (130 + 273.16))
+interval <- function(m, p) { r <- predict(m, at130, type = "uquantile", p = p, se.fit = TRUE); exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit)) }
+compare <- t(sapply(fits, function(m) c(AIC = AIC(m), median_130 = interval(m, 0.5)[[1]], q10_130 = interval(m, 0.1)[[1]], q0.1_130 = interval(m, 0.001)[[1]])))
+round(compare)
+```
+
+By the AIC the Weibull (`r f1(compare["weibull", "AIC"])`) and the log-logistic (`r f1(compare["loglogistic", "AIC"])`) are best, the log-normal close, and the exponential is out. With `r sum(motors$status)` failures the data cannot say more. Now look at the predictions for 130 °C.
+
+- The **median** life is `r f0(compare["weibull", "median_130"])`, `r f0(compare["lognormal", "median_130"])` and `r f0(compare["loglogistic", "median_130"])` hours. These agree: about five years of running day and night.
+- The time when **one in a thousand** has failed, which matters for a guarantee, is `r f0(compare["weibull", "q0.1_130"])`, `r f0(compare["lognormal", "q0.1_130"])` and `r f0(compare["loglogistic", "q0.1_130"])` hours. Here the distributions disagree by a factor of `r f1(max(compare[1:3, "q0.1_130"]) / min(compare[1:3, "q0.1_130"]))`. Nothing in the data can decide, because there is no data in that tail. (The exponential distribution, which the data reject, would say `r f0(compare["exponential", "q0.1_130"])` hours.)
+
+```{r extrapolation}
+line <- data.frame(temp = seq(125, 225, by = 1)); line$x <- 1000 / (line$temp + 273.16)
+qs <- do.call(rbind, lapply(c(0.1, 0.5, 0.9), function(p) { r <- predict(fit, line, type = "uquantile", p = p, se.fit = TRUE)
+  data.frame(temp = line$temp, est = exp(r$fit), low = exp(r$fit - 1.96 * r$se.fit), high = exp(r$fit + 1.96 * r$se.fit), q = paste0(100 * p, "% have failed")) }))
+qs$q <- factor(qs$q, levels = unique(qs$q))
+ggplot(qs, aes(temp, est, colour = q)) +
+  geom_ribbon(data = subset(qs, q == "50% have failed"), aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 0.9) +
+  geom_point(data = motors, aes(temp, time, shape = factor(status)), inherit.aes = FALSE, size = 1.8, colour = "grey30") +
+  geom_vline(xintercept = 130, linetype = "dashed") +
+  scale_shape_manual(values = c(`0` = 2, `1` = 16), labels = c("still running", "failed"), name = NULL) +
+  scale_colour_manual(values = c("#eda100", "#2a78d6", "#1baf7a"), name = NULL) +
+  scale_y_log10(breaks = c(300, 1000, 3000, 10000, 30000, 100000)) +
+  labs(title = "Weibull model: quantiles of the lifetime", subtitle = "Band: 95% interval of the median. Dashed line: the working temperature", x = "temperature (°C)", y = "hours (log scale)") +
+  theme_bw() + theme(legend.position = "bottom", legend.box = "vertical")
+med130 <- interval(fit, 0.5); q10 <- interval(fit, 0.1)
+```
+
+The median at 130 °C is **`r f0(med130[1])` hours**, 95% CI [`r f0(med130[2])`, `r f0(med130[3])`]. The interval is wide, and it contains only the uncertainty of the **estimates**. It does not contain the uncertainty about the Weibull, about the Arrhenius line, and about whether the same kind of failure happens at 130 °C at all. Meeker and Escobar (1998) list the ways in which such extrapolations go wrong.
+
+---
+
+## 6. Checking the model
+
+### Is the spread the same at all temperatures?
+
+The AFT model assumes one $\sigma$. Let each temperature have its own (`strata`):
+
+```{r strata}
+with_failures <- subset(motors, temp > 150)                                    # at 150 degrees nothing failed: no information about sigma
+one  <- survreg(Surv(time, status) ~ x, data = with_failures, dist = "weibull")
+many <- survreg(Surv(time, status) ~ x + strata(temp), data = with_failures, dist = "weibull")
+lr   <- 2 * (as.numeric(logLik(many)) - as.numeric(logLik(one)))
+many$scale
+c(LR = lr, df = 2, p = pchisq(lr, 2, lower.tail = FALSE))
+```
+
+The scales are `r paste(f2(many$scale), collapse = ", ")` at 170, 190 and 220 °C, and the test of equality gives *p* `r pval(pchisq(lr, 2, lower.tail = FALSE))`. The spread is probably **not** the same: at 220 °C the failures were all found at two neighbouring inspections. With five to seven failures per group no estimate of a spread is reliable, but the assumption of one $\sigma$ is doubtful, and again it is the highest temperature that stands out.
+
+### Is the line straight?
+
+```{r linearity}
+curve <- survreg(Surv(time, status) ~ x + I(x^2), data = motors, dist = "weibull")
+free  <- survreg(Surv(time, status) ~ factor(temp), data = with_failures, dist = "weibull")
+c(AIC_line = AIC(fit), AIC_curve = AIC(curve))
+c(AIC_line = AIC(one), AIC_each_temperature_free = AIC(free))
+lr_line <- 2 * (as.numeric(logLik(free)) - as.numeric(logLik(one)))
+c(LR = lr_line, df = 1, p = pchisq(lr_line, 1, lower.tail = FALSE))
+```
+
+Against a model where each of the three temperatures with failures has its own level, the Arrhenius line loses $\chi^2$(1) = `r f2(lr_line)`, *p* `r pval(pchisq(lr_line, 1, lower.tail = FALSE))`. `r if (pchisq(lr_line, 1, lower.tail = FALSE) < .05) "The line is not perfect. The lifetimes at the highest temperature are longer than it says, perhaps because the mechanism of failure is another one there. If so, the points at 220 °C should not help to predict 130 °C." else "The line is compatible with the data."`
+
+```{r without_220}
+no220 <- survreg(Surv(time, status) ~ x, data = subset(motors, temp < 220), dist = "weibull")
+m2 <- interval(no220, 0.5)
+m2
+```
+
+Without the motors tested at 220 °C the median at 130 °C becomes `r f0(m2[1])` hours, [`r f0(m2[2])`, `r f0(m2[3])`], instead of `r f0(med130[1])`. This is the size of the problem with extrapolation.
+
+### Residuals
+
+```{r residuals}
+z <- (log(motors$time) - predict(fit, type = "lp")) / fit$scale                 # standardised log times, censored like the times
+km <- survfit(Surv(exp(z), motors$status) ~ 1)
+resid_data <- data.frame(z = log(km$time), S = km$surv)
+resid_data <- subset(resid_data, S > 0 & S < 1)
+ggplot(resid_data, aes(z, log(-log(S)))) + geom_abline(colour = "grey60") + geom_point(size = 2.2, colour = "#2a78d6") +
+  labs(title = "Standardised residuals on Weibull paper", subtitle = "A straight line with slope 1 if the Weibull model is right", x = "residual", y = "log(-log(share not failed))") + theme_bw()
+```
+
+---
+
+## 7. The Weibull model is also a proportional hazards model
+
+The Weibull is special. It is the only distribution that is **both** an AFT and a PH model. A time ratio of $e^{\beta}$ is a hazard ratio of $e^{-\beta/\sigma}$:
+
+$$\text{HR} = e^{-\beta / \sigma} = e^{-\beta k}$$
+
+We check it on the experiment of [the Cox page](EXAMPLE_COX.Rmd), with 432 men released from prison, half of whom received money, and the weeks until the first arrest:
+
+```{r rossi}
+rossi <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/carData/Rossi.csv")
+rossi$money <- as.integer(rossi$fin == "yes")
+aft <- survreg(Surv(week, arrest) ~ money + age + prio, data = rossi, dist = "weibull")
+cox <- coxph(Surv(week, arrest) ~ money + age + prio, data = rossi)
+tr  <- exp(coef(aft)[["money"]]); tr_ci <- exp(confint(aft)["money", ])
+hr_weibull <- exp(-coef(aft) / aft$scale)[-1]
+round(rbind(time_ratio = exp(coef(aft))[-1], hazard_ratio_Weibull = hr_weibull, hazard_ratio_Cox = exp(coef(cox))), 3)
+c(shape = 1 / aft$scale)
+```
+
+- The **hazard ratio** of the payment is `r f2(hr_weibull[["money"]])` by the Weibull model and `r f2(exp(coef(cox)[["money"]]))` by Cox. They agree, without Cox assuming any shape.
+- The **time ratio** is `r f2(tr)`, 95% CI [`r f2(tr_ci[1])`, `r f2(tr_ci[2])`]: the payment stretches the time to the arrest by `r pct(tr - 1)`. Many find this easier to understand than a ratio of hazards (Wei, 1992).
+
+| | Cox | Weibull | Log-normal, log-logistic |
+|---|---|---|---|
+| Baseline | free | $k$ and $\eta$ | two parameters |
+| Effects | hazard ratios | hazard ratios **and** time ratios | time ratios only |
+| Hazard over time | any | rising or falling | can rise and then fall |
+| Prediction beyond the data | no | yes | yes |
+| Assumption | proportional hazards | both, and the shape | time ratios, and the shape |
+
+---
+
+## 8. Things to keep in mind
+
+- **Extrapolation is the purpose and the danger.** Say what it rests on: the distribution, the physical law, the same cause of failure.
+- **Choose the distribution** by theory and tradition as well as by AIC. The generalized gamma contains the exponential, Weibull and log-normal as special cases (`flexsurv::flexsurvreg(dist = "gengamma")`), and splines are more flexible still (Jackson, 2016).
+- **Look at the hazard.** If it falls after a peak (illness, infant mortality), the Weibull cannot follow it.
+- **Censoring must be independent** of the lifetime. Here it was fixed in advance.
+- **Interval censoring.** Failures found at inspections happened some time before. `Surv(time1, time2, type = "interval2")` does it properly.
+- **Time that varies** for predictors is harder in AFT models than in Cox.
+- **A time ratio is an average stretch.** If the effect is different for early and late events, use [censored quantile regression](EXAMPLE_CENSORED_QUANTILE_REGRESSION.Rmd), which has no such restriction.
+- **Parameter names** differ between programs. Check `1/scale`, signs, and whether the coefficients are for log time or log hazard.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the number of events and of censored cases, the distribution and why, the transformation of the predictors, time ratios or quantiles with intervals, and the basis of any extrapolation. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Term = c("Intercept", "1000 / temperature (K)", "log σ"), b = f2(s[, 1]), SE = f2(s[, 2]), z = f2(s[, 3]), p = sapply(s[, 4], function(p) sub("^= ", "", pval(p))))
+pred_table <- data.frame(temp = c(130, 150, 170, 190, 220))
+pred_table <- cbind(pred_table, t(sapply(pred_table$temp, function(tt) { r <- predict(fit, data.frame(x = 1000 / (tt + 273.16)), type = "uquantile", p = 0.5, se.fit = TRUE); exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit)) })))
+names(pred_table) <- c("temp", "med", "low", "high")
+```
+
+**Method** (data analysis):
+
+> The lifetimes of `r nrow(motors)` motors tested at 150, 170, 190 and 220 °C (Nelson & Hahn, 1972) were analysed with a Weibull accelerated failure time model; `r sum(motors$status == 0)` motors had not failed at the end of the test and were right-censored. The predictor was 1000 divided by the absolute temperature (Arrhenius relation). The Weibull distribution was compared with the exponential, log-normal and log-logistic distributions by the AIC, and the equality of the scale and the linearity of the relation were tested with likelihood-ratio tests. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package survival.
+
+**Results:**
+
+> Lifetimes were longer at lower temperatures, *b* = `r f2(b[["x"]])`, *SE* = `r f2(s["x", 2])`, *z* = `r f2(s["x", 3])`, *p* `r pval(s["x", 4])`; 10 degrees less, from 160 to 150 °C, multiplied the lifetime by `r f2(ratio10)`. The shape parameter was `r f2(k)`, an increasing hazard. The Weibull model had an AIC of `r f1(compare["weibull", "AIC"])` (log-logistic `r f1(compare["loglogistic", "AIC"])`, log-normal `r f1(compare["lognormal", "AIC"])`, exponential `r f1(compare["exponential", "AIC"])`). The extrapolated median lifetime at 130 °C was `r f0(med130[1])` hours, 95% CI [`r f0(med130[2])`, `r f0(med130[3])`] (Table 1); without the tests at 220 °C it was `r f0(m2[1])` hours. These values rest on the Weibull distribution and the Arrhenius relation, which cannot be checked at 130 °C.
+
+**Table 1**
+
+*Estimated Median Lifetime by Temperature (Weibull Model)*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(data.frame(pred_table$temp, f0(pred_table$med), paste0("[", f0(pred_table$low), ", ", f0(pred_table$high), "]")), col.names = c("Temperature (°C)", "Median (hours)", "95% CI"), align = "rrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(motors)`, `r sum(motors$status)` failures. σ = `r f2(fit$scale)`. No motor was tested at 130 °C, and none failed at 150 °C.
+
+**Points to remember:**
+
+- Give the numbers of events and of censored cases at each condition.
+- Name the distribution and the parameterisation.
+- Report quantiles in real units, with intervals.
+- Mark extrapolations, and show how they change with other distributions.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Times to an event, with censoring, and a need for full distributions, predictions or time ratios |
+| **The model** | $\log T = x^\top\beta + \sigma W$; Weibull: hazard $\propto t^{k-1}$, $k = 1/\sigma$ |
+| **How (R)** | `survreg(Surv(time, event) ~ x, data, dist = "weibull")` |
+| **Reading it** | $e^\beta$: time ratio; for the Weibull also $e^{-\beta/\sigma}$: hazard ratio |
+| **Quantiles** | `predict(fit, newdata, type = "quantile", p = c(.1, .5, .9))` |
+| **Choosing** | AIC, residual plots, theory of the hazard |
+| **Danger** | Extrapolation in time and in the predictors |
+| **Related pages** | [Cox](EXAMPLE_COX.Rmd), [censored quantile regression](EXAMPLE_CENSORED_QUANTILE_REGRESSION.Rmd), [Tobit](EXAMPLE_TOBIT.Rmd) (a survival model in disguise) |
+
+---
+
+## References
+
+Jackson, C. (2016). flexsurv: A platform for parametric survival modeling in R. *Journal of Statistical Software*, *70*(8), 1–33. https://doi.org/10.18637/jss.v070.i08
+
+Meeker, W. Q., & Escobar, L. A. (1998). Pitfalls of accelerated testing. *IEEE Transactions on Reliability*, *47*(2), 114–118. https://doi.org/10.1109/24.722271
+
+Nelson, W., & Hahn, G. J. (1972). Linear estimation of a regression relationship from censored data: Part I. Simple methods and their application. *Technometrics*, *14*(2), 247–269. https://doi.org/10.1080/00401706.1972.10488912
+
+Therneau, T. (2026). *A package for survival analysis in R* [R package]. https://CRAN.R-project.org/package=survival
+
+Wei, L. J. (1992). The accelerated failure time model: A useful alternative to the Cox regression model in survival analysis. *Statistics in Medicine*, *11*(14–15), 1871–1879. https://doi.org/10.1002/sim.4780111409
+
+Weibull, W. (1951). A statistical distribution function of wide applicability. *Journal of Applied Mechanics*, *18*(3), 293–297. https://doi.org/10.1115/1.4010337
