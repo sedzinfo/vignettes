@@ -1,0 +1,765 @@
+---
+title: "Robust Regression: When a Few Countries Pull the Line"
+description: "Robust regression in R with MASS::rlm() and robustbase::lmrob(), on World Bank data for about 190 countries: life expectancy against health spending. Why least squares is fragile, outliers, leverage and influence, M-estimation with Huber and bisquare weights, MM-estimation and the breakdown point, what to do with outliers instead of deleting them, robust against sandwich standard errors, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the World Bank each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: do a few odd countries decide the answer?
+
+Countries that spend more on health have longer-living people. But how much longer, for each extra dollar? To answer, we draw a line through about 190 countries and read its slope.
+
+Some countries do not follow the pattern. The Central African Republic spends little and its people live much shorter than even that low spending predicts. A few small island states spend a lot and do not live longer. **Ordinary least squares (OLS)** gives every country the same say, and lets such countries drag the line towards them.
+
+This page asks: **how much does one tenfold step in health spending buy in life expectancy, when we do not let a handful of odd countries decide?** The answer is **robust regression**: estimation that resists outliers.
+
+| | Resists outliers in $y$ | Resists bad leverage points | Efficient when data are clean |
+|---|---|---|---|
+| OLS (`lm()`) | no | no | the best |
+| M-estimation (`rlm()`) | yes | no | high (about 95%) |
+| MM-estimation (`lmrob()`) | yes | yes | high (about 95%) |
+| LTS (`lqs()`) | yes | yes | low |
+
+The columns are explained in section 3. This page does not re-teach ordinary regression: see [hierarchical regression](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd) for that.
+
+```{r packages}
+library(MASS)       # rlm() and lqs(): robust regression (comes with R)
+library(robustbase) # lmrob(): MM-estimation (a CRAN package, not part of R)
+library(sandwich)   # vcovHC(): heteroscedasticity-consistent standard errors
+library(lmtest)     # coeftest(), bptest()
+library(jsonlite)   # fromJSON(): reads the World Bank API
+library(ggplot2)
+library(ggrepel)    # labels that do not overlap
+
+# one colour per method, the same in every chart
+method_colours <- c("OLS" = "#2a78d6", "Huber" = "#eb6834", "Bisquare" = "#1baf7a",
+                    "MM" = "#eda100", "LTS" = "#e87ba4")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+
+# the sensitivity analysis of section 5: alter the spending of k_bad of the n_poor lowest spenders
+k_bad  <- 12
+n_poor <- 30
+```
+
+---
+
+## 1. The data
+
+The World Bank publishes the **World Development Indicators** through an open API: free, no key and no login. We take two indicators for the year 2021 and the list of countries:
+
+- `SH.XPD.CHEX.PC.CD`: **current health expenditure per capita**, in current US dollars. The World Bank gets it from the WHO Global Health Expenditure Database. "Current" means money spent in that year on health goods and services (not on buildings); "per capita" means per person.
+- `SP.DYN.LE00.IN`: **life expectancy at birth**, in years: how long a newborn would live if the death rates of that year stayed the same for life. It comes from the United Nations World Population Prospects and national statistical offices.
+- The **country list**, with region and income group, which tells countries from **aggregates** such as "World" or "Sub-Saharan Africa". The indicators contain both.
+
+```{r download}
+base <- "https://api.worldbank.org/v2/"
+urls <- c(spend     = paste0(base, "country/all/indicator/SH.XPD.CHEX.PC.CD?format=json&date=2021&per_page=400"),
+          life      = paste0(base, "country/all/indicator/SP.DYN.LE00.IN?format=json&date=2021&per_page=400"),
+          countries = paste0(base, "country?format=json&per_page=400"))
+
+started <- Sys.time()
+files   <- sapply(urls, function(u) { f <- tempfile(fileext = ".json"); download.file(u, f, quiet = TRUE); f })
+seconds <- as.numeric(difftime(Sys.time(), started, units = "secs"))
+kilobytes <- sum(file.size(files)) / 1024
+
+api <- lapply(files, fromJSON)
+sapply(api, function(a) a[[1]]$pages)   # 1 each: everything arrived on the first page
+```
+
+The three downloads took `r f1(seconds)` seconds and `r num(round(kilobytes))` kB together. Each answer has the number of pages in its first element and the records in its second, so `[[2]]` holds the data. We join the three, drop the aggregates and the countries with a missing value:
+
+```{r tidy}
+countries <- data.frame(iso3 = api$countries[[2]]$id, name = api$countries[[2]]$name,
+                        region = api$countries[[2]]$region$value, income = api$countries[[2]]$incomeLevel$value)
+health <- data.frame(iso3 = api$spend[[2]]$countryiso3code, spend = api$spend[[2]]$value)
+life   <- data.frame(iso3 = api$life[[2]]$countryiso3code,  life  = api$life[[2]]$value)
+
+d <- merge(merge(health, life, by = "iso3"), countries, by = "iso3")
+n_all <- nrow(d)
+d <- d[d$region != "Aggregates" & complete.cases(d), ]
+d$logspend <- log10(d$spend)          # explained in section 2
+rownames(d) <- d$name
+n <- nrow(d)
+head(d[order(d$spend), c("spend", "life", "region")], 4)
+```
+
+That leaves `r n` countries and territories (the join had `r n_all` rows, aggregates included). The **terms of use**: the World Bank licenses its own datasets under CC BY 4.0 by default (World Bank, n.d.), with attribution; the API does not say the licence of each single indicator, and the two used here come from the WHO and the United Nations, so check the terms of an indicator on its World Bank page before reusing it beyond a tutorial like this one. Names are as the World Bank writes them: "Naoero" is Nauru.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 4}
+long <- rbind(data.frame(life = d$life, x = d$spend,        scale = "Spending in dollars"),
+              data.frame(life = d$life, x = log10(d$spend), scale = "Log10 of spending"))
+long$scale <- factor(long$scale, levels = c("Spending in dollars", "Log10 of spending"))
+ggplot(long, aes(x, life)) +
+  geom_point(colour = "grey35", alpha = 0.7) +
+  facet_wrap(~ scale, scales = "free_x") +
+  scale_x_continuous(labels = function(v) num(v), expand = expansion(mult = c(0.05, 0.1))) +
+  labs(title = "Life expectancy against health spending, 2021",
+       x = "health spending per person", y = "life expectancy (years)") +
+  theme_bw()
+```
+
+The right panel shows the same points with the **logarithm** of spending on the axis. Look at the left panel first. Most countries crowd on the left, and a straight line through them would not describe the curve: the first dollars buy a lot of life, the ten-thousandth dollar very little. Taking the **logarithm** of spending, base 10, turns equal *ratios* into equal steps, and the cloud becomes straight. So we model
+
+$$\text{life}_i = \beta_0 + \beta_1 \log_{10}(\text{spend}_i) + \varepsilon_i$$
+
+and $\beta_1$ is the **gain in life expectancy for each tenfold increase in spending**. Doubling is a smaller step: $\beta_1 \times \log_{10} 2$.
+
+```{r look_log}
+ols <- lm(life ~ logspend, data = d)
+
+ggplot(d, aes(spend, life)) +
+  geom_point(colour = "grey35", alpha = 0.7) +
+  geom_abline(intercept = coef(ols)[[1]], slope = coef(ols)[[2]], colour = method_colours[["OLS"]]) +
+  scale_x_log10(labels = function(v) num(v), breaks = c(10, 30, 100, 300, 1000, 3000, 10000)) +
+  labs(title = "On a log scale the cloud is straight",
+       x = "health spending per person (US$, log scale)", y = "life expectancy (years)") +
+  theme_bw()
+```
+
+The OLS line is `r f1(coef(ols)[[1]])` + `r f2(coef(ols)[[2]])` $\times \log_{10}$(spend): each tenfold increase goes with `r f1(coef(ols)[[2]])` more years of life, and a doubling with `r f1(coef(ols)[[2]] * log10(2))`. Some points lie far from the line, mostly below it.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: why least squares is fragile
+
+OLS chooses the line that makes the sum of **squared** residuals $\sum_i e_i^2$ as small as possible, where $e_i = y_i - \hat y_i$. Squaring is the problem: a country that is 20 years off the line costs $400$, a hundred times as much as one that is 2 years off. To save that cost, the line moves towards it. **One bad point can move the OLS line as far as it likes.** To see this, we take one country with a high spending, Switzerland, and slide its life expectancy from 0 to 120 years. At each value we refit the line:
+
+```{r slide}
+slide <- seq(0, 120, by = 4)
+slope_when <- function(value) {
+  z <- d
+  z["Switzerland", "life"] <- value
+  c(OLS = coef(lm(life ~ logspend, z))[[2]],
+    Huber = coef(rlm(life ~ logspend, z))[[2]],
+    Bisquare = coef(rlm(life ~ logspend, z, psi = psi.bisquare))[[2]])
+}
+slides <- t(sapply(slide, slope_when))
+slides <- data.frame(value = rep(slide, 3), slope = c(slides), method = rep(colnames(slides), each = length(slide)))
+slides$method <- factor(slides$method, levels = c("OLS", "Huber", "Bisquare"))
+swiss <- d["Switzerland", ]
+range_by <- tapply(slides$slope, slides$method, function(s) diff(range(s)))
+```
+
+```{r slide_chart}
+ggplot(slides, aes(value, slope, colour = method)) +
+  geom_vline(xintercept = swiss$life, linetype = "dashed", colour = "grey50") +
+  geom_line(linewidth = 0.9) +
+  annotate("text", x = swiss$life - 1.5, y = max(slides$slope), label = "actual value",
+           hjust = 1, vjust = 1, size = 3.3, colour = "grey30") +
+  scale_colour_manual(values = method_colours) +
+  labs(title = "Moving one country's life expectancy",
+       x = "life expectancy given to Switzerland (years)", y = "estimated slope (years per tenfold)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+The OLS slope follows the value we gave Switzerland in a straight line: it moves by `r f1(range_by[["OLS"]])` years per tenfold across the range, and nothing stops it. The robust slopes move by `r f1(range_by[["Huber"]])` (Huber) and `r f1(range_by[["Bisquare"]])` (bisquare): the further away the point is, the less it matters, and that is what we want to build.
+
+### Step 2: three kinds of unusual point
+
+"Outlier" is used for three different things, with three different checks. All three come from the OLS fit, with $p = 2$ parameters and $n$ points:
+
+| Kind | What it is | Measure |
+|---|---|---|
+| **Outlier in $y$** | far from the line, up or down, at a usual $x$ | **studentized residual** $t_i$: the residual divided by its standard error, with the point left out of the fit. Beyond $\pm 2$ or $\pm 3$ is unusual |
+| **High-leverage point** | far from the other points in $x$, wherever its $y$ is | **hat value** $h_i$, the diagonal of $H = X(X^\top X)^{-1}X^\top$. The average is $p/n$; above $2p/n$ is high |
+| **Influential point** | removing it changes the fit a lot | **Cook's distance** $D_i = \dfrac{e_i^2}{p\,s^2}\dfrac{h_i}{(1 - h_i)^2}$: large when both the residual and the leverage are large. A common flag is $4/n$ |
+
+A high-leverage point that sits **on** the trend is a *good* leverage point: it makes the line more precise. One that sits **off** the trend is a *bad* leverage point, and is the most dangerous kind: it has the leverage to pull the line, and the residual to pull it the wrong way. Because the line bends towards it, its own residual in OLS is small, and the point hides itself.
+
+```{r influence}
+d$hat     <- hatvalues(ols)
+d$student <- rstudent(ols)
+d$cook    <- cooks.distance(ols)
+flag_cook <- 4 / n
+flag_hat  <- 2 * 2 / n
+d$flagged <- d$cook > flag_cook | d$hat > flag_hat | abs(d$student) > 2.5
+top_cook  <- d[order(-d$cook), ][1:6, c("spend", "life", "hat", "student", "cook")]
+round(top_cook, 3)
+```
+
+```{r influence_chart}
+labelled <- d$cook > flag_cook | abs(d$student) > 2.5 | d$hat > 0.025
+ggplot(d, aes(hat, student)) +
+  geom_hline(yintercept = c(-2.5, 2.5), linetype = "dashed", colour = "grey60") +
+  geom_vline(xintercept = flag_hat, linetype = "dashed", colour = "grey60") +
+  geom_point(aes(size = cook), colour = "grey35", alpha = 0.6) +
+  geom_text_repel(data = d[labelled, ], aes(label = name), size = 3, min.segment.length = 0, max.overlaps = Inf) +
+  scale_size_area(max_size = 9, name = "Cook's distance") +
+  labs(title = "Leverage, residual and influence of each country",
+       x = "hat value (leverage)", y = "studentized residual") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Dashed lines mark the flags: hat values above `r nz(flag_hat, 3)`, residuals beyond ±2.5. In these data:
+
+- The **biggest outlier in $y$** is `r rownames(d)[which.max(abs(d$student))]` (studentized residual `r f1(d$student[which.max(abs(d$student))])`) and also the most influential point, with Cook's distance `r f2(max(d$cook))`, `r f1(max(d$cook) / flag_cook)` times the flag. `r sum(abs(d$student) > 2.5)` countries lie beyond ±2.5.
+- The points of **highest leverage** are the biggest and smallest spenders: `r rownames(d)[which.max(d$hat)]` is the highest (hat value `r nz(max(d$hat), 3)`, against an average of `r nz(2 / n, 3)`). On a log scale, spending is not extreme in any country, so no point has enormous leverage, and `r rownames(d)[which.max(d$hat)]`'s studentized residual is only `r f1(d$student[which.max(d$hat)])`. Real data seldom come with a bad leverage point on demand: section 5 makes one.
+
+### Step 3: M-estimation, the idea
+
+Instead of squares, **M-estimation** (the "M" is for maximum likelihood type; Huber, 1964) minimises a **loss function** $\rho$ of the scaled residuals:
+
+$$\hat\beta = \arg\min_\beta \sum_{i=1}^{n} \rho\!\left(\frac{e_i}{s}\right), \qquad e_i = y_i - \mathbf{x}_i^\top\beta$$
+
+$s$ is a **robust scale**: an estimate of the typical size of a residual that outliers do not inflate, usually the median absolute residual divided by 0.6745 (so that it equals the standard deviation for normal errors). With $\rho(u) = u^2/2$ this is OLS. Robust methods replace $\rho$ by a function that grows more slowly. The derivative $\psi = \rho'$ is the **influence function**: how hard a residual of size $u$ pulls on the line. The **weight** is $w(u) = \psi(u)/u$.
+
+| | $\rho(u)$ | $\psi(u)$ | $w(u)$ |
+|---|---|---|---|
+| **Least squares** | $u^2/2$ | $u$ | $1$ |
+| **Huber**, $k = 1.345$ | $u^2/2$ if $\lvert u\rvert \le k$, else $k\lvert u\rvert - k^2/2$ | $u$ if $\lvert u\rvert \le k$, else $k\,\mathrm{sign}(u)$ | $1$ if $\lvert u\rvert \le k$, else $k/\lvert u\rvert$ |
+| **Tukey's bisquare**, $c = 4.685$ | $\dfrac{c^2}{6}\left[1 - \left(1 - \dfrac{u^2}{c^2}\right)^3\right]$ if $\lvert u\rvert \le c$, else $\dfrac{c^2}{6}$ | $u\left(1 - \dfrac{u^2}{c^2}\right)^2$ if $\lvert u\rvert \le c$, else $0$ | $\left(1 - \dfrac{u^2}{c^2}\right)^2$ if $\lvert u\rvert \le c$, else $0$ |
+
+The constants $k = 1.345$ and $c = 4.685$ are chosen so that, when the errors really are normal, the estimator is **95% as efficient** as OLS: its standard errors are only about 2.5% larger. They are the defaults of `rlm()` and `lmrob()`.
+
+```{r rho_psi}
+huber_rho <- function(u, k = 1.345) ifelse(abs(u) <= k, u^2 / 2, k * abs(u) - k^2 / 2)
+huber_psi <- function(u, k = 1.345) pmax(-k, pmin(k, u))
+huber_w   <- function(u, k = 1.345) ifelse(abs(u) <= k, 1, k / abs(u))
+bisq_rho  <- function(u, c = 4.685) ifelse(abs(u) <= c, c^2 / 6 * (1 - (1 - (u / c)^2)^3), c^2 / 6)
+bisq_psi  <- function(u, c = 4.685) ifelse(abs(u) <= c, u * (1 - (u / c)^2)^2, 0)
+bisq_w    <- function(u, c = 4.685) ifelse(abs(u) <= c, (1 - (u / c)^2)^2, 0)
+
+# the formulas above agree with the ones inside MASS
+u <- seq(-8, 8, by = 0.1)
+c(huber = max(abs(huber_w(u) - psi.huber(u))), bisquare = max(abs(bisq_w(u) - psi.bisquare(u))))
+```
+
+```{r rho_chart, fig.height = 6}
+curve_names <- c("Least squares", "Huber", "Bisquare")
+curves <- rbind(
+  data.frame(u, value = u^2 / 2,     fn = "Loss, ρ(u)",         method = "Least squares"),
+  data.frame(u, value = huber_rho(u), fn = "Loss, ρ(u)",        method = "Huber"),
+  data.frame(u, value = bisq_rho(u),  fn = "Loss, ρ(u)",        method = "Bisquare"),
+  data.frame(u, value = u,            fn = "Influence, ψ(u)",   method = "Least squares"),
+  data.frame(u, value = huber_psi(u), fn = "Influence, ψ(u)",   method = "Huber"),
+  data.frame(u, value = bisq_psi(u),  fn = "Influence, ψ(u)",   method = "Bisquare"),
+  data.frame(u, value = 1,            fn = "Weight, w(u)",      method = "Least squares"),
+  data.frame(u, value = huber_w(u),   fn = "Weight, w(u)",      method = "Huber"),
+  data.frame(u, value = bisq_w(u),    fn = "Weight, w(u)",      method = "Bisquare"))
+curves$method <- factor(curves$method, levels = curve_names)
+curves$fn     <- factor(curves$fn, levels = c("Loss, ρ(u)", "Influence, ψ(u)", "Weight, w(u)"))
+curves <- subset(curves, !(fn == "Loss, ρ(u)" & abs(value) > 12))   # keep the loss panel readable
+
+ggplot(curves, aes(u, value, colour = method)) +
+  geom_line(linewidth = 0.9) +
+  facet_wrap(~ fn, ncol = 1, scales = "free_y") +
+  scale_colour_manual(values = c("Least squares" = method_colours[["OLS"]],
+                                 Huber = method_colours[["Huber"]], Bisquare = method_colours[["Bisquare"]])) +
+  labs(title = "Loss, influence and weight of a residual",
+       x = "scaled residual u = e / s", y = NULL, colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Read the three panels from top to bottom:
+
+- **Loss.** OLS (blue) squares the residual, so the loss climbs steeply. Huber's loss turns into a straight line after $k$: big residuals cost much less. The bisquare loss stops growing altogether after $c$: beyond that, it does not matter how far away a point is.
+- **Influence.** OLS influence grows with the residual forever. Huber's is **bounded**: no residual pulls harder than $k$. Bisquare's **redescends**: it rises, falls back, and is exactly zero beyond $c$. Such a point has no say at all.
+- **Weight.** Every OLS residual has weight 1. Huber gives weight $k/\lvert u\rvert$ beyond $k$: smaller, but never zero. Bisquare gives zero weight to residuals beyond $c = 4.685$ scaled units.
+
+### Step 4: how R finds the numbers, by iteratively reweighted least squares
+
+No formula gives the minimum of $\sum\rho(e_i/s)$ directly, but the weights turn it into a series of ordinary regressions (**iteratively reweighted least squares**, IRLS):
+
+1. Fit OLS and compute the residuals $e_i$.
+2. Estimate the scale $s$ from the residuals, and the scaled residuals $u_i = e_i/s$.
+3. Give every point the weight $w_i = w(u_i)$.
+4. Fit a **weighted** least squares line with those weights: minimise $\sum w_i e_i^2$. (For weighted least squares, see [the page on it](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd).)
+5. Go back to step 2, until the coefficients stop changing.
+
+A country that the line fits badly gets a small weight, so next time the line follows it less, its residual stays large and its weight small. The final **weights** show who was ignored. We will do the loop by hand in section 4.
+
+### Step 5: the limit of M-estimators, and the breakdown point
+
+M-estimators bound the influence of a large *residual*, but do nothing about *leverage*: a point far out in $x$ drags the line so that its own residual is small, and so it keeps a large weight. Worse, IRLS starts from OLS, which the bad point has already ruined.
+
+The **breakdown point** measures this in plain words: *the share of the data that can be replaced by anything, however absurd, before the estimate can be taken anywhere you like*.
+
+- OLS: one point, so a breakdown point of $1/n$, almost 0%.
+- Huber M-estimator: it resists bad $y$ values but a bad $x$ value can break it, so with leverage points it too has a breakdown point of about $1/n$.
+- Estimators with the **highest possible breakdown point, 50%**: the **least trimmed squares** (LTS, Rousseeuw, 1984), which minimises the sum of the smallest half of the squared residuals, and **S-estimators**. They resist up to nearly half of the data being bad. They are far less efficient when the data are clean.
+- **MM-estimators** (Yohai, 1987) combine the two: an S-estimate gives a first fit and a robust scale $s$ (that is the 50% breakdown part), then a bisquare M-step starting from it, tuned for 95% efficiency. This is why `lmrob()` is the usual first choice today (Maronna et al., 2019).
+
+---
+
+## 4. Fitting the models
+
+### The OLS fit
+
+```{r ols}
+summary(ols)
+```
+
+```{r ols_numbers}
+s_ols <- summary(ols)
+```
+
+OLS says `r f2(coef(ols)[[2]])` years per tenfold, with a standard error of `r f2(s_ols$coefficients[2, 2])` and a residual standard deviation of `r f2(s_ols$sigma)` years: a typical country is off the line by about that much.
+
+### Huber M-estimation with `rlm()`
+
+```{r huber}
+huber <- rlm(life ~ logspend, data = d)           # psi = psi.huber, k = 1.345 by default
+summary(huber)
+```
+
+`rlm()` gives the coefficients and their standard errors, and the **scale** `Residual standard error`: the robust $s$. It prints no *p* values: the *t* values are only roughly *t*-distributed.
+
+### Bisquare M-estimation
+
+```{r bisquare}
+bisquare <- rlm(life ~ logspend, data = d, psi = psi.bisquare)   # c = 4.685 by default
+summary(bisquare)
+```
+
+### The final weights: who was down-weighted?
+
+The weights are in `$w`. A weight of 1 means "counted in full"; near 0 means "ignored".
+
+```{r weights}
+d$w_huber    <- huber$w
+d$w_bisquare <- bisquare$w
+d$resid_scaled <- resid(bisquare) / bisquare$s          # the u of section 3
+
+low <- d[order(d$w_bisquare), c("spend", "life", "region", "w_huber", "w_bisquare")]
+low$spend <- round(low$spend)
+low$w_huber <- round(low$w_huber, 2)
+low$w_bisquare <- round(low$w_bisquare, 2)
+head(low, 10)
+```
+
+```{r weights_numbers}
+n_zero  <- sum(d$w_bisquare < 0.01)
+n_below <- sum(d$w_bisquare < 0.5)
+n_full  <- sum(d$w_bisquare > 0.95)
+below_regions <- sort(table(d$region[d$w_bisquare < 0.5]), decreasing = TRUE)
+```
+
+- The bisquare fit gives a weight under 0.01 to `r n_zero` countr`r if (n_zero == 1) "y" else "ies"`, and under 0.5 to `r n_below`. `r n_full` countries (`r round(100 * n_full / n)`%) keep a weight above 0.95.
+- Huber is gentler: its smallest weight is `r f2(min(d$w_huber))`, for `r rownames(d)[which.min(d$w_huber)]`. It never switches a country off.
+- Of the `r n_below` countries under 0.5, `r below_regions[[1]]` are in `r names(below_regions)[1]`.
+
+```{r weights_chart}
+d$label_w <- ifelse(d$w_bisquare < 0.3, d$name, "")
+wt <- rbind(data.frame(name = d$name, u = d$resid_scaled, w = d$w_huber,    label = "",        method = "Huber"),
+            data.frame(name = d$name, u = d$resid_scaled, w = d$w_bisquare, label = d$label_w, method = "Bisquare"))
+wt$method <- factor(wt$method, levels = c("Huber", "Bisquare"))
+ggplot(wt, aes(u, w, colour = method)) +
+  geom_point(alpha = 0.6, size = 1.6) +
+  geom_text_repel(aes(label = label), size = 3, show.legend = FALSE, min.segment.length = 0, max.overlaps = Inf,
+                  nudge_x = -1.8, direction = "y", hjust = 1, segment.colour = "grey60") +
+  scale_x_continuous(expand = expansion(mult = c(0.4, 0.05))) +
+  scale_colour_manual(values = method_colours) +
+  labs(title = "The final weight of each country",
+       x = "scaled residual e / s (negative: below the line)", y = "weight", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Every point sits on one of the weight curves of section 3: the weight is a function of the scaled residual alone. The down-weighted countries are on the left, **below** the line: their people live shorter than their spending predicts.
+
+### The same numbers by hand: IRLS in six lines
+
+```{r irls}
+X <- model.matrix(~ logspend, d)
+y <- d$life
+b <- coef(ols)                                     # step 1: start from OLS
+for (i in 1:50) {
+  e  <- y - X %*% b
+  s  <- median(abs(e)) / 0.6745                    # step 2: robust scale
+  w  <- huber_w(e / s)                             # step 3: Huber weights
+  b_new <- solve(t(X) %*% (c(w) * X), t(X) %*% (c(w) * y))   # step 4: weighted least squares
+  if (max(abs(b_new - b)) < 1e-8) break
+  b <- b_new
+}
+rbind(by_hand = c(b), rlm = coef(huber))
+```
+
+The loop gives `r f2(c(b)[2])`, and `rlm()` `r f2(coef(huber)[[2]])`. Any small difference comes from the details of the scale estimate and the stopping rule.
+
+### MM-estimation with `robustbase::lmrob()`
+
+```{r mm}
+mm <- lmrob(life ~ logspend, data = d)             # MM-estimator: S start, then bisquare M-step
+summary(mm)
+```
+
+`lmrob()` reports *t* tests and *p* values, a robust $R^2$ and a robust residual scale. At the bottom it lists the observations with weights of about 0 as **outliers**. The `robustbase` package is not part of R: it is on CRAN (`install.packages("robustbase")`), and this page uses version `r as.character(packageVersion("robustbase"))`.
+
+```{r lts}
+set.seed(1)                                          # LTS draws random subsets
+lts <- lqs(life ~ logspend, data = d, method = "lts")
+coef(lts)
+```
+
+`lqs(method = "lts")` has the 50% breakdown point, but gives no standard errors, so we use it as a check on the others rather than as the final fit.
+
+### The comparison
+
+```{r compare}
+slope_row <- function(method, est, se, scale) {
+  data.frame(method = method, intercept = est[1], slope = est[2], se = se, scale = scale,
+             lower = est[2] - qnorm(.975) * se, upper = est[2] + qnorm(.975) * se)
+}
+robust_fits <- function(z) {
+  fits <- list(OLS      = lm(life ~ logspend, z),
+               Huber    = rlm(life ~ logspend, z),
+               Bisquare = rlm(life ~ logspend, z, psi = psi.bisquare),
+               MM       = lmrob(life ~ logspend, z))
+  rows <- lapply(names(fits), function(m) {
+    f <- fits[[m]]
+    sm <- summary(f)$coefficients
+    sc <- if (m == "OLS") summary(f)$sigma else if (m == "MM") f$scale else f$s
+    slope_row(m, sm[, 1], sm[2, 2], sc)
+  })
+  list(fits = fits, table = do.call(rbind, rows))
+}
+clean <- robust_fits(d)
+comparison <- clean$table
+comparison$method <- factor(comparison$method, levels = names(method_colours)[1:4])
+comparison[, -1] <- round(comparison[, -1], 2)
+comparison
+```
+
+```{r compare_numbers}
+cl <- clean$table
+rownames(cl) <- cl$method
+```
+
+| Method | Intercept | Slope (years per tenfold) | SE of slope | Residual scale (years) |
+|---|---|---|---|---|
+| OLS | `r f2(cl["OLS", "intercept"])` | `r f2(cl["OLS", "slope"])` | `r f2(cl["OLS", "se"])` | `r f2(cl["OLS", "scale"])` |
+| Huber | `r f2(cl["Huber", "intercept"])` | `r f2(cl["Huber", "slope"])` | `r f2(cl["Huber", "se"])` | `r f2(cl["Huber", "scale"])` |
+| Bisquare | `r f2(cl["Bisquare", "intercept"])` | `r f2(cl["Bisquare", "slope"])` | `r f2(cl["Bisquare", "se"])` | `r f2(cl["Bisquare", "scale"])` |
+| MM | `r f2(cl["MM", "intercept"])` | `r f2(cl["MM", "slope"])` | `r f2(cl["MM", "se"])` | `r f2(cl["MM", "scale"])` |
+
+- The slopes are **close**: from `r f2(min(cl$slope))` to `r f2(max(cl$slope))`. In these real data the line is more or less right under every method, which is what we hope to see: nobody can claim the result depends on the estimator. OLS is `r f2(cl["OLS", "slope"] - cl["MM", "slope"])` years lower than MM.
+- The **intercepts** are `r f2(cl["OLS", "intercept"])` for OLS and `r f2(cl["MM", "intercept"])` for MM, because the down-weighted countries all sit below the line: the robust line rides higher through the bulk of the countries.
+- The **residual scale** is what changes most: `r f2(cl["OLS", "scale"])` years for OLS and `r f2(cl["MM", "scale"])` for MM. The OLS figure is inflated by a few countries; the robust one describes the typical country. The **standard errors** are also smaller for the robust fits (`r f2(cl["MM", "se"])` against `r f2(cl["OLS", "se"])`), as the outliers no longer inflate the noise. Robust regression can be *more* efficient than OLS when the errors have heavy tails.
+- The "scale" of Huber and bisquare comes from `rlm()` and the MM one from `lmrob()`, so they are comparable only roughly.
+
+```{r fits_chart, fig.height = 5.5}
+lab <- d$name %in% c("Central African Republic", "Naoero", "Lesotho", "Nigeria", "United States", "Switzerland")
+line_of <- function(fit) coef(fit)[1:2]
+lines_df <- data.frame(method = names(clean$fits), do.call(rbind, lapply(clean$fits, line_of)))
+names(lines_df)[2:3] <- c("intercept", "slope")
+lines_df$method <- factor(lines_df$method, levels = names(method_colours)[1:4])
+ggplot(d, aes(spend, life)) +
+  geom_point(colour = "grey50", alpha = 0.6) +
+  geom_abline(data = lines_df, aes(intercept = intercept, slope = slope, colour = method), linewidth = 0.9) +
+  geom_text_repel(data = d[lab, ], aes(label = name), size = 3, min.segment.length = 0, max.overlaps = Inf) +
+  scale_colour_manual(values = method_colours) +
+  scale_x_log10(labels = function(v) num(v), breaks = c(10, 30, 100, 300, 1000, 3000, 10000)) +
+  labs(title = "Four fitted lines, nearly on top of each other",
+       x = "health spending per person (US$, log scale)", y = "life expectancy (years)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+---
+
+## 5. Where M-estimation is not enough: bad leverage points
+
+The real data have outliers but no bad leverage points, so every method gives much the same line. To see what happens when there *is* one, we **damage the data on purpose**. Suppose a data-entry error made the spending of the `r k_bad` countries with the shortest-lived people, among the `r n_poor` lowest spenders, a thousand times too large (a unit slip: that is 3 steps of $\log_{10}$). Those are the countries that pull the OLS line **flat**:
+
+```{r contaminate}
+make_bad <- function(k, shift = 3) {
+  poorest <- d[order(d$spend), ][seq_len(min(n, max(n_poor, round(2.5 * k)))), ]   # the lowest spenders
+  bad     <- rownames(poorest)[order(poorest$life)][seq_len(k)]   # the k with the lowest life expectancy
+  z <- d
+  z[bad, "logspend"] <- z[bad, "logspend"] + shift
+  z$altered <- rownames(z) %in% bad
+  z
+}
+d_bad <- make_bad(k_bad)
+bad   <- robust_fits(d_bad)
+bd    <- bad$table
+rownames(bd) <- bd$method
+set.seed(1)
+lts_bad <- lqs(life ~ logspend, data = d_bad, method = "lts")
+lts_clean <- lqs(life ~ logspend, data = d, method = "lts")
+data.frame(method = bd$method, slope = round(bd$slope, 2), clean = round(cl$slope, 2))
+```
+
+```{r bad_chart, fig.height = 5.5}
+d_bad$spend_shown <- 10^d_bad$logspend
+lines_bad <- data.frame(method = names(bad$fits), do.call(rbind, lapply(bad$fits, line_of)))
+names(lines_bad)[2:3] <- c("intercept", "slope")
+lines_bad <- rbind(lines_bad, data.frame(method = "LTS", intercept = coef(lts_bad)[[1]], slope = coef(lts_bad)[[2]]))
+lines_bad$method <- factor(lines_bad$method, levels = names(method_colours))
+d_bad$status <- factor(ifelse(d_bad$altered, "Spending altered", "As published"),
+                       levels = c("As published", "Spending altered"))
+ggplot(d_bad, aes(spend_shown, life)) +
+  geom_point(aes(shape = status, size = status), colour = "grey40", alpha = 0.7) +
+  geom_abline(data = lines_bad, aes(intercept = intercept, slope = slope, colour = method), linewidth = 0.9) +
+  scale_shape_manual(values = c("As published" = 16, "Spending altered" = 17)) +
+  scale_size_manual(values = c("As published" = 1.7, "Spending altered" = 3)) +
+  scale_colour_manual(values = method_colours) +
+  coord_cartesian(ylim = c(38, 88)) +
+  scale_x_log10(labels = function(v) num(v), breaks = c(10, 100, 1000, 10000, 100000)) +
+  guides(colour = guide_legend(order = 1), shape = guide_legend(order = 2), size = guide_legend(order = 2)) +
+  labs(title = "Twelve countries with a wrong spending value",
+       x = "health spending per person (US$, log scale)", y = "life expectancy (years)",
+       colour = NULL, shape = NULL, size = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+The `r k_bad` altered countries (triangles) sit far to the right at a low life expectancy: **bad leverage points**, `r round(100 * k_bad / n, 1)`% of the data. Their slopes:
+
+| Method | Slope, original data | Slope, `r k_bad` altered countries |
+|---|---|---|
+| OLS | `r f2(cl["OLS", "slope"])` | `r f2(bd["OLS", "slope"])` |
+| Huber | `r f2(cl["Huber", "slope"])` | `r f2(bd["Huber", "slope"])` |
+| Bisquare | `r f2(cl["Bisquare", "slope"])` | `r f2(bd["Bisquare", "slope"])` |
+| MM | `r f2(cl["MM", "slope"])` | `r f2(bd["MM", "slope"])` |
+| LTS | `r f2(coef(lts_clean)[[2]])` | `r f2(coef(lts_bad)[[2]])` |
+
+- **OLS** drops from `r f2(cl["OLS", "slope"])` to `r f2(bd["OLS", "slope"])`: it loses `r round(100 * (1 - bd["OLS", "slope"] / cl["OLS", "slope"]))`% of its slope. The altered countries have so much leverage that the line bends to them.
+- **Huber** is hurt too (`r f2(bd["Huber", "slope"])`), as predicted in section 3: bounding the influence of a residual does not bound the pull of a point far out in $x$, and the OLS start is already bent.
+- **Bisquare, MM and LTS** hold up much better (`r f2(bd["Bisquare", "slope"])`, `r f2(bd["MM", "slope"])` and `r f2(coef(lts_bad)[[2]])`). LTS is lower than the M-estimators on the original data too (`r f2(coef(lts_clean)[[2]])`): it fits only the best half of the countries, and is noisier. The bisquare weight is exactly zero for a point that is far enough from the line. Here the OLS start was bent but not too much; with more damage it can get stuck, because it is a local search started from a bad place. `lmrob()` starts from the S-estimator, which does not depend on OLS, so it is the one with the guarantee.
+
+How much damage can the methods take? Alter more and more countries, from the lowest-spending ones, and watch the slope. This is the **breakdown point** in practice:
+
+```{r breakdown}
+ks <- seq(0, 70, by = 5)
+set.seed(1)
+break_slopes <- t(sapply(ks, function(k) {
+  z <- make_bad(k)
+  c(OLS      = coef(lm(life ~ logspend, z))[[2]],
+    Huber    = coef(rlm(life ~ logspend, z, maxit = 100))[[2]],
+    Bisquare = coef(rlm(life ~ logspend, z, psi = psi.bisquare, maxit = 100))[[2]],
+    MM       = coef(suppressWarnings(lmrob(life ~ logspend, z)))[[2]],
+    LTS      = coef(lqs(life ~ logspend, z, method = "lts"))[[2]])
+}))
+breakdown <- data.frame(k = rep(ks, 5), slope = c(break_slopes),
+                        method = factor(rep(colnames(break_slopes), each = length(ks)), levels = names(method_colours)))
+```
+
+```{r breakdown_chart}
+ggplot(breakdown, aes(100 * k / n, slope, colour = method)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.5) +
+  scale_colour_manual(values = method_colours) +
+  labs(title = "The slope as more spending values are wrong",
+       x = "share of countries with an altered value (%)", y = "estimated slope (years per tenfold)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+```{r breakdown_numbers}
+share <- 100 * ks / n
+tol <- 3
+first_off <- function(m) {        # the first share where the slope is more than tol years away from its start
+  off <- which(abs(break_slopes[, m] - break_slopes[1, m]) > tol)
+  if (length(off)) round(share[min(off)], 1) else NA
+}
+```
+
+OLS moves at once and keeps moving. By the rule "more than `r tol` years from its starting value", Huber gives way at about `r first_off("Huber")`% altered countries, the bisquare M-estimator at `r first_off("Bisquare")`% and MM at `r first_off("MM")`%. LTS `r if (is.na(first_off("LTS"))) paste0(paste0("never moves by more than ", tol, " years up to "), round(max(share)), "%") else paste0("gives way at ", first_off("LTS"), "%")`, the end of the chart. In theory no estimator survives more than half of the data being bad, because from then on the bad points *are* the majority, and nothing tells which group is the right one. In practice the limit is lower, and depends on where the bad points are.
+
+---
+
+## 6. Do not just delete the outliers
+
+When a point looks wrong, deleting it is tempting. It is rarely the best answer:
+
+1. **Find out why it is unusual first.** A typing error or a unit slip, like the one we made up, may be corrected. A measurement taken under a different condition may belong to another population. A genuine but rare case, such as a country in a war, is information, not noise.
+2. **Deleting by a rule picked after looking** is a researcher's degree of freedom. If you delete the points that hurt your hypothesis, the answer is yours, not the data's. If you delete, say which, why and by what rule, set before fitting.
+3. **A 0/1 decision is blunt.** A robust fit makes the decision smoothly: a country gets a weight between 0 and 1 by how far it is, with a rule that is fixed in advance (the tuning constant) and an automatic result.
+4. **The outliers are often the interesting part.** The countries the robust line cannot explain are the ones to study.
+
+Compare, for these data, the OLS line after deleting the flagged countries with the robust fit:
+
+```{r delete}
+keep      <- !d$flagged
+ols_drop  <- lm(life ~ logspend, data = d[keep, ])
+n_dropped <- sum(!keep)
+c(ols = coef(ols)[[2]], ols_without_flagged = coef(ols_drop)[[2]], bisquare = coef(bisquare)[[2]], mm = coef(mm)[[2]])
+```
+
+Deleting the `r n_dropped` flagged countries (Cook's distance above `r nz(flag_cook, 3)`, hat value above `r nz(flag_hat, 3)` or studentized residual beyond ±2.5) moves the OLS slope from `r f2(coef(ols)[[2]])` to `r f2(coef(ols_drop)[[2]])`, which is close to the robust values `r f2(coef(bisquare)[[2]])` (bisquare) and `r f2(coef(mm)[[2]])` (MM). The robust methods get there without a human choosing who goes, and keep every country in the sample (with a small weight if need be).
+
+### What the robust fit says about the outliers
+
+The residuals of the **MM fit** are the honest measure of how far each country is from the trend, because the trend was not bent towards them:
+
+```{r outliers}
+d$resid_mm   <- resid(mm)
+d$w_mm       <- mm$rweights
+outliers <- d[order(d$resid_mm), c("spend", "life", "region", "resid_mm")][1:8, ]
+outliers$spend    <- round(outliers$spend)
+outliers$resid_mm <- round(outliers$resid_mm, 1)
+outliers
+n_neg <- sum(d$w_mm < 0.5 & d$resid_mm < 0)
+n_pos <- sum(d$w_mm < 0.5 & d$resid_mm > 0)
+```
+
+Of the `r n_neg + n_pos` countries with an MM weight under 0.5, `r n_neg` lie **below** the line and `r n_pos` above it. `r rownames(outliers)[1]` is the extreme one: `r f1(abs(outliers$resid_mm[1]))` years below what its spending predicts. The data cannot say *why*. Candidates are things the model leaves out: wars, epidemics such as HIV, and the very different age and disease patterns of small states. The robust fit has done its job when it has made the list. The World Bank's metadata do not say more about single countries, and no single value was checked against national sources. Part of the explanation may also lie in the data: the life expectancy of a country with poor records is an estimate.
+
+---
+
+## 7. "Robust regression" is not "robust standard errors"
+
+The two names sound alike and do different jobs:
+
+| | **Robust regression** | **Robust (sandwich) standard errors** |
+|---|---|---|
+| Changes the coefficients? | **yes**, they are estimated differently | **no**, they are the OLS ones |
+| Changes the standard errors? | yes, as a by-product | **yes**: that is the whole point |
+| Protects against | outliers and bad leverage points | unequal spread of the residuals (**heteroscedasticity**) |
+| R | `rlm()`, `lmrob()`, `lqs()` | `sandwich::vcovHC()`, `lmtest::coeftest()` |
+
+The sandwich estimator of White (1980) keeps the OLS coefficients, and replaces the formula for their covariance $s^2(X^\top X)^{-1}$ by
+
+$$\widehat{\operatorname{Var}}(\hat\beta) = (X^\top X)^{-1}\left(\sum_i e_i^2 \,\mathbf{x}_i\mathbf{x}_i^\top\right)(X^\top X)^{-1}$$
+
+in which each residual counts with its own size: no common variance is assumed. The **HC3** version (MacKinnon & White, 1985) also divides by $(1 - h_i)^2$ and works better in small samples (Long & Ervin, 2000).
+
+```{r sandwich}
+bp <- bptest(ols)
+coeftest(ols)                                    # the usual OLS standard errors
+coeftest(ols, vcov = vcovHC(ols, type = "HC3"))  # the same coefficients, sandwich standard errors
+se_hc3 <- sqrt(diag(vcovHC(ols, type = "HC3")))
+```
+
+The Breusch-Pagan test of constant variance gives $\chi^2$(`r bp$parameter`) = `r f2(bp$statistic)`, *p* `r pval(bp$p.value)`. The slope is the same, `r f2(coef(ols)[[2]])`, with a standard error of `r f2(s_ols$coefficients[2, 2])` in the usual way and `r f2(se_hc3[[2]])` with HC3. This changes the **uncertainty**, and the line stays where the outliers left it. Now the damaged data:
+
+```{r sandwich_bad}
+ols_bad <- lm(life ~ logspend, data = d_bad)
+se_bad  <- sqrt(diag(vcovHC(ols_bad, type = "HC3")))
+ci_bad  <- coef(ols_bad)[[2]] + c(-1, 1) * qnorm(.975) * se_bad[[2]]
+ci_mm   <- coef(bad$fits$MM)[[2]] + c(-1, 1) * qnorm(.975) * bd["MM", "se"]
+```
+
+OLS now gives a slope of `r f2(coef(ols_bad)[[2]])` with an HC3 standard error of `r f2(se_bad[[2]])`: a 95% interval of [`r f2(ci_bad[1])`, `r f2(ci_bad[2])`]. The interval is "honest" about the spread, but it is centred on the **wrong slope**, and it misses the value MM finds, `r f2(coef(bad$fits$MM)[[2]])` [`r f2(ci_mm[1])`, `r f2(ci_mm[2])`]. Sandwich standard errors answer "how uncertain is this estimate?"; they do not ask whether the estimate is any good.
+
+The two can be combined: `lmrob()` already reports standard errors that are robust to outliers, and a sandwich estimator can be put on top of a weighted fit. For heteroscedasticity with a known pattern, [weighted](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd) or [generalized](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd) least squares estimate the variance model directly.
+
+---
+
+## 8. Other things to keep in mind
+
+- **Median regression is another outlier-resistant method.** It minimises $\sum \lvert e_i\rvert$ (the weight of a residual is $1/\lvert e_i\rvert$), so a far residual pulls linearly, not quadratically. It resists outliers in $y$ but, like Huber, not leverage points, and it can describe other quantiles, not just the centre. See [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd).
+- **Heavy tails, not only outliers.** If the errors follow a distribution with long tails, such as the *t*, the best estimator is robust by nature. Robust regression is more than a cleaning tool.
+- **Robust methods do not fix a wrong model.** If the relationship is curved, down-weighting does not straighten it. Here the log of spending did that part; see [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd) for curves.
+- **Standard errors.** `rlm()` and `lmrob()` give asymptotic standard errors; with small samples they are optimistic, and a bootstrap is a good check.
+- **Tuning constants** trade resistance against efficiency. Smaller $k$ or $c$ down-weights more, and costs more efficiency when the data are clean. The defaults are a good place to stay.
+- **A robust fit is not a verdict.** It tells which points the model cannot explain. Whether to report, drop or model them is for the researcher, and should be stated.
+- **Compare with OLS**, always. If OLS and the robust fit agree, as in section 4, outliers are not an issue. If they disagree, find out why: the difference is itself the finding.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the data, the estimator and its tuning, the diagnostics that led to it, and the OLS results next to the robust ones. The numbers come from the R objects:
+
+```{r apa_numbers}
+mm_ci   <- confint(mm)
+mm_sum  <- summary(mm)$coefficients
+mm_r2   <- summary(mm)$r.squared
+ols_ci  <- confint(ols)
+
+est_table <- data.frame(
+  Method = c("OLS", "Huber", "Bisquare", "MM"),
+  Intercept = f2(cl$intercept),
+  Slope = f2(cl$slope),
+  SE = f2(cl$se),
+  `95% CI` = paste0("[", f2(cl$lower), ", ", f2(cl$upper), "]"),
+  `Residual scale` = f2(cl$scale),
+  check.names = FALSE)
+```
+
+**Method** (data analysis):
+
+> We analysed `r n` countries and territories with data for both indicators in 2021 (World Bank, n.d.): life expectancy at birth in years, and current health expenditure per person in current US dollars. Spending was log-transformed (base 10) because the relationship was curved on the original scale. Ordinary least squares regression was compared with M-estimation with Huber weights ($k$ = 1.345) and Tukey's bisquare weights ($c$ = 4.685; Venables & Ripley, 2002) and with MM-estimation (Yohai, 1987), all with the default tuning for 95% efficiency under normal errors. MM-estimation used the `lmrob()` function of the robustbase package (Maechler et al., 2024). Outliers were identified with studentized residuals, hat values and Cook's distance (Cook, 1977) and were not deleted. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> OLS regression gave a slope of `r f2(cl["OLS", "slope"])` years per tenfold increase in spending, SE = `r f2(cl["OLS", "se"])`, 95% CI [`r f2(ols_ci[2, 1])`, `r f2(ols_ci[2, 2])`]. `r sum(abs(d$student) > 2.5)` countries had studentized residuals beyond ±2.5; the largest was `r rownames(d)[which.max(abs(d$student))]` (*t* = `r f1(d$student[which.max(abs(d$student))])`, Cook's *D* = `r f2(max(d$cook))`). The robust estimates were close to the OLS estimate (Table 1): the MM slope was `r f2(mm_sum[2, 1])` years, SE = `r f2(mm_sum[2, 2])`, 95% CI [`r f2(mm_ci[2, 1])`, `r f2(mm_ci[2, 2])`], *p* `r pval(mm_sum[2, 4])`, with a robust residual scale of `r f2(mm$scale)` years, against `r f2(s_ols$sigma)` for OLS. The bisquare weights were below 0.5 for `r n_below` countries, `r sum(d$w_bisquare < 0.5 & d$resid_scaled < 0)` of them below the regression line, so the conclusion did not depend on the estimator. In a sensitivity analysis in which the spending of `r k_bad` countries was altered by a factor of 1,000, the OLS slope fell to `r f2(bd["OLS", "slope"])` and the Huber slope to `r f2(bd["Huber", "slope"])`, while the MM slope stayed at `r f2(bd["MM", "slope"])`.
+
+**Table 1**
+
+*Life Expectancy Regressed on Log Health Spending: OLS and Robust Estimates*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(est_table, align = "lrrrrr", format = "pipe")
+```
+
+*Note.* *N* = `r n` countries. The slope is the change in life expectancy (years) for a tenfold increase in health expenditure per person. 95% CI = Wald interval, estimate ± 1.96 SE. Residual scale in years: the residual standard deviation for OLS, the robust scale for the others.
+
+**Points to remember:**
+
+- Say which robust estimator, with its tuning constant and the software. "Robust regression" alone says nothing.
+- Report OLS next to the robust fit, and the observations that were down-weighted, with a reason when one is known.
+- Do not call sandwich standard errors "robust regression", or the reverse.
+- State the breakdown point or the efficiency of the method if the choice of method matters to the conclusion.
+- Do not delete points silently.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | The data have outliers, heavy tails, or points that OLS cannot be trusted with |
+| **Idea** | Minimise $\sum\rho(e_i/s)$ with a loss $\rho$ that grows more slowly than the square; computed by iteratively reweighted least squares |
+| **Huber** | Bounded influence; weights $\min(1, k/\lvert u\rvert)$, never zero. Resists outliers in $y$, not bad leverage |
+| **Bisquare** | Redescending: weights drop to zero beyond $c$. Resists large outliers, but needs a good start |
+| **MM** | An S-estimate (breakdown 50%) as a start, then a bisquare step (95% efficient). The usual first choice |
+| **LTS** | Fits the best half of the data: breakdown 50%, no standard errors, less efficient |
+| **How (R)** | `MASS::rlm(y ~ x, psi = psi.huber)` or `psi.bisquare`; `robustbase::lmrob(y ~ x)`; `MASS::lqs(y ~ x, method = "lts")` |
+| **Diagnostics** | `hatvalues()`, `rstudent()`, `cooks.distance()`; the final weights `fit$w` (`rlm`) or `fit$rweights` (`lmrob`) |
+| **Not the same as** | Sandwich standard errors: same coefficients, only the uncertainty changes |
+| **Dangers** | Deleting points silently; hiding a wrong model behind a robust fit |
+
+---
+
+## References
+
+Beaton, A. E., & Tukey, J. W. (1974). The fitting of power series, meaning polynomials, illustrated on band-spectroscopic data. *Technometrics*, *16*(2), 147–185.
+
+Cook, R. D. (1977). Detection of influential observation in linear regression. *Technometrics*, *19*(1), 15–18.
+
+Huber, P. J. (1964). Robust estimation of a location parameter. *The Annals of Mathematical Statistics*, *35*(1), 73–101.
+
+Long, J. S., & Ervin, L. H. (2000). Using heteroscedasticity consistent standard errors in the linear regression model. *The American Statistician*, *54*(3), 217–224.
+
+MacKinnon, J. G., & White, H. (1985). Some heteroskedasticity-consistent covariance matrix estimators with improved finite sample properties. *Journal of Econometrics*, *29*(3), 305–325.
+
+Maechler, M., Rousseeuw, P., Croux, C., Todorov, V., Ruckstuhl, A., Salibian-Barrera, M., Verbeke, T., Koller, M., Conceicao, E. L. T., & Anna di Palma, M. (2024). *robustbase: Basic robust statistics* (R package). https://CRAN.R-project.org/package=robustbase
+
+Maronna, R. A., Martin, R. D., Yohai, V. J., & Salibián-Barrera, M. (2019). *Robust statistics: Theory and methods (with R)* (2nd ed.). Wiley.
+
+R Core Team. (`r R.version$year`). *R: A language and environment for statistical computing*. R Foundation for Statistical Computing. https://www.R-project.org/
+
+Rousseeuw, P. J. (1984). Least median of squares regression. *Journal of the American Statistical Association*, *79*(388), 871–880.
+
+Venables, W. N., & Ripley, B. D. (2002). *Modern applied statistics with S* (4th ed.). Springer.
+
+White, H. (1980). A heteroskedasticity-consistent covariance matrix estimator and a direct test for heteroskedasticity. *Econometrica*, *48*(4), 817–838.
+
+World Bank. (n.d.). *World Development Indicators: Current health expenditure per capita (current US$) [SH.XPD.CHEX.PC.CD] and Life expectancy at birth, total (years) [SP.DYN.LE00.IN]* [Data set]. https://data.worldbank.org/ (retrieved through the World Bank API, `r format(Sys.Date(), "%d %B %Y")`; health expenditure data from the WHO Global Health Expenditure Database, life expectancy from the United Nations World Population Prospects)
+
+Yohai, V. J. (1987). High breakdown-point and high efficiency robust estimates for regression. *The Annals of Statistics*, *15*(2), 642–656.

@@ -8,10 +8,10 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Hierarchical: EXAMPLE_HIERARCHICAL_REGRESSION
 - [ ] Stepwise
 - [x] Polynomial: EXAMPLE_POLYNOMIAL_REGRESSION
-- [ ] Weighted least squares
-- [ ] Generalized least squares
-- [ ] Robust
-- [ ] Quantile
+- [x] Weighted least squares: EXAMPLE_WEIGHTED_LEAST_SQUARES
+- [x] Generalized least squares: EXAMPLE_GENERALIZED_LEAST_SQUARES
+- [x] Robust: EXAMPLE_ROBUST_REGRESSION
+- [x] Quantile: EXAMPLE_QUANTILE_REGRESSION
 - [ ] Deming (errors-in-variables)
 - [ ] Nonlinear least squares
 - [ ] Isotonic

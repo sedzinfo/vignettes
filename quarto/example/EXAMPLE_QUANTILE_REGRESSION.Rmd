@@ -1,0 +1,646 @@
+---
+title: "Quantile Regression: Who Pays More for a Home, the Cheap End or the Expensive End?"
+description: "Quantile regression in R with quantreg::rq(), on a year of house sales in England and Wales from the HM Land Registry Price Paid Data: why the mean is not the whole story, the check (pinball) loss, fitting at several quantiles, standard error methods, coefficients across quantiles against OLS, testing equal slopes, quantile crossing, log outcomes, robustness to outliers and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the Land Registry each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: what a home costs depends on where you look in the market
+
+A detached house costs more than a terraced house, and a home in London costs more than one elsewhere. Everybody knows that. The question for this page is: **by how much, and is it the same amount for cheap homes and for expensive ones?**
+
+An ordinary regression (OLS) answers with one number per predictor: the difference in the **mean** price. But house prices are strongly skewed: most homes sell for a modest sum and a few sell for millions. A predictor can move the cheap end of the market by a little, the middle by more, and the expensive end by far more. The mean blends all of that into one figure that describes nobody in particular.
+
+**Quantile regression** (Koenker & Bassett, 1978) fits a separate line for any quantile of the outcome: the 10th percentile (the cheapest tenth of homes), the median, the 90th percentile, and so on. The model is a family of regressions, one for each quantile $\tau$ (the Greek letter tau):
+
+| Quantile $\tau$ | What the line describes | In this example |
+|---|---|---|
+| 0.1 | the lower tail | the price below which 10% of comparable homes sell |
+| 0.5 | the median | the middle price |
+| 0.9 | the upper tail | the price below which 90% of comparable homes sell |
+
+Where a predictor's coefficient is the same at every $\tau$, it only shifts the distribution. Where it changes with $\tau$, the predictor changes the **shape** of the distribution: its spread, its skew.
+
+```{r packages}
+library(quantreg)   # rq(): quantile regression
+library(ggplot2)
+
+# the site's colours, in order
+blue <- "#2a78d6"; orange <- "#eb6834"; green <- "#1baf7a"; yellow <- "#eda100"; pink <- "#e87ba4"
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+num  <- function(x) trimws(format(x, big.mark = ","))
+k    <- function(x) paste0(ifelse(x < 0, "-", ""), "£", f0(abs(x)), "k")   # a price in thousands of pounds, for the text
+```
+
+---
+
+## 1. The data
+
+HM Land Registry, the government register of property ownership in England and Wales, publishes the **Price Paid Data**: one row for every residential sale registered since 1995, free, with no login, under the [Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). The yearly files are large (about 170 MB each), so this page uses the small **monthly update file**, the sales registered with the Land Registry in the latest month.
+
+```{r download}
+url  <- "https://price-paid-data.publicdata.landregistry.gov.uk/pp-monthly-update-new-version.csv"
+file <- tempfile(fileext = ".csv")
+download_time <- system.time(download.file(url, file, mode = "wb", quiet = TRUE))[["elapsed"]]
+file_mb <- file.size(file) / 1e6
+```
+
+The download is `r f1(file_mb)` MB and took `r f1(download_time)` seconds. The file has no header row. The columns are documented on the Land Registry's [about the Price Paid Data](https://www.gov.uk/guidance/about-the-price-paid-data) page, and we read only the ones we need:
+
+| Column | Meaning (from the documentation) |
+|---|---|
+| 2 | **Price**: the sale price stated on the transfer deed, in pounds |
+| 3 | **Date of transfer**: when the sale was completed, as stated on the deed |
+| 5 | **Property type**: D detached, S semi-detached, T terraced (including end-of-terrace), F flat or maisonette, O other. Bungalows are not separate |
+| 6 | **Old/new**: Y a newly built property, N an established one |
+| 14 | **County** |
+| 15 | **PPD category**: A a standard sale of a single residential property; B additional transactions, such as repossessions, buy-to-lets identified by a mortgage and transfers to non-private individuals |
+| 16 | **Record status** (monthly file only): A added, C changed, D deleted |
+
+```{r read}
+columns <- rep("NULL", 16)                      # "NULL" skips a column
+columns[c(2, 3, 5, 6, 14, 15, 16)] <- "character"
+raw <- read.csv(file, header = FALSE, colClasses = columns)
+names(raw) <- c("price", "date", "type", "new", "county", "category", "status")
+nrow(raw)
+table(raw$status)
+```
+
+The file holds `r num(nrow(raw))` rows. We keep what the question needs:
+
+```{r tidy}
+raw$date <- as.Date(substr(raw$date, 1, 10))
+homes <- subset(raw, status == "A" &                          # added records, not changes or deletions
+                  category == "A" &                           # standard sales of a single home
+                  type %in% c("T", "F", "S", "D") &           # the four named types of home
+                  date > max(date) - 365)                     # sales completed in the last 12 months
+
+homes$k      <- as.numeric(homes$price) / 1000                # price in £ thousand
+homes$type   <- factor(homes$type, levels = c("T", "F", "S", "D"),
+                       labels = c("Terraced", "Flat", "Semi-detached", "Detached"))
+homes$new    <- factor(homes$new, levels = c("N", "Y"), labels = c("Established", "New build"))
+homes$london <- factor(ifelse(homes$county == "GREATER LONDON", "London", "Elsewhere"),
+                       levels = c("Elsewhere", "London"))
+n <- nrow(homes)
+```
+
+That leaves **`r num(n)` sales** completed between `r format(min(homes$date), "%d %B %Y")` and `r format(max(homes$date), "%d %B %Y")` (`r pct(mean(homes$date >= max(homes$date) - 61))` of them in the last two months, because sales are registered some weeks after completion). The three predictors:
+
+- `type`: the type of home, with **terraced as the reference**, because it is the most common type;
+- `new`: newly built or established;
+- `london`: in Greater London, or elsewhere in England and Wales.
+- the outcome `k` is the price in **thousands of pounds**, so a coefficient of 50 means £50,000.
+
+```{r counts}
+table(homes$type, homes$london)
+```
+
+**What these data cannot say.** The Price Paid Data has no floor area, number of bedrooms, condition or street-level location. A detached house in the data is bigger than a terraced one, and the coefficient on `type` includes that. Nor does one monthly file cover all sales in England and Wales in a year: it holds the ones registered in one month, which is a large and mixed set, but not a random sample of the year. This page is a worked example of a method, not a house price index.
+
+---
+
+## 2. Look at the data
+
+```{r look_hist}
+mean_k   <- mean(homes$k)
+median_k <- median(homes$k)
+
+ggplot(homes, aes(k)) +
+  geom_histogram(binwidth = 25, boundary = 0, fill = "grey80", colour = "grey50") +
+  geom_vline(aes(xintercept = median_k, colour = "Median", linetype = "Median"), linewidth = 0.9) +
+  geom_vline(aes(xintercept = mean_k, colour = "Mean", linetype = "Mean"), linewidth = 0.9) +
+  scale_colour_manual(values = c(Median = blue, Mean = orange)) +
+  scale_linetype_manual(values = c(Median = "solid", Mean = "dashed")) +
+  coord_cartesian(xlim = c(0, 1500)) +
+  labs(title = "Sale prices of homes, England and Wales",
+       subtitle = "The chart stops at £1.5 million",
+       x = "price (£ thousand)", y = "sales", colour = NULL, linetype = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+qs <- quantile(homes$k, c(.1, .5, .9, .99))
+over <- mean(homes$k > 1500)
+```
+
+Prices pile up on the left and trail off to the right. The median is `r k(median_k)`, the mean `r k(mean_k)`: a few very expensive sales pull the mean up. The cheapest tenth of homes sold for up to `r k(qs[[1]])`, and the dearest tenth for `r k(qs[[3]])` or more. The chart cuts off `r pct(over, 1)` of the sales, those above £1.5 million; the dearest sale in the data is `r k(max(homes$k))`.
+
+The skew matters because the London gap is not one number. The same quantiles in the two areas:
+
+```{r look_gap}
+taus <- seq(.05, .95, by = .05)
+by_area <- do.call(rbind, lapply(levels(homes$london), function(a)
+  data.frame(area = a, tau = taus, price = quantile(homes$k[homes$london == a], taus, names = FALSE))))
+by_area$area <- factor(by_area$area, levels = c("Elsewhere", "London"))
+
+ggplot(by_area, aes(tau, price, colour = area)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 1.6) +
+  scale_colour_manual(values = c(Elsewhere = blue, London = orange)) +
+  scale_x_continuous(breaks = seq(0, 1, 0.1)) +
+  labs(title = "Sale price quantiles, London and elsewhere",
+       x = expression("quantile " * tau), y = "price (£ thousand)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+q_area <- tapply(homes$k, homes$london, quantile, probs = c(.1, .5, .9))
+```
+
+At the 10th percentile, a London home sells for `r k(q_area$London[[1]])` against `r k(q_area$Elsewhere[[1]])` elsewhere, a difference of `r k(q_area$London[[1]] - q_area$Elsewhere[[1]])`. At the median the difference is `r k(q_area$London[[2]] - q_area$Elsewhere[[2]])`, and at the 90th percentile `r k(q_area$London[[3]] - q_area$Elsewhere[[3]])`. The London premium grows steadily from the bottom of the market to the top. An OLS coefficient would report one number, somewhere in the middle of those, and say nothing about this.
+
+These are the raw differences. Quantile regression does the same thing while holding the type of home, and whether it is new, fixed.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: one line per quantile
+
+For a quantile $\tau$ between 0 and 1, the model says that the $\tau$-th quantile of the price, given the predictors $x_i$, is a linear function of them:
+
+$$Q_\tau(y_i \mid x_i) = \beta_0(\tau) + \beta_1(\tau)\,x_{i1} + \dots + \beta_p(\tau)\,x_{ip}$$
+
+The coefficients carry $(\tau)$ because each quantile has its own. The **conditional quantile** $Q_\tau(y_i \mid x_i)$ is the price below which a fraction $\tau$ of the homes *with these characteristics* sell. OLS models the conditional mean, $E(y_i \mid x_i)$, in the same way, with one set of coefficients.
+
+### Step 2: the check (pinball) loss
+
+OLS finds the coefficients that minimise the sum of squared residuals. Quantile regression minimises a different sum, with the **check loss** (also called the pinball loss because of its shape). For a residual $u = y - \hat y$:
+
+$$\rho_\tau(u) = u\,\bigl(\tau - I(u < 0)\bigr) = \begin{cases} \tau\,u & \text{if } u \ge 0 \text{ (the price is above the line)}\\ (\tau - 1)\,u = (1-\tau)\,|u| & \text{if } u < 0 \text{ (the price is below the line)}\end{cases}$$
+
+where $I(u < 0)$ is 1 when the residual is negative and 0 otherwise. The coefficients are
+
+$$\hat\beta(\tau) = \arg\min_{\beta} \sum_{i=1}^{n} \rho_\tau\bigl(y_i - x_i^\top \beta\bigr)$$
+
+The loss is a pair of straight lines: a point above the fitted line costs $\tau$ per unit of distance, a point below it costs $1-\tau$. Three cases:
+
+- **$\tau = 0.5$**: both sides cost 0.5, so the loss is half the absolute residual, $\tfrac12|u|$. This is **median regression**, or least absolute deviations (LAD): the line that minimises the sum of the absolute residuals.
+- **$\tau = 0.9$**: a point above the line costs 0.9, a point below costs only 0.1. The line is pushed up until **90% of the points are below it**.
+- **$\tau = 0.1$**: the reverse: the line is pushed down until 10% of the points are below it.
+
+### Step 3: why minimising it gives the quantile
+
+Start with no predictors, only a single number $c$ as the fit. The expected loss is
+
+$$E\,\rho_\tau(y - c) = (\tau - 1)\int_{-\infty}^{c} (y - c)\,dF(y) + \tau \int_{c}^{\infty} (y - c)\,dF(y)$$
+
+where $F$ is the distribution function of $y$. Differentiating with respect to $c$ gives
+
+$$\frac{d}{dc}\,E\,\rho_\tau(y - c) = (1 - \tau)\,F(c) - \tau\,\bigl(1 - F(c)\bigr) = F(c) - \tau$$
+
+which is zero when $F(c) = \tau$: **the value $c$ below which a fraction $\tau$ of the data lies, which is the $\tau$-th quantile**. In the same way, squared loss gives the mean, and absolute loss gives the median. A small numeric check with 11 real sales, drawn at random from the data:
+
+```{r pinball}
+rho <- function(u, tau) u * (tau - (u < 0))     # the check loss
+
+set.seed(2026)
+few    <- sort(sample(homes$k, 11))
+cand   <- seq(0, max(few) * 1.05, length.out = 1500)
+tau_set <- c(0.1, 0.5, 0.9)
+
+loss <- do.call(rbind, lapply(tau_set, function(t)
+  data.frame(tau = t, c = cand, loss = sapply(cand, function(cc) mean(rho(few - cc, t))))))
+best <- do.call(rbind, lapply(tau_set, function(t)
+  data.frame(tau = t, c = loss$c[loss$tau == t][which.min(loss$loss[loss$tau == t])],
+             loss = min(loss$loss[loss$tau == t]))))
+best$quantile <- sapply(tau_set, function(t) quantile(few, t, type = 1, names = FALSE))
+best
+```
+
+```{r pinball_chart}
+loss$panel <- factor(paste("τ =", loss$tau), levels = paste("τ =", tau_set))
+best$panel <- factor(paste("τ =", best$tau), levels = paste("τ =", tau_set))
+pts <- do.call(rbind, lapply(tau_set, function(t)
+  data.frame(panel = paste("τ =", t), x = few)))
+pts$panel <- factor(pts$panel, levels = paste("τ =", tau_set))
+
+ggplot(loss, aes(c, loss)) +
+  geom_line(colour = blue, linewidth = 0.9) +
+  geom_point(data = best, colour = orange, size = 3) +
+  geom_rug(data = pts, aes(x = x, y = NULL), colour = "grey35", sides = "b") +
+  facet_wrap(~ panel, scales = "free_y") +
+  labs(title = "Average check loss for a single fitted value c",
+       subtitle = "Orange: the lowest point. Grey ticks: the 11 sale prices.",
+       x = "c, the fitted price (£ thousand)", y = "average check loss") +
+  scale_x_continuous(expand = expansion(mult = c(0.03, 0.08))) +
+  theme_bw() +
+  theme(panel.spacing.x = unit(1, "lines"))
+```
+
+The loss curve is made of straight pieces that bend at the data points, and its lowest point (orange) sits on a data value: `r k(best$c[1])` for $\tau$ = 0.1, `r k(best$c[2])` for the median and `r k(best$c[3])` for $\tau$ = 0.9. Those are the 10th, 50th and 90th percentiles of the 11 prices (`r k(best$quantile[1])`, `r k(best$quantile[2])` and `r k(best$quantile[3])`). The same check on all `r num(n)` sales, by trying every candidate price on a fine grid:
+
+```{r pinball_all}
+grid <- seq(0, 1500, by = 0.5)
+by_search <- sapply(tau_set, function(t) grid[which.min(sapply(grid, function(cc) mean(rho(homes$k - cc, t))))])
+rbind(`minimising the loss` = by_search,
+      `quantile()` = quantile(homes$k, tau_set, type = 1, names = FALSE))
+```
+
+### Step 4: how the line is found
+
+The check loss has a corner at zero, so there is no formula like the normal equations of OLS. `rq()` solves the problem as a **linear programme** (the Barrodale and Roberts simplex algorithm, `method = "br"`, the default), which is fast for samples up to a few thousand rows; for very large data `method = "fn"` (an interior point method) is quicker. When the minimum is a flat stretch rather than a single point, as happens when many prices are the same round number, R warns "Solution may be nonunique". The warning is harmless here: any value on the flat stretch fits equally well.
+
+### Step 5: what the coefficients mean
+
+$\beta_j(\tau)$ is the change in the $\tau$-th **conditional quantile** of the price when $x_j$ goes up by one unit, with the other predictors fixed. With a categorical predictor, it is the difference between the $\tau$-th quantiles of the two groups, adjusting for the other predictors. Section 7 spells out what this does and does not mean.
+
+---
+
+## 4. Fitting the model and reading the output
+
+The model is `k ~ type + new + london`. `rq()` takes a formula, the data and the quantile or quantiles in `tau`:
+
+```{r fit}
+f <- k ~ type + new + london
+
+fit_ols <- lm(f, data = homes)
+fit10   <- rq(f, tau = 0.1, data = homes)
+fit50   <- rq(f, tau = 0.5, data = homes)
+fit90   <- rq(f, tau = 0.9, data = homes)
+summary(fit50, se = "nid")
+```
+
+The output looks like `lm()`: `Value` is the coefficient, then its standard error, *t* and *p*. The intercept is the median price of the reference home: an established terraced house elsewhere in England and Wales (the `r k(coef(fit50)[["(Intercept)"]])`, which is also the median of that group). The other lines are the differences from it:
+
+```{r fit_table}
+coefs <- cbind(`τ = 0.1` = coef(fit10), `τ = 0.5` = coef(fit50), `τ = 0.9` = coef(fit90), OLS = coef(fit_ols))
+round(coefs, 1)
+b10 <- coef(fit10); b50 <- coef(fit50); b90 <- coef(fit90); bo <- coef(fit_ols)
+```
+
+| | $\tau$ = 0.1 | Median | $\tau$ = 0.9 | OLS (mean) |
+|---|---|---|---|---|
+| Detached (against terraced) | `r k(b10[["typeDetached"]])` | `r k(b50[["typeDetached"]])` | `r k(b90[["typeDetached"]])` | `r k(bo[["typeDetached"]])` |
+| Flat (against terraced) | `r k(b10[["typeFlat"]])` | `r k(b50[["typeFlat"]])` | `r k(b90[["typeFlat"]])` | `r k(bo[["typeFlat"]])` |
+| London (against elsewhere) | `r k(b10[["londonLondon"]])` | `r k(b50[["londonLondon"]])` | `r k(b90[["londonLondon"]])` | `r k(bo[["londonLondon"]])` |
+| New build (against established) | `r k(b10[["newNew build"]])` | `r k(b50[["newNew build"]])` | `r k(b90[["newNew build"]])` | `r k(bo[["newNew build"]])` |
+
+- **London.** The London difference is `r k(b10[["londonLondon"]])` in the cheap end of the market, `r k(b50[["londonLondon"]])` at the median and `r k(b90[["londonLondon"]])` in the expensive end: about `r f1(b90[["londonLondon"]] / b10[["londonLondon"]])` times bigger at the top than at the bottom. OLS reports `r k(bo[["londonLondon"]])`, a number that is not the London difference for any group of homes: it is above the median difference because the mean follows the long right tail.
+- **Detached.** A detached house costs `r k(b10[["typeDetached"]])` more than a terraced one at $\tau$ = 0.1, `r k(b50[["typeDetached"]])` more at the median and `r k(b90[["typeDetached"]])` more at $\tau$ = 0.9.
+- **New build.** This is where the mean misleads the most. The new-build difference is `r k(b10[["newNew build"]])` in the cheap end, `r k(b50[["newNew build"]])` at the median, and `r k(b90[["newNew build"]])` at $\tau$ = 0.9: new homes sell for more than established ones at the bottom of the market, and for a little less at the top. OLS says `r k(bo[["newNew build"]])`, which hides the sign change. The data cannot say why: they have no information on size or exact location, which may differ between new and established homes.
+- **Flat.** Flats are cheaper than terraced houses, by `r k(-b10[["typeFlat"]])` at $\tau$ = 0.1 and `r k(-b90[["typeFlat"]])` at $\tau$ = 0.9.
+
+All the models here have categorical predictors only. The fitted lines are then the quantiles of price within each combination of type, new and London, tied together by the model's additive form (no interactions). With a continuous predictor, such as floor area, each $\tau$ would give a slope instead of a gap: the reading is the same.
+
+### Three ways to calculate the standard errors
+
+`summary.rq()` offers several methods for the standard errors, set with `se =`:
+
+| `se =` | The idea | When it fits |
+|---|---|---|
+| `"iid"` | Assumes the errors have the same distribution for every observation: one common density at the quantile | Only if the spread of the outcome is the same for all values of the predictors. **Not here** |
+| `"nid"` | A sandwich estimator (Hendricks & Koenker, 1992) that allows the density at the quantile to differ from one observation to the next. The default for samples above 1,000 | The usual choice with heteroscedastic data |
+| `"ker"` | A sandwich estimator that estimates the density with a kernel (Powell, 1991) | An alternative to `"nid"` |
+| `"boot"` | **Bootstrap**: resample the rows with replacement (the default `bsmethod = "xy"` resamples (x, y) pairs), refit, and take the standard deviation of the estimates | Needs no density at all, but slow: each bootstrap sample is a new fit |
+
+The standard error of a quantile depends on how thinly the data are spread **around that quantile**, since a coefficient is more uncertain where observations are sparse. The sandwich methods estimate this density, and `"iid"` takes it to be the same everywhere, which is wrong when the spread of price differs between London and elsewhere. A comparison on a random subsample of 5,000 sales (a bootstrap of the full `r num(n)` sales would be much slower), at $\tau$ = 0.9:
+
+```{r se_methods}
+set.seed(2026)
+sub   <- homes[sample(n, 5000), ]
+fit_s <- rq(f, tau = 0.9, data = sub)
+se_methods <- sapply(c("iid", "nid", "ker", "boot"), function(m) {
+  s <- if (m == "boot") summary(fit_s, se = m, R = 200) else summary(fit_s, se = m)
+  s$coefficients[, "Std. Error"]
+})
+round(se_methods, 1)
+```
+
+For the London coefficient the standard error is `r f1(se_methods["londonLondon", "iid"])` with `"iid"` and `r f1(se_methods["londonLondon", "nid"])` with `"nid"`, `r f1(se_methods["londonLondon", "ker"])` with `"ker"` and `r f1(se_methods["londonLondon", "boot"])` with the bootstrap. `"iid"` is `r f1(se_methods["londonLondon", "nid"] / se_methods["londonLondon", "iid"])` times too small: London prices are much more spread out than prices elsewhere, which the `"iid"` method does not allow. The three methods that allow unequal spread are in the same range for London, but they do not agree exactly: for the new-build coefficient the standard errors run from `r f1(min(se_methods["newNew build", c("nid", "ker", "boot")]))` to `r f1(max(se_methods["newNew build", c("nid", "ker", "boot")]))`. The bootstrap makes the fewest assumptions. A quick rule: use `"nid"` for large samples (it is the default) and `"boot"` for the final results of a smaller study, with a larger `R` (1,000 or more).
+
+The rest of the page uses `"nid"` on the full data.
+
+---
+
+## 5. The classic chart: coefficients across the quantiles
+
+Three quantiles tell the story in a table. The whole story is a chart: fit the model at `r length(taus)` quantiles from $\tau$ = 0.05 to 0.95, and draw each coefficient against $\tau$, with its 95% confidence band. The OLS estimate, with its interval, is a single horizontal line: **if the quantile coefficients stay near the OLS line, the mean tells the story; if they drift away from it, it does not.**
+
+```{r coef_path}
+fits_path <- rq(f, tau = taus, data = homes)
+sums_path <- summary(fits_path, se = "nid")
+
+names_short <- c(typeFlat = "Flat (vs terraced)", `typeSemi-detached` = "Semi-detached (vs terraced)",
+                 typeDetached = "Detached (vs terraced)", `newNew build` = "New build (vs established)",
+                 londonLondon = "London (vs elsewhere)")
+terms <- names(names_short)
+
+path <- do.call(rbind, lapply(seq_along(taus), function(i) {
+  cm <- sums_path[[i]]$coefficients[terms, , drop = FALSE]
+  data.frame(tau = taus[i], term = terms, est = cm[, "Value"],
+             lo = cm[, "Value"] - qnorm(.975) * cm[, "Std. Error"],
+             hi = cm[, "Value"] + qnorm(.975) * cm[, "Std. Error"])
+}))
+path$term <- factor(names_short[path$term], levels = names_short)
+
+ols_ci  <- confint(fit_ols)
+ols_ref <- data.frame(term = factor(names_short, levels = names_short),
+                      est = coef(fit_ols)[terms], lo = ols_ci[terms, 1], hi = ols_ci[terms, 2])
+
+ggplot(path, aes(tau)) +
+  geom_rect(data = ols_ref, aes(xmin = -Inf, xmax = Inf, ymin = lo, ymax = hi, fill = "OLS (mean)"),
+            alpha = 0.18, inherit.aes = FALSE) +
+  geom_hline(data = ols_ref, aes(yintercept = est, colour = "OLS (mean)"), linetype = "dashed", linewidth = 0.8) +
+  geom_ribbon(aes(ymin = lo, ymax = hi, fill = "Quantile regression"), alpha = 0.25) +
+  geom_line(aes(y = est, colour = "Quantile regression"), linewidth = 0.9) +
+  geom_point(aes(y = est, colour = "Quantile regression"), size = 1.4) +
+  facet_wrap(~ term, scales = "free_y", ncol = 3) +
+  scale_colour_manual(values = c(`Quantile regression` = blue, `OLS (mean)` = orange)) +
+  scale_fill_manual(values = c(`Quantile regression` = blue, `OLS (mean)` = orange)) +
+  scale_x_continuous(breaks = c(0.1, 0.5, 0.9)) +
+  labs(title = "How each coefficient changes along the price distribution",
+       subtitle = "Bands: 95% confidence intervals (standard errors by nid)",
+       x = expression("quantile " * tau), y = "difference in price (£ thousand)",
+       colour = NULL, fill = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+(The base R version is `plot(summary(rq(f, tau = taus, data = homes)))`, which draws the same panels, with the OLS line in red.) Reading the panels:
+
+```{r coef_path_numbers}
+p <- function(term, t) path$est[path$term == names_short[[term]] & abs(path$tau - t) < 1e-9]
+inside <- tapply(seq_len(nrow(path)), path$term, function(i) {
+  o <- ols_ref[ols_ref$term == path$term[i[1]], ]
+  mean(path$est[i] >= o$lo & path$est[i] <= o$hi)
+})
+```
+
+- **London** and **Detached**: the coefficient climbs steadily with $\tau$, from `r k(p("londonLondon", .05))` and `r k(p("typeDetached", .05))` at $\tau$ = 0.05 to `r k(p("londonLondon", .95))` and `r k(p("typeDetached", .95))` at $\tau$ = 0.95. The OLS line cuts across the middle and describes none of the ends.
+- **New build**: the coefficient falls from `r k(p("newNew build", .05))` at $\tau$ = 0.05 to `r k(p("newNew build", .95))` at $\tau$ = 0.95, and first drops below zero at $\tau$ = `r nz(min(path$tau[path$term == names_short[["newNew build"]] & path$est < 0]))`. OLS is a small positive number, `r k(bo[["newNew build"]])`, for all.
+- **Flat**: the gap against terraced homes widens from `r k(-p("typeFlat", .05))` to `r k(-p("typeFlat", .95))`. The OLS gap, `r k(-bo[["typeFlat"]])`, is bigger than the quantile gap at `r sum(-path$est[path$term == names_short[["typeFlat"]]] < -bo[["typeFlat"]])` of the `r length(taus)` quantiles: here the mean gap is larger than the gap at the quantiles, because the few very dear sales pull the mean.
+- **Semi-detached**: changes least. It is `r k(p("typeSemi-detached", .05))` at $\tau$ = 0.05 and `r k(p("typeSemi-detached", .5))` at the median, and rises only in the top tail, to `r k(p("typeSemi-detached", .95))` at $\tau$ = 0.95. For most of the market, OLS (`r k(bo[["typeSemi-detached"]])`) is not misleading for this predictor.
+
+The confidence bands widen at the extremes: there are fewer observations near the 5th and 95th percentiles to pin the line down. Remember that the bands are for each $\tau$ separately; they are not a simultaneous band for the whole curve.
+
+---
+
+## 6. Do the slopes differ across quantiles?
+
+The chart suggests that they do. `anova()` on `rq` fits at several quantiles tests it (Koenker & Bassett, 1982): the null hypothesis is that the coefficients of the predictors are **the same at every $\tau$ in the set**, which is the pure location-shift model in which the predictors move the whole distribution up or down by the same amount and leave its shape alone.
+
+```{r anova}
+test_joint <- anova(fit10, fit50, fit90)
+test_joint
+test_terms <- anova(fit10, fit50, fit90, joint = FALSE)
+test_terms
+```
+
+The first test is a joint test of all five predictors at the three quantiles (10 restrictions: each predictor's coefficient at $\tau$ = 0.1 and at 0.9 equal to the median's): *F*(`r test_joint$table$ndf`, `r num(test_joint$table$ddf)`) = `r f1(test_joint$table$Tn)`, *p* `r pval(test_joint$table$pvalue)`. The slopes are not the same at the three quantiles. The second test takes one predictor at a time: all five are significant, with the largest statistics for `r names_short[terms[which.max(test_terms$table$Tn)]]` (`r f1(max(test_terms$table$Tn))`) and `r names_short[terms[order(-test_terms$table$Tn)[2]]]` (`r f1(sort(test_terms$table$Tn, decreasing = TRUE)[2])`), and the smallest for `r names_short[terms[which.min(test_terms$table$Tn)]]` (`r f1(min(test_terms$table$Tn))`).
+
+Two cautions. With `r num(n)` sales, even a small difference is "significant", so the **size** of the differences (the chart) matters more than the *p* value. And the test compares only the quantiles you give it: a set of $\tau$ values such as 0.1, 0.5 and 0.9 can miss differences elsewhere.
+
+---
+
+## 7. Interpretation: a conditional quantile effect
+
+A coefficient at $\tau$ = 0.9 is easy to misread. It is **not** "the effect of being in London on the people at the top of the market". Two ideas separate:
+
+- A **conditional quantile** is a quantile of price among homes that share the same values of the predictors. $\beta_{\text{London}}(0.9)$ is the gap between the 90th percentile of London homes and the 90th percentile of the other homes of the same type and age. A 90th-percentile London flat is **not** the same home as a 90th-percentile detached house elsewhere: "the top" is defined **within** each group of comparable homes.
+- An **unconditional quantile** is a quantile of the whole market: the dearest 10% of all sales in the country, whatever their type or location. A coefficient at $\tau$ = 0.9 does **not** say what would happen to the dearest 10% of the whole market if the predictor changed. That is a different question, with a different method (Firpo et al., 2009).
+
+In plain words: the median regression tells you how the typical London home compares with the typical home elsewhere, and the 90th percentile regression tells you how an expensive London home compares with an expensive home elsewhere. Nothing is said about individual homes: a person who buys at the 90th percentile of a cheap area does not move to the 90th percentile of London by moving there.
+
+The numbers are also differences between **groups**, not changes in a home: the Price Paid Data holds one sale per home, so the coefficients describe how the groups differ, not what would happen to a given house if it were in London.
+
+A chart of the model's predictions for six typical homes, all established, makes the point concrete: the middle 80% of the predicted prices (from $\tau$ = 0.1 to 0.9) with the median and, for contrast, the OLS mean.
+
+```{r predict}
+cases <- expand.grid(type = c("Terraced", "Flat", "Detached"), london = c("Elsewhere", "London"),
+                     stringsAsFactors = FALSE)
+cases$new    <- "Established"
+cases$type   <- factor(cases$type, levels = levels(homes$type))
+cases$new    <- factor(cases$new, levels = levels(homes$new))
+cases$london <- factor(cases$london, levels = levels(homes$london))
+cases$label  <- paste0(cases$type, ", ", ifelse(cases$london == "London", "London", "elsewhere"))
+cases <- cases[order(cases$london, match(cases$type, c("Flat", "Terraced", "Detached"))), ]
+
+pred <- data.frame(label = cases$label,
+                   q10 = predict(fit10, cases), q50 = predict(fit50, cases), q90 = predict(fit90, cases),
+                   mean = predict(fit_ols, cases))
+pred$label <- factor(pred$label, levels = rev(pred$label))
+round(pred[, -1], 0)
+
+ggplot(pred, aes(y = label)) +
+  geom_linerange(aes(xmin = q10, xmax = q90), colour = "grey55", linewidth = 2.2, alpha = 0.6) +
+  geom_point(aes(x = q50, colour = "Median"), size = 3.2) +
+  geom_point(aes(x = mean, colour = "Mean (OLS)"), size = 3.2, shape = 18) +
+  scale_colour_manual(values = c(Median = blue, `Mean (OLS)` = orange)) +
+  labs(title = "Predicted prices of six typical homes",
+       subtitle = "Grey bar: the 10th to the 90th percentile of the quantile regression",
+       x = "price (£ thousand)", y = NULL, colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+The grey bars say what OLS cannot: the **range** of prices to expect. A detached home in London has a predicted median of `r k(pred$q50[pred$label == "Detached, London"])`, and the middle 80% of its predicted prices runs from `r k(pred$q10[pred$label == "Detached, London"])` to `r k(pred$q90[pred$label == "Detached, London"])`; a flat elsewhere is far tighter, from `r k(pred$q10[pred$label == "Flat, elsewhere"])` to `r k(pred$q90[pred$label == "Flat, elsewhere"])`. The OLS mean for the detached home in London, `r k(pred$mean[pred$label == "Detached, London"])`, is above the median: the mean is pulled up by the right tail.
+
+How well do the fitted lines do their job? By definition, a fraction $\tau$ of the sales should lie below the line at $\tau$. The check:
+
+```{r calibration}
+below <- sapply(list(fit10, fit50, fit90), function(m) mean(homes$k < fitted(m)))
+setNames(round(below, 3), c("τ = 0.1", "τ = 0.5", "τ = 0.9"))
+```
+
+The shares below the lines are `r pct(below[1], 1)`, `r pct(below[2], 1)` and `r pct(below[3], 1)`, close to 10%, 50% and 90% (not exactly so because many prices are round numbers, such as £250,000, and tie with the fitted values).
+
+---
+
+## 8. Practical points
+
+### Quantile crossing
+
+The quantile of 0.9 must never be below the quantile of 0.8, but separate fits do not know that. With a continuous predictor, the fitted lines can **cross**, usually at extreme values of the predictor, and then give an impossible prediction: a 90th percentile lower than the 80th. Crossing signals that the linear model is wrong for that part of the data, or that the extrapolation goes too far.
+
+```{r crossing}
+fit_ends <- rq(f, tau = c(0.01, 0.99), data = homes)
+all_taus <- c(0.01, taus, 0.99)
+B <- cbind(coef(fit_ends)[, 1], coef(fits_path), coef(fit_ends)[, 2])
+all_cells <- expand.grid(type = levels(homes$type), new = levels(homes$new), london = levels(homes$london))
+pred_all  <- model.matrix(~ type + new + london, all_cells) %*% B      # one row per kind of home, one column per tau
+crossings <- sum(apply(pred_all, 1, function(x) any(diff(x) < 0)))
+```
+
+I checked all `r nrow(all_cells)` combinations of type, new and London at `r length(all_taus)` quantiles from 0.01 to 0.99: `r crossings` of them have crossing quantiles. Crossing here is unlikely, because the predictors are categorical and every combination has many sales. If it does happen, the usual remedies are to fit a simpler model, to restrict predictions to the range of the data, or to **rearrange**: sort the predicted quantiles of each case into increasing order, which can only improve the estimates (Chernozhukov et al., 2010). In R, `sort()` on the row of predictions does it.
+
+### A log outcome, and back-transformation
+
+Prices are often analysed on the log scale: then the coefficients are percentages and the skew is much smaller. For quantiles the log scale has a special property. **Quantiles commute with monotone transformations**; means do not:
+
+$$Q_\tau\bigl(\log y\bigr) = \log Q_\tau(y) \qquad\text{but}\qquad E\bigl(\log y\bigr) \ne \log E(y)$$
+
+The median of the logs is the log of the median. The mean of the logs is the log of the **geometric** mean, which is smaller than the mean. So a quantile regression of $\log y$ can be back-transformed with `exp()` and gives a quantile of the price itself, whereas back-transforming an OLS of $\log y$ gives the geometric mean (or, with a "smearing" correction, an estimate of the mean that depends on the distribution of the errors).
+
+```{r log}
+c(`log of the median` = log(median(homes$k)), `median of the logs` = median(log(homes$k)),
+  `log of the mean` = log(mean(homes$k)), `mean of the logs` = mean(log(homes$k)))
+
+f_log   <- log(k) ~ type + new + london
+log_fit <- rq(f_log, tau = taus, data = homes)
+log_ols <- lm(f_log, data = homes)
+
+# the median regression on the log scale, back-transformed, against the median regression on the price
+log50   <- rq(f_log, tau = 0.5, data = homes)
+back    <- exp(predict(log50, cases))
+rbind(`median regression of price` = pred$q50[match(cases$label, pred$label)],
+      `median regression of log price, exp()` = back) |> round(0) |> `colnames<-`(cases$label)
+```
+
+The two models estimate the same quantile, but one is additive in pounds and the other additive in logs, so they only agree where an additive model is a good description: for a terraced home elsewhere they give `r k(pred$q50[match("Terraced, elsewhere", pred$label)])` and `r k(back[["2"]])`, but for a detached home in London `r k(pred$q50[match("Detached, London", pred$label)])` and `r k(back[["6"]])`. Back-transforming a quantile is exact for one variable; it is no reason to expect two different models to agree. `exp(coef)` on the log scale is a **ratio**: a London home has a median price `r f2(exp(coef(log50)[["londonLondon"]]))` times that elsewhere, that is `r pct(exp(coef(log50)[["londonLondon"]]) - 1)` more. The question changes with the scale: on the pound scale the London premium grows from the bottom to the top of the market; as a percentage it does not, as the chart shows:
+
+```{r log_chart}
+lb <- coef(log_fit)[terms, , drop = FALSE]
+log_path <- data.frame(tau = rep(taus, each = length(terms)),
+                       term = factor(rep(names_short, times = length(taus)), levels = names_short),
+                       pc = 100 * (exp(as.vector(lb)) - 1))
+log_ols_pc <- data.frame(term = factor(names_short, levels = names_short),
+                         pc = 100 * (exp(coef(log_ols)[terms]) - 1))
+
+ggplot(log_path, aes(tau, pc)) +
+  geom_hline(data = log_ols_pc, aes(yintercept = pc, colour = "OLS (geometric mean)"), linetype = "dashed", linewidth = 0.8) +
+  geom_line(aes(colour = "Quantile regression"), linewidth = 0.9) +
+  geom_point(aes(colour = "Quantile regression"), size = 1.4) +
+  facet_wrap(~ term, scales = "free_y", ncol = 3) +
+  scale_colour_manual(values = c(`Quantile regression` = blue, `OLS (geometric mean)` = orange)) +
+  scale_x_continuous(breaks = c(0.1, 0.5, 0.9)) +
+  labs(title = "The same model on the log scale, as percentage differences",
+       x = expression("quantile " * tau), y = "difference in price (%)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+lp <- function(term, t) 100 * (exp(coef(log_fit)[term, which.min(abs(taus - t))]) - 1)
+test_log <- anova(rq(f_log, tau = 0.1, data = homes), log50, rq(f_log, tau = 0.9, data = homes))
+```
+
+On the percentage scale the London premium is `r pct(lp("londonLondon", .1) / 100)` at $\tau$ = 0.1, `r pct(lp("londonLondon", .5) / 100)` at the median and `r pct(lp("londonLondon", .9) / 100)` at $\tau$ = 0.9. It is lowest near the middle (`r pct(min(log_path$pc[log_path$term == names_short[["londonLondon"]]]) / 100)`) and rises towards both ends, so across the middle 80% of the market it varies much less than the `r k(b10[["londonLondon"]])` to `r k(b90[["londonLondon"]])` in pounds. Prices in London are higher by a multiple rather than by a fixed sum, and part of the "growing" effect in pounds is just proportions on a skewed outcome. The shape of the curve depends on the scale: a steady rise in pounds becomes a U in percentages. A test of equal slopes on the log scale is still significant (*F*(`r test_log$table$ndf`, `r num(test_log$table$ddf)`) = `r f1(test_log$table$Tn)`, *p* `r pval(test_log$table$pvalue)`) but the differences are smaller. A report should say which scale it uses: the pound scale answers "how many pounds more?", the log scale "how many times more?".
+
+### Median regression resists outliers in y
+
+OLS minimises squared residuals, so a single huge price pulls the line towards it. The median regression minimises absolute residuals: an extreme price costs a little more than a moderate one, but not squared. Only the **ordering** of the prices around the line matters, not how far away they are, which is why the median regression is a robust method, in the same spirit as [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd) (which also handles outliers in the predictors, which median regression does not). To see it, simulate a data-entry error: **100 random sales are entered with two extra zeros** (£250,000 becomes £25,000,000).
+
+```{r outliers}
+set.seed(2026)
+dirty <- homes
+bad   <- sample(n, 100)
+dirty$k[bad] <- dirty$k[bad] * 100
+
+effect <- rbind(
+  OLS_clean    = coef(lm(f, homes)),
+  OLS_dirty    = coef(lm(f, dirty)),
+  median_clean = coef(rq(f, tau = 0.5, data = homes)),
+  median_dirty = coef(suppressWarnings(rq(f, tau = 0.5, data = dirty))))
+round(effect[, c("typeDetached", "londonLondon")], 1)
+```
+
+With 100 wrong prices out of `r num(n)` (`r pct(100 / n, 2)`), the OLS coefficient for London goes from `r k(effect["OLS_clean", "londonLondon"])` to `r k(effect["OLS_dirty", "londonLondon"])`, and the one for detached homes from `r k(effect["OLS_clean", "typeDetached"])` to `r k(effect["OLS_dirty", "typeDetached"])`. The median regression moves from `r k(effect["median_clean", "londonLondon"])` to `r k(effect["median_dirty", "londonLondon"])` for London and from `r k(effect["median_clean", "typeDetached"])` to `r k(effect["median_dirty", "typeDetached"])` for detached homes. A fully robust method would also resist bad predictors, and quantile regression does not, but for outliers in the outcome it is hard to beat. The same data contain real outliers too (the dearest sale is `r k(max(homes$k))`): median regression is not disturbed by them.
+
+### Other points
+
+- **Sample size.** The extreme quantiles ($\tau$ = 0.01 or 0.99) need many observations, since the line is fitted to a few points in the tail. As a rule of thumb, you want at least 10 or so observations in the tail for each parameter.
+- **Dependence.** Sales in the same street or town are alike, and the standard errors assume independent rows. With clustered data use a cluster bootstrap (`boot.rq()`) or see the [multilevel page](EXAMPLE_MULTILEVEL.Rmd).
+- **Weights and heteroscedasticity.** Quantile regression does not need constant variance: unequal spread is the thing it describes. If the aim is a better mean line instead, see [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd) and [generalised least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd).
+- **Trees instead of lines.** The [random forest page](EXAMPLE_RANDOM_FOREST.Rmd) shows quantile regression *forests*: the same idea with a flexible, non-linear model in place of a straight one.
+- **Not causal.** A London coefficient is a difference between groups of homes that differ in many other ways.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) states the data, the quantiles, the standard error method, the coefficients at the quantiles that matter, the comparison with OLS and the test of equal slopes.
+
+```{r apa_numbers}
+ci_of <- function(model, tau) {
+  s <- summary(model, se = "nid")$coefficients
+  cbind(est = s[, "Value"], lo = s[, "Value"] - qnorm(.975) * s[, "Std. Error"],
+        hi = s[, "Value"] + qnorm(.975) * s[, "Std. Error"])
+}
+c10 <- ci_of(fit10); c50 <- ci_of(fit50); c90 <- ci_of(fit90)
+co  <- cbind(est = coef(fit_ols), confint(fit_ols))
+cell <- function(m, term) paste0(f0(m[term, 1]), " [", f0(m[term, 2]), ", ", f0(m[term, 3]), "]")
+
+apa_table <- data.frame(
+  Predictor = c("Flat (vs terraced)", "Semi-detached (vs terraced)", "Detached (vs terraced)",
+                "New build (vs established)", "London (vs elsewhere)"),
+  `τ = .10` = sapply(terms, function(t) cell(c10, t)),
+  `τ = .50` = sapply(terms, function(t) cell(c50, t)),
+  `τ = .90` = sapply(terms, function(t) cell(c90, t)),
+  OLS       = sapply(terms, function(t) cell(co, t)),
+  check.names = FALSE, row.names = NULL)
+```
+
+**Method** (data analysis):
+
+> We analysed `r num(n)` sales of homes in England and Wales completed between `r format(min(homes$date), "%B %Y")` and `r format(max(homes$date), "%B %Y")`, from the HM Land Registry Price Paid Data (standard sales of detached, semi-detached, terraced and flat properties; Open Government Licence v3.0). The outcome was the sale price in thousands of pounds. The predictors were the type of home (reference: terraced), whether it was newly built and whether it was in Greater London. Price was strongly right-skewed (median = £`r f0(median_k)`k, mean = £`r f0(mean_k)`k), so we estimated linear quantile regressions at τ = .10, .50 and .90, and on a grid from .05 to .95, with the `quantreg` package (Version `r as.character(packageVersion("quantreg"))`; Koenker, 2005), and compared them with ordinary least squares. Standard errors for the quantile regressions were of the nid (sandwich) type (Hendricks & Koenker, 1992). Equality of the coefficients across τ = .10, .50 and .90 was tested with the Wald-type test of Koenker and Bassett (1982). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> The effects of the predictors differed across the price distribution (Table 1). The London difference was £`r f0(c10["londonLondon", 1])`k at the 10th percentile, 95% CI [`r f0(c10["londonLondon", 2])`, `r f0(c10["londonLondon", 3])`], £`r f0(c50["londonLondon", 1])`k at the median, 95% CI [`r f0(c50["londonLondon", 2])`, `r f0(c50["londonLondon", 3])`], and £`r f0(c90["londonLondon", 1])`k at the 90th percentile, 95% CI [`r f0(c90["londonLondon", 2])`, `r f0(c90["londonLondon", 3])`]; the OLS estimate for the mean was £`r f0(co["londonLondon", 1])`k, 95% CI [`r f0(co["londonLondon", 2])`, `r f0(co["londonLondon", 3])`]. Detached homes cost £`r f0(c10["typeDetached", 1])`k, £`r f0(c50["typeDetached", 1])`k and £`r f0(c90["typeDetached", 1])`k more than terraced homes at the three quantiles. New builds were £`r f0(c10["newNew build", 1])`k dearer than established homes at the 10th percentile, but at the 90th the difference was `r k(c90["newNew build", 1])`, 95% CI [`r f0(c90["newNew build", 2])`, `r f0(c90["newNew build", 3])`]. The coefficients were not equal across the three quantiles, *F*(`r test_joint$table$ndf`, `r num(test_joint$table$ddf)`) = `r f1(test_joint$table$Tn)`, *p* `r pval(test_joint$table$pvalue)`. On the log scale the percentage London premium varied less (`r pct(lp("londonLondon", .1) / 100)` at τ = .10, `r pct(lp("londonLondon", .5) / 100)` at τ = .50 and `r pct(lp("londonLondon", .9) / 100)` at τ = .90), though the slopes still differed, *F*(`r test_log$table$ndf`, `r num(test_log$table$ddf)`) = `r f1(test_log$table$Tn)`, *p* `r pval(test_log$table$pvalue)`.
+
+**Table 1**
+
+*Differences in Sale Price (£ Thousand) by Quantile of the Price Distribution, With 95% Confidence Intervals*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, align = "lrrrr", format = "pipe")
+```
+
+*Note.* *N* = `r num(n)` sales. The intercept (the price of an established terraced home outside London) was £`r f0(c10["(Intercept)", 1])`k, £`r f0(c50["(Intercept)", 1])`k and £`r f0(c90["(Intercept)", 1])`k at τ = .10, .50 and .90, and £`r f0(co["(Intercept)", 1])`k in OLS. Quantile regression intervals use nid standard errors.
+
+**Points to remember:**
+
+- Say which quantiles you fitted, and why those.
+- Say that coefficients are **conditional** quantile differences, and name the units.
+- Say which standard error method you used (nid, boot, ...) and the number of bootstrap samples.
+- Report the test of equal slopes, but base the conclusion on the size of the differences.
+- Say whether the outcome is on the original or the log scale.
+- Show the coefficients against τ: a table of three quantiles cannot show the shape.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | The effect of a predictor may differ between the low and high ends of the outcome: skewed outcomes (prices, wages, incomes), or interest in the tails (risk, growth charts) |
+| **The model** | $Q_\tau(y \mid x) = x^\top \beta(\tau)$: one linear regression for each quantile $\tau$ |
+| **The loss** | Check loss $\rho_\tau(u) = u(\tau - I(u < 0))$. Median: $\tau = 0.5$, least absolute deviations |
+| **How (R)** | `quantreg::rq(y ~ x, tau = c(.1, .5, .9), data = d)`; `summary(fit, se = "nid")` or `se = "boot"` |
+| **Standard errors** | `"nid"` for large samples; `"boot"` when in doubt; not `"iid"` with unequal spread |
+| **Equal slopes?** | `anova(fit10, fit50, fit90)` (joint test), `joint = FALSE` (one predictor at a time) |
+| **Reading it** | A difference in a **conditional** quantile, not an effect on the people at the top |
+| **Advantages** | No normality or constant variance needed; robust to outliers in $y$; quantiles commute with log and other monotone transformations |
+| **Dangers** | Crossing quantiles; extreme $\tau$ with small samples; dependent data; not robust to outliers in $x$ |
+| **Alternatives** | [Robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd), [WLS](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd) and [GLS](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd) for the mean; [quantile forests](EXAMPLE_RANDOM_FOREST.Rmd) for non-linear quantiles; unconditional quantile regression (RIF) for effects on the whole market |
+
+---
+
+## References
+
+Chernozhukov, V., Fernández-Val, I., & Galichon, A. (2010). Quantile and probability curves without crossing. *Econometrica*, *78*(3), 1093–1125. https://doi.org/10.3982/ECTA7880
+
+Firpo, S., Fortin, N. M., & Lemieux, T. (2009). Unconditional quantile regressions. *Econometrica*, *77*(3), 953–973. https://doi.org/10.3982/ECTA6822
+
+Hendricks, W., & Koenker, R. (1992). Hierarchical spline models for conditional quantiles and the demand for electricity. *Journal of the American Statistical Association*, *87*(417), 58–68. https://doi.org/10.1080/01621459.1992.10475175
+
+HM Land Registry. (2026). *Price Paid Data* [Data set]. Open Government Licence v3.0. https://www.gov.uk/government/statistical-data-sets/price-paid-data-downloads. Contains HM Land Registry data © Crown copyright and database right 2021. This data is licensed under the Open Government Licence v3.0.
+
+Koenker, R. (2005). *Quantile regression*. Cambridge University Press. https://doi.org/10.1017/CBO9780511754098
+
+Koenker, R., & Bassett, G., Jr. (1978). Regression quantiles. *Econometrica*, *46*(1), 33–50. https://doi.org/10.2307/1913643
+
+Koenker, R., & Bassett, G., Jr. (1982). Robust tests for heteroscedasticity based on regression quantiles. *Econometrica*, *50*(1), 43–61. https://doi.org/10.2307/1912528
+
+Koenker, R., & Hallock, K. F. (2001). Quantile regression. *Journal of Economic Perspectives*, *15*(4), 143–156. https://doi.org/10.1257/jep.15.4.143
+
+Powell, J. L. (1991). Estimation of monotonic regression models under quantile restrictions. In W. A. Barnett, J. Powell, & G. Tauchen (Eds.), *Nonparametric and semiparametric methods in econometrics and statistics* (pp. 357–384). Cambridge University Press.

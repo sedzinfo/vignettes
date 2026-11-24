@@ -1,0 +1,723 @@
+---
+title: "Generalized Least Squares: Okun's Law With Errors That Remember"
+description: "Generalized least squares (GLS) in R with nlme::gls(), on FRED's US quarterly unemployment and real GDP, 1948-2019: Okun's law with autocorrelated errors and a variance that changed over time, detecting both (ACF, PACF, Durbin-Watson, Breusch-Godfrey), AR(1), ARMA and variance structures compared with AIC and likelihood-ratio tests, REML against ML, OLS against GLS, GLS by hand (Prais-Winsten), Newey-West standard errors as the alternative, the caveats and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from FRED each time it runs (in under a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: how much does unemployment fall when the economy grows?
+
+In 1962 the economist Arthur Okun noticed that when the US economy grows fast, unemployment falls, and when it stalls, unemployment rises. The relation, now called **Okun's law**, is one of the best known rules of thumb in macroeconomics (Okun, 1962). It is a regression, and this page asks: **by how much does the unemployment rate change, quarter by quarter, for each percentage point of economic growth?**
+
+An ordinary regression (OLS) assumes that each quarter's error is **independent** of the others, and that the errors have the **same spread** in every quarter. Economic data break both assumptions:
+
+- **Errors that remember.** A quarter that is worse than the rule predicts tends to be followed by another one: unemployment moves in slow waves. The errors are **autocorrelated**.
+- **A spread that changes.** The economy was far more volatile in the 1950s to 1970s than it has been since the mid 1980s. The errors have **unequal variances**.
+
+OLS still gives unbiased estimates when the errors are like that, but they are not the most precise ones and, worse, the standard errors and *p* values are wrong. **Generalized least squares (GLS)** puts the memory and the changing spread into the model, and gives the best estimates for the errors that the data actually have.
+
+| Problem | What it looks like | In `nlme::gls()` |
+|---|---|---|
+| Errors depend on the previous ones | residuals run in streaks; the ACF is not zero | `correlation = corAR1()`, `corARMA()` |
+| The spread differs between groups | the residuals are wider in some groups | `weights = varIdent(form = ~ 1 &#124; group)` |
+| The spread follows a covariate | the residuals fan out as a variable grows | `weights = varPower()`, `varExp()` |
+| Both | both signs together | `correlation = ...` and `weights = ...` in the same call |
+
+If you know the weighted version, see [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd): it is GLS for the case when the errors are independent and only the variances differ. Two other pages deal with different departures from OLS: [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd) for outliers, and [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd) for effects that differ along the distribution of the outcome. The [polynomial regression example](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd) shows a first, short `gls()` with AR(1) errors, on the CO₂ record; here we go much deeper, on different data.
+
+```{r packages}
+library(ggplot2)
+library(nlme)       # gls() and the correlation and variance structures (comes with R)
+library(lmtest)     # dwtest(), bgtest()
+library(sandwich)   # NeweyWest()
+
+# colours: the same for the same thing in every chart
+era_colours    <- c("1948-83" = "#2a78d6", "1984-2019" = "#eb6834")
+method_colours <- c("OLS, usual SE"      = "#2a78d6", "OLS, Newey-West SE"   = "#eb6834",
+                    "GLS, AR(1)"         = "#1baf7a", "GLS, AR(1) + variance" = "#eda100")
+
+# number formats for the text
+f1   <- function(x) trimws(formatC(x, format = "f", digits = 1, big.mark = ","))
+f2   <- function(x) trimws(formatC(x, format = "f", digits = 2, big.mark = ","))
+f3   <- function(x) trimws(formatC(x, format = "f", digits = 3))
+f4   <- function(x) trimws(formatC(x, format = "f", digits = 4))
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+```
+
+---
+
+## 1. The data
+
+The Federal Reserve Bank of St. Louis publishes thousands of economic series on its site FRED, free and with no login. Each can be downloaded as a CSV file straight from R. We need two series:
+
+- **`GDPC1`**: real gross domestic product of the United States, from the US Bureau of Economic Analysis. Real means adjusted for inflation. FRED gives its units as *billions of chained 2017 dollars, seasonally adjusted annual rate*, one value per quarter.
+- **`UNRATE`**: the civilian unemployment rate, from the US Bureau of Labor Statistics, in *percent, seasonally adjusted*, one value per month. It is the percentage of the labour force (people aged 16 and over, not in institutions or the armed forces) who are without a job and looking for one.
+
+FRED labels both series "public domain: citation requested", so they are free to use, and it asks that you cite the source (see the references). The units above are the ones in FRED's own notes for each series.
+
+```{r download}
+download_time <- system.time({
+  gdp <- read.csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=GDPC1")
+  une <- read.csv("https://fred.stlouisfed.org/graph/fredgraph.csv?id=UNRATE")
+})[["elapsed"]]
+head(gdp, 3)
+head(une, 3)
+```
+
+Both files together took `r f1(download_time)` seconds. `GDPC1` has `r num(nrow(gdp))` quarters (from `r gdp$observation_date[1]`) and `UNRATE` has `r num(nrow(une))` months (from `r une$observation_date[1]`).
+
+Okun's law is usually written in **changes**: the change in the unemployment rate against the growth of output. Two steps put the data in that form.
+
+```{r tidy}
+# 1. unemployment: the mean of the three months of each quarter (a quarter with a missing month is NA)
+une$quarter <- as.Date(cut(as.Date(une$observation_date), "quarter"))
+quarterly   <- aggregate(UNRATE ~ quarter, data = une, na.action = na.pass,
+                         FUN = function(x) if (length(x) == 3) mean(x) else NA)
+missing_months <- une$observation_date[is.na(une$UNRATE)]
+
+# 2. join with GDP, and take changes
+gdp$quarter <- as.Date(gdp$observation_date)
+d <- merge(gdp, quarterly, by = "quarter")
+d <- d[order(d$quarter), ]
+d$growth  <- c(NA, 400 * diff(log(d$GDPC1)))   # growth of real GDP, % at an annual rate
+d$du      <- c(NA, diff(d$UNRATE))             # change in the unemployment rate, percentage points
+d$growth1 <- c(NA, head(d$growth, -1))         # last quarter's growth (used in section 8)
+covid <- subset(d, quarter >= as.Date("2020-01-01") & quarter <= as.Date("2020-07-01"))
+d <- d[complete.cases(d) & d$quarter < as.Date("2020-01-01"), ]
+d$year <- as.numeric(format(d$quarter, "%Y")) + (as.numeric(format(d$quarter, "%m")) - 1) / 12
+d$era  <- factor(ifelse(d$quarter < as.Date("1984-01-01"), "1948-83", "1984-2019"))
+head(d[, c("quarter", "growth", "du", "growth1")], 4)
+```
+
+- **`growth`** is $400 \times \Delta \ln(\text{GDP})$: the quarter's growth of real GDP in percent, expressed at an annual rate, as the statistical agencies do. A value of 3 means "growing at 3% a year".
+- **`du`** is the change in the quarterly unemployment rate from the previous quarter, in **percentage points**. A value of 0.2 means that the rate rose, say, from 5.0% to 5.2%.
+
+The sample runs from `r format(min(d$quarter), "%Y")` Q`r (as.numeric(format(min(d$quarter), "%m")) - 1) / 3 + 1` to `r format(max(d$quarter), "%Y")` Q4, `r num(nrow(d))` quarters (the first quarters are lost to taking changes and lags). **We stop at the end of 2019.** In the second quarter of 2020 the economy shrank at an annual rate of `r f1(-covid$growth[covid$quarter == as.Date("2020-04-01")])`% in one quarter, and the next quarter rebounded; those few quarters are so extreme that they would decide the whole regression, and they are not an error structure but a one-off shock. The unemployment file has `r sum(is.na(une$UNRATE))` missing month (`r paste(missing_months, collapse = ", ")`); the code above sets its quarter to missing, and it lies after our sample anyway.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ols <- lm(du ~ growth, data = d)
+
+ggplot(d, aes(growth, du)) +
+  geom_hline(yintercept = 0, colour = "grey75") +
+  geom_vline(xintercept = 0, colour = "grey75") +
+  geom_point(aes(colour = era), alpha = 0.7, size = 1.8) +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "grey20", se = FALSE, linewidth = 0.8) +
+  scale_colour_manual(values = era_colours) +
+  labs(title = "Okun's law: faster growth, falling unemployment",
+       subtitle = "One point per quarter, 1948-2019. Line: the ordinary least squares fit.",
+       x = "growth of real GDP (% at an annual rate)",
+       y = "change in unemployment rate (points)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+summary(ols)$coefficients
+```
+
+The relation is clear: the OLS slope is `r f3(coef(ols)[["growth"]])`. For each extra percentage point of annual growth, the unemployment rate changes by `r f3(coef(ols)[["growth"]])` points in the quarter, and, with no growth at all, it rises by `r f2(coef(ols)[[1]])` points a quarter (the intercept). But this chart hides the order of the quarters, and the order is where the trouble is. The residuals, in time order:
+
+```{r look_residuals}
+d$ols_resid <- resid(ols)
+
+ggplot(d, aes(quarter, ols_resid)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_vline(xintercept = as.Date("1984-01-01"), linetype = "dashed", colour = "grey40") +
+  geom_line(colour = "grey60", linewidth = 0.3) +
+  geom_point(aes(colour = era), size = 1.4) +
+  scale_colour_manual(values = era_colours) +
+  labs(title = "The OLS residuals in time order",
+       subtitle = "Dashed line: the first quarter of 1984",
+       x = NULL, y = "residual (points)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+sd_era <- tapply(d$ols_resid, d$era, sd)
+```
+
+Two patterns, one for each assumption:
+
+1. **Streaks.** The residuals do not jump around at random: several quarters in a row are above zero, then several below. The errors remember.
+2. **A change of spread.** The scatter is wide up to the early 1980s and narrower after. The standard deviation of the residuals is `r f3(sd_era[["1948-83"]])` points before 1984 and `r f3(sd_era[["1984-2019"]])` after, `r f2(sd_era[["1948-83"]] / sd_era[["1984-2019"]])` times as large. This calmer period is known as the **Great Moderation** (Kim & Nelson, 1999; McConnell & Perez-Quiros, 2000). We chose 1984 by looking at the chart and from that literature, not by a test: keep that in mind when we test the difference in section 4.
+
+### Detecting autocorrelation
+
+Three tools, from the picture to the test.
+
+**The ACF and PACF of the residuals.** The **autocorrelation function (ACF)** is the correlation of the residuals with themselves *k* quarters earlier, for k = 1, 2, 3... The **partial autocorrelation function (PACF)** is the same after removing the effect of the quarters in between. For independent errors, nearly all bars lie within the dashed band ($\pm 1.96/\sqrt{n}$).
+
+```{r acf}
+correlogram <- function(x, lag.max = 16) {
+  a <- acf(x,  lag.max = lag.max, plot = FALSE)
+  p <- pacf(x, lag.max = lag.max, plot = FALSE)
+  data.frame(lag = c(a$lag[-1], p$lag), value = c(a$acf[-1], p$acf),
+             type = rep(c("ACF", "PACF"), each = lag.max))
+}
+band <- qnorm(.975) / sqrt(nrow(d))
+
+ggplot(correlogram(d$ols_resid), aes(lag, value)) +
+  geom_hline(yintercept = 0, colour = "grey50") +
+  geom_hline(yintercept = c(-band, band), linetype = "dashed", colour = "#2a78d6") +
+  geom_col(width = 0.35, fill = "grey35") +
+  facet_wrap(~ type) +
+  labs(title = "ACF and PACF of the OLS residuals",
+       x = "lag (quarters)", y = "correlation") +
+  theme_bw()
+acf_values  <- acf(d$ols_resid, plot = FALSE)$acf[-1]
+pacf_values <- pacf(d$ols_resid, plot = FALSE)$acf
+```
+
+How to read it: the ACF starts at `r f2(acf_values[1])` at lag 1 and dies away over a few quarters, while the PACF has one large bar at lag 1 (`r f2(pacf_values[1])`) and then little. A large first bar in the PACF with an ACF that decays is the signature of an **AR(1)** process: each error is a fraction of the previous one, plus new noise. (An ACF that stops after $q$ lags and a PACF that decays points to a moving average, MA($q$).)
+
+**The Durbin-Watson test** looks at the correlation at lag 1 only. The statistic is about $2(1 - r_1)$: it is 2 when there is no autocorrelation, and below 2 when it is positive.
+
+**The Breusch-Godfrey test** tests up to a chosen lag (here 4 quarters, a year) and, unlike Durbin-Watson, it remains valid when the predictors include lagged values of the outcome.
+
+```{r dw_bg}
+dw <- dwtest(ols)
+bg <- bgtest(ols, order = 4)
+dw
+bg
+```
+
+Both reject the hypothesis of independent errors: Durbin-Watson $d$ = `r f2(dw$statistic)`, *p* `r pval(dw$p.value)`; Breusch-Godfrey $\chi^2$(4) = `r f1(bg$statistic)`, *p* `r pval(bg$p.value)`.
+
+### Detecting unequal variances
+
+For the variance, plot the residuals against the thing that might drive it (here time, above) or the fitted values, and compare the spread of the groups. A formal check is fitted below: the likelihood-ratio test of a model in which the variance differs between the two periods (section 4). The usual textbook tests of equal variance (Breusch-Pagan, Levene) assume independent errors, which we have just seen is wrong here, so the model comparison is the cleaner route.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the linear model with general errors
+
+$$\mathbf{y} = \mathbf{X}\boldsymbol\beta + \boldsymbol\varepsilon, \qquad \operatorname{Var}(\boldsymbol\varepsilon) = \sigma^2 \boldsymbol\Omega$$
+
+$\mathbf{y}$ is the vector of the `r num(nrow(d))` changes in unemployment, $\mathbf{X}$ the matrix with a column of ones and the growth, and $\boldsymbol\beta$ the intercept and slope. OLS assumes $\boldsymbol\Omega = \mathbf{I}$, the identity matrix: ones on the diagonal (equal variances) and zeros elsewhere (no correlations). GLS lets $\boldsymbol\Omega$ be any symmetric positive definite matrix:
+
+- the **diagonal** of $\boldsymbol\Omega$ holds the relative variances of the errors;
+- the **off-diagonal** cells hold their correlations.
+
+### Step 2: the GLS estimator
+
+$$\hat{\boldsymbol\beta}_{GLS} = (\mathbf{X}'\boldsymbol\Omega^{-1}\mathbf{X})^{-1}\mathbf{X}'\boldsymbol\Omega^{-1}\mathbf{y}, \qquad \operatorname{Var}(\hat{\boldsymbol\beta}_{GLS}) = \sigma^2(\mathbf{X}'\boldsymbol\Omega^{-1}\mathbf{X})^{-1}$$
+
+With $\boldsymbol\Omega = \mathbf{I}$ this is the OLS formula, $(\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\mathbf{y}$. The estimator is due to Aitken (1935). By the Gauss-Markov theorem generalised to correlated errors, it is the best linear unbiased estimator when $\boldsymbol\Omega$ is right: no other linear unbiased estimator has smaller variance.
+
+### Step 3: GLS is OLS on transformed data
+
+Write $\boldsymbol\Omega = \mathbf{L}\mathbf{L}'$ (the Cholesky decomposition, the matrix version of a square root) and multiply the model by $\mathbf{L}^{-1}$:
+
+$$\underbrace{\mathbf{L}^{-1}\mathbf{y}}_{\mathbf{y}^*} = \underbrace{\mathbf{L}^{-1}\mathbf{X}}_{\mathbf{X}^*}\boldsymbol\beta + \underbrace{\mathbf{L}^{-1}\boldsymbol\varepsilon}_{\boldsymbol\varepsilon^*}, \qquad \operatorname{Var}(\boldsymbol\varepsilon^*) = \sigma^2\mathbf{L}^{-1}\boldsymbol\Omega\mathbf{L}^{-1\prime} = \sigma^2\mathbf{I}$$
+
+The transformed errors are independent with equal variances, so ordinary least squares on $(\mathbf{y}^*, \mathbf{X}^*)$ is exactly right. That is the whole idea: **GLS is OLS after transforming the data by $\boldsymbol\Omega^{-1/2}$**, which removes the memory and equalises the spread. Section 6 does it by hand.
+
+### Step 4: the two classic cases
+
+**Unequal variances, independent errors.** $\boldsymbol\Omega$ is diagonal, $\operatorname{diag}(\omega_1, \dots, \omega_n)$. The transformation divides each observation by $\sqrt{\omega_i}$: noisy observations count for less. This is **weighted least squares**, with weights $1/\omega_i$ (see the [WLS example](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd)). `varIdent()`, `varPower()` and `varExp()` give the $\omega_i$ a shape, with few parameters.
+
+**AR(1) errors.** Each error is a fraction $\phi$ of the one before, plus new noise:
+
+$$\varepsilon_t = \phi\,\varepsilon_{t-1} + u_t, \qquad u_t \sim (0, \sigma_u^2), \qquad |\phi| < 1$$
+
+The correlation of two errors $k$ quarters apart is $\phi^k$: it decays geometrically, which is what the ACF above showed. So $\boldsymbol\Omega$ has $\Omega_{ij} = \phi^{|i-j|}$ (up to the scale $1/(1-\phi^2)$ that goes into $\sigma^2$), and $\boldsymbol\Omega^{-1/2}$ is a simple "quasi-differencing":
+
+$$y_t^* = y_t - \phi\,y_{t-1}, \qquad x_t^* = x_t - \phi\,x_{t-1} \qquad (t = 2, \dots, n)$$
+
+and, to keep the first observation, $y_1^* = \sqrt{1-\phi^2}\,y_1$ and $x_1^* = \sqrt{1-\phi^2}\,x_1$ (Prais & Winsten, 1954). Dropping the first observation instead is the Cochrane-Orcutt method (Cochrane & Orcutt, 1949). In the transformed data the errors are $u_t$: independent.
+
+### Step 5: the matrix $\boldsymbol\Omega$ is unknown
+
+In practice we never know $\phi$ or the variance ratios. **Feasible GLS** estimates them from the data, usually by maximum likelihood (ML) or restricted maximum likelihood (REML), and then uses the estimated $\hat{\boldsymbol\Omega}$ in the formula. That is what `gls()` does, and the price is that the standard errors no longer account for the uncertainty in $\hat{\boldsymbol\Omega}$: they are good in large samples, a little optimistic in small ones.
+
+### Step 6: what goes wrong with OLS
+
+With $\operatorname{Var}(\boldsymbol\varepsilon) = \sigma^2\boldsymbol\Omega$, OLS is still unbiased, but its true variance is
+
+$$\operatorname{Var}(\hat{\boldsymbol\beta}_{OLS}) = \sigma^2(\mathbf{X}'\mathbf{X})^{-1}\mathbf{X}'\boldsymbol\Omega\mathbf{X}(\mathbf{X}'\mathbf{X})^{-1}$$
+
+and `lm()` reports $\sigma^2(\mathbf{X}'\mathbf{X})^{-1}$, which is only the same when $\boldsymbol\Omega = \mathbf{I}$. With positive autocorrelation of both the errors and the predictor, the true variance is usually larger than the reported one: the standard errors are too small, and the *p* values too optimistic. The expression in the middle is also what the **Newey-West** estimator of section 7 estimates, so that OLS can be kept.
+
+---
+
+## 4. Fitting the models
+
+### The starting point: no structure
+
+`gls()` with no extra arguments is OLS, fitted by likelihood. The estimates match `lm()`:
+
+```{r gls_ols}
+fit_ols <- gls(du ~ growth, data = d, method = "ML")
+rbind(lm = coef(ols), gls = coef(fit_ols))
+```
+
+### One structure at a time
+
+We now add a correlation structure, a variance structure, or both. Each model is fitted by **maximum likelihood** (`method = "ML"`), for a reason explained below.
+
+```{r gls_fits}
+d$time10    <- (d$year - 1984) / 10        # decades from 1984
+d$growthdev <- abs(d$growth - mean(d$growth))
+
+fits <- list(
+  "OLS (independent, equal variances)" = fit_ols,
+  "AR(1)"                              = update(fit_ols, correlation = corAR1()),
+  "AR(2)"                              = update(fit_ols, correlation = corARMA(p = 2)),
+  "ARMA(1,1)"                          = update(fit_ols, correlation = corARMA(p = 1, q = 1)),
+  "Variance by period"                 = update(fit_ols, weights = varIdent(form = ~ 1 | era)),
+  "AR(1) + variance by time (varExp)"  = update(fit_ols, correlation = corAR1(), weights = varExp(form = ~ time10)),
+  "AR(1) + variance by growth (varPower)" = update(fit_ols, correlation = corAR1(), weights = varPower(form = ~ growthdev)),
+  "AR(1) + variance by period"         = update(fit_ols, correlation = corAR1(), weights = varIdent(form = ~ 1 | era)),
+  "AR(2) + variance by period"         = update(fit_ols, correlation = corARMA(p = 2), weights = varIdent(form = ~ 1 | era)),
+  "ARMA(1,1) + variance by period"     = update(fit_ols, correlation = corARMA(p = 1, q = 1), weights = varIdent(form = ~ 1 | era))
+)
+
+comparison <- data.frame(
+  model   = names(fits),
+  params  = sapply(fits, function(f) attr(logLik(f), "df")),
+  logLik  = sapply(fits, function(f) as.numeric(logLik(f))),
+  AIC     = sapply(fits, AIC),
+  BIC     = sapply(fits, BIC),
+  slope   = sapply(fits, function(f) coef(f)[["growth"]]),
+  row.names = NULL)
+comparison$dAIC <- comparison$AIC - min(comparison$AIC)
+comparison[, c("model", "params", "logLik", "AIC", "dAIC", "BIC", "slope")]
+```
+
+Each row is a different guess about $\boldsymbol\Omega$. **AIC** (and BIC) measure the fit with a penalty for the number of parameters: smaller is better, and a difference of more than about 2 matters. AIC can be negative: only the differences between models matter. Reading the table:
+
+- **Correlation alone.** AR(1) lowers AIC from `r f1(comparison$AIC[1])` to `r f1(comparison$AIC[2])`. AR(2) and ARMA(1,1) add a parameter or two and are **worse** than AR(1): the single parameter $\phi$ was enough, as the PACF suggested.
+- **Variance alone**, with independent errors, helps too (AIC `r f1(comparison$AIC[5])`), but less than the correlation does.
+- **Both together** is far better than either: AIC `r f1(comparison$AIC[8])` for AR(1) with a variance that differs between the two periods.
+- **Variance structures compared**, all on top of AR(1): by period (`r f1(comparison$AIC[8])`) beats a variance that changes smoothly with time (`varExp`, `r f1(comparison$AIC[6])`) and one that grows with the distance of growth from its mean (`varPower`, `r f1(comparison$AIC[7])`). The spread changed once, around 1984, more than it drifted.
+- **Richer correlation on top** (AR(2) or ARMA(1,1) with the variance) does not pay: AIC `r f1(comparison$AIC[9])` and `r f1(comparison$AIC[10])`.
+
+**We keep AR(1) with a variance that differs by period.** The formal comparisons are likelihood-ratio tests of nested models, which `anova()` does for `gls` objects:
+
+```{r lrt}
+lrt_corr <- anova(fits[["Variance by period"]], fits[["AR(1) + variance by period"]])   # add AR(1)
+lrt_var  <- anova(fits[["AR(1)"]],              fits[["AR(1) + variance by period"]])   # add the variance
+lrt_ar2  <- anova(fits[["AR(1) + variance by period"]], fits[["AR(2) + variance by period"]])
+lrt_corr
+lrt_var
+```
+
+- Adding AR(1) to the model with unequal variances: $\chi^2$(1) = `r f1(lrt_corr$L.Ratio[2])`, *p* `r pval(lrt_corr$"p-value"[2])`.
+- Adding the variance by period to the AR(1) model: $\chi^2$(1) = `r f1(lrt_var$L.Ratio[2])`, *p* `r pval(lrt_var$"p-value"[2])`. The 1984 cut was chosen by looking at the data, so this *p* value is a little too good; with a difference this large the conclusion does not depend on it.
+- Adding a second AR term: $\chi^2$(1) = `r f2(lrt_ar2$L.Ratio[2])`, *p* `r pval(lrt_ar2$"p-value"[2])`: not needed.
+
+### ML or REML?
+
+`gls()` has two ways to estimate the variance and correlation parameters:
+
+| | REML (the default) | ML (`method = "ML"`) |
+|---|---|---|
+| The idea | maximises the likelihood of the residuals, after removing the fixed effects | maximises the likelihood of the data |
+| Variance parameters | less biased: it allows for the degrees of freedom used by $\boldsymbol\beta$, as dividing by $n - p$ does | biased down, like dividing by $n$ |
+| Likelihoods of two models | comparable **only if their fixed effects (the formula) are the same** | comparable whatever the fixed effects |
+
+So the rule: **to compare models that differ only in the correlation or variance structure, REML is fine; to compare models with different fixed effects, as in section 8, use ML**. Above, the fixed effects are always the same, so REML would do; we used ML anyway so that every model of this page is on the same footing. For the **final** model, and for reporting, we refit with REML. The two fits are close, and REML has the slightly larger $\hat\sigma$:
+
+```{r final}
+final    <- update(fits[["AR(1) + variance by period"]], method = "REML")
+final_ml <- fits[["AR(1) + variance by period"]]
+summary(final)
+rbind(ML = c(coef(final_ml), phi = coef(final_ml$modelStruct$corStruct, unconstrained = FALSE), sigma = sigma(final_ml)),
+      REML = c(coef(final), phi = coef(final$modelStruct$corStruct, unconstrained = FALSE), sigma = sigma(final)))
+```
+
+### Reading the output
+
+```{r final_numbers}
+phi_hat   <- coef(final$modelStruct$corStruct, unconstrained = FALSE)[[1]]
+ratio_hat <- coef(final$modelStruct$varStruct, unconstrained = FALSE)[[1]]   # SD of 1984-2019 / SD of 1948-83
+ci_final  <- intervals(final)
+tt_final  <- summary(final)$tTable
+sigma_hat <- sigma(final)
+```
+
+- **Coefficients.** The slope is `r f3(coef(final)[["growth"]])` (SE = `r f3(tt_final["growth", "Std.Error"])`): each extra point of annual growth lowers the quarterly change in unemployment by `r f3(-coef(final)[["growth"]])` points. With no growth, the rate rises by `r f2(coef(final)[[1]])` points a quarter. These are the **Okun's law** estimates, after allowing for the memory and the changing spread.
+- **`Phi`** is the AR(1) coefficient: `r f2(phi_hat)`, 95% CI [`r f2(ci_final$corStruct[1])`, `r f2(ci_final$corStruct[3])`]. A quarter's error carries over about `r nz(phi_hat, 2)` of itself into the next quarter, `r nz(phi_hat^2, 2)` two quarters later, and so on.
+- **The variance function.** `varIdent()` gives the first group (1948-83) the multiplier 1 and estimates the other relative to it: `r f2(ratio_hat)`, 95% CI [`r f2(ci_final$varStruct[1])`, `r f2(ci_final$varStruct[3])`]. After 1984 the errors have `r f2(ratio_hat)` times the standard deviation of the earlier years.
+- **Residual standard error** `r f2(sigma_hat)`: the standard deviation of the errors in the *reference* group (1948-83). The post-1984 errors have a standard deviation of `r f2(sigma_hat * ratio_hat)`.
+
+### Checking the fit
+
+If the model is right, the **normalised residuals**, $\hat{\mathbf{L}}^{-1}\hat{\boldsymbol\varepsilon}$ (the residuals after the transformation of step 3), should look like independent noise with equal spread: no streaks, the same spread in both periods, an ACF inside the band. `resid(final, type = "normalized")` gives them.
+
+```{r check_residuals}
+d$gls_resid <- resid(final, type = "normalized")
+
+ggplot(d, aes(quarter, gls_resid)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_vline(xintercept = as.Date("1984-01-01"), linetype = "dashed", colour = "grey40") +
+  geom_line(colour = "grey60", linewidth = 0.3) +
+  geom_point(aes(colour = era), size = 1.4) +
+  scale_colour_manual(values = era_colours) +
+  labs(title = "The normalised GLS residuals",
+       subtitle = "Dashed line: the first quarter of 1984",
+       x = NULL, y = "normalised residual", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+both <- rbind(cbind(correlogram(d$ols_resid), model = "OLS residuals"),
+              cbind(correlogram(d$gls_resid), model = "GLS normalised residuals"))
+both$model <- factor(both$model, levels = c("OLS residuals", "GLS normalised residuals"))
+ggplot(subset(both, type == "ACF"), aes(lag, value)) +
+  geom_hline(yintercept = 0, colour = "grey50") +
+  geom_hline(yintercept = c(-band, band), linetype = "dashed", colour = "#2a78d6") +
+  geom_col(width = 0.35, fill = "grey35") +
+  facet_wrap(~ model) +
+  labs(title = "The ACF before and after GLS",
+       x = "lag (quarters)", y = "autocorrelation") +
+  theme_bw()
+sd_gls_era <- tapply(d$gls_resid, d$era, sd)
+acf_gls    <- acf(d$gls_resid, plot = FALSE)$acf[-1]
+lb_gls     <- Box.test(d$gls_resid, lag = 8, type = "Ljung-Box")
+```
+
+The streaks are gone and the spread is the same in both periods: the normalised residuals have a standard deviation of `r f2(sd_gls_era[["1948-83"]])` before 1984 and `r f2(sd_gls_era[["1984-2019"]])` after. The first autocorrelation fell from `r f2(acf_values[1])` to `r f2(acf_gls[1])`, and most bars of the ACF are inside the band. A Ljung-Box test of the first 8 lags does not reject independence at the .05 level, $\chi^2$(8) = `r f1(lb_gls$statistic)`, *p* `r pval(lb_gls$p.value)`.
+
+---
+
+## 5. OLS against GLS
+
+```{r compare}
+ols_se   <- summary(ols)$coefficients[, "Std. Error"]
+ar1_fit  <- update(fits[["AR(1)"]], method = "REML")
+nw       <- NeweyWest(ols, lag = 4, prewhite = FALSE)
+nw_se    <- sqrt(diag(nw))
+
+comp <- data.frame(
+  method   = c("OLS, usual SE", "OLS, Newey-West SE", "GLS, AR(1)", "GLS, AR(1) + variance"),
+  slope    = c(coef(ols)[["growth"]], coef(ols)[["growth"]],
+               coef(ar1_fit)[["growth"]], coef(final)[["growth"]]),
+  se       = c(ols_se[["growth"]], nw_se[["growth"]],
+               summary(ar1_fit)$tTable["growth", "Std.Error"], tt_final["growth", "Std.Error"]),
+  intercept = c(coef(ols)[[1]], coef(ols)[[1]], coef(ar1_fit)[[1]], coef(final)[[1]]),
+  se_int   = c(ols_se[[1]], nw_se[[1]],
+               summary(ar1_fit)$tTable[1, "Std.Error"], tt_final[1, "Std.Error"]))
+comp$method <- factor(comp$method, levels = comp$method)
+comp$lower  <- comp$slope - qnorm(.975) * comp$se
+comp$upper  <- comp$slope + qnorm(.975) * comp$se
+comp$ratio  <- comp$se / comp$se[1]
+comp[, c("method", "intercept", "se_int", "slope", "se", "ratio")]
+```
+
+```{r compare_chart}
+ggplot(comp, aes(slope, method, colour = method)) +
+  geom_vline(xintercept = 0, colour = "grey75") +
+  geom_errorbar(aes(xmin = lower, xmax = upper), width = 0.25) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = method_colours) +
+  scale_y_discrete(limits = rev) +
+  labs(title = "The Okun slope, four ways",
+       subtitle = "Points: the slope. Bars: 95% confidence intervals.",
+       x = "change in unemployment per point of growth (points)", y = NULL, colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom", axis.text.y = element_blank(), axis.ticks.y = element_blank())
+```
+
+```{r compare_lines}
+lines <- data.frame(growth = seq(min(d$growth), max(d$growth), length.out = 100))
+lines <- rbind(
+  data.frame(lines, du = coef(ols)[[1]] + coef(ols)[["growth"]] * lines$growth, method = "OLS, usual SE"),
+  data.frame(lines, du = coef(final)[[1]] + coef(final)[["growth"]] * lines$growth, method = "GLS, AR(1) + variance"))
+lines$method <- factor(lines$method, levels = c("OLS, usual SE", "GLS, AR(1) + variance"))
+ggplot(d, aes(growth, du)) +
+  geom_point(colour = "grey65", size = 1.4) +
+  geom_line(data = lines, aes(colour = method), linewidth = 0.9) +
+  scale_colour_manual(values = method_colours) +
+  labs(title = "The OLS and GLS lines",
+       x = "growth of real GDP (% at an annual rate)",
+       y = "change in unemployment rate (points)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+Two things stand out, and neither is what a textbook example would give.
+
+**1. The standard error hardly changes between OLS and GLS.** With the usual OLS SE as the benchmark, the GLS standard errors are `r f2(comp$ratio[3])` times (AR(1)) and `r f2(comp$ratio[4])` times (AR(1) with variance) as large. We might have expected a big increase, as in the [CO₂ example](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd). One reason is that GLS does two things at once: it makes the standard errors honest *and* it makes the estimate more precise, by giving less weight to the noisy early years and by using the information in the streaks. These two effects can cancel, and they seem to here. The Newey-West standard error (section 7), which corrects the inference without changing the estimate, is `r f2(comp$ratio[2])` times the usual one: that is the honest price of the autocorrelation if we keep OLS.
+
+**2. The slope itself moves a lot**: from `r f3(comp$slope[1])` (OLS) to `r f3(comp$slope[3])` (AR(1)) and `r f3(comp$slope[4])` (AR(1) with variance), a change of about `r round(100 * abs(comp$slope[4] / comp$slope[1] - 1))`% of the OLS value, and well outside the OLS interval, [`r f3(comp$lower[1])`, `r f3(comp$upper[1])`]. If the errors were just autocorrelated and independent of the predictor, OLS and GLS would both estimate the same slope, and would differ only by chance. A gap this large is a warning that **something is missing from the mean model**. Section 8 follows it up.
+
+---
+
+## 6. GLS by hand: the Prais-Winsten transformation
+
+To see that GLS really is OLS on transformed data, we do it several ways with the $\hat\phi$ from the ML fit of AR(1) (without the variance), `r f3(coef(fits[["AR(1)"]]$modelStruct$corStruct, unconstrained = FALSE)[[1]])`.
+
+```{r by_hand}
+y <- d$du
+X <- cbind(`(Intercept)` = 1, growth = d$growth)
+n <- length(y)
+phi <- coef(fits[["AR(1)"]]$modelStruct$corStruct, unconstrained = FALSE)[[1]]
+
+# (a) the formula, with the matrix Omega[i, j] = phi^|i - j|
+Omega <- phi^abs(outer(1:n, 1:n, "-"))
+Oinv  <- solve(Omega)
+beta_formula <- solve(t(X) %*% Oinv %*% X, t(X) %*% Oinv %*% y)
+
+# (b) the Prais-Winsten transformation, then ordinary least squares
+y_star <- c(sqrt(1 - phi^2) * y[1],  y[-1] - phi * y[-n])
+X_star <- rbind(sqrt(1 - phi^2) * X[1, ],  X[-1, ] - phi * X[-n, ])
+beta_pw <- coef(lm(y_star ~ X_star - 1))
+
+# (c) the same, dropping the first observation: Cochrane-Orcutt
+beta_co <- coef(lm(y_star[-1] ~ X_star[-1, ] - 1))
+
+# (d) gls() with phi held fixed at the same value
+fit_fixed <- gls(du ~ growth, data = d, correlation = corAR1(value = phi, fixed = TRUE), method = "ML")
+
+# (e) gls() estimating phi
+beta_gls <- coef(fits[["AR(1)"]])
+
+round(rbind("(a) formula" = beta_formula[, 1], "(b) Prais-Winsten" = beta_pw,
+            "(c) Cochrane-Orcutt" = beta_co, "(d) gls, phi fixed" = coef(fit_fixed),
+            "(e) gls, phi estimated" = beta_gls, "OLS" = coef(ols)), 5)
+```
+
+- Rows (a), (b) and (d) are **the same numbers**, as the theory says: the formula, the transformation and `gls()` with the same $\hat\phi$ are three ways to write one calculation. (The largest difference between them is `r formatC(max(abs(beta_formula[, 1] - beta_pw), abs(beta_pw - coef(fit_fixed))), format = "e", digits = 1)`.)
+- Row (c) drops the first quarter and moves the slope by `r formatC(abs(beta_co[2] - beta_pw[2]), format = "e", digits = 1)`: with `r num(n)` observations one quarter does not matter.
+- Row (e) is the `gls()` fit that estimated $\phi$ itself: it is where the value `r f3(phi)` used in the other rows came from, so it agrees with them. The classic iterative Prais-Winsten method has to find $\phi$ on its own: it re-estimates it from the residuals of the transformed fit and repeats until it settles:
+
+```{r iterate}
+phi_it <- 0.5
+for (i in 1:100) {
+  ys <- c(sqrt(1 - phi_it^2) * y[1],  y[-1] - phi_it * y[-n])
+  Xs <- rbind(sqrt(1 - phi_it^2) * X[1, ],  X[-1, ] - phi_it * X[-n, ])
+  b  <- solve(crossprod(Xs), crossprod(Xs, ys))
+  e  <- y - X %*% b
+  phi_new <- sum(e[-1] * e[-n]) / sum(e^2)
+  if (abs(phi_new - phi_it) < 1e-10) break
+  phi_it <- phi_new
+}
+round(c(iterations = i, phi = phi_it, b[, 1]), 4)
+round(c(phi = phi, beta_gls), 4)
+```
+
+It converges to $\hat\phi$ = `r f3(phi_it)` and a slope of `r f4(b[2, 1])`, against `r f3(phi)` and `r f4(beta_gls[["growth"]])` from `gls()`: nearly the same. The small difference is that the two methods estimate $\phi$ by different criteria: the iterative method takes the lag-1 correlation of the residuals, while `gls()` maximises the likelihood.
+
+The matrix in (a) is $`r num(n)` \times `r num(n)`$. That is fine here but impossible for a series of a million observations; `gls()` never builds it, and uses the recursion of (b) instead. The point of the hand calculation is to see what the function does.
+
+---
+
+## 7. The alternative: keep OLS, correct its standard errors
+
+GLS needs a **model of the errors**: here, AR(1) and two variances. If it is wrong, the estimates are still unbiased, but the standard errors can be wrong too. A different approach, common in economics, is to keep the OLS estimate and replace only its standard error with one that stays valid whatever the error structure: a **heteroskedasticity and autocorrelation consistent (HAC)** estimator. The best known is **Newey-West** (Newey & West, 1987), which estimates the middle part of the formula in step 6 by weighting the products of the residuals up to a chosen lag. In R:
+
+```{r newey_west}
+lag_rule <- floor(0.75 * n^(1/3))                       # a common rule of thumb for the lag
+nw_rule  <- sqrt(diag(NeweyWest(ols, lag = lag_rule, prewhite = FALSE)))
+nw_auto  <- sqrt(diag(NeweyWest(ols)))                  # automatic lag selection (Newey & West, 1994), with prewhitening
+rbind(usual = ols_se, "Newey-West, lag 4" = nw_rule, "Newey-West, automatic" = nw_auto)
+coeftest(ols, vcov. = NeweyWest(ols, lag = lag_rule, prewhite = FALSE))
+```
+
+The Newey-West standard error of the slope is `r f4(nw_rule[["growth"]])` (lag `r lag_rule`) or `r f4(nw_auto[["growth"]])` (automatic lag), against `r f4(ols_se[["growth"]])` from the usual formula: `r f2(nw_rule[["growth"]] / ols_se[["growth"]])` and `r f2(nw_auto[["growth"]] / ols_se[["growth"]])` times as large. The OLS conclusion, that the slope is far from zero, stands; only the width of the interval changes: 95% CI [`r f3(coef(ols)[["growth"]] - qnorm(.975) * nw_rule[["growth"]])`, `r f3(coef(ols)[["growth"]] + qnorm(.975) * nw_rule[["growth"]])`].
+
+| | GLS | OLS with Newey-West SEs |
+|---|---|---|
+| Needs a model of the errors | yes | no |
+| Estimate | changes: more efficient if the model is right | the OLS estimate: unchanged |
+| Standard errors | right if the error model is right | right in large samples whatever the error structure |
+| Efficiency | the best, if the model is right | not improved |
+| Needs | a good guess of the structure | a long series (the estimator is erratic in short ones) |
+
+If GLS and OLS agree, use whichever is simpler to explain. If they disagree, as here, do not just choose the one you like: ask why (next section).
+
+---
+
+## 8. Things to keep in mind
+
+### A large gap between OLS and GLS: look for a missing predictor
+
+Okun's law is not instantaneous: output growth acts on unemployment with a delay, as firms hire and fire slowly. Last quarter's growth should also matter. If it is left out of the model, it goes into the error, so the error is correlated with this quarter's growth, because growth itself is autocorrelated (`r f2(cor(d$growth, d$growth1))`). Then:
+
+- the errors look autocorrelated, because last quarter's omitted growth is in them;
+- OLS is biased (it gives this quarter's growth credit for some of last quarter's effect);
+- GLS removes the autocorrelation in a different way, and moves the slope a different way. That is what the gap shows.
+
+The check is to add the lag, and refit by **ML** (the fixed effects now differ):
+
+```{r lag_model}
+fit_lag_ols <- gls(du ~ growth + growth1, data = d, method = "ML")
+fit_lag     <- gls(du ~ growth + growth1, data = d, method = "ML",
+                   correlation = corAR1(), weights = varIdent(form = ~ 1 | era))
+fit_nolag   <- final_ml                      # the section 4 model, on the same rows
+lag_test    <- anova(fit_nolag, fit_lag)
+lag_test
+rbind("OLS, no lag"  = c(coef(ols), growth1 = NA),
+      "OLS, lag"     = coef(fit_lag_ols),
+      "GLS, no lag"  = c(coef(final_ml), growth1 = NA),
+      "GLS, lag"     = coef(fit_lag))
+phi_lag <- coef(fit_lag$modelStruct$corStruct, unconstrained = FALSE)[[1]]
+```
+
+Compare the rows:
+
+- With the lag, the OLS and GLS estimates of the current-quarter slope are much closer: `r f3(coef(fit_lag_ols)[["growth"]])` and `r f3(coef(fit_lag)[["growth"]])`, against `r f3(coef(ols)[["growth"]])` and `r f3(coef(final_ml)[["growth"]])` without it. The gap was mostly a missing predictor.
+- The lag is clearly needed: likelihood-ratio $\chi^2$(1) = `r f1(lag_test$L.Ratio[2])`, *p* `r pval(lag_test$"p-value"[2])`, and AIC falls from `r f1(AIC(fit_nolag))` to `r f1(AIC(fit_lag))`.
+- The AR(1) coefficient falls, from `r f2(phi_hat)` to `r f2(phi_lag)`, but it does not vanish: the unemployment rate has some inertia that the lag does not explain. So the error structure is still needed, though the lag explained part of it.
+- Together, a one-point rise in growth lowers the unemployment rate by `r f3(-sum(coef(fit_lag)[c("growth", "growth1")]))` points over two quarters.
+
+The general rule: **a correlation structure models what the mean model leaves over, and does not replace it.** Fitting an AR(1) is a quick way to fix the standard errors, but when the residuals show streaks, first ask what is *missing from the mean*: a predictor, a lag, a trend, a shift in level. A small simulation shows how an AR(1) can pose as an omitted trend:
+
+```{r hidden_trend}
+set.seed(1)
+sim <- data.frame(t = 1:120)
+sim$y <- 0.05 * sim$t + rnorm(120)         # a straight trend plus independent noise
+phi_no_trend   <- coef(gls(y ~ 1, data = sim, correlation = corAR1())$modelStruct$corStruct, unconstrained = FALSE)[[1]]
+phi_with_trend <- coef(gls(y ~ t, data = sim, correlation = corAR1())$modelStruct$corStruct, unconstrained = FALSE)[[1]]
+c(without_trend = phi_no_trend, with_trend = phi_with_trend)
+```
+
+The noise here is independent by construction. Without the trend in the model, the fitted AR(1) coefficient is `r f2(phi_no_trend)`: the trend leaks into the errors and `gls()` accepts it as memory. With the trend, it is `r f2(phi_with_trend)`. An AR(1) coefficient close to 1 in a regression on a time-ordered series is often this.
+
+### Generalized least squares is not a mixed model
+
+[Multilevel models](EXAMPLE_MULTILEVEL.Rmd) also handle correlated observations, but in a different way:
+
+| | GLS (`nlme::gls`) | Mixed model (`lme`, `lmer`) |
+|---|---|---|
+| Where the correlation comes from | a **pattern** you specify for the errors: AR(1), exchangeable... | **random effects**: each cluster has its own intercept (and slopes) |
+| Targets | the **marginal** model: the average relation, with the correlations of the errors as a nuisance | the **conditional** model: the relation within a cluster, with the between-cluster variation as a result |
+| Typical data | one long series; repeated measurements in fixed time order | observations in clusters: pupils in schools, patients in clinics |
+| Predictions for one cluster | no | yes (the random effects) |
+| Combine them | `lme(..., correlation = corAR1())` puts a random effect and AR(1) errors in the same model | |
+
+A random intercept alone implies a **constant** correlation between any two observations in a cluster, however far apart. An AR(1) implies a correlation that **fades with the distance**. For a single time series, like this one, there are no clusters, and `gls()` is the tool. For repeated measures on many people, the usual answer is a mixed model, with an AR(1) added if the measurements are close together in time.
+
+### Other points
+
+- **The error model is a hypothesis.** AIC picks the best of the structures you tried, not the true one. Plot the normalised residuals each time.
+- **Estimated $\hat{\boldsymbol\Omega}$ is uncertain.** Standard errors from `gls()` take $\hat{\boldsymbol\Omega}$ as given, so they are a little optimistic in short series. With few observations, a HAC estimator is not better; consider a bootstrap that resamples blocks.
+- **Non-stationary series.** If the series wanders, as unemployment *levels* do, a regression of one level on another can show a strong relation that does not exist (a *spurious regression*). We used **changes**, which are stationary. GLS with $\phi$ close to 1 is a sign that differencing is needed.
+- **Heteroskedasticity from the data, not the time.** A variance that grows with the fitted value is modelled with `varPower(form = ~ fitted(.))` (`gls()` did not converge with it on these data, so we used the covariate-based `varPower()` of section 4 instead).
+- **An uneven time grid** needs a continuous-time structure, `corCAR1()`, in place of `corAR1()`.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the data and their units, the problem found in the OLS residuals, the error structure and how it was chosen, the estimates with their uncertainty, and how the result compares with OLS. The numbers come from the R objects:
+
+```{r apa_numbers}
+b_final  <- coef(final)
+ci_coef  <- ci_final$coef
+
+models_table <- data.frame(
+  Model  = c("OLS", "AR(1)", "AR(1) + variance by period", "AR(2) + variance by period",
+             "ARMA(1,1) + variance by period"),
+  k      = comparison$params[c(1, 2, 8, 9, 10)],
+  AIC    = f1(comparison$AIC[c(1, 2, 8, 9, 10)]),
+  BIC    = f1(comparison$BIC[c(1, 2, 8, 9, 10)]),
+  Slope  = f3(comparison$slope[c(1, 2, 8, 9, 10)]),
+  check.names = FALSE)
+
+estimates_table <- data.frame(
+  Method = c("OLS, usual SE", "OLS, Newey-West SE", "GLS, AR(1)", "GLS, AR(1) + variance by period"),
+  Slope  = f3(comp$slope),
+  SE     = f4(comp$se),
+  `95% CI` = paste0("[", f3(comp$lower), ", ", f3(comp$upper), "]"),
+  check.names = FALSE)
+```
+
+**Method** (data analysis):
+
+> We analysed the quarterly change in the US unemployment rate (percentage points; the mean of the monthly seasonally adjusted civilian rate, U.S. Bureau of Labor Statistics) against the growth of real gross domestic product (percent at an annual rate, $400 \times \Delta\ln$ of chained 2017 dollars, seasonally adjusted; U.S. Bureau of Economic Analysis), both from the Federal Reserve Bank of St. Louis' FRED database, for `r num(nrow(d))` quarters from `r format(min(d$quarter), "%Y")` Q`r (as.numeric(format(min(d$quarter), "%m")) - 1) / 3 + 1` to 2019 Q4. The pandemic quarters were excluded. The residuals of an ordinary least squares (OLS) regression showed positive autocorrelation (Durbin-Watson *d* = `r f2(dw$statistic)`, *p* `r pval(dw$p.value)`; Breusch-Godfrey test of order 4, *p* `r pval(bg$p.value)`) and a smaller spread after 1983. We therefore estimated the regression by generalized least squares (Pinheiro & Bates, 2000) with first-order autoregressive errors and a separate error variance for 1948-83 and 1984-2019. Error structures were compared by maximum likelihood with the Akaike information criterion (AIC) and likelihood-ratio tests; the final model was estimated by restricted maximum likelihood. For comparison, we also report OLS estimates with Newey-West (1987) standard errors. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages nlme, lmtest and sandwich.
+
+**Results:**
+
+> Okun's law was clear in the data. In the final model, the unemployment rate changed by `r f3(b_final[["growth"]])` points per quarter for each additional percentage point of annual GDP growth, 95% CI [`r f3(ci_coef["growth", 1])`, `r f3(ci_coef["growth", 3])`], and rose by `r f2(b_final[[1]])` points per quarter at zero growth, 95% CI [`r f2(ci_coef[1, 1])`, `r f2(ci_coef[1, 3])`]. The errors were autocorrelated, $\hat\phi$ = `r f2(phi_hat)`, 95% CI [`r f2(ci_final$corStruct[1])`, `r f2(ci_final$corStruct[3])`], and their standard deviation after 1983 was `r f2(ratio_hat)` times that of the earlier period, 95% CI [`r f2(ci_final$varStruct[1])`, `r f2(ci_final$varStruct[3])`]. Both parts of the error structure improved the fit: AR(1) errors, $\chi^2$(1) = `r f1(lrt_corr$L.Ratio[2])`, *p* `r pval(lrt_corr$"p-value"[2])`, and unequal variances, $\chi^2$(1) = `r f1(lrt_var$L.Ratio[2])`, *p* `r pval(lrt_var$"p-value"[2])` (Table 1); richer correlation structures did not (AR(2): $\chi^2$(1) = `r f2(lrt_ar2$L.Ratio[2])`, *p* `r pval(lrt_ar2$"p-value"[2])`). The OLS slope was `r f3(comp$slope[1])`, and its standard error was `r f4(comp$se[1])` with the usual formula and `r f4(comp$se[2])` with a Newey-West estimator (Table 2). The GLS slope was about `r round(100 * abs(1 - comp$slope[4] / comp$slope[1]))`% smaller in size than the OLS slope. Adding last quarter's growth to the model, $\chi^2$(1) = `r f1(lag_test$L.Ratio[2])`, *p* `r pval(lag_test$"p-value"[2])`, brought the OLS and GLS estimates of the current-quarter slope closer, `r f3(coef(fit_lag_ols)[["growth"]])` and `r f3(coef(fit_lag)[["growth"]])`, which suggests that the difference between them came from the omitted lag.
+
+**Table 1**
+
+*Error Structures for Okun's Law, 1948-2019, Fitted by Maximum Likelihood*
+
+```{r apa_table1, echo=FALSE}
+knitr::kable(models_table, align = "lrrrr", format = "pipe")
+```
+
+*Note.* *N* = `r num(nrow(d))` quarters. *k* = number of estimated parameters (intercept, slope, error variance, plus those of the correlation and variance structures). Slope: change in the unemployment rate (points) per percentage point of annual GDP growth.
+
+**Table 2**
+
+*The Okun's Law Slope by Method*
+
+```{r apa_table2, echo=FALSE}
+knitr::kable(estimates_table, align = "lrrr", format = "pipe")
+```
+
+*Note.* The GLS rows are from the models of Table 1, refitted by restricted maximum likelihood. Confidence intervals are the estimate $\pm$ 1.96 standard errors. The Newey-West estimator used a lag of `r lag_rule` quarters without prewhitening.
+
+**Points to remember:**
+
+- Show how you found the problem (the residual plot, the ACF, a test) and how you chose the structure (AIC, likelihood-ratio tests).
+- Say whether you estimated by ML or REML, and compare models with different fixed effects only by ML.
+- Report the correlation and variance parameters with their intervals: they say something about the data, here the persistence and the Great Moderation.
+- Give the OLS estimate as well, and explain a large difference.
+- State the choices made by looking at the data (here, the 1984 cut) openly.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | The errors of a regression are correlated (time series, repeated measures in order) or have unequal variances |
+| **The model** | $\mathbf{y} = \mathbf{X}\boldsymbol\beta + \boldsymbol\varepsilon$, $\operatorname{Var}(\boldsymbol\varepsilon) = \sigma^2\boldsymbol\Omega$; $\hat{\boldsymbol\beta} = (\mathbf{X}'\boldsymbol\Omega^{-1}\mathbf{X})^{-1}\mathbf{X}'\boldsymbol\Omega^{-1}\mathbf{y}$ |
+| **The idea** | OLS after transforming the data by $\boldsymbol\Omega^{-1/2}$; WLS is the diagonal case |
+| **How (R)** | nlme::gls(y ~ x, correlation = corAR1(), weights = varIdent(form = ~ 1 &#124; group)) |
+| **Detect** | Residual plots; ACF and PACF; `lmtest::dwtest()`, `bgtest()`; the spread by group or covariate |
+| **Choose the structure** | AIC, BIC, `anova()` likelihood-ratio tests; use ML when fixed effects differ, REML for the final fit |
+| **Check** | Normalised residuals: no streaks, equal spread |
+| **Alternative** | Keep OLS, with `sandwich::NeweyWest()` standard errors |
+| **Dangers** | An error structure can hide a missing predictor, lag or trend; $\hat{\boldsymbol\Omega}$ is estimated, so standard errors are optimistic in short series |
+| **Related** | [WLS](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd), [mixed models](EXAMPLE_MULTILEVEL.Rmd), [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Aitken, A. C. (1935). On least squares and linear combination of observations. *Proceedings of the Royal Society of Edinburgh*, *55*, 42–48.
+
+Breusch, T. S. (1978). Testing for autocorrelation in dynamic linear models. *Australian Economic Papers*, *17*(31), 334–355.
+
+Cochrane, D., & Orcutt, G. H. (1949). Application of least squares regression to relationships containing auto-correlated error terms. *Journal of the American Statistical Association*, *44*(245), 32–61.
+
+Durbin, J., & Watson, G. S. (1950). Testing for serial correlation in least squares regression: I. *Biometrika*, *37*(3–4), 409–428.
+
+Godfrey, L. G. (1978). Testing against general autoregressive and moving average error models when the regressors include lagged dependent variables. *Econometrica*, *46*(6), 1293–1301.
+
+Kim, C.-J., & Nelson, C. R. (1999). Has the U.S. economy become more stable? A Bayesian approach based on a Markov-switching model of the business cycle. *Review of Economics and Statistics*, *81*(4), 608–616.
+
+McConnell, M. M., & Perez-Quiros, G. (2000). Output fluctuations in the United States: What has changed since the early 1980s? *American Economic Review*, *90*(5), 1464–1476.
+
+Newey, W. K., & West, K. D. (1987). A simple, positive semi-definite, heteroskedasticity and autocorrelation consistent covariance matrix. *Econometrica*, *55*(3), 703–708.
+
+Newey, W. K., & West, K. D. (1994). Automatic lag selection in covariance matrix estimation. *Review of Economic Studies*, *61*(4), 631–653.
+
+Okun, A. M. (1962). Potential GNP: Its measurement and significance. In *Proceedings of the Business and Economic Statistics Section* (pp. 98–104). American Statistical Association.
+
+Pinheiro, J. C., & Bates, D. M. (2000). *Mixed-effects models in S and S-PLUS*. Springer.
+
+Prais, S. J., & Winsten, C. B. (1954). *Trend estimators and serial correlation* (Cowles Commission Discussion Paper: Statistics No. 383). Cowles Commission for Research in Economics.
+
+U.S. Bureau of Economic Analysis. (n.d.). *Real gross domestic product* [GDPC1] [Data set]. FRED, Federal Reserve Bank of St. Louis. https://fred.stlouisfed.org/series/GDPC1
+
+U.S. Bureau of Labor Statistics. (n.d.). *Unemployment rate* [UNRATE] [Data set]. FRED, Federal Reserve Bank of St. Louis. https://fred.stlouisfed.org/series/UNRATE
+
+Zeileis, A. (2004). Econometric computing with HC and HAC covariance matrix estimators. *Journal of Statistical Software*, *11*(10), 1–17. https://doi.org/10.18637/jss.v011.i10
+
+Zuur, A. F., Ieno, E. N., Walker, N., Saveliev, A. A., & Smith, G. M. (2009). *Mixed effects models and extensions in ecology with R*. Springer.

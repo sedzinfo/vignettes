@@ -1,0 +1,566 @@
+---
+title: "Weighted Least Squares: How Closely Do Schools' Reading and Writing Scores Go Together?"
+description: "Weighted least squares (WLS) in R with lm(weights = ), on the 2012 SAT results of about 420 New York City high schools: heteroscedasticity, the Breusch–Pagan test, known weights (each row is a mean of n students), estimated weights (feasible WLS), robust sandwich standard errors as the alternative, variance weights against frequency and survey weights, residual checks after weighting and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from NYC Open Data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: can we trust every school's average equally?
+
+Every year, many students in New York City sit the SAT, the US college-entrance test. It has three sections: reading, mathematics and writing. The city publishes, for each high school, **the average score** of its students in each section, and the **number of students** who sat the test.
+
+This page asks: **how closely do a school's average reading score and its average writing score go together?** A regression of the writing average on the reading average gives a slope and a line.
+
+There is a catch. The schools are very different in size. One school averages the scores of 6 students, another the scores of 1,277. An average of 6 students is far less reliable than an average of 1,277: it jumps around more from one year to the next. So the points on the chart are **not equally precise**, and ordinary regression treats them as if they were. This is called **heteroscedasticity**: the spread of the errors is not the same for every row.
+
+**Weighted least squares (WLS)** fixes this by giving the precise rows more say than the imprecise ones. It is a special case of **generalized least squares** (see [EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)), where the errors have unequal variances but no correlation between them. Ordinary multiple regression is explained in [the hierarchical regression example](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd); here we only look at what changes.
+
+```{r packages}
+library(ggplot2)
+library(lmtest)     # bptest(): Breusch–Pagan test; coeftest(): tests with a chosen covariance matrix
+library(sandwich)   # vcovHC(): heteroscedasticity-consistent ("sandwich") covariance matrices
+
+# one colour per model, the same in every chart
+model_colours <- c("OLS" = "#2a78d6", "WLS, weights = n" = "#eb6834", "WLS, estimated weights" = "#1baf7a")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+```
+
+---
+
+## 1. The data
+
+NYC Open Data, the city's open-data portal, publishes the *2012 SAT Results*: one row per high school, free and with no login. We read it straight from the portal's CSV address.
+
+```{r download}
+t0  <- Sys.time()
+url <- "https://data.cityofnewyork.us/resource/f9bf-2cp4.csv?$limit=1000"
+raw <- read.csv(url)
+seconds <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+str(raw)
+```
+
+The columns are the school code (`dbn`) and name, the number of students who took the SAT, and the average score in reading, mathematics and writing. The portal's description says only "mean SAT scores" for the seniors of 2012 and gives no unit; the scores in the file run from `r min(suppressWarnings(as.numeric(unlist(raw[4:6]))), na.rm = TRUE)` to `r max(suppressWarnings(as.numeric(unlist(raw[4:6]))), na.rm = TRUE)`, which fits the usual SAT scale of 200 to 800 points per section, but the file does not state it. The download took `r f1(seconds)` seconds.
+
+Some schools have the letter `s` instead of numbers. The file does not say why; it is most likely a rule that hides the results of very small groups. We cannot use these rows, so we drop them:
+
+```{r tidy}
+sat <- data.frame(school = raw$school_name,
+                  n      = suppressWarnings(as.numeric(raw$num_of_sat_test_takers)),
+                  read   = suppressWarnings(as.numeric(raw$sat_critical_reading_avg_score)),
+                  math   = suppressWarnings(as.numeric(raw$sat_math_avg_score)),
+                  write  = suppressWarnings(as.numeric(raw$sat_writing_avg_score)))
+n_hidden <- sum(!complete.cases(sat))
+sat <- sat[complete.cases(sat), ]
+nrow(sat)
+summary(sat[, c("n", "read", "write")])
+```
+
+That leaves `r num(nrow(sat))` schools, after dropping `r n_hidden` with hidden results. The smallest school in the file has `r min(sat$n)` test takers, the largest `r num(max(sat$n))`, and half of the schools have fewer than `r median(sat$n)`. In all, the schools stand for `r num(sum(sat$n))` students. Each row is a **mean**, and the means rest on very different numbers of students.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ols <- lm(write ~ read, data = sat)
+
+ggplot(sat, aes(read, write)) +
+  geom_point(aes(size = n), alpha = 0.45, colour = "#2a78d6") +
+  geom_smooth(method = "lm", se = FALSE, colour = "#eb6834", linewidth = 0.9) +
+  scale_size_area(max_size = 6, breaks = c(50, 250, 1000), name = "test takers") +
+  labs(title = "Writing against reading: school averages",
+       x = "average reading score", y = "average writing score") +
+  theme_bw()
+```
+
+The schools lie close to a straight line. The size of each point is the number of students. The big points hug the line, and the small ones scatter more around it. The residuals show it more clearly:
+
+```{r look_residuals}
+sat$fitted <- fitted(ols)
+sat$resid  <- resid(ols)
+
+ggplot(sat, aes(n, resid)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_point(alpha = 0.45, colour = "#2a78d6") +
+  scale_x_log10(breaks = c(10, 30, 100, 300, 1000)) +
+  labs(title = "OLS residuals fan out in the small schools",
+       x = "test takers (log scale)", y = "residual (points)") +
+  theme_bw()
+```
+
+A **funnel**: wide on the left, where the schools are small, and narrow on the right. The usual first check is a plot of the residuals against the fitted values, and it is worth doing. But here the fitted values do not drive the spread: the number of students does, so the plot against `n` shows it best. In general, plot the residuals against the fitted values, against each predictor and against anything that could change the precision of a row.
+
+```{r look_bands}
+bands <- cut(sat$n, c(0, 25, 50, 100, 200, Inf),
+             labels = c("under 25", "25–50", "51–100", "101–200", "over 200"))
+spread <- tapply(sat$resid, bands, sd)
+```
+
+The standard deviation of the residuals falls from `r f1(spread[[1]])` points in the schools with fewer than 25 test takers to `r f1(spread[[5]])` points in the schools with more than 200.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: ordinary least squares
+
+$$\text{write}_i = \beta_0 + \beta_1 \,\text{read}_i + \varepsilon_i$$
+
+Ordinary least squares (OLS) finds the $\beta$'s that minimise the sum of squared residuals, $\sum_i e_i^2$. Every row counts the same. It assumes **homoscedasticity**: all errors have the same variance, $\text{Var}(\varepsilon_i) = \sigma^2$.
+
+### Step 2: what goes wrong when the variances differ
+
+Suppose instead that $\text{Var}(\varepsilon_i) = \sigma_i^2$ differs from row to row. Then OLS is affected in two ways:
+
+- **The estimates stay unbiased.** On average, over many samples, $\hat\beta$ is still $\beta$, as long as the mean model is right.
+- **The standard errors are wrong.** The usual formula, $\hat\sigma^2 (X^\top X)^{-1}$, assumes one common $\sigma^2$. With unequal variances, the *t* tests, *p* values and confidence intervals can be too narrow or too wide, and there is no way to tell which from the output.
+- **OLS is no longer the best.** It is not the linear unbiased estimator with the smallest variance (the Gauss–Markov theorem needs equal variances). There is a more precise one, WLS.
+
+### Step 3: weighted least squares
+
+WLS minimises a weighted sum of squares:
+
+$$\sum_i w_i\, e_i^2 \qquad \text{with} \qquad w_i = \frac{1}{\text{Var}(\varepsilon_i)}$$
+
+A row with a large variance has a small weight, so it pulls the line less. In matrix form, with $W$ a diagonal matrix of the weights:
+
+$$\hat\beta_{WLS} = (X^\top W X)^{-1} X^\top W y$$
+
+Only the **ratios** of the weights matter. Multiplying all weights by 10 changes nothing in the estimates, and the standard errors are rescaled by the residual standard error. The weights are not parameters to estimate in the usual way: they must come from somewhere. There are two cases.
+
+### Step 4a: known weights, when each row is a mean
+
+If row $i$ is the **mean of $n_i$ people**, and the people vary around the line with variance $\sigma^2$, then the mean has variance
+
+$$\text{Var}(\varepsilon_i) = \frac{\sigma^2}{n_i} \qquad \Rightarrow \qquad w_i = n_i$$
+
+The weight is the number of people. This is the textbook case of known weights, and in R it is `lm(y ~ x, weights = n)`.
+
+It assumes that the variance comes **only** from averaging people. If schools also differ from each other for other reasons, for example in how well they teach, that adds a constant $\tau^2$ that does not shrink with $n_i$:
+
+$$\text{Var}(\varepsilon_i) = \tau^2 + \frac{\sigma^2}{n_i}$$
+
+Then giving a school of 1,000 students 1,000 times the weight of a school of one student is too much. We will see which of the two holds in these data.
+
+### Step 4b: estimated weights (feasible WLS)
+
+Often the variances are not known, and we must **model** them from the residuals:
+
+1. Fit OLS and keep the residuals $e_i$.
+2. Model the variance: regress $e_i^2$ (or $\log e_i^2$) on the variables that could change it. Here, on $1/n_i$.
+3. Turn the fitted variances into weights, $w_i = 1 / \widehat{\text{Var}}_i$.
+4. Refit by WLS.
+
+This is **feasible WLS** (or feasible generalized least squares). It is not exact, because the weights are themselves estimates, and the standard errors from `lm()` do not take that uncertainty into account. With a few hundred rows and a simple variance model, this matters little.
+
+### Step 5: the other way out, keep OLS and fix the standard errors
+
+OLS is still unbiased. So an alternative is to keep the OLS estimates and replace only the wrong standard errors with **heteroscedasticity-consistent** ones, also called robust or **sandwich** standard errors. The covariance matrix of $\hat\beta$ is built as a sandwich:
+
+$$\widehat{\text{Var}}(\hat\beta) = (X^\top X)^{-1} \Big( \sum_i e_i^2\, x_i x_i^\top \Big) (X^\top X)^{-1}$$
+
+The squared residual $e_i^2$ stands in for the unknown variance of each row, so no model for the variance is needed (White, 1980). The version called HC3 (MacKinnon & White, 1985; `type = "HC3"` in `vcovHC()`) is the safest for samples of this size (Long & Ervin, 2000).
+
+| | WLS | OLS with sandwich standard errors |
+|---|---|---|
+| Estimates | Change (they are weighted) | The same as OLS |
+| Needs | A good model for the variances | Nothing about the variances |
+| Efficiency | Better, **if** the variance model is right | Not improved: OLS stays inefficient |
+| If the variance model is wrong | Estimates still unbiased, but the usual standard errors are wrong (use sandwich with WLS too) | Not applicable |
+| Makes sense when | The weights are known or well understood, as with group means | The variance pattern is unknown, or you care only about valid inference |
+
+---
+
+## 4. Fitting the model and reading the output
+
+### Is there heteroscedasticity? The Breusch–Pagan test
+
+The **Breusch–Pagan test** (Breusch & Pagan, 1979) regresses the squared residuals on a set of variables. The null hypothesis is homoscedasticity. `bptest()` from `lmtest` uses the Koenker version, which does not need normal errors. By default it uses the predictors of the model, here the reading score:
+
+```{r bp}
+bp_read <- bptest(ols)
+bp_read
+```
+
+With the reading score as the only suspect, the test does not find a problem, $\chi^2$(`r bp_read$parameter`) = `r f2(bp_read$statistic)`, *p* `r pval(bp_read$p.value)`. But the test only looks for variance that is linked to the variables we give it. The funnel is linked to the number of students, so we give it `1/n`, the variable that the formula of step 4a points to:
+
+```{r bp_n}
+bp_n <- bptest(ols, ~ I(1/n), data = sat)
+bp_n
+```
+
+Now it is clear, $\chi^2$(`r bp_n$parameter`) = `r f1(bp_n$statistic)`, *p* `r pval(bp_n$p.value)`. A non-significant test does not prove homoscedasticity: it means that this pattern was not found. Always look at the plots, and choose the variables for the test by thinking about where the variance comes from.
+
+### The OLS fit
+
+```{r ols}
+summary(ols)
+```
+
+The slope is `r f3(coef(ols)[["read"]])` points of writing for each point of reading, with a standard error of `r f3(summary(ols)$coefficients["read", 2])`. The slope is close to 1: a school with 10 points more in reading has about 10 points more in writing. $R^2$ = `r nz(summary(ols)$r.squared, 3)`, which is very high, as expected for averages of the same students.
+
+### WLS with known weights: weights = n
+
+`lm()` takes the weights in its `weights` argument:
+
+```{r wls_n}
+wls_n <- lm(write ~ read, data = sat, weights = n)
+summary(wls_n)
+```
+
+The slope is now `r f3(coef(wls_n)[["read"]])` and the intercept `r f1(coef(wls_n)[["(Intercept)"]])`, against `r f1(coef(ols)[["(Intercept)"]])` with OLS. In the output, "Weighted Residuals" are $\sqrt{w_i}\,e_i$, and the residual standard error is in those units, which is why it is `r f1(summary(wls_n)$sigma)` and not comparable to OLS's `r f1(summary(ols)$sigma)` points. It is the estimate of $\sigma$, the standard deviation of **one student**, under this model.
+
+Do the weights $w = n$ do their job? After weighting, the residuals $\sqrt{n_i}\,e_i$ should have the same spread for all schools. We check this in section 6, but we can already see a warning in the variance model of the next step.
+
+### WLS with estimated weights
+
+We follow the four steps of section 3. We regress the squared OLS residuals on $1/n$:
+
+$$e_i^2 = \tau^2 + \sigma^2 \,\frac{1}{n_i} + \text{error}$$
+
+```{r variance_model}
+variance_model <- lm(resid^2 ~ I(1/n), data = sat)
+tau2   <- coef(variance_model)[[1]]
+sigma2 <- coef(variance_model)[[2]]
+c(tau2 = tau2, sigma2 = sigma2)
+```
+
+The intercept is $\hat\tau^2$ = `r f1(tau2)`, a standard deviation of `r f1(sqrt(tau2))` points that every school has **whatever its size**. The slope is $\hat\sigma^2$ = `r num(round(sigma2))`, a standard deviation of `r f1(sqrt(sigma2))` points for one student. So a school of 10 students has a standard error of about `r f1(sqrt(tau2 + sigma2 / 10))` points, and a school of 1,000, `r f1(sqrt(tau2 + sigma2 / 1000))`: the floor $\tau$ dominates for the big ones. This picture shows it, with the pure $\sigma^2/n$ curve of known weights for comparison:
+
+```{r variance_plot}
+sigma2_only <- sum(sat$resid^2 / sat$n) / sum(1 / sat$n^2)   # least squares for e^2 = sigma^2 / n, no floor
+grid <- data.frame(n = exp(seq(log(min(sat$n)), log(max(sat$n)), length.out = 200)))
+curves <- rbind(
+  data.frame(n = grid$n, sd = sqrt(tau2 + sigma2 / grid$n),  model = "floor + σ²/n"),
+  data.frame(n = grid$n, sd = sqrt(sigma2_only / grid$n),    model = "σ²/n only (weights = n)"))
+
+ggplot(sat, aes(n)) +
+  geom_point(aes(y = abs(resid)), alpha = 0.35, colour = "grey45") +
+  geom_line(data = curves, aes(y = sd, colour = model), linewidth = 1) +
+  scale_colour_manual(values = c("floor + σ²/n" = "#1baf7a", "σ²/n only (weights = n)" = "#eb6834"), name = NULL) +
+  scale_x_log10(breaks = c(10, 30, 100, 300, 1000)) +
+  coord_cartesian(ylim = c(0, 70)) +
+  labs(title = "How the typical error shrinks with school size",
+       subtitle = "Points: absolute OLS residuals. Lines: the standard deviation each model expects",
+       x = "test takers (log scale)", y = "points") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The pure $\sigma^2/n$ curve keeps falling, and goes under the points for the biggest schools. The curve with a floor flattens, as the data do. Now we turn the fitted variances into weights and refit:
+
+```{r wls_estimated}
+sat$w <- 1 / fitted(variance_model)
+wls_est <- lm(write ~ read, data = sat, weights = w)
+summary(wls_est)
+```
+
+The fitted variances are all positive here (`r f1(min(fitted(variance_model)))` to `r f1(max(fitted(variance_model)))`), which is not guaranteed for a regression of $e^2$. If some were negative, or near zero, the weights would be nonsense. A safer way is to model the **logarithm** of the squared residuals, which can never give a negative variance:
+
+```{r wls_log}
+log_model <- lm(log(resid^2) ~ log(n), data = sat)
+wls_log   <- lm(write ~ read, data = sat, weights = 1 / exp(fitted(log_model)))
+c(log_n_slope = unname(coef(log_model)[2]))
+```
+
+The variance goes with $n^{`r f2(coef(log_model)[[2]])`}$: a pure $\sigma^2/n$ would give $-1$, and no dependence on the number of students would give 0. The data lie in between, as the floor suggested. The log version gives a slope of `r f3(coef(wls_log)[["read"]])`, almost the same as `r f3(coef(wls_est)[["read"]])` from the first one. The two ways of modelling the variance agree. (One could also repeat the cycle, fitting again to the new residuals until nothing changes. One round is usually enough.)
+
+### The three lines
+
+```{r lines}
+line_data <- data.frame(read = seq(min(sat$read), max(sat$read), length.out = 100))
+lines_all <- rbind(
+  data.frame(read = line_data$read, write = predict(ols,     line_data), model = "OLS"),
+  data.frame(read = line_data$read, write = predict(wls_n,   line_data), model = "WLS, weights = n"),
+  data.frame(read = line_data$read, write = predict(wls_est, line_data), model = "WLS, estimated weights"))
+lines_all$model <- factor(lines_all$model, levels = names(model_colours))
+
+ggplot(sat, aes(read, write)) +
+  geom_point(colour = "grey70", alpha = 0.6) +
+  geom_line(data = lines_all, aes(colour = model), linewidth = 0.9) +
+  scale_colour_manual(values = model_colours, name = NULL) +
+  labs(title = "Three fitted lines through the same schools",
+       x = "average reading score", y = "average writing score") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The lines are close in the middle and part ways at the ends.
+
+---
+
+## 5. OLS against WLS, and the sandwich alternative
+
+We put the estimates and the standard errors of the three fits side by side. For each fit, the standard errors are given in two ways: the usual ones from `lm()`, and the sandwich ones (HC3):
+
+```{r comparison}
+fits <- list("OLS" = ols, "WLS, weights = n" = wls_n, "WLS, estimated weights" = wls_est)
+
+compare <- do.call(rbind, lapply(names(fits), function(m) {
+  fit <- fits[[m]]
+  usual  <- coef(summary(fit))
+  robust <- coeftest(fit, vcov = vcovHC(fit, type = "HC3"))
+  data.frame(model = m, term = rownames(usual),
+             estimate = usual[, "Estimate"],
+             se_usual = usual[, "Std. Error"],
+             se_hc3   = robust[, "Std. Error"],
+             row.names = NULL)
+}))
+compare[, 3:5] <- round(compare[, 3:5], 3)
+compare
+```
+
+```{r comparison_numbers}
+get <- function(m, term, col) compare[compare$model == m & compare$term == term, col]
+ratio_ols <- get("OLS", "read", "se_hc3") / get("OLS", "read", "se_usual")
+```
+
+What the table says:
+
+- **The OLS standard errors were wrong.** With sandwich errors, the standard error of the OLS slope is `r f3(get("OLS", "read", "se_hc3"))` instead of `r f3(get("OLS", "read", "se_usual"))`, `r f2(ratio_ols)` times as large. The usual output was too optimistic here, and the confidence interval is wider than the one `lm()` printed. The slope is still very significant, so the conclusion is the same, but with another dataset it might not be. The direction of the error is not fixed: in the simulation below the usual standard error is, on the contrary, too large.
+- **The estimates move.** The slope is `r f3(get("OLS", "read", "estimate"))` with OLS, `r f3(get("WLS, weights = n", "read", "estimate"))` with weights $n$ and `r f3(get("WLS, estimated weights", "read", "estimate"))` with estimated weights. The intercept goes from `r f1(get("OLS", "(Intercept)", "estimate"))` to `r f1(get("WLS, weights = n", "(Intercept)", "estimate"))` and `r f1(get("WLS, estimated weights", "(Intercept)", "estimate"))`. If the model were exactly right, all three would estimate the same thing and differ only by chance. The intercept of the estimated-weights fit is `r f1(abs(get("WLS, estimated weights", "(Intercept)", "estimate") - get("OLS", "(Intercept)", "estimate")))` points away from the OLS one, which is `r f1(abs(get("WLS, estimated weights", "(Intercept)", "estimate") - get("OLS", "(Intercept)", "estimate")) / get("OLS", "(Intercept)", "se_hc3"))` times the sandwich standard error of the OLS intercept. This is not a formal test, but it hints that the straight line fits the small schools and the big schools a little differently. The file cannot tell us why, and the large schools may differ from the small ones in more than size. Weighting changes **which schools the line follows**, so the two answers are answers to slightly different questions (Solon et al., 2015).
+- **WLS is more precise, when compared fairly.** Compare the sandwich errors, which are valid for every fit: the slope has `r f3(get("OLS", "read", "se_hc3"))` for OLS, `r f3(get("WLS, weights = n", "read", "se_hc3"))` with weights $n$ and `r f3(get("WLS, estimated weights", "read", "se_hc3"))` with estimated weights. That is the gain that the weights are meant to bring. The simulation below shows a clearer gain, when the variance model is exactly right.
+- **The usual WLS errors are too small here.** For WLS with $w = n$ the usual and the sandwich errors differ (`r f3(get("WLS, weights = n", "read", "se_usual"))` against `r f3(get("WLS, weights = n", "read", "se_hc3"))`), which says that the weights $n$ do not describe the variance well. With the estimated weights the gap is smaller but still there (`r f3(get("WLS, estimated weights", "read", "se_usual"))` against `r f3(get("WLS, estimated weights", "read", "se_hc3"))`): even this variance model is not perfect, and the variance may depend on more than the number of students. When in doubt, use WLS **and** sandwich errors: the weights buy precision, and the sandwich protects against a wrong variance model.
+
+### Proof by simulation: unbiased, but with wrong errors
+
+To see the claims of step 2 at work, we generate 2,000 new data sets that follow the variance model we found, with a known slope, and fit both models to each:
+
+```{r simulation}
+set.seed(2025)
+reps   <- 2000
+true_b <- c(0, 1)
+X      <- cbind(1, sat$read)
+sd_i   <- sqrt(tau2 + sigma2 / sat$n)              # the standard deviation of each school
+wt     <- 1 / sd_i^2                               # the ideal weights: 1 / variance
+XtX_inv   <- solve(crossprod(X))
+XtWX_inv  <- solve(crossprod(X, X * wt))
+
+sim <- t(replicate(reps, {
+  y   <- drop(X %*% true_b) + rnorm(nrow(X), 0, sd_i)
+  b_o <- XtX_inv %*% crossprod(X, y)
+  e_o <- y - X %*% b_o
+  b_w <- XtWX_inv %*% crossprod(X, wt * y)
+  c(ols = b_o[2], wls = b_w[2],
+    se_ols_usual = sqrt(sum(e_o^2) / (nrow(X) - 2) * XtX_inv[2, 2]))
+}))
+colMeans(sim)
+apply(sim, 2, sd)
+```
+
+The true slope is 1.
+
+- **Unbiased:** the average OLS slope is `r f3(mean(sim[, "ols"]))` and the average WLS slope `r f3(mean(sim[, "wls"]))`. Both hit the target.
+- **Inefficient:** the slope of OLS varies from sample to sample with a standard deviation of `r f3(sd(sim[, "ols"]))`, that of WLS with `r f3(sd(sim[, "wls"]))`. WLS is `r f2(sd(sim[, "ols"]) / sd(sim[, "wls"]))` times as precise.
+- **Wrong standard errors:** the OLS standard error that `lm()` prints averages `r f3(mean(sim[, "se_ols_usual"]))`, while the true spread is `r f3(sd(sim[, "ols"]))`.
+
+```{r simulation_plot}
+sim_long <- data.frame(slope = c(sim[, "ols"], sim[, "wls"]),
+                       model = rep(c("OLS", "WLS"), each = reps))
+
+ggplot(sim_long, aes(slope, colour = model, fill = model)) +
+  geom_density(alpha = 0.25, linewidth = 0.8) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey40") +
+  scale_colour_manual(values = c("OLS" = "#2a78d6", "WLS" = "#eb6834"), name = NULL) +
+  scale_fill_manual(values = c("OLS" = "#2a78d6", "WLS" = "#eb6834"), name = NULL) +
+  labs(title = "2,000 simulated slopes, OLS and WLS",
+       subtitle = "Both centre on the true slope (dashed line); WLS is narrower",
+       x = "estimated slope", y = "density") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+---
+
+## 6. Checking the model after weighting
+
+After weighting, what should be flat is not the raw residual but the **weighted** (or standardised) one. For a fit with weights, $\sqrt{w_i}\,e_i$ should have the same spread for all rows. `rstandard()` divides further by the estimated $\sigma$ and by a leverage term, and understands weights.
+
+```{r diagnostics}
+check <- rbind(
+  data.frame(n = sat$n, fitted = fitted(ols),     r = rstandard(ols),     model = "OLS"),
+  data.frame(n = sat$n, fitted = fitted(wls_n),   r = rstandard(wls_n),   model = "WLS, weights = n"),
+  data.frame(n = sat$n, fitted = fitted(wls_est), r = rstandard(wls_est), model = "WLS, estimated weights"))
+check$model <- factor(check$model, levels = names(model_colours))
+
+ggplot(check, aes(n, r, colour = model)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_point(alpha = 0.4) +
+  facet_wrap(~ model) +
+  scale_colour_manual(values = model_colours, guide = "none") +
+  scale_x_log10(breaks = c(10, 100, 1000)) +
+  labs(title = "Standardised residuals against school size",
+       x = "test takers (log scale)", y = "standardised residual") +
+  theme_bw()
+```
+
+Left, OLS still has the funnel. In the middle, the weights $n$ turn it round: now the big schools scatter more than the small ones, an overcorrection, which is what the floor $\tau^2$ explained. Right, the estimated weights give a much more even band. A table shows the same by size of school:
+
+```{r diagnostics_table}
+sd_by_band <- sapply(list("OLS" = ols, "WLS, weights = n" = wls_n, "WLS, estimated weights" = wls_est),
+                     function(m) tapply(rstandard(m), bands, sd))
+knitr::kable(round(sd_by_band, 2), format = "pipe")
+```
+
+The standard deviation of the standardised residuals should be near 1 in every row. For OLS it falls from `r f2(sd_by_band[1, "OLS"])` to `r f2(sd_by_band[5, "OLS"])`, with weights $n$ it rises from `r f2(sd_by_band[1, "WLS, weights = n"])` to `r f2(sd_by_band[5, "WLS, weights = n"])`, and with estimated weights it stays between `r f2(min(sd_by_band[, "WLS, estimated weights"]))` and `r f2(max(sd_by_band[, "WLS, estimated weights"]))`.
+
+Other checks work as for any regression:
+
+- **Linearity:** plot the standardised residuals against the predictor, and check there is no curve (see [EXAMPLE_POLYNOMIAL_REGRESSION.Rmd](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd)).
+- **Outliers and influence:** a few schools have large standardised residuals. `cooks.distance()` and `hatvalues()` work with weights too. If outliers are the main worry, see [EXAMPLE_ROBUST_REGRESSION.Rmd](EXAMPLE_ROBUST_REGRESSION.Rmd).
+- **Normality:** it matters little with `r nrow(sat)` rows, thanks to the central limit theorem.
+- **Run the Breusch–Pagan test again, on the standardised residuals.** The same test that found the problem should now find less of it. The test is simple enough to do by hand (Koenker's version): regress the squared standardised residuals on $1/n$, and take the number of rows times $R^2$, which follows a $\chi^2$ distribution with 1 degree of freedom. We do it by hand because `bptest()` on a weighted fit gave, for the weights $n$, a statistic larger than the number of rows, which this version of the test cannot produce, so we do not rely on it here.
+
+```{r diagnostics_bp}
+bp_by_hand <- function(fit) {
+  aux  <- lm(rstandard(fit)^2 ~ I(1/sat$n))
+  stat <- nobs(aux) * summary(aux)$r.squared
+  c(statistic = stat, p = pchisq(stat, df = 1, lower.tail = FALSE))
+}
+bp_after <- rbind("OLS" = bp_by_hand(ols), "WLS, weights = n" = bp_by_hand(wls_n),
+                  "WLS, estimated weights" = bp_by_hand(wls_est))
+round(bp_after, 3)
+```
+
+Against $1/n$, the statistic is `r f1(bp_after[1, 1])` for OLS (*p* `r pval(bp_after[1, 2])`), `r f1(bp_after[2, 1])` with weights $n$ (*p* `r pval(bp_after[2, 2])`) and `r f1(bp_after[3, 1])` with the estimated weights (*p* `r pval(bp_after[3, 2])`). The by-hand version for OLS matches `bptest()`'s `r f1(bp_n$statistic)`, as it should.
+
+---
+
+## 7. Things to keep in mind
+
+### Variance weights, frequency weights and survey weights are different things
+
+Many programs have one box called "weights", and people put in three different things. They give the same estimates, but **different standard errors**:
+
+| Kind | What a weight of $w_i$ means | Use when | Standard errors |
+|---|---|---|---|
+| **Variance (precision) weights** | The row has variance $\sigma^2 / w_i$ | Rows are means of $n_i$ people, or measurements of known precision | This page: `lm(weights = )` |
+| **Frequency weights** | The row stands for $w_i$ identical cases | A table of counts instead of a long data set | The sample size is $\sum w_i$, not the number of rows |
+| **Survey (sampling) weights** | The row stands for $w_i$ people in the population, because it was sampled with probability $1/w_i$ | A complex survey, to estimate for the population | Need the survey design: `survey::svyglm()` |
+
+`lm(weights = )` always treats the weights as **variance weights**. Here is what happens if you wrongly think of the $n$ as a frequency, that is, if you take each school to be $n_i$ separate identical students:
+
+```{r frequency_trap}
+df_rows <- df.residual(wls_n)               # the number of schools, minus 2
+df_freq <- sum(sat$n) - 2                   # the number of students, minus 2
+se_variance  <- summary(wls_n)$coefficients["read", 2]
+se_frequency <- se_variance * sqrt(df_rows / df_freq)
+```
+
+The slope would have a standard error of `r formatC(se_frequency, format = "f", digits = 4)` instead of `r formatC(se_variance, format = "f", digits = 4)`, which is `r f1(se_variance / se_frequency)` times too small. The schools are `r num(nrow(sat))` pieces of information, not `r num(sum(sat$n))`. A frequency weight multiplies the information, a variance weight only redistributes it. If your weights are survey weights, do not use `lm(weights = )` for inference at all: the errors need the design of the survey, or at least sandwich errors, and the survey weights are there to make the estimate **represent the population**, not to make it more precise.
+
+### Weighting changes the question
+
+OLS answers "what is the line through the schools?", WLS answers "what is the line, in which the schools with more information count more?". If the straight line is exactly right, the two agree and the weights only add precision. If the two lines differ a lot, as with the intercepts of section 5, the model is probably wrong somewhere, and the weights should not hide it. Find the reason, rather than choose the line you prefer.
+
+### The caveats of these data
+
+- **Averages of averages.** These are school means, not students. A line through schools says how the school averages go together, which may not be how a student's writing goes with their reading (the ecological fallacy).
+- **The same students sit all three sections**, so the high correlation between reading and writing is partly built in.
+- **Only students who took the SAT**, and in 2012 only. The schools with hidden results are not in the data.
+- **The file does not state the scale** of the scores or why some are hidden, as noted in section 1.
+
+### Other warnings
+
+- **Wrong weights can mislead.** If the weights follow a wrong idea of the variance, for example the pure $\sigma^2 / n$ here, the standard errors of the usual output are wrong again. Use sandwich errors for safety.
+- **Estimated weights come with uncertainty** that `lm()` ignores. For large samples it does not matter. For small ones, bootstrap the whole procedure, or use `nlme::gls()` with a `varFunc` (for example `varPower()`), which estimates the variance function and the coefficients together by maximum likelihood (see [EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)).
+- **Heteroscedasticity can be the finding.** If the spread itself is what interests you, for example if the best students vary more than the weak ones, model it, or use [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd), which describes the whole distribution of the outcome rather than one line through its middle.
+- **Transforming the outcome** (for example, taking logs) is another remedy when the spread grows with the mean, at the price of changing the meaning of the coefficients.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the data and the unit of analysis, the test that showed the heteroscedasticity, where the weights came from, the estimates with their uncertainty, and what the robust standard errors say. The numbers come from the R objects:
+
+```{r apa_numbers}
+ci_est  <- confint(wls_est)
+rob_est <- coeftest(wls_est, vcov = vcovHC(wls_est, type = "HC3"))
+ci_rob  <- coefci(wls_est, vcov. = vcovHC(wls_est, type = "HC3"))
+r2_est  <- summary(wls_est)$r.squared
+
+apa_table <- data.frame(
+  Model        = c("OLS", "OLS", "WLS, weights = n", "WLS, weights = n", "WLS, estimated weights", "WLS, estimated weights"),
+  Term         = rep(c("Intercept", "Reading"), 3),
+  `*b*`        = f3(compare$estimate),
+  `SE`         = f3(compare$se_usual),
+  `SE (HC3)`   = f3(compare$se_hc3),
+  check.names = FALSE)
+```
+
+**Method** (data analysis):
+
+> We analysed the 2012 SAT results of `r num(nrow(sat))` New York City high schools (NYC Department of Education, 2013), after removing `r n_hidden` schools whose results were not published. Each row is a school mean based on between `r min(sat$n)` and `r num(max(sat$n))` students (*M* = `r f1(mean(sat$n))`, *Mdn* = `r median(sat$n)`). We regressed the mean writing score on the mean reading score. Because school means rest on very different numbers of students, we tested for heteroscedasticity with the studentised Breusch–Pagan test (Koenker, 1981), and we compared ordinary least squares (OLS) with weighted least squares (WLS), using weights equal to the number of test takers and weights estimated from a regression of the squared OLS residuals on the reciprocal of the number of test takers. We report heteroscedasticity-consistent (HC3) standard errors (MacKinnon & White, 1985). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages lmtest (Zeileis & Hothorn, 2002) and sandwich (Zeileis, 2004).
+
+**Results:**
+
+> The residuals of the OLS model were more spread out in schools with fewer test takers, Breusch–Pagan χ²(`r bp_n$parameter`) = `r f1(bp_n$statistic)`, *p* `r pval(bp_n$p.value)` (for the reciprocal of the number of test takers); the standard deviation of the residuals was `r f1(spread[[1]])` points in schools with fewer than 25 test takers and `r f1(spread[[5]])` points in schools with more than 200. In the model with estimated weights, each point of reading score went with `r f2(coef(wls_est)[["read"]])` points of writing score, *b* = `r f3(coef(wls_est)[["read"]])`, 95% CI [`r f3(ci_est["read", 1])`, `r f3(ci_est["read", 2])`], *SE* = `r f3(get("WLS, estimated weights", "read", "se_usual"))`, *R*² = `r nz(r2_est, 3)`. With HC3 standard errors, the 95% CI was [`r f3(ci_rob["read", 1])`, `r f3(ci_rob["read", 2])`]. The OLS slope was `r f3(get("OLS", "read", "estimate"))` with a model-based standard error of `r f3(get("OLS", "read", "se_usual"))`, which rose to `r f3(get("OLS", "read", "se_hc3"))` with HC3 standard errors (Table 1). Weights equal to the number of test takers over-corrected: the standardised residuals then grew with school size, from *SD* = `r f2(sd_by_band[1, "WLS, weights = n"])` to `r f2(sd_by_band[5, "WLS, weights = n"])`, because schools also differ by a variance that does not shrink with size, estimated here as *SD* = `r f1(sqrt(tau2))` points.
+
+**Table 1**
+
+*Regression of Average Writing Score on Average Reading Score in `r num(nrow(sat))` New York City High Schools*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, align = "llrrr", format = "pipe")
+```
+
+*Note.* *b* = unstandardised coefficient. SE = standard error from `lm()`; SE (HC3) = heteroscedasticity-consistent standard error. Estimated weights are the reciprocals of the fitted values of a regression of the squared OLS residuals on 1/*n*, where *n* is the number of test takers.
+
+**Points to remember:**
+
+- Say what the rows are (here, school means) and how many people each one rests on.
+- Report the test for heteroscedasticity **and** the variable it was tested against.
+- Say where the weights came from, and which kind of weights they are (variance weights).
+- Give robust standard errors, or say why you did not need them.
+- Show that the weighting worked, with the standardised residuals.
+- If OLS and WLS disagree, say so and offer an explanation.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | The spread of the errors differs from row to row: means of groups of different size, measurements of known precision, or a spread that grows with a predictor |
+| **The problem** | OLS stays unbiased, but its standard errors are wrong and it is not the most precise estimator |
+| **Spotting it** | Residuals against fitted values, against each predictor and against the group size; `lmtest::bptest(fit, ~ z, data = d)` for the variable $z$ you suspect |
+| **WLS** | Minimise $\sum w_i e_i^2$, with $w_i = 1 / \text{Var}(\varepsilon_i)$; in R, `lm(y ~ x, weights = w)` |
+| **Known weights** | A mean of $n_i$ people has variance $\sigma^2 / n_i$, so $w_i = n_i$, unless there is also a variance that does not shrink with $n_i$ |
+| **Estimated weights** | Regress $e_i^2$ (or $\log e_i^2$) on the suspected variables, take $w_i = 1 / \widehat{\text{Var}}_i$, refit |
+| **Alternative** | Keep OLS, and use sandwich standard errors: `coeftest(fit, vcov = vcovHC(fit, type = "HC3"))` |
+| **Do not confuse** | Variance weights (`lm(weights = )`) with frequency weights and survey weights |
+| **Checking** | The standardised residuals, `rstandard()`, against the variable that drives the variance |
+| **Related pages** | [Generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd), [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd), [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Breusch, T. S., & Pagan, A. R. (1979). A simple test for heteroscedasticity and random coefficient variation. *Econometrica*, *47*(5), 1287–1294. https://doi.org/10.2307/1911963
+
+Koenker, R. (1981). A note on studentizing a test for heteroscedasticity. *Journal of Econometrics*, *17*(1), 107–112. https://doi.org/10.1016/0304-4076(81)90062-2
+
+Long, J. S., & Ervin, L. H. (2000). Using heteroscedasticity consistent standard errors in the linear regression model. *The American Statistician*, *54*(3), 217–224. https://doi.org/10.1080/00031305.2000.10474549
+
+MacKinnon, J. G., & White, H. (1985). Some heteroskedasticity-consistent covariance matrix estimators with improved finite sample properties. *Journal of Econometrics*, *29*(3), 305–325. https://doi.org/10.1016/0304-4076(85)90158-7
+
+NYC Department of Education. (2013). *2012 SAT results* [Data set]. NYC Open Data. https://data.cityofnewyork.us/Education/2012-SAT-Results/f9bf-2cp4
+
+Solon, G., Haider, S. J., & Wooldridge, J. M. (2015). What are we weighting for? *Journal of Human Resources*, *50*(2), 301–316. https://doi.org/10.3368/jhr.50.2.301
+
+White, H. (1980). A heteroskedasticity-consistent covariance matrix estimator and a direct test for heteroskedasticity. *Econometrica*, *48*(4), 817–838. https://doi.org/10.2307/1912934
+
+Zeileis, A. (2004). Econometric computing with HC and HAC covariance matrix estimators. *Journal of Statistical Software*, *11*(10), 1–17. https://doi.org/10.18637/jss.v011.i10
+
+Zeileis, A., & Hothorn, T. (2002). Diagnostic checking in regression relationships. *R News*, *2*(3), 7–10.
