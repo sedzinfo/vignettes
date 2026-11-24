@@ -12,7 +12,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Generalized least squares: EXAMPLE_GENERALIZED_LEAST_SQUARES
 - [x] Robust: EXAMPLE_ROBUST_REGRESSION
 - [x] Quantile: EXAMPLE_QUANTILE_REGRESSION
-- [ ] Deming (errors-in-variables)
+- [x] Deming (errors-in-variables): EXAMPLE_DEMING_REGRESSION
 - [ ] Nonlinear least squares
 - [ ] Isotonic
 - [ ] LOESS
