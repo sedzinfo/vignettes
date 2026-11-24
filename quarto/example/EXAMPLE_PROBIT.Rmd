@@ -1,0 +1,408 @@
+---
+title: "Probit Regression: How Little Light Can a Human See?"
+description: "Probit regression in R with glm(), on the classic experiment of Hecht, Shlaer and Pirenne (1942), in which three observers said whether they saw flashes of a few dozen light quanta: the hidden-variable model, maximum likelihood by hand, thresholds with delta, Fieller and bootstrap intervals, comparing observers, grouped and single trials, goodness of fit, probit against logit and complementary log-log, marginal effects, a model from physics and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the faintest flash
+
+Around 1940 three scientists sat in the dark until their eyes were as sensitive as they get. Then they looked at very short flashes of light, each a few dozen to a few hundred **quanta** (photons) at the eye, and said "yes" or "no". Hecht, Shlaer and Pirenne (1942) wanted to know how little light a human being can see. Their paper reports one of the most famous experiments on the senses.
+
+The same flash is sometimes seen and sometimes not. So there is no sharp limit. There is a **probability of seeing** that rises with the amount of light, from 0 to 1, along an S-shaped curve. The **threshold** is usually defined as the light that is seen half of the time.
+
+**Probit regression** is the model for this kind of data: a yes-or-no outcome whose probability rises with a predictor. It is as old as statistics for yes and no (Bliss, 1934, invented it for insects and poison), and it is the sister of logistic regression. Psychologists like it, because behind it there is a simple picture of what happens in the observer.
+
+```{r packages}
+library(ggplot2)
+
+obs_colours <- c(SH = "#2a78d6", SS = "#eb6834", MHP = "#1baf7a")
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The results are in the R package `MPDiR`, the companion of the book by Knoblauch and Maloney (2012). We read them from its copy on GitHub:
+
+```{r download}
+path <- tempfile(fileext = ".rda")
+download.file("https://raw.githubusercontent.com/cran/MPDiR/master/data/HSP.rda", path, mode = "wb", quiet = TRUE)
+load(path)
+light <- data.frame(observer = HSP$Obs, run = HSP$Run, quanta = HSP$Q, N = HSP$N,
+                    seen = round(HSP$p * HSP$N / 100))      # the paper gives percentages
+light$log_q <- log10(light$quanta)
+head(light, 6)
+c(rows = nrow(light), flashes = sum(light$N), seen = sum(light$seen))
+```
+
+Each row is one intensity: how many quanta reached the eye on average, how many flashes were shown (`N`) and how many were `seen`. There are three observers, SH, SS and MHP (the initials of the authors), two of them with two series (`run`). In all, `r num(sum(light$N))` flashes. We use the logarithm of the light, because the eye works with ratios.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ggplot(light, aes(quanta, seen / N, colour = observer, shape = run)) +
+  geom_point(size = 2.6) +
+  scale_x_log10(breaks = c(25, 50, 100, 200, 400)) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  scale_colour_manual(values = obs_colours) +
+  labs(title = "Share of flashes seen", x = "quanta at the eye (log scale)", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Below about 40 quanta nearly nothing is seen, above 250 everything is. A straight line cannot follow this, and would predict probabilities below 0 and above 1. The observer SS sees less light than the others.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a hidden quantity
+
+Imagine that each flash causes some amount of excitation in the observer, $y^*$. It depends on the light, and it varies from flash to flash, because of noise in the eye and the brain:
+
+$$y^* = \beta_0 + \beta_1 x + \varepsilon, \qquad \varepsilon \sim N(0, 1), \qquad x = \log_{10}(\text{quanta})$$
+
+The observer says "yes" if the excitation is above a criterion, which we can put at 0.
+
+### Step 2: the probability of "yes"
+
+$$P(\text{yes}) = P(y^* > 0) = \Phi(\beta_0 + \beta_1 x)$$
+
+$\Phi$ is the area under the standard normal curve (`pnorm()`). Its inverse, $\Phi^{-1}$, turns a probability into a number of standard deviations (`qnorm()`). It is called the **probit**. So the model is a straight line for the probit of the probability:
+
+$$\Phi^{-1}(P) = \beta_0 + \beta_1 x$$
+
+We set the standard deviation of the noise to 1. It must be set to something: we never see $y^*$, so its unit is arbitrary.
+
+### Step 3: threshold and noise
+
+The line is at 0, and the probability at 50%, where $x = -\beta_0/\beta_1$: the **threshold**. The slope is the inverse of the noise: rewrite the model as
+
+$$P(\text{yes}) = \Phi\!\left(\frac{x - \mu}{\sigma}\right), \qquad \mu = -\frac{\beta_0}{\beta_1}, \quad \sigma = \frac{1}{\beta_1}$$
+
+It is the cumulative normal distribution with mean $\mu$ and standard deviation $\sigma$. In the language of Bliss, each insect has its own lethal dose, and the doses are normally distributed in the population, with the mean $\mu$ (its **LD50**) and the spread $\sigma$. A steep curve means little noise.
+
+### Step 4: maximum likelihood
+
+In row $i$, $s_i$ of $N_i$ flashes were seen. With $p_i = \Phi(\beta_0 + \beta_1 x_i)$, the log-likelihood is the binomial one:
+
+$$\log L = \sum_i \left[ s_i \log p_i + (N_i - s_i) \log(1 - p_i) \right] + \text{const}$$
+
+R finds the maximum by iteratively reweighted least squares, as for every GLM. By hand, for the observer SH:
+
+```{r by_hand}
+sh <- subset(light, observer == "SH")
+minus_loglik <- function(b) {
+  eta <- b[1] + b[2] * sh$log_q
+  -sum(sh$seen * pnorm(eta, log.p = TRUE) + (sh$N - sh$seen) * pnorm(-eta, log.p = TRUE))
+}
+hand <- optim(c(-10, 5), minus_loglik, method = "BFGS", control = list(reltol = 1e-14))
+fit_sh <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = sh)
+rbind(by_hand = hand$par, glm = coef(fit_sh))
+```
+
+---
+
+## 4. Fitting the model and reading the output
+
+The outcome of a grouped binomial model is a pair of columns, the successes and the failures:
+
+```{r fit_sh}
+summary(fit_sh)
+b <- coef(fit_sh)
+mu_sh <- -b[[1]] / b[[2]]; sigma_sh <- 1 / b[[2]]
+c(threshold_quanta = 10^mu_sh, sigma_log10 = sigma_sh)
+```
+
+- **`log_q`** = `r f2(b[[2]])`: one unit more of $\log_{10}$ quanta, ten times the light, raises the hidden excitation by `r f2(b[[2]])` standard deviations of its noise. Nobody thinks in these units. The sign and the test are what one reads directly.
+- **The threshold** is $10^{-\beta_0/\beta_1}$ = **`r f0(10^mu_sh)` quanta**. SH sees flashes of this strength half of the time.
+- **The noise**, $1/\beta_1$ = `r f2(sigma_sh)` in $\log_{10}$ units, is a factor of $10^{`r f2(sigma_sh)`}$ = `r f2(10^sigma_sh)`. With light `r f2(10^sigma_sh)` times the threshold, the probability is $\Phi(1)$ = 84%.
+- **`Residual deviance`** = `r f1(deviance(fit_sh))` on `r df.residual(fit_sh)` degrees of freedom: with grouped data it is a test of fit (section 6). Here it is `r if (pchisq(deviance(fit_sh), df.residual(fit_sh), lower.tail = FALSE) > .05) "fine" else "too large"`.
+
+### One row per intensity, or one row per flash?
+
+The same estimates come from a file with one row for each of the flashes and an outcome of 0 or 1. The likelihood differs only by a constant:
+
+```{r single_trials}
+single <- data.frame(log_q = rep(sh$log_q, sh$N), yes = unlist(Map(function(s, n) rep(c(1, 0), c(s, n - s)), sh$seen, sh$N)))
+fit_single <- glm(yes ~ log_q, family = binomial("probit"), data = single)
+rbind(grouped = coef(fit_sh), single = coef(fit_single))
+c(deviance_grouped = deviance(fit_sh), deviance_single = deviance(fit_single))
+```
+
+The deviance is different. For single trials it is **not** a test of fit.
+
+---
+
+## 5. Three observers
+
+```{r observers}
+m0 <- glm(cbind(seen, N - seen) ~ log_q,            family = binomial("probit"), data = light)   # one curve
+m1 <- glm(cbind(seen, N - seen) ~ log_q + observer, family = binomial("probit"), data = light)   # same slope
+m2 <- glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial("probit"), data = light)   # own curves
+tests <- anova(m0, m1, m2, test = "Chisq")
+tests
+```
+
+Likelihood-ratio tests compare the models. The observers differ in their threshold ($\chi^2$(`r tests$Df[2]`) = `r f1(tests$Deviance[2])`, *p* `r pval(tests$"Pr(>Chi)"[2])`) and in their slope ($\chi^2$(`r tests$Df[3]`) = `r f1(tests$Deviance[3])`, *p* `r pval(tests$"Pr(>Chi)"[3])`). So each needs a separate curve.
+
+### Thresholds, with three kinds of interval
+
+A threshold is a **ratio** of two estimates, and its interval is not in the output of R. Three ways to get it:
+
+1. **Delta method**: the standard error of $-\beta_0/\beta_1$ from the covariance matrix, and a symmetric interval.
+2. **Fieller**: the set of all the values $x$ for which $\beta_0 + \beta_1 x = 0$ is not rejected, that is for which $(\hat\beta_0 + \hat\beta_1 x)^2 \le 1.96^2\, \text{Var}(\hat\beta_0 + \hat\beta_1 x)$. It need not be symmetric.
+3. **Parametric bootstrap**: simulate new answers from the fitted curve, fit again, many times.
+
+```{r thresholds}
+threshold_table <- function(d) {
+  m <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
+  b <- coef(m); V <- vcov(m); mu <- -b[[1]] / b[[2]]
+  g     <- c(-1 / b[[2]], b[[1]] / b[[2]]^2)                            # derivatives of -b0/b1
+  se    <- sqrt(drop(t(g) %*% V %*% g))
+  z2    <- qnorm(0.975)^2                                               # Fieller: a quadratic in x
+  A <- b[[2]]^2 - z2 * V[2, 2]; B <- 2 * (b[[1]] * b[[2]] - z2 * V[1, 2]); C <- b[[1]]^2 - z2 * V[1, 1]
+  fieller <- sort((-B + c(-1, 1) * sqrt(B^2 - 4 * A * C)) / (2 * A))
+  set.seed(71)
+  boot <- replicate(1000, { d$seen <- rbinom(nrow(d), d$N, fitted(m))
+    bb <- coef(suppressWarnings(glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))); -bb[[1]] / bb[[2]] })
+  10^c(threshold = mu, delta_low = mu - 1.96 * se, delta_high = mu + 1.96 * se, fieller_low = fieller[1], fieller_high = fieller[2],
+       boot_low = unname(quantile(boot, 0.025)), boot_high = unname(quantile(boot, 0.975)))
+}
+thresholds <- t(sapply(split(light, light$observer), threshold_table))
+noise      <- sapply(split(light, light$observer), function(d) 1 / coef(glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))[[2]])
+round(thresholds, 1)
+round(10^noise, 2)                                # the noise as a factor of light
+```
+
+The thresholds are `r f0(thresholds["SH", 1])`, `r f0(thresholds["SS", 1])` and `r f0(thresholds["MHP", 1])` quanta. The three intervals agree, because the slopes are known well. With a slope that is close to zero the delta method fails and Fieller's interval becomes very wide, as it should.
+
+```{r curves}
+grid <- expand.grid(log_q = seq(1.2, 2.75, by = 0.01), observer = levels(light$observer))
+pr   <- predict(m2, grid, se.fit = TRUE)                       # on the probit scale, then back
+grid$p <- pnorm(pr$fit); grid$low <- pnorm(pr$fit - 1.96 * pr$se.fit); grid$high <- pnorm(pr$fit + 1.96 * pr$se.fit)
+
+ggplot(grid, aes(10^log_q, p, colour = observer, fill = observer)) +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.2, colour = NA) +
+  geom_line(linewidth = 0.9) +
+  geom_point(data = light, aes(quanta, seen / N, colour = observer), size = 2, inherit.aes = FALSE) +
+  geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey50") +
+  scale_x_log10(breaks = c(25, 50, 100, 200, 400)) +
+  scale_colour_manual(values = obs_colours) + scale_fill_manual(values = obs_colours) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  labs(title = "Fitted probabilities of seeing, with 95% bands", x = "quanta at the eye (log scale)", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The bands are computed on the probit scale and then transformed, so they never leave the range from 0 to 1.
+
+---
+
+## 6. Does the model fit?
+
+With several flashes at each intensity, the **residual deviance** compares the model with one that has its own probability for each row. If the model is right it is about as large as its degrees of freedom.
+
+```{r fit_test}
+fit_table <- data.frame(model = c("one curve", "same slope", "own curves"),
+                        deviance = c(deviance(m0), deviance(m1), deviance(m2)), df = c(df.residual(m0), df.residual(m1), df.residual(m2)))
+fit_table$p <- pchisq(fit_table$deviance, fit_table$df, lower.tail = FALSE)
+fit_table
+res <- residuals(m2, type = "deviance")
+small <- mean(fitted(m2) * light$N < 1 | (1 - fitted(m2)) * light$N < 1)
+c(largest_residual = max(abs(res)), rows_with_tiny_expected_counts = small)
+```
+
+With own curves the deviance is `r f1(fit_table$deviance[3])` on `r fit_table$df[3]` degrees of freedom, *p* `r pval(fit_table$p[3])`: no sign of misfit. (The $\chi^2$ approximation is rough here, because `r pct(small)` of the rows expect less than one "yes" or less than one "no". A simulation of the deviance under the fitted model is the exact version:)
+
+```{r simulated_fit}
+set.seed(72)
+sim_dev <- replicate(1000, { z <- light; z$seen <- rbinom(nrow(z), z$N, fitted(m2))
+  suppressWarnings(deviance(glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial("probit"), data = z))) })
+c(mean_of_simulated_deviances = mean(sim_dev), p = mean(sim_dev >= deviance(m2)))
+```
+
+If the deviance were much larger than its degrees of freedom, the answers would vary **more** than binomial. In experiments this happens when the observer's attention drifts between blocks of trials. The remedy is `family = quasibinomial("probit")`, which widens the standard errors, or a random effect for the blocks.
+
+---
+
+## 7. Probit, logit or complementary log-log?
+
+Other S-curves could replace the normal one. The **logit** uses the logistic distribution, and the **complementary log-log** an asymmetric one, which rises slowly and ends abruptly:
+
+```{r links}
+links <- c("probit", "logit", "cloglog")
+fits  <- lapply(links, function(l) glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial(l), data = light))
+names(fits) <- links
+data.frame(link = links, deviance = sapply(fits, deviance), AIC = sapply(fits, AIC), slope_SH = sapply(fits, function(m) coef(m)[["log_q"]]), row.names = NULL)
+ratio <- coef(fits$logit)[["log_q"]] / coef(fits$probit)[["log_q"]]
+ratio
+
+# the light for SH to see 50% and 99%, by each link
+at_p <- function(m, p, link) 10^((switch(link, probit = qnorm(p), logit = qlogis(p), cloglog = log(-log(1 - p))) - coef(m)[[1]]) / coef(m)[["log_q"]])
+extremes <- t(sapply(links, function(l) sapply(c(0.01, 0.5, 0.99), function(p) at_p(fits[[l]], p, l))))
+colnames(extremes) <- c("1%", "50%", "99%")
+round(extremes, 0)
+```
+
+- The three curves fit almost equally well. The AICs are within `r f1(max(sapply(fits, AIC)) - min(sapply(fits, AIC)))` points, with the complementary log-log a little ahead, which is no decisive difference.
+- The **logit** coefficients are `r f2(ratio)` times as large as the probit ones, because the logistic distribution has a larger standard deviation ($\pi/\sqrt 3$ = 1.81). This is why coefficients of the two must not be compared directly. Rules of thumb say 1.6 to 1.8.
+- The **thresholds** agree (`r paste(f0(extremes[, "50%"]), collapse = ", ")` quanta). The **extremes** do not: for a probability of 1% the three curves say `r paste(f0(extremes[, "1%"]), collapse = ", ")` quanta. Far from the data, the choice of the link decides.
+
+So choose by the story. Probit for a normal hidden variable, and where the tradition is (psychophysics, toxicology, economics, models with several correlated outcomes). Logit when odds ratios are wanted. Cloglog when the probability comes from an underlying rate.
+
+---
+
+## 8. What a probit coefficient means in general: marginal effects
+
+In most uses of probit regression there is no natural unit for the predictor, and the effect is reported as a change of the **probability**:
+
+$$\frac{\partial P}{\partial x} = \beta_1\, \phi(\beta_0 + \beta_1 x)$$
+
+It is largest at the threshold and goes to 0 at both ends. So one number needs a convention: at the mean, or **averaged** over the cases.
+
+```{r marginal}
+eta    <- predict(m2, type = "link")
+slopes <- coef(m2)[["log_q"]] + c(SH = 0, SS = coef(m2)[["log_q:observerSS"]], MHP = coef(m2)[["log_q:observerMHP"]])[as.character(light$observer)]
+step   <- log10(1.1)                                                     # 10% more light
+ame    <- sum(light$N * slopes * dnorm(eta)) / sum(light$N)              # average marginal effect, over the flashes
+exact  <- sum(light$N * (pnorm(eta + slopes * step) - pnorm(eta))) / sum(light$N)
+max_effect <- tapply(slopes, light$observer, function(v) v[1]) * dnorm(0) * step
+c(average_effect_of_10pct_more_light = ame * step, exact = exact)
+max_effect
+```
+
+Averaged over the flashes of the experiment, 10% more light raises the probability of seeing by `r f1(100 * exact)` percentage points. At the threshold it raises it by `r f1(100 * max_effect[["SH"]])` points for SH and by `r f1(100 * max_effect[["SS"]])` for SS.
+
+---
+
+## 9. What the physicists said
+
+Hecht and his colleagues did not stop at the threshold. Quanta arrive at random: if a flash has 100 quanta on average, the number that is really **absorbed** by the rods of the eye varies like a Poisson variable with mean $\alpha Q$, where $\alpha$ is the small share that is absorbed. Suppose that the observer says "yes" if at least $k$ quanta are absorbed. Then
+
+$$P(\text{yes}) = P(\text{Poisson}(\alpha Q) \ge k)$$
+
+There is **no noise** in this observer. All the variability is in the light. The steepness of the curve then tells $k$, the number of quanta that are enough:
+
+```{r poisson_threshold}
+k_fit <- function(d, k) {
+  nll <- function(la) { p <- ppois(k - 1, exp(la) * d$quanta, lower.tail = FALSE); p <- pmin(pmax(p, 1e-12), 1 - 1e-12)
+    -sum(dbinom(d$seen, d$N, p, log = TRUE)) }
+  o <- optimize(nll, c(-6, 0)); c(k = k, alpha = exp(o$minimum), logLik = -o$objective)
+}
+physics <- do.call(rbind, lapply(levels(light$observer), function(o) {
+  d <- subset(light, observer == o)
+  r <- as.data.frame(t(sapply(1:15, function(k) k_fit(d, k))))
+  best <- r[which.max(r$logLik), ]
+  m <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
+  data.frame(observer = o, k = best$k, alpha = best$alpha, AIC_physics = -2 * best$logLik + 4, AIC_probit = AIC(m))
+}))
+physics
+```
+
+The best values of $k$ are `r paste(physics$k, collapse = ", ")`: **a handful of absorbed quanta** is enough to see. The authors themselves concluded 5 to 8. Because these few quanta fall on a region with hundreds of rods, hardly any rod gets two of them, so a **single quantum must be able to excite a rod**. They found this with a psychometric curve, long before anybody could measure it. (A modern experiment suggests that humans can do better than chance with single photons; Tinsley et al., 2016.) By the AIC the physical model is as good as the probit for SH and a little better for the other two, with one parameter for the light and one whole number.
+
+---
+
+## 10. Things to keep in mind
+
+- **The variance of the hidden variable is fixed at 1**, so coefficients are in units of that noise. Comparing probit (or logit) coefficients **between groups** or between models with different predictors mixes differences in effects with differences in noise. Compare probabilities, thresholds or marginal effects.
+- **Guessing and lapses.** If observers can guess (as in "left or right?"), the curve starts at 50%. If they blink, it does not reach 100%. Psychometric functions add two parameters for this (Wichmann & Hill, 2001). Ignoring lapses makes the slope too flat.
+- **Yes–no experiments mix seeing and willingness to say yes.** Signal detection theory separates the two with trials without light; its $d'$ is a difference of probits.
+- **Repeated answers of the same person** are not a sample of persons. Our intervals are about these three observers. For a population of observers, use a mixed model with random thresholds.
+- **Separation.** If a value of the predictor divides "yes" and "no" perfectly, the slope goes to infinity (see [rare outcomes and Firth's correction](EXAMPLE_IMBALANCED_LOGISTIC.Rmd)).
+- **More than two answers in order** lead to the ordered probit, the sister of [ordinal logistic regression](EXAMPLE_ORDINAL_LOGISTIC.Rmd): `MASS::polr(..., method = "probit")`.
+
+---
+
+## 11. Reporting the results in APA style
+
+A report (APA 7th edition) needs the outcome and its coding, the link, the predictor's scale, the estimates and tests, and quantities that readers can understand. The numbers come from the R objects:
+
+```{r apa_numbers}
+per_obs <- lapply(split(light, light$observer), function(d) glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))
+apa_table <- data.frame(
+  Observer = names(per_obs),
+  flashes  = sapply(split(light$N, light$observer), sum),
+  b  = f2(sapply(per_obs, function(m) coef(m)[[2]])),
+  SE = f2(sapply(per_obs, function(m) sqrt(vcov(m)[2, 2]))),
+  z  = f2(sapply(per_obs, function(m) coef(summary(m))[2, 3])),
+  thr = paste0(f0(thresholds[, 1]), " [", f0(thresholds[, "fieller_low"]), ", ", f0(thresholds[, "fieller_high"]), "]"),
+  noise = f2(10^noise))
+```
+
+**Method** (data analysis):
+
+> The answers (seen or not seen) of three observers to `r num(sum(light$N))` flashes of `r f0(min(light$quanta))` to `r f0(max(light$quanta))` quanta (Hecht et al., 1942) were analysed with probit regression on the base-10 logarithm of the number of quanta. Models with a common curve, with separate thresholds, and with separate thresholds and slopes were compared with likelihood-ratio tests. The threshold is the number of quanta seen with a probability of .50; its confidence intervals are Fieller intervals. Goodness of fit was assessed with the residual deviance and 1,000 simulated data sets. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> The probability of seeing increased with the amount of light in every observer (Table 1). The observers differed in their thresholds, χ²(`r tests$Df[2]`) = `r f1(tests$Deviance[2])`, *p* `r pval(tests$"Pr(>Chi)"[2])`, and in their slopes, χ²(`r tests$Df[3]`) = `r f1(tests$Deviance[3])`, *p* `r pval(tests$"Pr(>Chi)"[3])`. The thresholds were `r f0(thresholds["SH", 1])` quanta, 95% CI [`r f0(thresholds["SH", "fieller_low"])`, `r f0(thresholds["SH", "fieller_high"])`], for SH, `r f0(thresholds["SS", 1])`, 95% CI [`r f0(thresholds["SS", "fieller_low"])`, `r f0(thresholds["SS", "fieller_high"])`], for SS and `r f0(thresholds["MHP", 1])`, 95% CI [`r f0(thresholds["MHP", "fieller_low"])`, `r f0(thresholds["MHP", "fieller_high"])`], for MHP. The model with separate curves fitted the data, deviance = `r f1(deviance(m2))`, *df* = `r df.residual(m2)`, simulated *p* `r pval(mean(sim_dev >= deviance(m2)))`.
+
+**Table 1**
+
+*Probit Regression of Seeing a Flash on the Logarithm of the Light*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Observer", "Flashes", "*b*", "*SE*", "*z*", "Threshold (quanta) [95% CI]", "Noise (factor)"),
+             align = "lrrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *b*: change of the probit for ten times the light. Noise: the factor by which the light must exceed the threshold to be seen with a probability of .84. All *p* < .001.
+
+**Points to remember:**
+
+- Name the link. "Binary regression" is not enough.
+- Report quantities in the units of the problem: thresholds, probabilities, marginal effects.
+- Give the interval of a threshold, and how it was computed.
+- With grouped data, report the test of fit.
+
+---
+
+## 12. Summary
+
+| | |
+|---|---|
+| **When** | A yes-or-no outcome (or counts of yes out of *N*), and a normal hidden variable is a sensible picture |
+| **The model** | $P(y = 1) = \Phi(\beta_0 + \beta_1 x)$ |
+| **How (R)** | `glm(y ~ x, family = binomial("probit"))`; grouped: `cbind(successes, failures) ~ x` |
+| **Threshold** | $-\beta_0/\beta_1$ (LD50); noise $1/\beta_1$ |
+| **Interval of the threshold** | Fieller, delta method or bootstrap |
+| **Effect on the probability** | $\beta_1\phi(\beta_0 + \beta_1 x)$: depends on where you are |
+| **Against the logit** | Nearly the same curve; logit coefficients are about 1.6–1.8 times larger |
+| **Fit** | Residual deviance against its df, for grouped data |
+| **Related pages** | [Generalized linear models](EXAMPLE_GENERALIZED.rmd) (logistic), [ordinal logistic](EXAMPLE_ORDINAL_LOGISTIC.Rmd), [Heckman](EXAMPLE_HECKMAN_SELECTION.Rmd) (uses a probit) |
+
+---
+
+## References
+
+Bliss, C. I. (1934). The method of probits. *Science*, *79*(2037), 38–39. https://doi.org/10.1126/science.79.2037.38
+
+Fieller, E. C. (1954). Some problems in interval estimation. *Journal of the Royal Statistical Society: Series B*, *16*(2), 175–185. https://doi.org/10.1111/j.2517-6161.1954.tb00159.x
+
+Hecht, S., Shlaer, S., & Pirenne, M. H. (1942). Energy, quanta, and vision. *Journal of General Physiology*, *25*(6), 819–840. https://doi.org/10.1085/jgp.25.6.819
+
+Knoblauch, K., & Maloney, L. T. (2012). *Modeling psychophysical data in R*. Springer. https://doi.org/10.1007/978-1-4614-4475-6
+
+Tinsley, J. N., Molodtsov, M. I., Prevedel, R., Wartmann, D., Espigulé-Pons, J., Lauwers, M., & Vaziri, A. (2016). Direct detection of a single photon by humans. *Nature Communications*, *7*, Article 12172. https://doi.org/10.1038/ncomms12172
+
+Wichmann, F. A., & Hill, N. J. (2001). The psychometric function: I. Fitting, sampling, and goodness of fit. *Perception & Psychophysics*, *63*(8), 1293–1313. https://doi.org/10.3758/BF03194544
