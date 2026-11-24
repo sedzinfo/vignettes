@@ -18,7 +18,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] LOESS: EXAMPLE_LOESS
 - [x] Splines / GAM: EXAMPLE_SPLINES_GAM
 - [x] Multivariate (several outcomes): EXAMPLE_MULTIVARIATE_REGRESSION
-- [ ] Seemingly unrelated regression (SUR)
+- [x] Seemingly unrelated regression (SUR): EXAMPLE_SEEMINGLY_UNRELATED_REGRESSION
 
 ## Regularized
 - [x] Ridge, lasso, elastic net: EXAMPLE_REGULARIZED_REGRESSION

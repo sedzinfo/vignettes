@@ -1,0 +1,475 @@
+---
+title: "Seemingly Unrelated Regression: Do General Electric and Westinghouse Invest Alike?"
+description: "Seemingly unrelated regression (SUR) in R, by hand and with systemfit, on Grunfeld's investment data of US firms (1935-1954), the example of Zellner's original paper: why equations with correlated errors should be estimated together, feasible GLS with the Kronecker product, when SUR gives the same as OLS, the Breusch-Pagan test, tests between equations, iterated SUR and maximum likelihood, a simulation of the gain and of standard errors that are too small, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: two firms, two equations, one economy
+
+General Electric and Westinghouse were the two giants of electrical engineering in the United States. How much did each of them invest in new equipment every year, and what did it depend on? Grunfeld's theory says: on the **value** of the firm (what the market expects of it) and on the **capital** that it already has (which must be replaced). So there is a regression for each firm:
+
+$$\begin{aligned}
+\text{invest}_{GE,t} &= \beta_{1} + \beta_{2}\,\text{value}_{GE,t} + \beta_{3}\,\text{capital}_{GE,t} + \varepsilon_{GE,t} \\
+\text{invest}_{W,t}  &= \gamma_{1} + \gamma_{2}\,\text{value}_{W,t} + \gamma_{3}\,\text{capital}_{W,t} + \varepsilon_{W,t}
+\end{aligned}$$
+
+The two equations have nothing in common. Different firms, different outcomes, different predictors, different coefficients. They **seem unrelated**. But both firms lived through the same years. A good year for the whole industry, which neither value nor capital explains, makes **both** errors positive. Then the error of one equation contains information about the error of the other.
+
+Arnold Zellner (1962) showed how to use this information. His method, **seemingly unrelated regressions** (SUR), estimates the equations together and gets more precise coefficients than separate regressions. His example was this one, with these two firms.
+
+SUR is the neighbour of [multivariate regression](EXAMPLE_MULTIVARIATE_REGRESSION.Rmd). There, all equations have the same predictors, and joint estimation changes nothing. Here the predictors differ, and it does.
+
+```{r packages}
+library(ggplot2)
+library(systemfit)   # systems of equations: OLS, SUR and others
+library(lmtest)      # dwtest(): autocorrelation
+
+firm_colours <- c("General Electric" = "#2a78d6", "Westinghouse" = "#eb6834")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+f4   <- function(x) formatC(x, format = "f", digits = 4, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+```
+
+---
+
+## 1. The data
+
+Grunfeld's data have been used in so many textbooks that several wrong versions went around. Kleiber and Zeileis (2010) went back to the original and corrected them. Their version is in the R package `AER`, and as a CSV file in the *Rdatasets* collection:
+
+```{r download}
+grunfeld <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/AER/Grunfeld.csv")
+head(grunfeld[, c("firm", "year", "invest", "value", "capital")], 3)
+ge <- subset(grunfeld, firm == "General Electric")
+wh <- subset(grunfeld, firm == "Westinghouse")
+all(ge$year == wh$year)
+c(years = nrow(ge), from = min(ge$year), to = max(ge$year))
+```
+
+There are `r nrow(ge)` years, `r min(ge$year)` to `r max(ge$year)`, for each firm. All amounts are in millions of dollars, in constant prices. `invest` is the gross investment of the year, `value` the market value of the firm at the beginning of the year and `capital` its stock of plant and equipment.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+both <- rbind(ge, wh)
+ggplot(both, aes(year, invest, colour = firm)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 2) +
+  scale_colour_manual(values = firm_colours, name = NULL) +
+  labs(title = "Investment of the two firms", x = NULL, y = "million dollars (constant prices)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+General Electric is the larger firm, and the two series move together. But do the **errors** of the two regressions move together? That is what matters.
+
+```{r separate}
+ols_ge <- lm(invest ~ value + capital, data = ge)
+ols_wh <- lm(invest ~ value + capital, data = wh)
+round(rbind(GE = coef(summary(ols_ge))["value", ], Westinghouse = coef(summary(ols_wh))["value", ]), 4)
+r_errors <- cor(resid(ols_ge), resid(ols_wh))
+r_errors
+```
+
+```{r residuals}
+errors <- data.frame(year = ge$year, GE = resid(ols_ge), W = resid(ols_wh))
+ggplot(errors, aes(GE, W)) +
+  geom_hline(yintercept = 0, colour = "grey70") + geom_vline(xintercept = 0, colour = "grey70") +
+  geom_point(size = 2, colour = "grey25") +
+  geom_text(aes(label = year), size = 2.8, nudge_y = 1.4, colour = "grey40") +
+  labs(title = "Residuals of the two separate regressions",
+       x = "General Electric (million dollars)", y = "Westinghouse (million dollars)") +
+  theme_bw()
+```
+
+They do: the residuals of the two regressions correlate at `r f2(r_errors)`. In 1941 and 1947, for example, both firms invested more than their values and capitals explain, and in 1950 both invested less. The two regressions are not unrelated at all.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the errors of one year are correlated
+
+Let $m$ be the number of equations (firms) and $T$ the number of years. Within a year, the errors of the equations have a covariance matrix $\Sigma$. Between years, the errors are independent:
+
+$$\text{Cov}(\varepsilon_{it}, \varepsilon_{jt}) = \sigma_{ij}, \qquad \text{Cov}(\varepsilon_{it}, \varepsilon_{js}) = 0 \;\text{ for } t \ne s$$
+
+### Step 2: stack the equations
+
+Write the two outcomes one below the other, and the predictors in blocks:
+
+$$\underbrace{\begin{pmatrix} y_{GE} \\ y_W \end{pmatrix}}_{y} = \underbrace{\begin{pmatrix} X_{GE} & 0 \\ 0 & X_W \end{pmatrix}}_{X} \begin{pmatrix} \beta \\ \gamma \end{pmatrix} + \begin{pmatrix} \varepsilon_{GE} \\ \varepsilon_W \end{pmatrix}, \qquad \text{Cov}(\varepsilon) = \Sigma \otimes I_T$$
+
+The Kronecker product $\Sigma \otimes I_T$ is a matrix of $2 \times 2$ blocks: in each block, $\sigma_{ij}$ on the diagonal, because only errors of the same year are related. It is now one regression with correlated errors, which is **generalized least squares** (see [this page](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)):
+
+$$\hat\beta_{SUR} = \big(X^\top (\Sigma^{-1} \otimes I)\, X\big)^{-1} X^\top (\Sigma^{-1} \otimes I)\, y, \qquad \text{Var}(\hat\beta_{SUR}) = \big(X^\top (\Sigma^{-1} \otimes I)\, X\big)^{-1}$$
+
+### Step 3: $\Sigma$ is unknown, so estimate it
+
+1. Estimate each equation by OLS, and keep the residuals.
+2. $\hat\sigma_{ij} = \sum_t e_{it} e_{jt} / T$. (Dividing by $T - k$ instead, with $k$ coefficients per equation, is the other common choice.)
+3. Put $\hat\Sigma$ into the formula: **feasible** GLS.
+
+The step from 1 to 3 can be repeated with the new residuals until nothing changes. The end is the maximum likelihood estimate for normal errors.
+
+### Step 4: where the gain comes from
+
+Suppose the residual of General Electric in 1946 is large and positive. Because the errors correlate, we expect a positive error for Westinghouse in 1946, too. SUR takes that expected error **out** of Westinghouse's investment before it looks for the slope. It is like a covariate that OLS does not have.
+
+### Step 5: when there is nothing to gain
+
+Two cases give exactly the OLS estimates:
+
+- **The errors are uncorrelated** ($\sigma_{ij} = 0$): no information to pass on.
+- **All equations have the same predictors**: the covariate of step 4 would be orthogonal to the predictors by construction.
+
+The gain is largest when the errors are highly correlated and the predictors are not.
+
+---
+
+## 4. The estimates by hand
+
+```{r by_hand}
+X_ge <- model.matrix(ols_ge); X_wh <- model.matrix(ols_wh)
+Tn <- nrow(X_ge); k <- ncol(X_ge)
+Z  <- matrix(0, Tn, k)
+X  <- rbind(cbind(X_ge, Z), cbind(Z, X_wh))                            # the block matrix of step 2
+y  <- c(ge$invest, wh$invest)
+colnames(X) <- c(paste0("GE_", c("intercept", "value", "capital")), paste0("W_", c("intercept", "value", "capital")))
+
+E     <- cbind(GE = resid(ols_ge), W = resid(ols_wh))
+Sigma <- crossprod(E) / Tn
+round(Sigma, 1)
+
+W     <- kronecker(solve(Sigma), diag(Tn))                             # inverse of Sigma ⊗ I
+V_sur <- solve(t(X) %*% W %*% X)
+b_sur <- drop(V_sur %*% t(X) %*% W %*% y)
+cbind(OLS = c(coef(ols_ge), coef(ols_wh)), SUR = b_sur, SE_SUR = sqrt(diag(V_sur)))
+```
+
+With the package, the equations are a list of formulas. The data must be in **wide** form, one row per year:
+
+```{r systemfit}
+wide <- data.frame(year = ge$year,
+                   invest_ge = ge$invest, value_ge = ge$value, capital_ge = ge$capital,
+                   invest_wh = wh$invest, value_wh = wh$value, capital_wh = wh$capital)
+equations <- list(GE = invest_ge ~ value_ge + capital_ge,
+                  W  = invest_wh ~ value_wh + capital_wh)
+ols <- systemfit(equations, method = "OLS", data = wide)
+sur <- systemfit(equations, method = "SUR", data = wide, methodResidCov = "noDfCor")   # divide by T, as by hand
+max(abs(coef(sur) - b_sur))
+max(abs(sqrt(diag(vcov(sur))) - sqrt(diag(V_sur))))
+```
+
+The differences are zero. `methodResidCov = "noDfCor"` divides by $T$. The default of `systemfit()`, `"geomean"`, divides by the degrees of freedom. It leaves the estimates as they are when all equations have the same number of coefficients, and it makes the standard errors a little **larger**. With `r Tn` years that is the safer choice, so we use it from here on:
+
+```{r sur_default}
+sur <- systemfit(equations, method = "SUR", data = wide)
+summary(sur)
+b <- coef(sur); se <- sqrt(diag(vcov(sur))); se_ols <- sqrt(diag(vcov(ols)))
+```
+
+### How to read the output
+
+- **`Covariance of the residuals used for estimation`** is $\hat\Sigma$ from the OLS residuals, and **`... correlations of the residuals`** shows the link between the equations, after the final fit.
+- The **coefficients of each equation** are read as in any regression. One million dollars more in the value of General Electric goes with `r f3(b[["GE_value_ge"]])` million more investment in the year, and for Westinghouse with `r f3(b[["W_value_wh"]])`.
+- **`McElroy R²`** is a single $R^2$ for the whole system. The $R^2$ of an equation can be lower than with OLS, because OLS makes each $R^2$ as large as possible, and SUR does not aim for that.
+
+```{r gain_table}
+gain <- data.frame(term = names(b), OLS = coef(ols), SE_OLS = se_ols, SUR = b, SE_SUR = se, ratio = se / se_ols, row.names = NULL)
+print(cbind(term = gain$term, round(gain[, -1], 4)), row.names = FALSE)
+```
+
+```{r gain_chart}
+rows <- c("GE_value_ge", "GE_capital_ge", "W_value_wh", "W_capital_wh")
+plot_data <- rbind(data.frame(term = rows, est = coef(ols)[rows], se = se_ols[rows], method = "OLS"),
+                   data.frame(term = rows, est = b[rows], se = se[rows], method = "SUR"))
+plot_data$label <- factor(plot_data$term, levels = rev(rows),
+                          labels = rev(c("GE: value", "GE: capital", "Westinghouse: value", "Westinghouse: capital")))
+t_crit <- qt(0.975, Tn - k)
+
+ggplot(plot_data, aes(est, label, colour = method)) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_pointrange(aes(xmin = est - t_crit * se, xmax = est + t_crit * se), position = position_dodge(width = 0.5), linewidth = 0.8) +
+  scale_colour_manual(values = c(OLS = "#eb6834", SUR = "#2a78d6"), name = NULL) +
+  labs(title = "Separate (OLS) and joint (SUR) estimates with 95% intervals", x = "coefficient", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The standard errors of SUR are `r f1(100 * (1 - max(gain$ratio[-c(1, 4)])))` to `r f1(100 * (1 - min(gain$ratio[-c(1, 4)])))`% smaller for the slopes. The estimates move too: the slope of value for General Electric goes from `r f3(coef(ols)[["GE_value_ge"]])` (*t* = `r f2(coef(ols)[["GE_value_ge"]] / se_ols[["GE_value_ge"]])`) to `r f3(b[["GE_value_ge"]])` (*t* = `r f2(b[["GE_value_ge"]] / se[["GE_value_ge"]])`).
+
+---
+
+## 5. Tests
+
+### Are the equations related at all? The Breusch–Pagan test
+
+The null hypothesis is that $\Sigma$ is diagonal. Under it, $T$ times the sum of the squared correlations of the OLS residuals follows a $\chi^2$ distribution with $m(m-1)/2$ degrees of freedom (Breusch & Pagan, 1980). (This is another test than the Breusch–Pagan test for unequal variances.)
+
+```{r breusch_pagan}
+lm_stat <- Tn * r_errors^2
+c(LM = lm_stat, df = 1, p = pchisq(lm_stat, 1, lower.tail = FALSE))
+```
+
+The errors are related, $\chi^2$(1) = `r f2(lm_stat)`, *p* `r pval(pchisq(lm_stat, 1, lower.tail = FALSE))`.
+
+### Do the two firms invest alike?
+
+The question of the title compares coefficients **between** equations. Separate regressions cannot do it properly: the two estimates are correlated. In the system it is an ordinary linear hypothesis, with the covariance matrix of all six coefficients:
+
+$$H_0:\; \beta_2 = \gamma_2 \;\text{ and }\; \beta_3 = \gamma_3$$
+
+```{r equal}
+equal_slopes <- linearHypothesis(sur, c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0"), test = "F")
+equal_slopes
+
+difference <- function(term_a, term_b) {
+  d <- b[[term_a]] - b[[term_b]]
+  s <- sqrt(vcov(sur)[term_a, term_a] + vcov(sur)[term_b, term_b] - 2 * vcov(sur)[term_a, term_b])
+  c(difference = d, SE = s, t = d / s)
+}
+diffs <- rbind(value = difference("GE_value_ge", "W_value_wh"), capital = difference("GE_capital_ge", "W_capital_wh"))
+diffs
+```
+
+We cannot say that the slopes differ, *F*(`r equal_slopes$Df[2]`, `r equal_slopes$Res.Df[2]`) = `r f2(equal_slopes$F[2])`, *p* `r pval(equal_slopes$"Pr(>F)"[2])`. That is not evidence that they are the same: with `r Tn` years the standard errors of the differences are large. If theory says that the slopes are equal, we can impose it, and estimate them with both firms' data:
+
+```{r restricted}
+restricted <- systemfit(equations, method = "SUR", data = wide,
+                        restrict.matrix = c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0"))
+round(coef(summary(restricted))[c("GE_value_ge", "GE_capital_ge"), 1:2], 4)
+```
+
+### Iterating to maximum likelihood
+
+```{r iterate}
+iterated <- systemfit(equations, method = "SUR", data = wide, methodResidCov = "noDfCor", maxiter = 500, tol = 1e-8)
+cbind(two_steps = coef(sur), iterated = coef(iterated))
+c(iterations = iterated$iter)
+```
+
+Iterating changes the estimates a little. Both versions are equally good in large samples.
+
+---
+
+## 6. When does SUR help? Experiments
+
+### The same predictors: nothing happens
+
+If each firm had **all four** predictors (its own and the other's), the equations would have identical right-hand sides:
+
+```{r identical}
+same_rhs <- list(GE = invest_ge ~ value_ge + capital_ge + value_wh + capital_wh,
+                 W  = invest_wh ~ value_ge + capital_ge + value_wh + capital_wh)
+max(abs(coef(systemfit(same_rhs, method = "OLS", data = wide)) - coef(systemfit(same_rhs, method = "SUR", data = wide))))
+```
+
+The largest difference between OLS and SUR is zero, up to rounding, although the errors are correlated. This is the case of [multivariate regression](EXAMPLE_MULTIVARIATE_REGRESSION.Rmd).
+
+### A known truth: how large is the gain, and are the standard errors right?
+
+We take the predictors of the real data, a truth equal to our SUR estimates, and errors with a chosen correlation. For each correlation we simulate 1,000 histories of 20 years, and compare the **true** spread of the estimates of one slope with the standard errors that the programs report:
+
+```{r simulation}
+set.seed(12)
+truth <- b_sur
+sds   <- sqrt(diag(Sigma))
+fit_both <- function(yy) {
+  b_o <- c(qr.coef(qr(X_ge), yy[1:Tn]), qr.coef(qr(X_wh), yy[Tn + 1:Tn]))
+  e   <- matrix(yy - X %*% b_o, Tn)
+  S   <- crossprod(e) / (Tn - k)                                     # the cautious version, with degrees of freedom
+  Si  <- solve(S)
+  A   <- rbind(cbind(Si[1, 1] * crossprod(X_ge), Si[1, 2] * crossprod(X_ge, X_wh)),
+               cbind(Si[2, 1] * crossprod(X_wh, X_ge), Si[2, 2] * crossprod(X_wh)))
+  y1 <- yy[1:Tn]; y2 <- yy[Tn + 1:Tn]
+  V  <- solve(A)
+  b_s <- V %*% c(Si[1, 1] * crossprod(X_ge, y1) + Si[1, 2] * crossprod(X_ge, y2),
+                 Si[2, 1] * crossprod(X_wh, y1) + Si[2, 2] * crossprod(X_wh, y2))
+  c(ols = b_o[[2]], sur = b_s[[2]], se_ols = sqrt(S[1, 1] * solve(crossprod(X_ge))[2, 2]), se_sur = sqrt(V[2, 2]))
+}
+rhos <- c(0, 0.3, 0.5, 0.73, 0.9)
+experiment <- do.call(rbind, lapply(rhos, function(rho) {
+  S0 <- diag(sds) %*% matrix(c(1, rho, rho, 1), 2) %*% diag(sds)
+  L  <- t(chol(S0))
+  r  <- replicate(1000, fit_both(drop(X %*% truth) + as.vector(t(L %*% matrix(rnorm(2 * Tn), 2)))))
+  data.frame(rho, SD_OLS = sd(r["ols", ]), SD_SUR = sd(r["sur", ]),
+             reported_OLS = mean(r["se_ols", ]), reported_SUR = mean(r["se_sur", ]))
+}))
+experiment$gain <- 1 - experiment$SD_SUR / experiment$SD_OLS
+round(experiment, 4)
+```
+
+```{r simulation_chart}
+sim_long <- rbind(data.frame(rho = rhos, sd = experiment$SD_OLS, what = "OLS: true spread"),
+                  data.frame(rho = rhos, sd = experiment$SD_SUR, what = "SUR: true spread"),
+                  data.frame(rho = rhos, sd = experiment$reported_SUR, what = "SUR: reported standard error"))
+ggplot(sim_long, aes(rho, sd, colour = what, linetype = what)) +
+  geom_line(linewidth = 1) + geom_point(size = 2.2) +
+  scale_colour_manual(values = c("#eb6834", "#2a78d6", "#2a78d6"), name = NULL, breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")) +
+  scale_linetype_manual(values = c("solid", "solid", "dashed"), name = NULL, breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")) +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(title = "The slope of value for General Electric, 1,000 simulations each",
+       x = "correlation of the errors of the two equations", y = "standard deviation of the estimate") +
+  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+```
+
+- With uncorrelated errors SUR gains nothing (`r f1(100 * experiment$gain[1])`%). It even loses a little, because it estimates a correlation that is zero.
+- With the correlation of our data (0.73) the estimates are `r f1(100 * experiment$gain[4])`% more precise, and with 0.9, `r f1(100 * experiment$gain[5])`%.
+- The **reported** standard errors of SUR are smaller than the true spread: `r f4(experiment$reported_SUR[4])` against `r f4(experiment$SD_SUR[4])` at 0.73. The formula takes $\hat\Sigma$ for the true $\Sigma$. With 20 years and two equations the error is small. It grows with the number of equations, as the third experiment shows.
+
+### Five firms
+
+```{r five_firms}
+five <- c("General Motors", "Chrysler", "General Electric", "Westinghouse", "US Steel")
+fits <- lapply(five, function(f) lm(invest ~ value + capital, data = subset(grunfeld, firm == f)))
+R5 <- cor(sapply(fits, resid)); dimnames(R5) <- list(five, five)
+round(R5, 2)
+lm5 <- Tn * sum(R5[lower.tri(R5)]^2)
+c(LM = lm5, df = 10, p = pchisq(lm5, 10, lower.tail = FALSE))
+
+panel5 <- plm::pdata.frame(subset(grunfeld, firm %in% five)[, c("firm", "year", "invest", "value", "capital")], index = c("firm", "year"))
+sur5 <- systemfit(invest ~ value + capital, method = "SUR", data = panel5)
+ols5 <- systemfit(invest ~ value + capital, method = "OLS", data = panel5)
+ratio5 <- sqrt(diag(vcov(sur5)) / diag(vcov(ols5)))
+ge_rows <- c("General.Electric_value", "General.Electric_capital")
+data.frame(two_firms = se[c("GE_value_ge", "GE_capital_ge")], five_firms = sqrt(diag(vcov(sur5)))[ge_rows],
+           row.names = c("GE value", "GE capital"))
+```
+
+With five firms there are 10 correlations to estimate from `r Tn` years. They range from `r f2(min(R5[lower.tri(R5)]))` to `r f2(max(R5[lower.tri(R5)]))`: the electrical firms and US Steel go together, the car makers do not go with them. The reported standard errors of General Electric get smaller with more firms. Can we believe them?
+
+### Many equations: the standard errors stop being true
+
+Again a known truth: the predictors of 2, 5 and 10 of the firms, their OLS coefficients, and errors that correlate at 0.4 between all the firms. How does the reported standard error of the slope of value (first firm) compare with the true spread of the estimates?
+
+```{r many_equations}
+set.seed(13)
+firms <- setdiff(unique(grunfeld$firm), "American Steel")             # ten firms
+many <- function(m, reps = 500) {
+  d    <- lapply(c("General Electric", setdiff(firms, "General Electric"))[1:m], function(f) subset(grunfeld, firm == f))
+  Xs   <- lapply(d, function(z) cbind(1, z$value, z$capital))
+  fits <- lapply(seq_len(m), function(j) lm.fit(Xs[[j]], d[[j]]$invest))
+  mu   <- sapply(fits, function(f) f$fitted.values)
+  s0   <- sapply(fits, function(f) sqrt(sum(f$residuals^2) / (Tn - k)))
+  R    <- matrix(0.4, m, m); diag(R) <- 1
+  L    <- t(chol(diag(s0) %*% R %*% diag(s0)))
+  r <- replicate(reps, {
+    Ys <- mu + t(L %*% matrix(rnorm(m * Tn), m))
+    Es <- sapply(seq_len(m), function(j) lm.fit(Xs[[j]], Ys[, j])$residuals)
+    Si <- solve(crossprod(Es) / (Tn - k))
+    A  <- do.call(rbind, lapply(1:m, function(i) do.call(cbind, lapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Xs[[j]])))))
+    v  <- do.call(c, lapply(1:m, function(i) rowSums(sapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Ys[, j])))))
+    V  <- solve(A)
+    c(est = sum(V[2, ] * v), se = sqrt(V[2, 2]))
+  })
+  data.frame(equations = m, covariances = m * (m + 1) / 2, true_spread = sd(r["est", ]), reported_SE = mean(r["se", ]),
+             ratio = mean(r["se", ]) / sd(r["est", ]))
+}
+trap <- do.call(rbind, lapply(c(2, 5, 10), many))
+round(trap, 4)
+```
+
+With two equations the reported standard error is `r f2(trap$ratio[1])` times the true one, with five `r f2(trap$ratio[2])` and with ten `r f2(trap$ratio[3])`. With ten firms and 20 years there are `r trap$covariances[3]` variances and covariances to estimate, and the formula does not know how badly.
+
+---
+
+## 7. Things to keep in mind
+
+- **Many equations, few years.** $\Sigma$ has $m(m+1)/2$ elements. If $m$ comes close to $T$, the reported standard errors become far too small, as in the third experiment; with $m > T$ the estimate of $\Sigma$ cannot even be inverted. Beck and Katz (1995) showed this for panels of countries, and proposed to keep OLS and correct its standard errors instead (panel-corrected standard errors).
+- **Autocorrelation.** SUR allows errors to correlate between equations in the same year, not between years. Our residuals fail here:
+
+```{r durbin_watson}
+dw <- rbind(GE = unlist(dwtest(ols_ge)[c("statistic", "p.value")]), Westinghouse = unlist(dwtest(ols_wh)[c("statistic", "p.value")]))
+round(dw, 3)
+```
+
+- The Durbin–Watson statistics (`r f2(dw[1, 1])` and `r f2(dw[2, 1])`, far below 2) show positive autocorrelation, so **all** the standard errors of this page, OLS and SUR, are too small. A serious analysis would add autoregressive errors to each equation (Parks' method), or dynamics.
+- **One wrong equation spoils the others.** If the equation of one firm lacks an important predictor, its error goes through $\Sigma$ into the estimates of the other firms. OLS keeps such damage inside its own equation. SUR is more precise when everything is right, and less robust when something is wrong.
+- **Endogeneity.** SUR does not help if a predictor depends on the errors, for example if investment raises the value of the firm in the same year. (Here the value is that of the beginning of the year.) Three-stage least squares combines SUR with instrumental variables: `method = "3SLS"`.
+- **Pooling.** If the coefficients are the same in all equations, a panel model is simpler and more precise. SUR is for few units, many times and different coefficients.
+- **In psychology and sociology** the same model appears as a *path model* with correlated residuals. `lavaan` fits it with `y1 ~ x1; y2 ~ x2; y1 ~~ y2`, and with maximum likelihood it gives the iterated estimates. For categorical outcomes, the bivariate probit model is the relative of SUR.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the equations, why they are estimated together, the residual correlation and its test, the method and its variant, and the estimates. The numbers come from the R objects:
+
+```{r apa_numbers}
+terms <- c("Intercept", "Value", "Capital")
+fmt <- function(v) ifelse(abs(v) < 1, f3(v), f1(v))
+apa_table <- data.frame(
+  Equation  = c("General Electric", "", "", "Westinghouse", "", ""),
+  Predictor = rep(terms, 2),
+  ols  = fmt(coef(ols)), ols_se = fmt(se_ols),
+  sur  = fmt(b), sur_se = fmt(se),
+  t    = f2(b / se))
+```
+
+**Method** (data analysis):
+
+> We modelled the annual gross investment of General Electric and Westinghouse from `r min(ge$year)` to `r max(ge$year)` (*T* = `r Tn` years, million dollars; Grunfeld's data as corrected by Kleiber & Zeileis, 2010) with one equation per firm, with the market value of the firm and its stock of capital as predictors. Because both firms were exposed to the same economic conditions, the equations were estimated jointly by seemingly unrelated regressions (Zellner, 1962), using the residual covariance matrix of the OLS equations with a correction for degrees of freedom. Independence of the equations was tested with the Breusch–Pagan (1980) test, and equality of the slopes with an *F* test on the joint estimates. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package systemfit (Henningsen & Hamann, 2007).
+
+**Results:**
+
+> The residuals of the two equations were correlated, *r* = `r nz(r_errors)`, χ²(1) = `r f2(lm_stat)`, *p* `r pval(pchisq(lm_stat, 1, lower.tail = FALSE))`. In the joint estimates (Table 1), investment increased with the value of the firm both for General Electric, *b* = `r f3(b[["GE_value_ge"]])`, *SE* = `r f3(se[["GE_value_ge"]])`, *t*(`r Tn - k`) = `r f2(b[["GE_value_ge"]] / se[["GE_value_ge"]])`, and for Westinghouse, *b* = `r f3(b[["W_value_wh"]])`, *SE* = `r f3(se[["W_value_wh"]])`, *t*(`r Tn - k`) = `r f2(b[["W_value_wh"]] / se[["W_value_wh"]])`. The slopes of the two firms did not differ significantly, *F*(`r equal_slopes$Df[2]`, `r equal_slopes$Res.Df[2]`) = `r f2(equal_slopes$F[2])`, *p* `r pval(equal_slopes$"Pr(>F)"[2])`. The residuals were autocorrelated (Durbin–Watson = `r f2(dw[1, 1])` and `r f2(dw[2, 1])`), so the standard errors are probably too small.
+
+**Table 1**
+
+*Investment of General Electric and Westinghouse: Separate and Joint Estimates*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Equation", "Predictor", "OLS *b*", "OLS *SE*", "SUR *b*", "SUR *SE*", "SUR *t*"),
+             align = "llrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *T* = `r Tn` years. SUR = seemingly unrelated regressions. Residual correlation between the equations: `r nz(r_errors)` (OLS residuals).
+
+**Points to remember:**
+
+- Report the residual correlations: they are the reason for the method.
+- Say how $\hat\Sigma$ was computed (divisor, one step or iterated).
+- Show OLS next to SUR. If they differ by more than precision can explain, suspect a wrong equation.
+- Give the number of equations and of time points.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | Several regressions with different predictors whose errors are correlated, such as firms in the same years or outcomes of the same people |
+| **The model** | Stacked equations, errors with covariance $\Sigma \otimes I$ |
+| **How (R)** | `systemfit(list(eq1 = y1 ~ x1, eq2 = y2 ~ x2), method = "SUR", data = wide)` |
+| **The estimator** | Feasible GLS: OLS, then $\hat\Sigma$ from its residuals, then GLS; iterated = maximum likelihood |
+| **Gain** | Large with correlated errors and different predictors |
+| **No gain** | Uncorrelated errors, or the same predictors everywhere |
+| **Tests** | Breusch–Pagan for $\Sigma$ diagonal; `linearHypothesis()` between equations |
+| **Dangers** | Many equations and few times; autocorrelation; one misspecified equation |
+| **Related pages** | [Multivariate regression](EXAMPLE_MULTIVARIATE_REGRESSION.Rmd), [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd) |
+
+---
+
+## References
+
+Beck, N., & Katz, J. N. (1995). What to do (and not to do) with time-series cross-section data. *American Political Science Review*, *89*(3), 634–647. https://doi.org/10.2307/2082979
+
+Breusch, T. S., & Pagan, A. R. (1980). The Lagrange multiplier test and its applications to model specification in econometrics. *The Review of Economic Studies*, *47*(1), 239–253. https://doi.org/10.2307/2297111
+
+Henningsen, A., & Hamann, J. D. (2007). systemfit: A package for estimating systems of simultaneous equations in R. *Journal of Statistical Software*, *23*(4), 1–40. https://doi.org/10.18637/jss.v023.i04
+
+Kleiber, C., & Zeileis, A. (2010). The Grunfeld data at 50. *German Economic Review*, *11*(4), 404–417. https://doi.org/10.1111/j.1468-0475.2010.00513.x
+
+Zellner, A. (1962). An efficient method of estimating seemingly unrelated regressions and tests for aggregation bias. *Journal of the American Statistical Association*, *57*(298), 348–368. https://doi.org/10.1080/01621459.1962.10480664
