@@ -1,0 +1,401 @@
+---
+title: "Hurdle and Two-Part Models: Does Free Health Care Make People Use More of It?"
+description: "Two-part (hurdle) models in R on the RAND Health Insurance Experiment, where families were randomly given free care or had to pay part of the bill: spending with many zeros and a long tail, a logistic part for any spending and a gamma or log-normal part for how much, Duan's smearing estimator, predictions and average effects with the bootstrap, splitting an effect into its two parts, comparison with one-part and Tobit models, hurdle models for counts with pscl, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: first whether, then how much
+
+In the 1970s the United States made an experiment that has not been repeated: the **RAND Health Insurance Experiment**. Thousands of families were assigned **at random** to different health insurance. For some, care was free. Others had to pay 25%, 50% or 95% of every bill, up to a yearly limit. Does it matter for how much care people use (Manning et al., 1987)?
+
+The outcome is the medical spending of a person in a year, and it has two awkward features:
+
+- many people spend **nothing at all**;
+- among those who spend, most spend little and a few spend **enormous** amounts.
+
+No ordinary distribution looks like that. But there is a natural way to think about it. A person first decides **whether** to see a doctor at all. Once there, the person and the doctor decide **how much** is done. The price may act on the first step, on the second, or on both. **Two-part models** (also called **hurdle** models; Cragg, 1971) model the two steps separately and then put them together.
+
+```{r packages}
+library(ggplot2)
+library(pscl)       # hurdle(): hurdle models for counts
+library(MASS)       # glm.nb(): negative binomial regression (comes with R)
+library(survival)   # survreg(): the Tobit model, for comparison (comes with R)
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+```{r download}
+rand_all <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/sampleSelection/RandHIE.csv")
+rand <- subset(rand_all, year == 2 & !is.na(educdec))           # the second year, one row per person
+rand <- with(rand, data.frame(
+  spending = meddol,                                            # medical spending in the year, US dollars
+  visits   = mdvis,                                             # visits to a physician
+  plan     = factor(coins, levels = c(0, 25, 50, 95, 100), labels = c("free", "25%", "50%", "95%", "deductible")),
+  age = xage, female, child, income = income / 1000, disease = disea,
+  fair_poor = as.integer(hlthf + hlthp > 0), education = educdec))
+rand$any <- as.integer(rand$spending > 0)
+nrow(rand)
+table(rand$plan)
+```
+
+We use the second year of the experiment, `r num(nrow(rand))` people. `plan` is the share of the bill that the family paid. The last group, "deductible", paid 95% of outpatient care up to a limit per person, and nothing for hospital care. `disease` is the number of chronic diseases, `fair_poor` is 1 for people who described their health as fair or poor, `income` is in thousands of dollars.
+
+Because the plans were assigned **at random**, the groups are comparable, and the differences between the plans are effects. The families were randomised, not the persons, and the file has no family number. So the standard errors of this page are a little too small.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+pa <- ggplot(rand, aes(pmin(spending, 800))) +
+  geom_histogram(binwidth = 20, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  labs(title = "Spending (800 = 800 or more)", x = "US dollars per year", y = "people") + theme_bw()
+pb <- ggplot(subset(rand, any == 1), aes(log(spending))) +
+  geom_histogram(binwidth = 0.3, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  labs(title = "Log of the spending above zero", x = "log(dollars)", y = NULL) + theme_bw()
+patchwork::wrap_plots(pa, pb)
+
+c(share_zero = mean(rand$any == 0), median = median(rand$spending), mean = mean(rand$spending), max = max(rand$spending))
+top1 <- sum(sort(rand$spending, decreasing = TRUE)[seq_len(round(0.01 * nrow(rand)))]) / sum(rand$spending)
+top1
+```
+
+`r pct(mean(rand$any == 0))` spent nothing. The median is `r f0(median(rand$spending))` dollars and the mean `r f0(mean(rand$spending))`; the top 1% of the people account for `r pct(top1)` of all the spending. On a log scale the positive part looks almost normal.
+
+```{r by_plan}
+by_plan <- do.call(rbind, lapply(split(rand, rand$plan), function(d)
+  data.frame(n = nrow(d), share_any = mean(d$any), mean_if_any = mean(d$spending[d$any == 1]), mean_all = mean(d$spending))))
+round(by_plan, 3)
+```
+
+The experiment allows a direct answer: compare the plans. With free care `r pct(by_plan["free", "share_any"])` of the people used some care, with 95% to pay, `r pct(by_plan["95%", "share_any"])`. The means are much less clear. The mean of the 50% plan is the **highest**, although its share of users is lower. It is a small group (`r by_plan["50%", "n"]` people), and a few huge bills decide its mean. A model that respects the shape of the data should do better.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: split the mean
+
+Every mean of a variable with zeros can be written as a product:
+
+$$E(y \mid x) = \underbrace{P(y > 0 \mid x)}_{\text{part 1: whether}} \times \underbrace{E(y \mid y > 0, x)}_{\text{part 2: how much}}$$
+
+It is not an assumption. It is arithmetic. The assumptions come with the models for the two factors.
+
+### Step 2: part 1, a model for yes or no
+
+A logistic regression, on **everybody**:
+
+$$\log \frac{p_i}{1 - p_i} = x_i^\top \alpha$$
+
+### Step 3: part 2, a model for positive amounts
+
+On **those with some spending only**. There are two usual choices:
+
+- **Log-normal**: $\log y_i = x_i^\top\beta + \varepsilon_i$, by OLS on the logarithm.
+- **Gamma with a log link**: $E(y_i \mid y_i > 0) = \exp(x_i^\top\beta)$, with a variance proportional to the square of the mean.
+
+In both, $e^{\beta}$ is a ratio: how many times more the users spend.
+
+### Step 4: from logs back to dollars, the smearing estimator
+
+The mean of $y$ is **not** the exponential of the mean of $\log y$. If $\log y$ has the mean $x^\top\beta$, then $E(y) = e^{x^\top\beta} \times E(e^{\varepsilon})$, and the second factor is larger than 1. If the errors were normal it would be $e^{\sigma^2/2}$. Duan (1983) showed that the normal distribution is not needed. Use the average of the exponentiated residuals, the **smearing factor**:
+
+$$\hat S = \frac{1}{n_+} \sum_{i:\, y_i > 0} e^{\hat\varepsilon_i}, \qquad \hat E(y \mid y > 0, x) = \hat S\, e^{x^\top\hat\beta}$$
+
+The gamma model does not need this, because it models the mean in dollars directly.
+
+### Step 5: the two parts are estimated separately
+
+The likelihood of a two-part model is a product of two pieces with no parameters in common, so each part can be fitted by itself. There is **no** correlation to estimate, unlike in the [Heckman model](EXAMPLE_HECKMAN_SELECTION.Rmd). The reason is that the zeros here are real zeros. Nobody asks what the non-users "would have spent".
+
+### Step 6: effects
+
+A predictor can appear in both parts. Its effect on the mean has two sources (with $\mu$ the mean of the second part):
+
+$$\underbrace{p_1\mu_1 - p_0\mu_0}_{\text{total}} = \underbrace{(p_1 - p_0)\,\mu_0}_{\text{more users}} + \underbrace{p_1\,(\mu_1 - \mu_0)}_{\text{more per user}}$$
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r part1}
+part1 <- glm(any ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+             family = binomial, data = rand)
+round(coef(summary(part1)), 3)
+```
+
+```{r part2}
+users <- subset(rand, any == 1)
+part2_gamma <- glm(spending ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+                   family = Gamma("log"), data = users, control = list(maxit = 100))
+part2_log   <- lm(log(spending) ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education, data = users)
+smear <- mean(exp(resid(part2_log)))
+c(users = nrow(users), smearing_factor = smear, if_normal = exp(sigma(part2_log)^2 / 2))
+rows <- c(paste0("plan", levels(rand$plan)[-1]), "female", "disease", "fair_poor")
+round(cbind(gamma = coef(summary(part2_gamma))[rows, 1:2], lognormal = coef(summary(part2_log))[rows, 1:2]), 3)
+```
+
+Read the two parts side by side:
+
+```{r read_parts}
+or <- exp(coef(part1)); ratio_g <- exp(coef(part2_gamma)); ratio_l <- exp(coef(part2_log))
+p1 <- coef(summary(part1))[, 4]; p2 <- coef(summary(part2_gamma))[, 4]; p2l <- coef(summary(part2_log))[, 4]
+```
+
+- **The plan and whether.** Compared with free care, the odds of using any care are `r f2(or[["plan95%"]])` times as high with the 95% plan (*p* `r pval(p1[["plan95%"]])`). The price keeps people away from the first visit.
+- **The plan and how much.** Among the users, those on the 95% plan spend `r f2(ratio_g[["plan95%"]])` times as much as those with free care by the gamma model (*p* `r pval(p2[["plan95%"]])`) and `r f2(ratio_l[["plan95%"]])` times by the log-normal one (*p* `r pval(p2l[["plan95%"]])`).
+- **Illness** acts on both. Each chronic disease multiplies the odds of any use by `r f2(or[["disease"]])` and the amount by `r f2(ratio_g[["disease"]])`.
+- **Women** use care more often (odds ratio `r f2(or[["female"]])`), but do not clearly spend more once they do (ratio `r f2(ratio_g[["female"]])`, *p* `r pval(p2[["female"]])`, gamma). The log-normal model disagrees: ratio `r f2(ratio_l[["female"]])`, *p* `r pval(p2l[["female"]])`. The two compare different things. The log model compares the **typical** (geometric mean) amounts, the gamma model the **means**, which the largest bills dominate. For costs, the mean is usually what counts.
+
+A predictor can matter in one part and not in the other, and even with opposite signs. One-part models cannot show that.
+
+### The smearing factor
+
+The exponential of the mean log is `r f1(smear)` times too small. With a normal distribution of the errors it would have to be multiplied by `r f1(exp(sigma(part2_log)^2 / 2))`: the errors of the logs are not quite normal, and the residuals decide. One more trap: if the spread of the errors differs between the plans, one smearing factor for all is wrong.
+
+```{r smear_by_plan}
+round(tapply(exp(resid(part2_log)), users$plan, mean), 2)
+round(tapply(resid(part2_log), users$plan, sd), 2)
+```
+
+It ranges from `r f1(min(tapply(exp(resid(part2_log)), users$plan, mean)))` to `r f1(max(tapply(exp(resid(part2_log)), users$plan, mean)))`. For a comparison of plans in dollars the gamma model is safer here, and we use it from now on.
+
+---
+
+## 5. Putting the parts together
+
+### Predictions
+
+```{r combine}
+predict_mean <- function(newdata, m1 = part1, m2 = part2_gamma)
+  predict(m1, newdata, type = "response") * predict(m2, newdata, type = "response")
+
+# everybody on the same plan, with their own age, health and so on
+standardised <- t(sapply(levels(rand$plan), function(pl) {
+  d <- rand; d$plan <- factor(pl, levels = levels(rand$plan))
+  p <- predict(part1, d, type = "response"); m <- predict(part2_gamma, d, type = "response")
+  c(p = mean(p), amount = sum(p * m) / sum(p), mean = mean(p * m))
+}))
+round(cbind(standardised, observed_mean = by_plan$mean_all), 2)
+```
+
+Each row answers: if **all** the `r num(nrow(rand))` people had this plan, what share would use care, how much would the users spend, and how much is that per person? (The amount per user is averaged over the users that each plan would have.)
+
+### The effect, with a bootstrap interval
+
+There is no formula for the standard error of a product of two predictions averaged over people. The bootstrap resamples people and repeats everything:
+
+```{r bootstrap}
+effect_of <- function(d) {
+  m1 <- glm(formula(part1), family = binomial, data = d)
+  m2 <- glm(formula(part2_gamma), family = Gamma("log"), data = subset(d, any == 1), control = list(maxit = 100))
+  s <- sapply(c("free", "25%", "95%"), function(pl) {
+    z <- d; z$plan <- factor(pl, levels = levels(rand$plan))
+    p <- predict(m1, z, type = "response"); m <- predict(m2, z, type = "response")
+    c(p = mean(p), amount = sum(p * m) / sum(p), mean = mean(p * m))
+  })
+  total <- s["mean", "95%"] - s["mean", "free"]
+  whether <- (s["p", "95%"] - s["p", "free"]) * s["amount", "free"]
+  c(total = total, whether = whether, how_much = total - whether, ratio = s["mean", "95%"] / s["mean", "free"],
+    d_p = s["p", "95%"] - s["p", "free"], d_amount = s["amount", "95%"] - s["amount", "free"])
+}
+set.seed(51)
+point <- effect_of(rand)
+boot  <- replicate(500, effect_of(rand[sample(nrow(rand), replace = TRUE), ]))
+ci    <- apply(boot, 1, quantile, c(0.025, 0.975))
+round(rbind(estimate = point, ci), 2)
+```
+
+Paying 95% instead of nothing changes the spending of an average person by **`r f0(point[["total"]])` dollars a year**, 95% CI [`r f0(ci[1, "total"])`, `r f0(ci[2, "total"])`]. Spending is `r f2(point[["ratio"]])` times that with free care, [`r f2(ci[1, "ratio"])`, `r f2(ci[2, "ratio"])`].
+
+The split of step 6:
+
+```{r split_chart}
+split_data <- data.frame(
+  part = factor(c("fewer users", "less per user", "total"), levels = c("total", "less per user", "fewer users")),
+  est = point[c("whether", "how_much", "total")], low = ci[1, c("whether", "how_much", "total")], high = ci[2, c("whether", "how_much", "total")])
+ggplot(split_data, aes(est, part, colour = part)) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_pointrange(aes(xmin = low, xmax = high), linewidth = 1) +
+  scale_colour_manual(values = c(total = "grey25", `less per user` = "#eb6834", `fewer users` = "#2a78d6"), guide = "none") +
+  labs(title = "The effect of paying 95% instead of nothing, in two parts", x = "dollars per person and year (95% bootstrap interval)", y = NULL) +
+  theme_bw()
+```
+
+`r f0(abs(point[["whether"]]))` dollars come from fewer people using care (the share falls by `r f1(abs(100 * point[["d_p"]]))` points, 95% CI [`r f1(abs(100 * ci[2, "d_p"]))`, `r f1(abs(100 * ci[1, "d_p"]))`]), and `r f0(abs(point[["how_much"]]))` from less spending per user, 95% CI for this part [`r f0(ci[1, "how_much"])`, `r f0(ci[2, "how_much"])`]. The first part is certain. The second is much less so: the amounts vary enormously, and the interval is wide.
+
+---
+
+## 6. Against one-part models
+
+What if we model the spending in one piece?
+
+```{r one_part}
+f_rhs  <- ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education
+ols    <- lm(update(f_rhs, spending ~ .), data = rand)
+quasi  <- glm(update(f_rhs, spending ~ .), family = quasipoisson, data = rand)            # log link, zeros allowed
+tobit  <- survreg(update(f_rhs, Surv(log(spending + 1), spending > 0, type = "left") ~ .), data = rand, dist = "gaussian")
+
+tobit_mean <- function(d) {                              # E(y) by the Tobit model for log(y + 1): by simulation
+  mu <- predict(tobit, d); set.seed(1)
+  z  <- rnorm(400); mean(sapply(z, function(e) mean(pmax(exp(mu + tobit$scale * e) - 1, 0))))
+}
+plan_mean <- function(pl, kind) {
+  d <- rand; d$plan <- factor(pl, levels = levels(rand$plan))
+  switch(kind, OLS = mean(predict(ols, d)), `one-part, log link` = mean(predict(quasi, d, type = "response")),
+         Tobit = tobit_mean(d), `two-part` = mean(predict_mean(d)))
+}
+kinds <- c("OLS", "one-part, log link", "Tobit", "two-part")
+models <- sapply(kinds, function(k) sapply(c("free", "25%", "95%"), plan_mean, kind = k))
+round(cbind(models, observed = by_plan[c("free", "25%", "95%"), "mean_all"]), 0)
+negative <- mean(predict(ols) < 0)
+c(OLS_negative_predictions = negative)
+```
+
+- **OLS** gets the averages right, and predicts **negative** spending for `r pct(negative, 1)` of the people. Its coefficients are dollars, the same for everybody.
+- The **one-part model with a log link** (quasi-Poisson) also gets the averages right, zeros and all. If only $E(y \mid x)$ is of interest, it is a simple and good choice. It says nothing about the two decisions.
+- **Tobit** (on the log scale) predicts `r f0(models["free", "Tobit"])` dollars for free care, against `r f0(by_plan["free", "mean_all"])` observed. It assumes that the same line decides whether and how much, and that the zeros are the hidden part of a normal distribution. Neither is true here.
+
+```{r calibration_chart}
+rand$predicted <- predict_mean(rand)
+rand$tenth <- cut(rand$predicted, quantile(rand$predicted, 0:10 / 10), include.lowest = TRUE, labels = 1:10)
+cal <- aggregate(cbind(predicted, spending) ~ tenth, data = rand, FUN = mean)
+cal_long <- rbind(data.frame(tenth = cal$tenth, dollars = cal$predicted, what = "predicted by the two-part model"),
+                  data.frame(tenth = cal$tenth, dollars = cal$spending,  what = "observed"))
+ggplot(cal_long, aes(tenth, dollars, colour = what, group = what)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
+  scale_colour_manual(values = c(observed = "grey30", `predicted by the two-part model` = "#2a78d6"), name = NULL) +
+  labs(title = "Mean spending in tenths of the predicted spending", x = "tenth of the people, by predicted spending", y = "dollars") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The two-part model sorts people well, from `r f0(cal$spending[1])` dollars observed in the lowest tenth to `r f0(cal$spending[10])` in the highest, with the noise that a few large bills bring.
+
+---
+
+## 7. The same idea for counts: hurdle models
+
+For counts such as the number of visits, the second part is a **zero-truncated** count distribution: a Poisson or negative binomial without its zero. The **hurdle** is the step from 0 to 1 (Mullahy, 1986). `pscl::hurdle()` fits both parts at once:
+
+```{r hurdle}
+hurdle_nb <- hurdle(visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+                    data = rand, dist = "negbin", zero.dist = "binomial")
+nb <- glm.nb(visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education, data = rand)
+pois <- glm(formula(nb), family = poisson, data = rand)
+hs <- summary(hurdle_nb)$coefficients
+round(cbind(zero_part = hs$zero[c("plan95%", "female", "disease"), c(1, 2, 4)], count_part = hs$count[c("plan95%", "female", "disease"), c(1, 2, 4)]), 3)
+counts_aic <- AIC(pois, nb, hurdle_nb)
+counts_aic
+zeros <- c(observed = sum(rand$visits == 0), poisson = sum(dpois(0, fitted(pois))),
+           negative_binomial = sum(dnbinom(0, mu = fitted(nb), size = nb$theta)),
+           hurdle = sum(predict(hurdle_nb, type = "prob")[, 1]))
+round(zeros)
+```
+
+The **hurdle model reproduces the number of zeros exactly**, because it has a separate part for them. Poisson regression expects `r f0(zeros[["poisson"]])` people without a visit, and there are `r f0(zeros[["observed"]])`. The negative binomial, which allows more variation, expects `r f0(zeros[["negative_binomial"]])`. By the AIC the hurdle model is `r f0(counts_aic["nb", "AIC"] - counts_aic["hurdle_nb", "AIC"])` points better than the negative binomial.
+
+A **zero-inflated** model is the close relative: there, zeros come from two sources, people who never go and people who could have gone but did not. A hurdle model has only one kind of zero. Here one can argue either way, and the two often fit equally well.
+
+---
+
+## 8. Things to keep in mind
+
+- **Whose question?** If you need only the mean, a one-part model with a log link is enough. Use two parts when the two decisions are of interest, or when the predictors act differently on them.
+- **The second part compares selected groups.** The users on the 95% plan are fewer, and probably sicker, than the users with free care. So the **ratio of the second part is not an effect** of the price on given people, even in a randomised experiment. The effects that the randomisation supports are those on the share of users and on the **mean of everybody**.
+- **Report the combination**, with an interval. Two tables of coefficients leave the reader to multiply. (Belotti et al., 2015, review the model and its marginal effects.)
+- **Two-part, Tobit or Heckman?** Real zeros: two-part. Zeros that hide a value (below a detection limit): [Tobit](EXAMPLE_TOBIT.Rmd). An outcome that exists but is seen only for a selected group: [Heckman](EXAMPLE_HECKMAN_SELECTION.Rmd).
+- **The tail.** One bill of `r f0(max(rand$spending))` dollars is `r pct(max(rand$spending) / sum(rand$spending), 1)` of all the spending. Gamma models are less sensitive to it than OLS, but not immune. See how the results change without the top few values.
+- **Never use log(y + 1)** to get rid of the zeros. The result depends on the 1: with cents instead of dollars it would be another answer.
+- **Choose between the gamma and the log-normal** by their residuals and their calibration. Use separate smearing factors if the spread differs between groups.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the share of zeros, the model of each part, the estimates of both, and the combined effect with its interval. The numbers come from the R objects:
+
+```{r apa_numbers}
+show <- c("plan25%", "plan50%", "plan95%", "plandeductible", "female", "disease", "fair_poor", "income")
+ci1 <- exp(confint.default(part1)); ci2 <- exp(confint.default(part2_gamma))
+apa_table <- data.frame(
+  Predictor = c("Plan: 25%", "Plan: 50%", "Plan: 95%", "Plan: deductible", "Female", "Chronic diseases (each)", "Fair or poor health", "Income ($1,000)"),
+  or  = f2(or[show]), orci = paste0("[", f2(ci1[show, 1]), ", ", f2(ci1[show, 2]), "]"),
+  rr  = f2(ratio_g[show]), rrci = paste0("[", f2(ci2[show, 1]), ", ", f2(ci2[show, 2]), "]"))
+```
+
+**Method** (data analysis):
+
+> Medical spending in the second year of the RAND Health Insurance Experiment (*N* = `r num(nrow(rand))`) was zero for `r pct(mean(rand$any == 0))` of the participants and strongly skewed for the others. We used a two-part model: a logistic regression for any spending, and a gamma regression with a log link for the amount among those with some spending (*n* = `r num(nrow(users))`). Both parts contained the insurance plan (reference: free care) and age, its square, sex, child status, family income, education, the number of chronic diseases and self-rated health. The effect of the plan on mean spending combines both parts, standardised over the sample; confidence intervals are from 500 bootstrap samples of persons. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> Participants who had to pay 95% of their bills were less likely than those with free care to have any spending, *OR* = `r f2(or[["plan95%"]])`, 95% CI [`r f2(ci1["plan95%", 1])`, `r f2(ci1["plan95%", 2])`], *p* `r pval(p1[["plan95%"]])`. Among those with some spending, the amount was `r f2(ratio_g[["plan95%"]])` times that of users with free care, 95% CI [`r f2(ci2["plan95%", 1])`, `r f2(ci2["plan95%", 2])`], *p* `r pval(p2[["plan95%"]])` (Table 1). Together, mean spending differed by `r f0(point[["total"]])` dollars per person and year, 95% CI [`r f0(ci[1, "total"])`, `r f0(ci[2, "total"])`]: `r f0(point[["whether"]])` dollars because fewer people used care, and `r f0(point[["how_much"]])` because of less spending per user.
+
+**Table 1**
+
+*Two-Part Model of Medical Spending*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "Any spending: *OR*", "95% CI", "Amount if any: ratio", "95% CI"),
+             align = "lrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(nrow(rand))`; `r num(nrow(users))` with some spending. Reference plan: free care. Also adjusted for age, age squared, child status and education. *OR* = odds ratio from the logistic part; ratio = ratio of mean amounts from the gamma part.
+
+**Points to remember:**
+
+- Give the share of zeros, and say why they are real zeros.
+- Report both parts, with the same predictors, and the combined effect with an interval.
+- Do not call the ratio of the second part an effect.
+- Say how you came back from logs, if you used them.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Many real zeros, and a positive, skewed amount (or count) for the others |
+| **The identity** | $E(y) = P(y > 0) \times E(y \mid y > 0)$ |
+| **Part 1** | Logistic (or probit) regression on everybody |
+| **Part 2** | Gamma regression with a log link, or OLS on logs with smearing, on the positive cases |
+| **How (R)** | `glm(y > 0 ~ x, binomial)` and `glm(y ~ x, Gamma("log"), subset = y > 0)`; for counts `pscl::hurdle()` |
+| **Combine** | Multiply the predictions; bootstrap the effects |
+| **Advantage** | Shows whether and how much separately |
+| **Careful** | The users are a selected group |
+| **Related pages** | [Tobit](EXAMPLE_TOBIT.Rmd), [Heckman](EXAMPLE_HECKMAN_SELECTION.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd) |
+
+---
+
+## References
+
+Belotti, F., Deb, P., Manning, W. G., & Norton, E. C. (2015). twopm: Two-part models. *The Stata Journal*, *15*(1), 3–20. https://doi.org/10.1177/1536867X1501500102
+
+Cragg, J. G. (1971). Some statistical models for limited dependent variables with application to the demand for durable goods. *Econometrica*, *39*(5), 829–844. https://doi.org/10.2307/1909582
+
+Duan, N. (1983). Smearing estimate: A nonparametric retransformation method. *Journal of the American Statistical Association*, *78*(383), 605–610. https://doi.org/10.1080/01621459.1983.10478017
+
+Manning, W. G., Newhouse, J. P., Duan, N., Keeler, E. B., Leibowitz, A., & Marquis, M. S. (1987). Health insurance and the demand for medical care: Evidence from a randomized experiment. *The American Economic Review*, *77*(3), 251–277.
+
+Mullahy, J. (1986). Specification and testing of some modified count data models. *Journal of Econometrics*, *33*(3), 341–365. https://doi.org/10.1016/0304-4076(86)90002-3
