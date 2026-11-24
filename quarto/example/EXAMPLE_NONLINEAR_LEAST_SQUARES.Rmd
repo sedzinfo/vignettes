@@ -1,0 +1,503 @@
+---
+title: "Nonlinear Least Squares: How Fast Did Greece Go Online?"
+description: "Nonlinear least squares in R with nls(), on the World Bank's share of people in Greece who use the internet (1990-2024): logistic and Gompertz growth curves, Gauss-Newton by hand, starting values and what happens when they are bad, self-starting models, profile against Wald confidence intervals, the delta method, AIC for curves that are not nested, a forecast test from 2008, a comparison of three countries and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the World Bank each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a curve with a meaning
+
+In 1995 fewer than one in a hundred people in Greece used the internet. Today almost everybody does. New things usually spread like this: slowly at first, when few people have them and others hardly hear of them; then fast; then slowly again, when only a few people are left. The curve looks like an **S**.
+
+This page fits S-curves to the data, to answer three questions:
+
+1. What is the **ceiling**, the share at which the curve will stop?
+2. **When** was the growth fastest?
+3. **How fast** was it?
+
+A polynomial could follow the points (see [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd)), but it has no ceiling, and its coefficients answer none of the three questions. An S-curve has exactly three parameters, and they **are** the three answers. The price is that the curve is **nonlinear in its parameters**, so the formulas of linear regression do not apply, and the computer must search. **Nonlinear least squares** is that search.
+
+```{r packages}
+library(jsonlite)   # fromJSON(): the World Bank answers in JSON
+library(ggplot2)
+
+curve_colours <- c("Logistic" = "#eb6834", "Gompertz" = "#2a78d6")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+num  <- function(x) trimws(format(x, big.mark = ","))
+```
+
+---
+
+## 1. The data
+
+The World Bank publishes, for every country and year, the *individuals using the internet (% of population)*, collected by the International Telecommunication Union. It is free and needs no login:
+
+```{r download}
+internet <- function(country) {
+  url <- paste0("https://api.worldbank.org/v2/country/", country,
+                "/indicator/IT.NET.USER.ZS?format=json&per_page=200")
+  d <- fromJSON(url)[[2]][, c("date", "value")]
+  d <- data.frame(year = as.integer(d$date), share = d$value)
+  d <- subset(d, !is.na(share) & year <= 2024)
+  d$t <- d$year - 2000                     # years since 2000
+  d[order(d$year), ]
+}
+greece <- internet("GRC")
+nrow(greece)
+greece[greece$year %in% c(1990, 1995, 2000, 2005, 2010, 2015, 2020, 2024), ]
+```
+
+There are `r nrow(greece)` years, `r min(greece$year)` to `r max(greece$year)`. The share is the percentage of people who used the internet in the last three months. The early years are estimates of the ITU from subscriptions and connected computers, and the later ones come mostly from household surveys, so the series is not measured in the same way from end to end.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ggplot(greece, aes(year, share)) +
+  geom_line(colour = "grey70") +
+  geom_point(size = 2, colour = "grey25") +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(title = "People in Greece who use the internet", x = NULL, y = "% of the population") +
+  theme_bw()
+
+rise <- data.frame(year = greece$year[-1], rise = diff(greece$share))
+fastest <- rise[order(-rise$rise), ][1:3, ]
+fastest
+```
+
+A slow start, a fast middle, and a slow approach to a ceiling. The yearly rise was largest in `r fastest$year[1]` (`r f1(fastest$rise[1])` points), and it is now `r f1(tail(rise$rise, 1))`.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: what "nonlinear" means
+
+$$y_i = f(t_i; \theta) + \varepsilon_i$$
+
+A model is **linear** when its parameters only multiply things that are known and are added up: $\beta_0 + \beta_1 t + \beta_2 t^2$ is linear, although it is a curve in $t$. It is **nonlinear** when a parameter sits inside a function, in a denominator or an exponent.
+
+### Step 2: the logistic curve
+
+$$y = \frac{A}{1 + e^{-(t - m)/s}}$$
+
+- $A$ is the **ceiling** (the asymptote), in % of the population;
+- $m$ is the **midpoint**, the time at which the curve is at $A/2$ and grows fastest;
+- $s$ is the **scale**, how stretched the S is: in $s$ years the curve goes from 50% to 73% of the ceiling. The growth at the midpoint is $A/(4s)$ points per year.
+
+The story behind it: the growth is proportional to those who have it already (they spread it) and to those who do not have it yet (Geroski, 2000).
+
+### Step 3: the Gompertz curve
+
+$$y = A\, e^{-e^{-(t - m)/s}}$$
+
+The same three parameters, but the S is **not symmetric**. The growth is fastest at $t = m$, when the curve has reached only $A/e$ = 37% of the ceiling, and it is $A/(e\,s)$ points per year there. The rest of the way is slow: a long tail of late adopters. (Winsor, 1932, compares the two curves.)
+
+```{r curves}
+shape <- data.frame(t = seq(-15, 30, by = 0.1))
+shape <- rbind(data.frame(shape, y = 100 / (1 + exp(-(shape$t - 5) / 3)), curve = "Logistic"),
+               data.frame(shape, y = 100 * exp(-exp(-(shape$t - 3) / 5)), curve = "Gompertz"))
+top   <- data.frame(t = c(5, 3), y = c(50, 100 / exp(1)), curve = c("Logistic", "Gompertz"))
+
+ggplot(shape, aes(t, y, colour = curve)) +
+  geom_line(linewidth = 1) +
+  geom_point(data = top, size = 3) +
+  scale_colour_manual(values = curve_colours, name = NULL) +
+  labs(title = "Two S-curves with a ceiling of 100",
+       subtitle = "Points: the fastest growth, half-way up (logistic) or at 37% (Gompertz)",
+       x = "time", y = "y") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+### Step 4: least squares again, but without a formula
+
+We still want the parameters with the smallest sum of squared residuals,
+
+$$S(\theta) = \sum_i \left[ y_i - f(t_i; \theta) \right]^2$$
+
+In linear regression, setting the derivatives to zero gives equations that can be solved. Here the equations cannot be solved, so we walk downhill from a starting guess.
+
+### Step 5: the Gauss–Newton method
+
+Near the current guess, replace the curve by its tangent, which is **linear** in the parameters (Bates & Watts, 1988). With $J$ the table of derivatives of the curve (one row per year, one column per parameter) and $e$ the current residuals, the best step is an ordinary regression of $e$ on $J$:
+
+$$\theta_{\text{new}} = \theta_{\text{old}} + (J^\top J)^{-1} J^\top e$$
+
+Repeat until the step is tiny. For the logistic curve, with $p = 1/(1 + e^{-(t-m)/s})$, the derivatives are
+
+$$\frac{\partial f}{\partial A} = p, \qquad \frac{\partial f}{\partial m} = -\frac{A}{s}\, p(1-p), \qquad \frac{\partial f}{\partial s} = -\frac{A}{s}\cdot\frac{t - m}{s}\, p(1-p)$$
+
+```{r gauss_newton}
+t_ <- greece$t
+y_ <- greece$share
+theta <- c(A = 90, m = 8, s = 4)            # the starting guess, read off the chart
+walk  <- NULL
+for (iteration in 0:8) {
+  p <- 1 / (1 + exp(-(t_ - theta["m"]) / theta["s"]))
+  e <- y_ - theta["A"] * p
+  walk <- rbind(walk, c(iteration = iteration, theta, RSS = sum(e^2)))
+  k <- theta["A"] / theta["s"] * p * (1 - p)
+  J <- cbind(A = p, m = -k, s = -k * (t_ - theta["m"]) / theta["s"])
+  theta <- theta + drop(solve(crossprod(J), crossprod(J, e)))
+}
+round(walk, 4)
+```
+
+A handful of steps is enough. The sum of squares falls from `r num(round(walk[1, "RSS"], 1))` to `r num(round(walk[nrow(walk), "RSS"], 1))`.
+
+### Step 6: the standard errors
+
+At the minimum, the same tangent gives approximate standard errors, as if the model were the linear one:
+
+$$\widehat{\text{Var}}(\hat\theta) \approx \hat\sigma^2 (J^\top J)^{-1}, \qquad \hat\sigma^2 = \frac{S(\hat\theta)}{n - p}$$
+
+They are only as good as the tangent. Section 5 has a better interval.
+
+---
+
+## 4. Fitting the models and reading the output
+
+### The logistic curve
+
+`nls()` takes the formula of the curve and a list of starting values:
+
+```{r logistic}
+logistic <- nls(share ~ A / (1 + exp(-(t - m) / s)), data = greece,
+                start = list(A = 90, m = 8, s = 4))
+summary(logistic)
+cL <- coef(logistic)
+```
+
+- **`A`** = `r f1(cL[["A"]])`: the curve stops at `r f1(cL[["A"]])`% of the population. But in `r max(greece$year)` the share was `r f1(tail(greece$share, 1))`%, **above** the ceiling, and still rising. Something is wrong with this curve.
+- **`m`** = `r f2(cL[["m"]])`: the midpoint is about `r round(2000 + cL[["m"]])`.
+- **`s`** = `r f2(cL[["s"]])`: at the midpoint the share grew by $A/(4s)$ = `r f1(cL[["A"]] / (4 * cL[["s"]]))` points a year.
+- **`Residual standard error`**: the curve misses the points by about `r f1(sigma(logistic))` percentage points. There is no $R^2$: in nonlinear models it does not split the variation into two parts, it can mislead, and R does not print it (Spiess & Neumeyer, 2010).
+- **`Number of iterations`** and **`convergence tolerance`**: how the search ended. Our own Gauss–Newton steps gave the same estimates.
+
+### Starting values
+
+The search needs to start in the right area. Three ways to find it:
+
+1. **Read them off the chart.** The ceiling is a bit above the last points, the midpoint is where the curve is at half of it, the scale is the time from 50% to 73%.
+2. **Use a self-starting model**, which finds its own: `SSlogis()` and `SSgompertz()` come with R.
+3. **Make the problem linear** to get a rough first answer: for a fixed ceiling, the logit of $y/A$ is a straight line in $t$.
+
+```{r self_start}
+self <- nls(share ~ SSlogis(t, A, m, s), data = greece)    # no starting values
+rbind(own_start = cL, self_start = coef(self))
+```
+
+And what happens with bad starting values?
+
+```{r bad_starts}
+starts <- list(good        = list(A = 90,  m = 8,  s = 4),
+               steep       = list(A = 100, m = 0,  s = 0.1),
+               wrong_year  = list(A = 90,  m = 50, s = 1),
+               low_ceiling = list(A = 1,   m = 0,  s = 1))
+outcome <- sapply(starts, function(st) {
+  fit <- try(nls(share ~ A / (1 + exp(-(t - m) / s)), data = greece, start = st), silent = TRUE)
+  if (inherits(fit, "try-error")) trimws(sub(".*:", "", sub("\n *$", "", as.character(fit))))
+  else paste("converged: A =", f1(coef(fit)[["A"]]))
+})
+data.frame(start = names(starts), outcome = outcome, row.names = NULL)
+```
+
+`singular gradient` is the most common error of `nls()`. It means that, at the current guess, changing some parameter does not change the curve (or two parameters change it in the same way), so there is no direction to walk in. With a midpoint in 2050, for example, the curve is flat zero over all the data. The remedy is almost always a better starting value, sometimes fewer parameters. `minpack.lm::nlsLM()` is a more patient search.
+
+### The Gompertz curve
+
+```{r gompertz}
+gompertz <- nls(share ~ A * exp(-exp(-(t - m) / s)), data = greece,
+                start = list(A = 95, m = 6, s = 6))
+summary(gompertz)
+cG <- coef(gompertz)
+```
+
+```{r fits_chart}
+grid <- data.frame(t = seq(-10, 40, by = 0.2))
+grid$year <- 2000 + grid$t
+paths <- rbind(data.frame(grid, share = predict(logistic, grid), curve = "Logistic"),
+               data.frame(grid, share = predict(gompertz, grid), curve = "Gompertz"))
+
+ggplot(greece, aes(year, share)) +
+  geom_line(data = paths, aes(colour = curve), linewidth = 1) +
+  geom_point(size = 1.8, colour = "grey25") +
+  scale_colour_manual(values = curve_colours, name = NULL) +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(title = "Logistic and Gompertz curves for Greece", x = NULL, y = "% of the population") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The Gompertz curve follows the points all the way. The logistic is too low at the end, because it is symmetric: having risen fast, it must also stop fast.
+
+### Which curve is better?
+
+The two curves are **not nested**: neither is a special case of the other, so no *F* test compares them. They have the same number of parameters, so we can compare the residual sums of squares, or the AIC:
+
+```{r compare}
+comparison <- data.frame(curve  = c("Logistic", "Gompertz"),
+                         RSS    = c(deviance(logistic), deviance(gompertz)),
+                         sigma  = c(sigma(logistic), sigma(gompertz)),
+                         AIC    = AIC(logistic, gompertz)$AIC)
+comparison
+```
+
+The Gompertz misses by about `r f1(sigma(gompertz))` points, the logistic by about `r f1(sigma(logistic))`. The AIC difference is `r f1(comparison$AIC[1] - comparison$AIC[2])`, and by the usual rule of thumb 10 is already decisive. The residuals say it best:
+
+```{r residuals, fig.height = 5}
+res <- rbind(data.frame(year = greece$year, r = resid(logistic), curve = "Logistic"),
+             data.frame(year = greece$year, r = resid(gompertz), curve = "Gompertz"))
+res$curve <- factor(res$curve, levels = c("Logistic", "Gompertz"))
+
+ggplot(res, aes(year, r, colour = curve)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_segment(aes(xend = year, yend = 0), linewidth = 0.5) +
+  geom_point(size = 1.8) +
+  facet_wrap(~ curve, ncol = 1) +
+  scale_colour_manual(values = curve_colours, guide = "none") +
+  labs(title = "Residuals: the logistic misses in long waves", x = NULL, y = "residual (points)") +
+  theme_bw()
+
+lag1 <- c(logistic = acf(resid(logistic), plot = FALSE)$acf[2], gompertz = acf(resid(gompertz), plot = FALSE)$acf[2])
+lag1
+```
+
+The residuals of the logistic come in long runs of the same sign, and each correlates with the next at `r f2(lag1[["logistic"]])`: the sign of a wrong curve. For the Gompertz the correlation is `r f2(lag1[["gompertz"]])`.
+
+---
+
+## 5. Confidence intervals, and quantities made from the parameters
+
+### Wald or profile?
+
+The quick interval is the estimate $\pm$ 2 standard errors (Wald). It trusts the tangent of step 6, and it is symmetric. The **profile** interval does not: it fixes one parameter at a value, fits all the others again, and keeps the values for which the fit does not become significantly worse (with an *F* test). `confint()` does it for `nls` fits:
+
+```{r intervals}
+wald    <- coef(gompertz) + outer(summary(gompertz)$coefficients[, 2], c(-1, 1) * qt(0.975, df.residual(gompertz)))
+profile_ci <- confint(gompertz)
+cbind(estimate = cG, wald_low = wald[, 1], wald_high = wald[, 2],
+      profile_low = profile_ci[, 1], profile_high = profile_ci[, 2])
+```
+
+Here they nearly agree, because the data cover the whole curve. When they do not agree, the profile is the one to trust. The next section shows such a case.
+
+### The year when half of the people were online
+
+This is not a parameter, but it can be computed from them. Setting the Gompertz curve to 50 and solving for $t$:
+
+$$t_{50} = m - s \log\!\big({-\log(50/A)}\big)$$
+
+Its standard error comes from the **delta method**: the derivatives of the formula with respect to the parameters, and the covariance matrix of the estimates $V$, give $\sqrt{g^\top V g}$.
+
+```{r delta}
+t50   <- function(th) th[["m"]] - th[["s"]] * log(-log(50 / th[["A"]]))
+slope <- function(th) th[["A"]] / (exp(1) * th[["s"]])          # the growth at the fastest moment
+delta_se <- function(fun, fit, h = 1e-5) {
+  th <- coef(fit)
+  g  <- sapply(names(th), function(p) { up <- th; up[p] <- up[p] + h; (fun(up) - fun(th)) / h })
+  sqrt(drop(t(g) %*% vcov(fit) %*% g))
+}
+derived <- rbind(t50        = c(estimate = t50(cG),   SE = delta_se(t50, gompertz)),
+                 max_growth = c(estimate = slope(cG), SE = delta_se(slope, gompertz)))
+derived <- cbind(derived, lower = derived[, 1] - 2 * derived[, 2], upper = derived[, 1] + 2 * derived[, 2])
+derived
+```
+
+Half of the population was online `r f1(derived["t50", "estimate"])` years after the start of 2000, that is around `r round(2000 + derived["t50", "estimate"])`. The growth was fastest around `r round(2000 + cG[["m"]])`, `r f1(derived["max_growth", "estimate"])` points a year, 95% CI [`r f1(derived["max_growth", "lower"])`, `r f1(derived["max_growth", "upper"])`].
+
+### The parameters are not independent
+
+```{r parameter_correlation}
+cov2cor(vcov(gompertz))
+```
+
+A higher ceiling can be traded for a later midpoint and a slower curve, with almost the same fit: the correlation of `A` with the other two is `r f2(cov2cor(vcov(gompertz))["A", "m"])` and `r f2(cov2cor(vcov(gompertz))["A", "s"])`. Near 1 in absolute value, the data cannot separate them, and the search fails.
+
+---
+
+## 6. The test: could we have known in 2008?
+
+In 2008 the share was `r f1(greece$share[greece$year == 2008])`%. Fit both curves to the years until then, and let them say what comes next:
+
+```{r forecast}
+past   <- subset(greece, year <= 2008)
+future <- subset(greece, year > 2008)
+past_logistic <- nls(share ~ A / (1 + exp(-(t - m) / s)), data = past, start = list(A = 60, m = 5, s = 3))
+past_gompertz <- nls(share ~ A * exp(-exp(-(t - m) / s)), data = past, start = list(A = 90, m = 7, s = 7))
+early <- rbind(Logistic = coef(past_logistic), Gompertz = coef(past_gompertz))
+early
+
+rmse <- c(Logistic = sqrt(mean((future$share - predict(past_logistic, future))^2)),
+          Gompertz = sqrt(mean((future$share - predict(past_gompertz, future))^2)))
+rmse
+
+ceiling_ci <- rbind(Logistic = confint(past_logistic)["A", ],      # profile intervals
+                    Gompertz = confint(past_gompertz)["A", ])
+ceiling_ci
+```
+
+```{r forecast_chart}
+early_paths <- rbind(data.frame(grid, share = predict(past_logistic, grid), curve = "Logistic"),
+                     data.frame(grid, share = predict(past_gompertz, grid), curve = "Gompertz"))
+
+ggplot(greece, aes(year, share)) +
+  geom_vline(xintercept = 2008.5, linetype = "dashed", colour = "grey50") +
+  geom_line(data = early_paths, aes(colour = curve), linewidth = 1) +
+  geom_point(size = 1.8, colour = "grey25") +
+  annotate("text", x = 2008, y = 97, label = "fitted", hjust = 1, size = 3.3, colour = "grey30") +
+  annotate("text", x = 2009, y = 97, label = "predicted", hjust = 0, size = 3.3, colour = "grey30") +
+  scale_colour_manual(values = curve_colours, name = NULL) +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(title = "Curves fitted to 1990–2008, continued", x = NULL, y = "% of the population") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The logistic curve, fitted to 2008, announced a ceiling of `r f1(early["Logistic", "A"])`%, with a 95% confidence interval from `r f1(ceiling_ci["Logistic", 1])` to `r f1(ceiling_ci["Logistic", 2])`. In `r max(greece$year)` the share was `r f1(tail(greece$share, 1))`%. The Gompertz said `r f1(early["Gompertz", "A"])`%, and predicted the next `r nrow(future)` years with an error of `r f1(rmse[["Gompertz"]])` points, against `r f1(rmse[["Logistic"]])`.
+
+Two lessons. First, **the confidence interval is conditional on the curve**. The interval of the logistic ceiling was honest about the noise and said nothing about being the wrong curve. Second, the ceiling is the hardest thing to estimate from an S-curve that has not yet bent: until 2008 the two curves fitted almost equally well (residual standard errors `r f1(sigma(past_logistic))` and `r f1(sigma(past_gompertz))`), and differed by `r f1(abs(diff(early[, "A"])))` points about the future. The Gompertz was the better guess here. Nobody could have proved it in 2008. Forecasts of technology from early data are known to be this fragile (Meade & Islam, 2006).
+
+This is also the case where the two kinds of interval disagree:
+
+```{r gompertz_interval}
+est_A  <- early["Gompertz", "A"]
+se_A   <- summary(past_gompertz)$coefficients["A", "Std. Error"]
+wald_A <- est_A + c(-1, 1) * qt(0.975, df.residual(past_gompertz)) * se_A
+c(estimate = est_A, SE = se_A, wald_low = wald_A[1], wald_high = wald_A[2],
+  profile_low = ceiling_ci["Gompertz", 1], profile_high = ceiling_ci["Gompertz", 2])
+```
+
+By the Wald interval, the Gompertz ceiling of 2008 was between `r f1(wald_A[1])` and `r f1(wald_A[2])`; by the profile, between `r f1(ceiling_ci["Gompertz", 1])` and `r f1(ceiling_ci["Gompertz", 2])`. The profile is **not symmetric**: the data could rule out a low ceiling, but not a high one. A ceiling above 100% is impossible, and the model does not know it. If a limit is known, fix it ($A = 100$), or use a curve that contains it.
+
+---
+
+## 7. Comparing countries
+
+The parameters mean the same thing everywhere, so they can be compared:
+
+```{r countries}
+countries <- c(Greece = "GRC", Germany = "DEU", `South Korea` = "KOR")
+sets <- lapply(countries, internet)
+fits <- lapply(sets, function(d) nls(share ~ A * exp(-exp(-(t - m) / s)), data = d,
+                                     start = list(A = 90, m = 3, s = 5)))
+country_table <- data.frame(
+  country = names(countries),
+  ceiling = sapply(fits, function(f) coef(f)[["A"]]),
+  fastest = 2000 + sapply(fits, function(f) coef(f)[["m"]]),
+  scale   = sapply(fits, function(f) coef(f)[["s"]]),
+  growth  = sapply(fits, function(f) slope(coef(f))),
+  sigma   = sapply(fits, sigma), row.names = NULL)
+country_table
+```
+
+```{r countries_chart}
+obs  <- do.call(rbind, Map(function(d, n) data.frame(d, country = n), sets, names(sets)))
+pred <- do.call(rbind, Map(function(f, n) data.frame(year = grid$year, share = predict(f, grid), country = n), fits, names(fits)))
+
+ggplot(obs, aes(year, share, colour = country)) +
+  geom_line(data = subset(pred, year <= 2025), linewidth = 1) +
+  geom_point(size = 1.6) +
+  scale_colour_manual(values = c(Greece = "#2a78d6", Germany = "#eb6834", `South Korea` = "#1baf7a"), name = NULL) +
+  labs(title = "The same curve, three countries", x = NULL, y = "% of the population") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+South Korea was fastest around `r round(country_table$fastest[3])` with `r f1(country_table$growth[3])` points a year, Germany around `r round(country_table$fastest[2])` with `r f1(country_table$growth[2])`, Greece around `r round(country_table$fastest[1])` with `r f1(country_table$growth[1])`. The curve fits Greece best: the residual standard error is `r f1(country_table$sigma[1])` points for Greece, `r f1(country_table$sigma[2])` for Germany and `r f1(country_table$sigma[3])` for South Korea, where the points leave the curve visibly. One curve does not fit everybody. (For many countries together, with parameters that vary between them, see `nlme::nlme()`, the nonlinear form of the [multilevel model](EXAMPLE_MULTILEVEL.Rmd).)
+
+---
+
+## 8. Things to keep in mind
+
+- **Choose the curve from what you know**, not from a catalogue. Ceiling or no ceiling? Symmetric? Does it start at zero? A different curve is a different claim about the future.
+- **Do not linearise by taking logs just to use `lm()`.** A log changes the errors: it makes the relative errors equal, and it lets the years with 0.1% count as much as the years with 80%. Use it for starting values.
+- **Local minima.** The search stops at the bottom of a valley, which may not be the deepest. Start from several places, and look at the fitted curve.
+- **The errors.** Here they cannot be equally large everywhere: near 0 and near 100 there is no room for them. Residuals close to 0 in the first years, as in the chart of section 4, are the sign. Weights, or a model for proportions (a logistic GLM with a ceiling), would be the next step.
+- **Time series.** Years that follow each other are not independent. The standard errors assume they are. `nlme::gnls()` allows autocorrelated errors (compare [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)).
+- **Too many parameters.** Each one needs data in the part of the curve that it describes. A ceiling needs points near the ceiling.
+- **The measure changed** from estimates to surveys, and the question of who counts as a user changed with it.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the equation, the meaning of the parameters and their units, the starting values and the software, the estimates with their intervals, and how the curve was chosen. The numbers come from the R objects:
+
+```{r apa_numbers}
+sG <- summary(gompertz)$coefficients
+ciL <- confint(logistic)
+sL <- summary(logistic)$coefficients
+apa_table <- data.frame(
+  Parameter = c("Ceiling *A* (%)", "Time of fastest growth *m* (years since 2000)", "Scale *s* (years)"),
+  gE = f2(sG[, 1]), gS = f2(sG[, 2]), gC = paste0("[", f2(profile_ci[, 1]), ", ", f2(profile_ci[, 2]), "]"),
+  lE = f2(sL[, 1]), lS = f2(sL[, 2]), lC = paste0("[", f2(ciL[, 1]), ", ", f2(ciL[, 2]), "]"))
+```
+
+**Method** (data analysis):
+
+> We modelled the percentage of the population of Greece using the internet in `r min(greece$year)`–`r max(greece$year)` (*N* = `r nrow(greece)` years; World Bank, 2026) with two three-parameter growth curves, the logistic, $y = A/(1 + e^{-(t - m)/s})$, and the Gompertz, $y = A\,e^{-e^{-(t - m)/s}}$, where *t* is the number of years since 2000, *A* the ceiling, *m* the time of fastest growth and *s* the scale. The curves were fitted by nonlinear least squares (Gauss–Newton), with starting values read from the chart, and compared with the AIC and with their forecasts for 2009–`r max(greece$year)` when fitted to the years until 2008. Confidence intervals are profile intervals. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> The Gompertz curve fitted better than the logistic (AIC = `r f1(comparison$AIC[2])` against `r f1(comparison$AIC[1])`; residual *SD* = `r f1(sigma(gompertz))` against `r f1(sigma(logistic))` percentage points; Table 1). By the Gompertz curve, the share approaches a ceiling of `r f1(cG[["A"]])`%, 95% CI [`r f1(profile_ci["A", 1])`, `r f1(profile_ci["A", 2])`]. Growth was fastest in `r round(2000 + cG[["m"]])`, at `r f1(derived["max_growth", "estimate"])` points per year, 95% CI [`r f1(derived["max_growth", "lower"])`, `r f1(derived["max_growth", "upper"])`]. Fitted to the years until 2008 only, the Gompertz curve predicted 2009–`r max(greece$year)` with a root mean squared error of `r f1(rmse[["Gompertz"]])` points, and the logistic with `r f1(rmse[["Logistic"]])`.
+
+**Table 1**
+
+*Growth Curves for the Share of People Using the Internet in Greece*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Parameter", "Gompertz", "*SE*", "95% CI", "Logistic", "*SE*", "95% CI"),
+             align = "lrrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(greece)` years. Profile confidence intervals. Residual standard error: `r f2(sigma(gompertz))` (Gompertz) and `r f2(sigma(logistic))` (logistic) percentage points, `r df.residual(gompertz)` degrees of freedom.
+
+**Points to remember:**
+
+- Write the equation. "A logistic curve" has many forms, and the parameters depend on the form.
+- Give units for every parameter.
+- Say how you chose the starting values and that the search converged.
+- Do not report $R^2$. Report the residual standard error, and show the curve with the points.
+- An interval for a ceiling that the data have not reached is a statement about the curve as much as about the data.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Theory gives a curve whose parameters mean something: growth, decay, saturation, dose and response |
+| **Nonlinear** | A parameter sits inside a function; polynomials are linear |
+| **How (R)** | `nls(y ~ A / (1 + exp(-(t - m)/s)), data, start = list(...))`, or self-starting: `nls(y ~ SSlogis(t, A, m, s), data)` |
+| **The search** | Gauss–Newton: regress the residuals on the derivatives, step, repeat |
+| **If it fails** | `singular gradient`: better starting values, fewer parameters, `minpack.lm::nlsLM()` |
+| **Intervals** | `confint()` gives profile intervals; the delta method for quantities made from parameters |
+| **Comparing curves** | Nested: `anova()`. Not nested: AIC, residual plots, forecasts |
+| **Danger** | Extrapolation: the curve decides, not the data |
+| **Related pages** | [Polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd), [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd) |
+
+---
+
+## References
+
+Bates, D. M., & Watts, D. G. (1988). *Nonlinear regression analysis and its applications*. Wiley. https://doi.org/10.1002/9780470316757
+
+Geroski, P. A. (2000). Models of technology diffusion. *Research Policy*, *29*(4–5), 603–625. https://doi.org/10.1016/S0048-7333(99)00092-X
+
+Meade, N., & Islam, T. (2006). Modelling and forecasting the diffusion of innovation – A 25-year review. *International Journal of Forecasting*, *22*(3), 519–545. https://doi.org/10.1016/j.ijforecast.2006.01.005
+
+Spiess, A.-N., & Neumeyer, N. (2010). An evaluation of *R*² as an inadequate measure for nonlinear models in pharmacological and biochemical research: A Monte Carlo approach. *BMC Pharmacology*, *10*, Article 6. https://doi.org/10.1186/1471-2210-10-6
+
+Winsor, C. P. (1932). The Gompertz curve as a growth curve. *Proceedings of the National Academy of Sciences*, *18*(1), 1–8. https://doi.org/10.1073/pnas.18.1.1
+
+World Bank. (2026). *Individuals using the Internet (% of population)* [Data set]. World Development Indicators. https://data.worldbank.org/indicator/IT.NET.USER.ZS
