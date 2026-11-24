@@ -50,15 +50,17 @@ Generalized Linear Models (GLMs; Nelder & Wedderburn, 1972) extend ordinary leas
 2. **Systematic component** — a linear predictor $\eta_i = \mathbf{x}_i^\top \boldsymbol{\beta}$
 3. **Link function** $g(\cdot)$ — a monotone differentiable function relating the conditional mean $\mu_i = E[Y_i|\mathbf{x}_i]$ to the linear predictor: $g(\mu_i) = \eta_i$
 
-The model is estimated via **maximum likelihood**, and inference relies on asymptotic normality of the MLE. Parameters are tested with Wald statistics ($z = \hat\beta / \text{SE}$) or likelihood ratio tests (LRTs), both asymptotically $\chi^2$.
+The model is estimated via **maximum likelihood**, and inference relies on asymptotic normality of the MLE. Parameters are tested with Wald statistics ($z = \hat\beta / \text{SE}$, asymptotically standard normal) or likelihood ratio tests (LRTs, asymptotically $\chi^2$).
 
-| Family | Canonical link | Use case |
+| Family | Usual link | Use case |
 |---|---|---|
 | Gaussian | Identity | Continuous, symmetric outcome |
 | Binomial | Logit | Binary / proportion outcome |
 | Poisson | Log | Non-negative integer counts |
 | Negative Binomial | Log | Overdispersed counts |
 | Gamma | Inverse / Log | Positive skewed continuous |
+
+The links are the canonical ones, except the log for the Negative Binomial and Gamma families.
 
 ---
 
@@ -82,7 +84,7 @@ plot_multiplot(p1, p2, cols=2)
 
 ### 2.2 Model Specification and Estimation
 
-We fit a saturated model including all main effects and the theoretically motivated `smoker × bmi` interaction (smoking amplifies the effect of obesity on health costs).
+We fit a full model with all main effects and the theoretically motivated `smoker × bmi` interaction (smoking amplifies the effect of obesity on health costs).
 
 ```{r gaussian_glm}
 m_gauss_null <- glm(log_charges ~ 1,
@@ -109,21 +111,27 @@ Anova(m_gauss_full, type=2)
 
 ### 2.4 Likelihood Ratio Test — Interaction Term
 
+The deviance of a Gaussian model is its residual sum of squares. The $\chi^2$ statistic is the drop in deviance divided by the residual variance of the larger model: `anova()` uses it for the *p* value but prints only the drop.
+
 ```{r gaussian_lrt}
 lrt_interaction <- anova(m_gauss_main, m_gauss_full, test="LRT")
 lrt_interaction
-cat(sprintf("\nLRT: χ²(%d) = %.3f, p = %.4f\n",
+
+p_text <- function(p) ifelse(p < 0.001, "p < 0.001", sprintf("p = %.3f", p))
+cat(sprintf("\nLRT: χ²(%d) = %.3f, %s\n",
     lrt_interaction$Df[2],
-    lrt_interaction$Deviance[2],
-    lrt_interaction$`Pr(>Chi)`[2]))
+    lrt_interaction$Deviance[2] / summary(m_gauss_full)$dispersion,
+    p_text(lrt_interaction$`Pr(>Chi)`[2])))
 ```
 
 ### 2.5 Model Fit
 
+For a Gaussian model, the share of the null deviance that the model explains is the ordinary $R^2$.
+
 ```{r gaussian_fit}
 cat("Null deviance     :", round(m_gauss_null$deviance, 2), "\n")
 cat("Residual deviance :", round(m_gauss_full$deviance, 2), "\n")
-cat("McFadden pseudo-R²:", round(1 - m_gauss_full$deviance/m_gauss_null$deviance, 4), "\n")
+cat("R²                :", round(1 - m_gauss_full$deviance/m_gauss_null$deviance, 4), "\n")
 cat("AIC               :", round(AIC(m_gauss_full), 2), "\n")
 ```
 
@@ -134,6 +142,16 @@ VIF > 5 indicates problematic collinearity; VIF > 10 is severe.
 ```{r gaussian_vif}
 vif(m_gauss_full)
 ```
+
+The VIFs of `smoker` and `bmi:smoker` are about 25, but only because of the interaction: BMI is far from 0, so `bmi:smoker` is almost a multiple of `smoker`. Centring BMI removes this collinearity and leaves the fit unchanged:
+
+```{r gaussian_vif_centred}
+m_gauss_centred <- update(m_gauss_full, data=transform(df_insurance, bmi=bmi - mean(bmi)))
+vif(m_gauss_centred)
+all.equal(fitted(m_gauss_full), fitted(m_gauss_centred))
+```
+
+What changes is the meaning of the `smokeryes` coefficient. In the original model it is the effect of smoking at a BMI of 0 (`r round(coef(m_gauss_full)["smokeryes"], 2)`, *p* = .284), which nobody has. In the centred model it is the effect at the average BMI (`r round(coef(m_gauss_centred)["smokeryes"], 2)`, *p* < .001).
 
 ### 2.7 Diagnostics
 
@@ -210,10 +228,10 @@ summary(m_admit_main)
 ```{r logistic_lrt}
 lrt_admit <- anova(m_admit_null, m_admit_main, test="LRT")
 lrt_admit
-cat(sprintf("\nOverall model: χ²(%d) = %.3f, p = %.4f\n",
+cat(sprintf("\nOverall model: χ²(%d) = %.3f, %s\n",
     lrt_admit$Df[2],
     lrt_admit$Deviance[2],
-    lrt_admit$`Pr(>Chi)`[2]))
+    p_text(lrt_admit$`Pr(>Chi)`[2])))
 ```
 
 ### 3.5 Odds Ratios and 95% Profile-Likelihood CIs
@@ -474,6 +492,8 @@ aic_df <- data.frame(
 )
 knitr::kable(aic_df, row.names=FALSE)
 ```
+
+AIC and BIC compare models of the same outcome fitted to the same observations. The table has three such pairs: the two Gaussian models, the two models of `children` and the two Titanic models. In each pair the second model has the lower AIC and BIC.
 
 ---
 
