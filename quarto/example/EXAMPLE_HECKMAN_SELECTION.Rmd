@@ -1,0 +1,391 @@
+---
+title: "Heckman Selection Model: What Would the Women Who Did Not Work Have Earned?"
+description: "The Heckman sample selection model in R, by hand and with sampleSelection, on Mroz's classic data of 753 married women of whom 428 worked for pay: wages that are seen only for a selected group, the two-step estimator with the inverse Mills ratio, maximum likelihood, testing for selection, why exclusion restrictions decide everything, a simulation with a known truth, predicted wage offers, how it differs from Tobit and two-part models, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: wages that nobody paid
+
+How much more does a woman earn for each year of education? In 1975 a study asked 753 married American women. But only 428 of them worked for pay. For the other 325 there is **no wage**. Not because the question was left out: there was none to report.
+
+A regression of the wage on education, for the women who worked, describes the women who worked. But the question is usually about **all** women: what would education be worth to a woman who is at home now? If those who work are a special group, if for example they are the ones who were **offered a good wage**, then the sample is selected by the very thing we want to explain, and the regression may be wrong.
+
+James Heckman (1979) proposed a model for this situation, with two equations: one that decides **who is in the sample**, and one for the **outcome**. It brought him a Nobel Prize, and it is one of the most used, and most misused, models of social science. This page shows what it does, and what it can and cannot repair.
+
+```{r packages}
+library(ggplot2)
+library(sampleSelection)   # selection(): two-step and maximum likelihood
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data come from the Panel Study of Income Dynamics: married white women, 30 to 60 years old, in 1975. Mroz (1987) used them to show how much the conclusions about women's work depend on the assumptions, and they have been the standard example ever since.
+
+```{r download}
+women <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/sampleSelection/Mroz87.csv")
+women <- women[, c("lfp", "wage", "educ", "exper", "age", "kids5", "kids618", "nwifeinc")]
+women$logwage <- ifelse(women$lfp == 1, log(women$wage), NA)       # no wage for those who do not work
+str(women)
+works <- women$lfp == 1
+c(women = nrow(women), working = sum(works), share = mean(works))
+```
+
+`lfp` is 1 for a woman who worked for pay in 1975, `wage` her average hourly earnings in dollars, `educ` her years of schooling, `exper` her years of work experience, `kids5` and `kids618` the number of children under 6 and from 6 to 18, and `nwifeinc` the income of the family without her earnings, in thousands of dollars. We use the **logarithm** of the wage, so that a coefficient of 0.10 means about 10% more.
+
+---
+
+## 2. Look at the data
+
+```{r look_table}
+groups <- aggregate(cbind(educ, exper, age, kids5, kids618, nwifeinc) ~ lfp, data = women, FUN = mean)
+groups$lfp <- c("not working", "working")
+print(cbind(group = groups$lfp, round(groups[, -1], 2)), row.names = FALSE)
+```
+
+```{r look}
+kids_share <- aggregate(lfp ~ kids5, data = women, FUN = mean)
+pa <- ggplot(women, aes(factor(kids5), fill = factor(lfp))) +
+  geom_bar() +
+  scale_fill_manual(values = c(`0` = "grey70", `1` = "#2a78d6"), labels = c("not working: no wage", "working"), name = NULL) +
+  labs(title = "Children under 6", x = "number", y = "women") + theme_bw() + theme(legend.position = "bottom")
+pb <- ggplot(subset(women, works), aes(educ, logwage)) +
+  geom_jitter(width = 0.2, alpha = 0.4, colour = "grey30", size = 1.4) +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") +
+  labs(title = "Wages, where they are known", x = "years of education", y = "log hourly wage") + theme_bw()
+patchwork::wrap_plots(pa, pb)
+```
+
+The women who worked are a little better educated (`r f1(groups$educ[2])` against `r f1(groups$educ[1])` years), have much more experience (`r f1(groups$exper[2])` against `r f1(groups$exper[1])` years) and fewer small children. Of the women without a child under 6, `r pct(kids_share$lfp[kids_share$kids5 == 0])` worked; of those with one, `r pct(kids_share$lfp[kids_share$kids5 == 1])`.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: two equations
+
+The **outcome** equation, for every woman, whether she works or not. It is the wage that she is or would be offered:
+
+$$y_i^* = x_i^\top \beta + \varepsilon_i$$
+
+The **selection** equation. She works if the advantage of working, $d_i^*$, is positive:
+
+$$d_i^* = z_i^\top \gamma + u_i, \qquad \text{we see } y_i = y_i^* \text{ only if } d_i^* > 0$$
+
+### Step 2: the errors may be correlated
+
+$$\begin{pmatrix} \varepsilon_i \\ u_i \end{pmatrix} \sim N\!\left(0, \begin{pmatrix} \sigma^2 & \rho\sigma \\ \rho\sigma & 1 \end{pmatrix}\right)$$
+
+$u_i$ is whatever makes her more likely to work than $z_i$ says: ambition, health, a well-connected aunt. $\varepsilon_i$ is whatever makes her wage higher than $x_i$ says: ambition, health, a well-connected aunt. If the two are related ($\rho \ne 0$), then those who work have, on average, errors $\varepsilon$ that are not zero. **This is the whole problem.** If $\rho = 0$, selection may depend on everything in $z$, and OLS on the workers is still fine.
+
+### Step 3: the bias of OLS is a missing predictor
+
+For the women who work, the expected error is
+
+$$E(\varepsilon_i \mid u_i > -z_i^\top\gamma) = \rho\sigma\,\lambda_i, \qquad \lambda_i = \frac{\phi(z_i^\top\gamma)}{\Phi(z_i^\top\gamma)}$$
+
+$\lambda_i$ is the **inverse Mills ratio**. It is large for women who work although the model says they hardly would (they must have a large $u$), and near 0 for those who would work anyway. So
+
+$$E(y_i \mid \text{works}) = x_i^\top\beta + (\rho\sigma)\,\lambda_i$$
+
+OLS leaves out $\lambda_i$. In Heckman's words, selection bias is a **specification error**: an omitted variable.
+
+### Step 4: the two-step estimator
+
+1. Fit a **probit** regression of working on $z$, for all the women. Compute $\hat\lambda_i$.
+2. Fit OLS of the wage on $x$ **and** $\hat\lambda$, for the women who work.
+
+The coefficient of $\hat\lambda$ estimates $\rho\sigma$. Its *t* test is a test of whether there is selection at all. The ordinary standard errors of step 2 are wrong, because $\hat\lambda$ is estimated and the errors have unequal variances.
+
+### Step 5: maximum likelihood
+
+Both equations at once. A woman who does not work contributes $P(d^* \le 0)$. A woman who works contributes the density of her wage, times the probability of working **given that wage**:
+
+$$\log L = \sum_{d_i = 0} \log \Phi(-z_i^\top\gamma) + \sum_{d_i = 1} \left[ \log \frac{1}{\sigma}\phi\!\left(\frac{e_i}{\sigma}\right) + \log \Phi\!\left(\frac{z_i^\top\gamma + \rho\, e_i/\sigma}{\sqrt{1 - \rho^2}}\right) \right], \qquad e_i = y_i - x_i^\top\beta$$
+
+It is more precise than the two steps if the bivariate normal model is right.
+
+### Step 6: exclusion restrictions
+
+If $x$ and $z$ contain the same variables, the only thing that tells $\lambda_i$ from the predictors in $x$ is its **curvature**, and over most of its range it is nearly a straight line. The model is then identified by the assumption of normality alone, which is not much. To identify it properly there must be at least one variable in $z$ that is **not** in $x$: something that makes a woman work, but does not change the wage that she would be offered. Here: the income of the rest of the family, her age, and her children. Whether employers really did not care about a woman's children in 1975 is a question that the model cannot answer.
+
+---
+
+## 4. The two steps by hand
+
+```{r two_step}
+# step 1: probit for working
+probit <- glm(lfp ~ nwifeinc + educ + exper + I(exper^2) + age + kids5 + kids618, family = binomial("probit"), data = women)
+round(coef(summary(probit)), 3)
+zg <- predict(probit, type = "link")
+women$mills <- dnorm(zg) / pnorm(zg)
+
+# step 2: OLS with the inverse Mills ratio, for the women who work
+ols   <- lm(logwage ~ educ + exper + I(exper^2), data = women, subset = works)
+step2 <- lm(logwage ~ educ + exper + I(exper^2) + mills, data = women, subset = works)
+round(cbind(OLS = c(coef(ols), NA), two_step = coef(step2)), 4)
+```
+
+```{r mills_chart}
+ggplot(women, aes(pnorm(zg), mills, colour = factor(lfp))) +
+  geom_point(alpha = 0.5, size = 1.4) +
+  scale_colour_manual(values = c(`0` = "grey60", `1` = "#2a78d6"), labels = c("not working", "working"), name = NULL) +
+  labs(title = "The inverse Mills ratio", x = "probability of working, from the probit", y = "λ") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Small children make work much less likely, age and the family's other income too; education and experience make it more likely. The coefficient of $\hat\lambda$ is `r f3(coef(step2)[["mills"]])`: close to zero.
+
+---
+
+## 5. The same with the package
+
+```{r package}
+two_step <- selection(lfp ~ nwifeinc + educ + exper + I(exper^2) + age + kids5 + kids618,
+                      logwage ~ educ + exper + I(exper^2), data = women, method = "2step")
+ml       <- selection(lfp ~ nwifeinc + educ + exper + I(exper^2) + age + kids5 + kids618,
+                      logwage ~ educ + exper + I(exper^2), data = women, method = "ml")
+summary(ml)
+```
+
+```{r by_hand_ml}
+Z <- model.matrix(probit); X <- model.matrix(~ educ + exper + I(exper^2), data = women)
+y <- ifelse(works, women$logwage, 0)
+minus_loglik <- function(par) {
+  g <- par[1:ncol(Z)]; b <- par[ncol(Z) + 1:ncol(X)]; s <- exp(par[length(par) - 1]); r <- tanh(par[length(par)])
+  a <- drop(Z %*% g); e <- (y - drop(X %*% b)) / s
+  -sum(ifelse(works, dnorm(e, log = TRUE) - log(s) + pnorm((a + r * e) / sqrt(1 - r^2), log.p = TRUE), pnorm(-a, log.p = TRUE)))
+}
+hand <- optim(c(coef(probit), coef(ols), log(sigma(ols)), 0), minus_loglik, method = "BFGS",
+              control = list(maxit = 2000, reltol = 1e-12, parscale = c(0.5, 0.01, 0.1, 0.1, 0.01, 0.05, 0.3, 0.1, 0.3, 0.1, 0.1, 0.01, 0.1, 0.1)))
+c(our_logLik = -hand$value, package_logLik = as.numeric(logLik(ml)), our_rho = tanh(hand$par[[14]]), package_rho = coef(ml)[["rho"]])
+```
+
+### How to read the output
+
+- **`Probit selection equation`**: who works. Read the coefficients as in any probit: their sign and their ratio, not their size.
+- **`Outcome equation`**: the wage offer of **all** women. One more year of education goes with a wage offer that is `r pct(exp(coef(ml)[[10]]) - 1, 1)` higher.
+- **`sigma`**: the standard deviation of the wage error. **`rho`**: the correlation between the two errors, `r f3(coef(ml)[["rho"]])` with a standard error of `r f3(sqrt(vcov(ml)["rho", "rho"]))`.
+
+```{r comparison}
+row_out <- 9:12                                           # the rows of the outcome equation
+compare <- data.frame(
+  term = c("Intercept", "Education", "Experience", "Experience²"),
+  OLS = coef(ols), SE_OLS = coef(summary(ols))[, 2],
+  two_step = coef(two_step)[9:12], SE_2 = sqrt(diag(vcov(two_step)))[9:12],
+  ML = coef(ml)[row_out], SE_ML = sqrt(diag(vcov(ml)))[row_out], row.names = NULL)
+print(cbind(term = compare$term, round(compare[, -1], 4)), row.names = FALSE)
+
+lr   <- 2 * (as.numeric(logLik(ml)) - (as.numeric(logLik(probit)) + as.numeric(logLik(ols))))
+lr_p <- pchisq(lr, 1, lower.tail = FALSE)
+c(LR = lr, p = lr_p)
+```
+
+If $\rho = 0$, the likelihood of the model is that of the probit times that of the OLS regression. So the **likelihood-ratio test** of selection compares the two: $\chi^2$(1) = `r f2(lr)`, *p* `r pval(lr_p)`. We find **no sign of selection bias**. The return to a year of education is `r f3(compare$OLS[2])` with OLS, `r f3(compare$two_step[2])` with the two steps and `r f3(compare$ML[2])` with maximum likelihood.
+
+That the correction changes nothing is a common result, and a legitimate one. It does not mean that the workers are like the others: they differ in education, experience and children. It means that what is left, **after** these, seems not to be related to the wage. Or that our restrictions cannot show it.
+
+---
+
+## 6. Everything depends on the exclusion restrictions
+
+What if we had no excluded variables, and the probit contained only what is in the wage equation?
+
+```{r no_exclusion}
+probit0 <- glm(lfp ~ educ + exper + I(exper^2), family = binomial("probit"), data = women)
+zg0 <- predict(probit0, type = "link"); women$mills0 <- dnorm(zg0) / pnorm(zg0)
+r2_with    <- summary(lm(mills  ~ educ + exper + I(exper^2), data = women, subset = works))$r.squared
+r2_without <- summary(lm(mills0 ~ educ + exper + I(exper^2), data = women, subset = works))$r.squared
+c(R2_of_mills_on_x_with_exclusions = r2_with, without = r2_without)
+
+no_excl <- selection(lfp ~ educ + exper + I(exper^2), logwage ~ educ + exper + I(exper^2), data = women, method = "2step")
+mills_est <- c(with = coef(two_step)[["invMillsRatio"]], without = coef(no_excl)[["invMillsRatio"]])
+mills_se  <- c(with = sqrt(vcov(two_step)["invMillsRatio", "invMillsRatio"]), without = sqrt(vcov(no_excl)["invMillsRatio", "invMillsRatio"]))
+educ_est  <- c(with = coef(two_step)[[10]], without = coef(no_excl)[[6]])            # education in the wage equation
+educ_se   <- c(with = sqrt(vcov(two_step)[10, 10]), without = sqrt(vcov(no_excl)[6, 6]))
+rbind(education = educ_est, SE_education = educ_se, mills = mills_est, SE_mills = mills_se)
+```
+
+Without exclusions, `r pct(r2_without, 1)` of the variation of $\hat\lambda$ is already in the predictors of the wage (with them, `r pct(r2_with)`). The inverse Mills ratio is nearly a copy of $x$. Its coefficient is estimated as `r f2(mills_est[["without"]])` with a standard error of `r f2(mills_se[["without"]])`, and the standard error of the education coefficient grows from `r f3(educ_se[["with"]])` to `r f3(educ_se[["without"]])`. The correction is then worse than the disease.
+
+### A known truth
+
+A simulation with the real predictors shows both sides. The true return to education is 0.10. We set the correlation $\rho$ of the errors to 0, 0.5 and 0.8, and estimate with OLS, with the two steps, and with the two steps **without** exclusion restrictions (the data are generated with them):
+
+```{r simulation}
+set.seed(41)
+beta  <- c(-0.5, 0.10, 0.04, -0.0008); s0 <- 0.66; gamma0 <- coef(probit)
+reps  <- 500
+heck  <- function(yy, d, Zm) {                                         # two-step, by hand, fast
+  p  <- suppressWarnings(glm.fit(Zm, d, family = binomial("probit")))
+  a  <- drop(Zm %*% p$coefficients); m <- dnorm(a) / pnorm(a)
+  unname(lm.fit(cbind(X[d == 1, ], m[d == 1]), yy[d == 1])$coefficients[2])
+}
+one <- function(rho) {
+  u <- rnorm(nrow(X)); e <- s0 * (rho * u + sqrt(1 - rho^2) * rnorm(nrow(X)))
+  d <- as.integer(drop(Z %*% gamma0) + u > 0); yy <- drop(X %*% beta) + e
+  c(OLS = unname(lm.fit(X[d == 1, ], yy[d == 1])$coefficients[2]), two_step = heck(yy, d, Z), no_exclusions = heck(yy, d, X))
+}
+sims <- do.call(rbind, lapply(c(0, 0.5, 0.8), function(rho) {
+  r <- t(replicate(reps, one(rho)))
+  data.frame(rho, method = colnames(r), mean = colMeans(r), SD = apply(r, 2, sd), RMSE = sqrt(colMeans((r - 0.10)^2)), row.names = NULL)
+}))
+print(transform(sims, mean = round(mean, 4), SD = round(SD, 4), RMSE = round(RMSE, 4)), row.names = FALSE)
+get <- function(rho, m, col) sims[sims$rho == rho & sims$method == m, col]
+```
+
+```{r simulation_chart}
+sims$label <- factor(sims$method, levels = c("OLS", "two_step", "no_exclusions"),
+                     labels = c("OLS", "two-step, with exclusion restrictions", "two-step, without"))
+ggplot(sims, aes(mean, factor(rho), colour = label)) +
+  geom_vline(xintercept = 0.10, linetype = "dashed") +
+  geom_pointrange(aes(xmin = mean - 2 * SD, xmax = mean + 2 * SD), position = position_dodge(width = 0.6), linewidth = 0.9) +
+  scale_colour_manual(values = c("#eb6834", "#2a78d6", "grey50"), name = NULL) +
+  labs(title = "500 simulated studies: the return to education (truth: 0.10)",
+       subtitle = "Points: mean of the estimates. Lines: plus and minus two standard deviations",
+       x = "estimate", y = "correlation of the errors, ρ") +
+  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+```
+
+- With $\rho$ = 0.8, OLS gives `r f3(get(0.8, "OLS", "mean"))` on average, below the truth of 0.10: the bias is real. The two steps give `r f3(get(0.8, "two_step", "mean"))`.
+- With $\rho$ = 0 OLS is right and more precise: its typical error is `r f3(get(0, "OLS", "RMSE"))` against `r f3(get(0, "two_step", "RMSE"))` for the two steps. The correction has a price.
+- **Without exclusion restrictions** the two steps are right on average, but the spread is `r f1(get(0.8, "no_exclusions", "SD") / get(0.8, "two_step", "SD"))` times as large as with them. A single study may land anywhere. With $\rho$ = 0.8 their typical error, `r f3(get(0.8, "no_exclusions", "RMSE"))`, is larger than that of the **biased** OLS, `r f3(get(0.8, "OLS", "RMSE"))`.
+
+---
+
+## 7. What would the others have earned?
+
+The outcome equation gives a wage offer to every woman. For the women at home there are two predictions: the **unconditional** one, $x^\top\beta$, for any woman with such education and experience, and the one **given that she does not work**, which uses the selection term with the opposite sign:
+
+$$E(y_i^* \mid \text{does not work}) = x_i^\top\beta - \rho\sigma\,\frac{\phi(z_i^\top\gamma)}{1 - \Phi(z_i^\top\gamma)}$$
+
+```{r predictions}
+xb      <- drop(X %*% coef(ml)[9:12])
+rs      <- coef(ml)[["rho"]] * coef(ml)[["sigma"]]
+a       <- drop(Z %*% coef(ml)[1:8])
+offer   <- ifelse(works, xb + rs * dnorm(a) / pnorm(a), xb - rs * dnorm(a) / pnorm(-a))
+ols_hat <- drop(X %*% coef(ols))
+wages <- data.frame(group = c("working", "not working"),
+                    observed      = c(mean(women$logwage[works]), NA),
+                    unconditional = c(mean(xb[works]), mean(xb[!works])),
+                    conditional   = c(mean(offer[works]), mean(offer[!works])),
+                    OLS           = c(mean(ols_hat[works]), mean(ols_hat[!works])))
+print(cbind(group = wages$group, round(wages[, -1], 3)), row.names = FALSE)
+gap <- 1 - exp(mean(offer[!works]) - mean(offer[works]))
+gap
+```
+
+On this model, the women who did not work would have been offered wages `r pct(gap)` lower than those of the women who worked, nearly all of it because of less experience and education. With $\rho$ so close to zero, the selection term adds almost nothing, and OLS says the same. The log wage is predicted; for dollars one also needs $e^{\sigma^2/2}$.
+
+---
+
+## 8. Things to keep in mind
+
+- **Find an exclusion restriction before you run the model**, and defend it. Without one, do not use the Heckman correction (Puhani, 2000; Bushway et al., 2007).
+- **The predictors of the outcome belong in the selection equation too.** Leaving one out biases everything.
+- **It is not a cure for every missing outcome.** If the outcome is missing for reasons that are in your predictors, OLS or [multiple imputation](EXAMPLE_MISSING_DATA.Rmd) is better. Heckman's model is for missingness that depends on the **unseen** part of the outcome.
+- **Normality** carries a lot of weight. There are versions with other distributions, and semiparametric ones that need stronger exclusion restrictions.
+- **A non-significant $\hat\lambda$** is not proof that there is no selection. With weak exclusions the test has little power.
+- **The two steps need special standard errors.** The package has them; OLS with a column $\hat\lambda$ has not.
+- **Bounds.** Without any model one can still say something. If the missing outcomes lie within known limits, the answer lies within limits (Manski, 1989). They are often wide, and that is the honest measure of what the data say.
+
+| Situation | Model |
+|---|---|
+| Values pile up at a limit because they cannot be recorded beyond it | [Tobit](EXAMPLE_TOBIT.Rmd) |
+| Cases beyond a limit of the outcome are missing | [Truncated regression](EXAMPLE_TRUNCATED_REGRESSION.Rmd) |
+| Outcome seen only for a group selected by **another** decision, related to the outcome's error; interest in everybody | **Heckman** |
+| A real zero for some (no purchase), and an amount for the others; interest in the observed outcome | Two-part (hurdle) model |
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the two equations, the excluded variables and the argument for them, the estimator, $\rho$ with its test, and the uncorrected estimates for comparison. The numbers come from the R objects:
+
+```{r apa_numbers}
+sm  <- coef(summary(ml))
+est <- sm[, 1]; se <- sm[, 2]
+fmt <- function(v, d) mapply(function(x, k) formatC(x, format = "f", digits = k), v, d)
+apa_table <- data.frame(
+  Predictor = c("Intercept", "Education (years)", "Experience (years)", "Experience squared", "Non-wife income ($1,000)", "Age (years)", "Children under 6", "Children 6–18"),
+  sel = paste0(fmt(est[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)), " (", fmt(se[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)), ")"),
+  out = c(paste0(fmt(est[9:12], c(3, 3, 3, 4)), " (", fmt(se[9:12], c(3, 3, 3, 4)), ")"), rep("—", 4)),
+  ols = c(paste0(fmt(coef(ols), c(3, 3, 3, 4)), " (", fmt(coef(summary(ols))[, 2], c(3, 3, 3, 4)), ")"), rep("—", 4)))
+```
+
+**Method** (data analysis):
+
+> Wages were observed only for the `r sum(works)` of `r nrow(women)` married women who worked for pay in 1975 (Mroz, 1987). We estimated the determinants of the log hourly wage with Heckman's (1979) sample selection model by maximum likelihood. The wage equation contained education, experience and its square; the selection equation contained these and the income of the other family members, age, and the numbers of children under 6 and between 6 and 18, which we assumed to affect the decision to work but not the wage offered. Selection was tested with a likelihood-ratio test of ρ = 0, and the results were compared with ordinary least squares on the working women and with the two-step estimator. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package sampleSelection (Toomet & Henningsen, 2008).
+
+**Results:**
+
+> Women were less likely to work if they had children under 6, *b* = `r f2(est[7])`, *SE* = `r f2(se[7])`, *z* = `r f2(est[7] / se[7])`, *p* `r pval(2 * pnorm(-abs(est[7] / se[7])))`, were older, or had a higher family income from others (Table 1). Each year of education went with a wage offer that was `r pct(exp(est[10]) - 1, 1)` higher, *b* = `r f3(est[10])`, *SE* = `r f3(se[10])`, 95% CI [`r f3(est[10] - 1.96 * se[10])`, `r f3(est[10] + 1.96 * se[10])`]. The errors of the two equations were not significantly correlated, ρ = `r nz(est[14])`, χ²(1) = `r f2(lr)`, *p* `r pval(lr_p)`, and the coefficient of education was nearly the same as without the correction (`r f3(coef(ols)[["educ"]])`). We therefore find no evidence of selection bias under the assumed exclusion restrictions.
+
+**Table 1**
+
+*Sample Selection Model of Women's Wages*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "Working (probit)", "Log wage (ML)", "Log wage (OLS, working women)"),
+             align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Estimates with standard errors in parentheses. *N* = `r nrow(women)`, of whom `r sum(works)` worked. ρ = `r nz(est[14])` (*SE* = `r nz(se[14])`), σ = `r f2(est[13])`.
+
+**Points to remember:**
+
+- Name the excluded variables and argue for them.
+- Report the selection equation as well.
+- Show the uncorrected estimates.
+- Report $\rho$ with its uncertainty, and say what the test can and cannot show.
+- Say to whom the coefficients apply: the whole population, not those who were seen.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | The outcome is seen only for a group selected by a decision that is related to the outcome's error |
+| **The model** | A probit for selection and a regression for the outcome, with correlated normal errors |
+| **The bias** | A missing predictor: $\rho\sigma\lambda$, with $\lambda$ the inverse Mills ratio |
+| **How (R)** | `sampleSelection::selection(d ~ z1 + z2 + x, y ~ x, data, method = "ml")` or `"2step"` |
+| **Needs** | At least one variable that moves selection but not the outcome |
+| **Test** | $\rho = 0$: likelihood ratio, or the *t* test of $\hat\lambda$ |
+| **If $\rho = 0$** | OLS on those who are seen is right, and more precise |
+| **Without exclusions** | Identified by normality alone: do not |
+| **Related pages** | [Truncated regression](EXAMPLE_TRUNCATED_REGRESSION.Rmd), [Tobit](EXAMPLE_TOBIT.Rmd), [missing data](EXAMPLE_MISSING_DATA.Rmd) |
+
+---
+
+## References
+
+Bushway, S., Johnson, B. D., & Slocum, L. A. (2007). Is the magic still there? The use of the Heckman two-step correction for selection bias in criminology. *Journal of Quantitative Criminology*, *23*(2), 151–178. https://doi.org/10.1007/s10940-007-9024-4
+
+Heckman, J. J. (1979). Sample selection bias as a specification error. *Econometrica*, *47*(1), 153–161. https://doi.org/10.2307/1912352
+
+Manski, C. F. (1989). Anatomy of the selection problem. *The Journal of Human Resources*, *24*(3), 343–360. https://doi.org/10.2307/145818
+
+Mroz, T. A. (1987). The sensitivity of an empirical model of married women's hours of work to economic and statistical assumptions. *Econometrica*, *55*(4), 765–799. https://doi.org/10.2307/1911029
+
+Puhani, P. A. (2000). The Heckman correction for sample selection and its critique. *Journal of Economic Surveys*, *14*(1), 53–68. https://doi.org/10.1111/1467-6419.00104
+
+Toomet, O., & Henningsen, A. (2008). Sample selection models in R: Package sampleSelection. *Journal of Statistical Software*, *27*(7), 1–23. https://doi.org/10.18637/jss.v027.i07

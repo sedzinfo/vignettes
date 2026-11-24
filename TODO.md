@@ -28,7 +28,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 ## Limited outcomes
 - [x] Tobit: EXAMPLE_TOBIT
 - [x] Truncated: EXAMPLE_TRUNCATED_REGRESSION
-- [ ] Heckman selection
+- [x] Heckman selection: EXAMPLE_HECKMAN_SELECTION
 - [ ] Hurdle / two-part
 - [ ] Censored quantile
 
