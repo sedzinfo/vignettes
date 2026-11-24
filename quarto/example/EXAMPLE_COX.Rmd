@@ -1,0 +1,348 @@
+---
+title: "Cox Regression: Does Money Keep Released Prisoners Out of Jail?"
+description: "Cox proportional hazards regression in R with survival::coxph(), on a randomised experiment with 432 men released from prison: Kaplan-Meier curves and the log-rank test, the hazard, the partial likelihood by hand, hazard ratios, predicted survival and differences in weeks, testing proportional hazards and what to do when they fail, predictors that change over time, reverse causation and immortal time bias, residuals, ties and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: money for the first weeks of freedom
+
+People who leave prison have little money and find it hard to get work. Many are soon arrested again. In the 1970s the state of Maryland made an experiment: of 432 men released from prison, half were chosen **at random** to receive a small weekly payment for three months. All were followed for **one year**. Did the money keep them out of jail (Rossi et al., 1980)?
+
+The outcome is a **time**: the number of weeks until the first arrest. For most men it is not known, because they were not arrested in the year. We know only that their time is longer than 52 weeks. Such a time is **censored**. Neither a regression of the weeks (what value should the others have?) nor a logistic regression of arrested or not (an arrest in week 1 counts like one in week 52) uses what we know.
+
+**Survival analysis** does, and **Cox regression** (Cox, 1972) is its most used model. It asks: at any moment, among those who are still free, how many times higher is the rate of arrest for one person than for another?
+
+```{r packages}
+library(survival)   # Surv(), survfit(), coxph(), cox.zph() (comes with R)
+library(ggplot2)
+
+arm_colours <- c(`no payment` = "#eb6834", payment = "#2a78d6")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+```{r download}
+raw <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/carData/Rossi.csv")
+rossi <- with(raw, data.frame(id = seq_len(nrow(raw)), week, arrest, money = as.integer(fin == "yes"), age = (age - 25) / 5, prior = prio))
+work  <- as.matrix(raw[, paste0("emp", 1:52)]) == "yes"              # employed in week 1, ..., 52 (NA after the arrest)
+nrow(rossi)
+table(money = rossi$money, arrest = rossi$arrest)
+summary(rossi$week)
+```
+
+Each row is a man. `week` is the week of the first arrest, or 52; `arrest` is 1 if he was arrested and 0 if the time is censored at 52. `money` is the randomised payment, `age` his age at release in steps of 5 years from 25, and `prior` the number of earlier convictions. The file also says in which weeks he had a **job**, which we use in section 6. (The study has more variables. We keep the model small.)
+
+---
+
+## 2. Look at the data
+
+```{r look}
+km <- survfit(Surv(week, arrest) ~ money, data = rossi)
+km_data <- data.frame(time = km$time, surv = km$surv, low = km$lower, high = km$upper, arm = rep(names(arm_colours), km$strata))
+km_data <- rbind(data.frame(time = 0, surv = 1, low = 1, high = 1, arm = names(arm_colours)), km_data)
+ggplot(km_data, aes(time, surv, colour = arm, fill = arm)) +
+  geom_step(linewidth = 1) +
+  scale_colour_manual(values = arm_colours, name = NULL) + scale_fill_manual(values = arm_colours, name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0.6, 1)) +
+  labs(title = "Men who have not been arrested (Kaplan–Meier)", x = "weeks since release", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+free <- summary(km, times = 52)$surv
+logrank <- survdiff(Surv(week, arrest) ~ money, data = rossi)
+logrank
+```
+
+The **Kaplan–Meier** curve shows the share of men who are still free. After a year it is `r pct(free[1])` without the payment and `r pct(free[2])` with it. The **log-rank test** compares the two curves at all times: $\chi^2$(1) = `r f2(logrank$chisq)`, *p* `r pval(pchisq(logrank$chisq, 1, lower.tail = FALSE))`. The test has no predictors besides the groups and gives no size of an effect. That is what the regression is for.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the hazard
+
+The **hazard** $h(t)$ is the rate of the event at time $t$ **among those who have not had it yet**. If 100 men are still free at the start of a week and 2 are arrested in it, the hazard is about 0.02 per week. It may go up and down over time.
+
+### Step 2: proportional hazards
+
+$$h(t \mid x) = h_0(t)\, e^{\beta_1 x_1 + \beta_2 x_2 + \dots}$$
+
+$h_0(t)$ is the **baseline** hazard, of somebody with all predictors 0. It can have **any** shape, and we do not model it. The predictors multiply it by a factor that does not depend on time. So for two people who differ by one unit in $x_1$, the ratio of their hazards is
+
+$$\frac{h(t \mid x_1 + 1)}{h(t \mid x_1)} = e^{\beta_1} \quad\text{at every } t$$
+
+the **hazard ratio** (HR). That it is the same at all times is the assumption of proportional hazards.
+
+### Step 3: the partial likelihood
+
+Cox's idea: at each arrest, ask only **who** among those still free is the one arrested. Given that one of them is, the probability that it is man $i$ is his share of the total hazard, and $h_0(t)$ cancels:
+
+$$\frac{h_0(t)\, e^{x_i^\top\beta}}{\sum_{j \text{ still free}} h_0(t)\, e^{x_j^\top\beta}} = \frac{e^{x_i^\top\beta}}{\sum_{j \text{ still free}} e^{x_j^\top\beta}}$$
+
+Multiply these over all the arrests, and find the $\beta$ that makes the product largest. Only the **order** of the events matters, not the exact times. Censored men count in the sums as long as they are free.
+
+```{r by_hand}
+X <- as.matrix(rossi[, c("money", "age", "prior")])
+minus_partial <- function(b) {                                             # with Breslow's treatment of ties
+  eta <- drop(X %*% b)
+  -sum(sapply(which(rossi$arrest == 1), function(i) eta[i] - log(sum(exp(eta[rossi$week >= rossi$week[i]])))))
+}
+hand <- optim(c(0, 0, 0), minus_partial, method = "BFGS", control = list(reltol = 1e-12))
+fit_breslow <- coxph(Surv(week, arrest) ~ money + age + prior, data = rossi, ties = "breslow")
+rbind(by_hand = hand$par, coxph = coef(fit_breslow))
+```
+
+### Step 4: ties
+
+Time was recorded in weeks, so several men were arrested at the "same" time, and it is not clear who was in the sum when. The default of `coxph()` is Efron's approximation, better than Breslow's simple one above. With few ties they agree.
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+fit <- coxph(Surv(week, arrest) ~ money + age + prior, data = rossi)
+summary(fit)
+s  <- summary(fit)$coefficients; hr <- s[, 2]; ci <- exp(confint(fit))
+con <- summary(fit)$concordance[[1]]
+```
+
+- **`money`**: HR = `r f2(hr[["money"]])`. At any time, among men of the same age and record who are still free, the rate of arrest of those with the payment is `r f2(hr[["money"]])` times that of the others, `r pct(1 - hr[["money"]])` lower. 95% CI [`r f2(ci["money", 1])`, `r f2(ci["money", 2])`], *p* `r pval(s["money", 5])`: the interval reaches just over 1.
+- **`age`**: five years older, `r f2(hr[["age"]])` times the hazard. **`prior`**: each earlier conviction, `r f2(hr[["prior"]])` times, so three more convictions, $`r f2(hr[["prior"]])`^3$ = `r f2(hr[["prior"]]^3)`.
+- **`Concordance`** = `r f2(con)`: of two men of whom it is known who was arrested first, the model gives the higher risk to the right one in `r pct(con)` of the pairs. 50% is guessing.
+- **The three tests** at the end (likelihood ratio, Wald, score) test all the predictors together. The score test with one group variable is the log-rank test.
+- There is **no intercept**: it is in the baseline hazard.
+
+### What a hazard ratio is not
+
+An HR of `r f2(hr[["money"]])` does **not** mean that `r pct(1 - hr[["money"]])` fewer men are arrested, nor that they stay free `r f2(1 / hr[["money"]])` times as long. It is a ratio of rates among those still free. For people, translate it into survival curves:
+
+```{r predicted}
+new  <- data.frame(money = c(0, 1), age = 0, prior = 2)                    # 25 years old, two earlier convictions
+sf   <- survfit(fit, newdata = new)
+at52 <- summary(sf, times = 52)$surv[1, ]
+at52
+curves <- data.frame(time = rep(sf$time, 2), surv = as.vector(sf$surv), low = as.vector(sf$lower), high = as.vector(sf$upper), arm = rep(names(arm_colours), each = length(sf$time)))
+ggplot(curves, aes(time, surv, colour = arm, fill = arm)) +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.15, colour = NA) + geom_step(linewidth = 1) +
+  scale_colour_manual(values = arm_colours, name = NULL) + scale_fill_manual(values = arm_colours, name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0.4, 1)) +
+  labs(title = "Predicted: a man of 25 with two earlier convictions", x = "weeks since release", y = "not arrested") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+For such a man the model predicts a chance of `r pct(at52[1])` of staying free for a year without the payment, and `r pct(at52[2])` with it: `r f1(100 * (at52[2] - at52[1]))` points more.
+
+### In weeks: the restricted mean
+
+Another number for the whole experiment needs no model: the mean number of weeks **free in the first 52**, which is the area under the Kaplan–Meier curve.
+
+```{r rmst}
+tab  <- summary(km, rmean = 52)$table
+rm   <- tab[, "rmean"]; rm_se <- tab[, "se(rmean)"]
+diff <- rm[[2]] - rm[[1]]; diff_se <- sqrt(sum(rm_se^2))
+c(no_payment = rm[[1]], payment = rm[[2]], difference = diff, low = diff - 1.96 * diff_se, high = diff + 1.96 * diff_se)
+```
+
+On average the men with the payment were free for `r f1(diff)` weeks more of the 52, 95% CI [`r f1(diff - 1.96 * diff_se)`, `r f1(diff + 1.96 * diff_se)`].
+
+---
+
+## 5. Are the hazards proportional?
+
+`cox.zph()` looks at the **Schoenfeld residuals**: at each arrest, how the arrested man differs from the average of those still free. If the effect of a predictor changes over time, they show a trend (Grambsch & Therneau, 1994).
+
+```{r zph}
+zph <- cox.zph(fit)
+zph
+```
+
+```{r zph_chart}
+zd <- data.frame(time = rep(zph$time, 3), beta = as.vector(zph$y), term = rep(colnames(zph$y), each = length(zph$time)))
+ggplot(zd, aes(time, beta)) + geom_point(alpha = 0.5, colour = "grey40", size = 1.2) +
+  geom_smooth(method = "loess", formula = y ~ x, colour = "#2a78d6", fill = "#2a78d6", alpha = 0.2) +
+  geom_hline(data = data.frame(term = names(coef(fit)), b = coef(fit)), aes(yintercept = b), colour = "#eb6834", linetype = "dashed") +
+  facet_wrap(~ term, scales = "free_y") +
+  labs(title = "Does the coefficient change over time?", subtitle = "Blue: smoothed residuals. Dashed: the constant coefficient of the model", x = "weeks (transformed scale)", y = "coefficient") + theme_bw()
+```
+
+For the payment there is no sign of a change (*p* `r pval(zph$table["money", "p"])`). For **age** there is (*p* `r pval(zph$table["age", "p"])`): the line falls. Age hardly matters in the first weeks, and a lot later. What can be done?
+
+1. **Let the effect change with time**, for example linearly. `tt()` does it:
+
+```{r tt}
+fit_tt <- coxph(Surv(week, arrest) ~ money + age + prior + tt(age), data = rossi, tt = function(x, t, ...) x * (t - 26) / 26)
+round(coef(summary(fit_tt)), 3)
+age_at <- function(w) exp(coef(fit_tt)[["age"]] + coef(fit_tt)[["tt(age)"]] * (w - 26) / 26)
+c(week_5 = age_at(5), week_26 = age_at(26), week_52 = age_at(52))
+```
+
+Five years more multiply the hazard by `r f2(age_at(5))` in week 5 and by `r f2(age_at(52))` at the end of the year.
+
+2. **Stratify**: give each age group its own baseline hazard. Age then has no coefficient, and the others are adjusted for it without any assumption:
+
+```{r strata}
+rossi$age_group <- cut(raw$age, c(0, 19, 22, 25, 100), labels = c("-19", "20-22", "23-25", "26-"))
+fit_strata <- coxph(Surv(week, arrest) ~ money + prior + strata(age_group), data = rossi)
+round(rbind(original = coef(summary(fit))["money", ], stratified = coef(summary(fit_strata))["money", ], time_varying_age = coef(summary(fit_tt))["money", ]), 3)
+```
+
+3. **Or leave it**, and read the HR as an average over time, if the predictor is only there for adjustment. The effect of the payment, our question, is the same in all three: `r f2(exp(coef(fit_strata)[["money"]]))` and `r f2(exp(coef(fit_tt)[["money"]]))` against `r f2(hr[["money"]])`.
+
+---
+
+## 6. Predictors that change over time: having a job
+
+Did the men who found **work** stay free? Work changes from week to week, so it cannot be one number per man. Two wrong ways and a better one.
+
+### The trap: "ever employed"
+
+```{r immortal}
+rossi$ever <- as.integer(apply(work, 1, any, na.rm = TRUE))
+wrong <- coxph(Surv(week, arrest) ~ money + age + prior + ever, data = rossi)
+round(coef(summary(wrong))["ever", ], 4)
+```
+
+Men who were ever employed have a hazard `r f2(exp(coef(wrong)[["ever"]]))` times that of the others. It looks like a miracle, and it is a mistake. To find a job in week 20 a man must first **stay free for 20 weeks**. During those weeks he could not be arrested and count as employed: he was "immortal". The variable looks into the future. This is **immortal time bias** (Suissa, 2008), and it is still found in medical journals.
+
+### The right data: one row per man and week
+
+Split each man's time into weeks. In each, the job status is what it was **then**:
+
+```{r counting_process}
+long <- do.call(rbind, lapply(seq_len(nrow(rossi)), function(i) {
+  w <- rossi$week[i]
+  data.frame(rossi[i, c("id", "money", "age", "prior")], start = 0:(w - 1), stop = 1:w,
+             arrest = c(rep(0, w - 1), rossi$arrest[i]), job = as.integer(work[i, 1:w]), row.names = NULL)
+}))
+long$job_before <- ave(long$job, long$id, FUN = function(v) c(NA, head(v, -1)))      # the week before
+subset(long, id == 1)[14:20, ]
+nrow(long)
+same_week <- coxph(Surv(start, stop, arrest) ~ money + age + prior + job, data = long)
+week_before <- coxph(Surv(start, stop, arrest) ~ money + age + prior + job_before, data = long)
+round(rbind(same_week = coef(summary(same_week))["job", ], week_before = coef(summary(week_before))["job_before", ]), 4)
+```
+
+The outcome is now `Surv(start, stop, arrest)`. Each row is at risk only in its own week, and a man leaves the risk set when he is arrested. (The rows of one man are not repeated observations that need a correction: at each event he appears once.)
+
+- With the job **in the same week**, the HR is `r f2(exp(coef(same_week)[["job"]]))`. But there is a second trap. An arrest on Monday costs the job of that week. The cause may run **backwards**.
+- With the job **in the week before**, the HR is `r f2(exp(coef(week_before)[["job_before"]]))`, 95% CI [`r f2(exp(confint(week_before))["job_before", 1])`, `r f2(exp(confint(week_before))["job_before", 2])`]. That is the number to believe, more or less. Men were not assigned to jobs at random, as they were to the payment, and those who find work may be those who would stay free anyway.
+
+And note: the job may be **on the way** from the payment to freedom (or away from it, since the payment was cut when a man earned money). Adjusting for it changes the meaning of the effect of the payment.
+
+---
+
+## 7. More checks
+
+```{r martingale}
+m0 <- coxph(Surv(week, arrest) ~ money, data = rossi)
+md <- rbind(data.frame(x = raw$age, r = residuals(m0, type = "martingale"), what = "age (years)"), data.frame(x = rossi$prior, r = residuals(m0, type = "martingale"), what = "earlier convictions"))
+ggplot(md, aes(x, r)) + geom_point(alpha = 0.3, size = 1) + geom_smooth(method = "loess", formula = y ~ x, colour = "#2a78d6", se = FALSE) +
+  facet_wrap(~ what, scales = "free_x") + labs(title = "Martingale residuals: what shape should the predictor have?", x = NULL, y = "residual of a model without it") + theme_bw()
+infl <- residuals(fit, type = "dfbetas"); colnames(infl) <- names(coef(fit))
+worst <- apply(abs(infl), 2, max)
+worst
+fit_log <- coxph(Surv(week, arrest) ~ money + log(raw$age) + prior, data = rossi)
+c(AIC_linear_age = AIC(fit), AIC_log_age = AIC(fit_log))
+```
+
+- **Shape of the predictors.** The smooth line of the martingale residuals (observed minus expected arrests) against age falls steeply at first and then flattens: the logarithm of age would fit a little better (AIC `r f1(AIC(fit_log))` against `r f1(AIC(fit))`).
+- **Influence.** No man moves a coefficient by more than `r f2(max(worst))` standard errors.
+
+---
+
+## 8. Things to keep in mind
+
+- **Independent censoring.** The method assumes that those who leave the study would have gone on like those who stay. Here almost all the censoring is the end of the year, which is harmless.
+- **Events decide the power**, not people. With `r sum(rossi$arrest)` arrests a model has room for about `r round(sum(rossi$arrest) / 10)` predictors at most.
+- **The hazard ratio and selection.** Even in a randomised experiment, those still free after 30 weeks are not a random half any more: if the money works, the high-risk men of the payment group are still in it. So the HR at later times is not a clean comparison (Hernán, 2010). Differences of survival curves and restricted means are.
+- **Adding predictors changes the HR** of the others even if they are unrelated to them (as for odds ratios). Compare models with care.
+- **Several events.** We used the first arrest. For repeated events there are extensions (Andersen–Gill).
+- **Other ways to end.** If some men had died, death would be a **competing risk**.
+- **Parametric models** (Weibull and others) estimate the baseline too, and can predict beyond the data.
+- **Discrete time.** With few intervals, a [complementary log-log regression](EXAMPLE_COMPLEMENTARY_LOG_LOG.Rmd) on person-weeks gives the same hazard ratios.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the start and end of the time, the number of events, the method for ties, hazard ratios with intervals, the check of proportional hazards, and survival at some times. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Predictor = c("Payment", "Age (5 years)", "Earlier convictions (each)"), b = f2(s[, 1]), SE = f2(s[, 3]), z = f2(s[, 4]),
+                        p = sapply(s[, 5], function(p) sub("^= ", "", pval(p))), HR = paste0(f2(hr), " [", f2(ci[, 1]), ", ", f2(ci[, 2]), "]"))
+```
+
+**Method** (data analysis):
+
+> We analysed the time from release to the first arrest in `r nrow(rossi)` men who were randomly assigned to a weekly payment for three months or to no payment (Rossi et al., 1980). Men not arrested within 52 weeks were censored. Arrest-free survival was described with Kaplan–Meier curves and compared with the log-rank test. Hazard ratios were estimated with Cox regression (Efron's method for ties), adjusting for age and the number of earlier convictions. Proportional hazards were tested with scaled Schoenfeld residuals; because the effect of age changed over time, we repeated the analysis stratified by age group. Employment was analysed as a time-dependent covariate, lagged by one week. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package survival (Therneau & Grambsch, 2000).
+
+**Results:**
+
+> Within a year, `r sum(rossi$arrest[rossi$money == 1])` of `r sum(rossi$money == 1)` men with the payment and `r sum(rossi$arrest[rossi$money == 0])` of `r sum(rossi$money == 0)` without it were arrested; the proportion free after 52 weeks was `r pct(free[2])` and `r pct(free[1])`, log-rank χ²(1) = `r f2(logrank$chisq)`, *p* `r pval(pchisq(logrank$chisq, 1, lower.tail = FALSE))`. In the Cox model, the hazard of arrest was lower with the payment, *HR* = `r f2(hr[["money"]])`, 95% CI [`r f2(ci["money", 1])`, `r f2(ci["money", 2])`], *p* `r pval(s["money", 5])`, a difference that did not reach significance (Table 1). The men with the payment were free for `r f1(diff)` more of the 52 weeks, 95% CI [`r f1(diff - 1.96 * diff_se)`, `r f1(diff + 1.96 * diff_se)`]. Proportional hazards held for the payment (*p* `r pval(zph$table["money", "p"])`) but not for age (*p* `r pval(zph$table["age", "p"])`); in the analysis stratified by age, *HR* = `r f2(exp(coef(fit_strata)[["money"]]))`. Having had a job in the week before went with a lower hazard, *HR* = `r f2(exp(coef(week_before)[["job_before"]]))`, 95% CI [`r f2(exp(confint(week_before))["job_before", 1])`, `r f2(exp(confint(week_before))["job_before", 2])`].
+
+**Table 1**
+
+*Cox Regression of the Time to the First Arrest*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "*z*", "*p*", "*HR* [95% CI]"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(rossi)`, `r sum(rossi$arrest)` arrests. HR = hazard ratio. Concordance = `r nz(con)`.
+
+**Points to remember:**
+
+- Define time zero, the event and the censoring.
+- Give the number of events.
+- Report the test of proportional hazards, and what you did about it.
+- Add survival proportions or restricted means: hazard ratios are hard to picture.
+- Never use a variable that looks into the future.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Time to an event, with censored cases, and the interest is in relative rates |
+| **The model** | $h(t \mid x) = h_0(t)\,e^{x^\top\beta}$, with any baseline |
+| **Estimation** | Partial likelihood: at each event, who among those at risk? |
+| **How (R)** | `coxph(Surv(time, event) ~ x, data)`; changing predictors: `Surv(start, stop, event)` |
+| **Reading it** | $e^\beta$: hazard ratio, the same at all times |
+| **Check** | `cox.zph()`; if it fails: `tt()`, `strata()`, or read it as an average |
+| **Also report** | Kaplan–Meier, survival at chosen times, restricted means |
+| **Traps** | Immortal time, reverse causation, informative censoring |
+| **Related pages** | [Censored quantile regression](EXAMPLE_CENSORED_QUANTILE_REGRESSION.Rmd), [complementary log-log](EXAMPLE_COMPLEMENTARY_LOG_LOG.Rmd) |
+
+---
+
+## References
+
+Cox, D. R. (1972). Regression models and life-tables. *Journal of the Royal Statistical Society: Series B*, *34*(2), 187–202. https://doi.org/10.1111/j.2517-6161.1972.tb00899.x
+
+Grambsch, P. M., & Therneau, T. M. (1994). Proportional hazards tests and diagnostics based on weighted residuals. *Biometrika*, *81*(3), 515–526. https://doi.org/10.1093/biomet/81.3.515
+
+Hernán, M. A. (2010). The hazards of hazard ratios. *Epidemiology*, *21*(1), 13–15. https://doi.org/10.1097/EDE.0b013e3181c1ea43
+
+Rossi, P. H., Berk, R. A., & Lenihan, K. J. (1980). *Money, work, and crime: Experimental evidence*. Academic Press.
+
+Suissa, S. (2008). Immortal time bias in pharmacoepidemiology. *American Journal of Epidemiology*, *167*(4), 492–499. https://doi.org/10.1093/aje/kwm324
+
+Therneau, T. M., & Grambsch, P. M. (2000). *Modeling survival data: Extending the Cox model*. Springer.
