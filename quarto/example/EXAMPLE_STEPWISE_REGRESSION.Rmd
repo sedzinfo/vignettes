@@ -1,0 +1,486 @@
+---
+title: "Stepwise Regression: Which Body Measurements Predict Body Fat?"
+description: "Stepwise regression in R with step(), on body fat measured under water in 250 men and 13 tape measurements: forward, backward and both directions, AIC, BIC and p values by hand, all subsets, and why it is risky: findings in shuffled data, unstable choices under the bootstrap, inflated coefficients, optimistic fit, with cross-validation against the full model, lasso and ridge, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: which measurements should we keep?
+
+The accurate way to measure a man's body fat is to weigh him **under water**: fat floats, muscle and bone sink. It needs a tank and takes time. A tape measure costs nothing. So we would like a formula that predicts the percentage of body fat from measurements that anyone can take: neck, chest, abdomen, hip, thigh and so on.
+
+There are 13 candidates. Do we need all of them? **Stepwise regression** lets the computer choose: it adds the predictor that helps most, or removes the one that helps least, and repeats until nothing improves.
+
+It is one of the most used methods of data analysis, and one of the most criticised (Harrell, 2015; Smith, 2018). This page does both things. It shows how the method works, step by step, and then it **tests** it: on the same data, on shuffled data, on resampled data, and against simpler alternatives.
+
+```{r packages}
+library(ggplot2)
+library(leaps)     # regsubsets(): the best model of every size
+library(glmnet)    # lasso and ridge, for comparison
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x) paste0(formatC(100 * x, format = "f", digits = 0), "%")
+```
+
+---
+
+## 1. The data
+
+The data come from a study of 252 men by K. W. Penrose, A. G. Nelson and A. G. Fisher, published in 1985. Johnson (1996) made them available for teaching. The file has no header, so we give the names:
+
+```{r download}
+raw <- read.table("https://jse.amstat.org/datasets/fat.dat.txt")
+names(raw) <- c("case", "brozek", "siri", "density", "age", "weight", "height", "adiposity", "fat_free_weight",
+                "neck", "chest", "abdomen", "hip", "thigh", "knee", "ankle", "biceps", "forearm", "wrist")
+dim(raw)
+```
+
+The outcome is `siri`, the percentage of body fat worked out from the density under water with Siri's equation. `adiposity` is the body mass index and `fat_free_weight` is computed from the body fat itself, so neither belongs among the predictors. The circumferences are in centimetres; weight is in pounds and height in inches, which we convert.
+
+Three rows need a decision before anything else:
+
+```{r odd_rows}
+raw[c(39, 42, 182), c("case", "siri", "density", "age", "weight", "height", "abdomen")]
+```
+
+- **Case 42** is `r raw$height[42]` inches tall (75 cm) and weighs `r raw$weight[42]` pounds. That is almost certainly a typing error for 69.5, which we correct.
+- **Case 182** has 0% fat, which no living person has: the equation gave a negative value that was set to zero. We drop him.
+- **Case 39** weighs `r f1(raw$weight[39])` pounds (`r f1(raw$weight[39] * 0.45359237)` kg), `r f1(raw$weight[39] - sort(raw$weight, decreasing = TRUE)[2])` pounds more than the next man. It is probably a correct value, but a formula for ordinary men should not be steered by him. We drop him too, and say so.
+
+```{r tidy}
+predictors <- c("age", "weight", "height", "neck", "chest", "abdomen", "hip", "thigh",
+                "knee", "ankle", "biceps", "forearm", "wrist")
+men <- raw
+men$height[42] <- 69.5
+men$weight <- men$weight * 0.45359237     # kg
+men$height <- men$height * 2.54           # cm
+men <- men[-c(39, 182), c("siri", predictors)]
+names(men)[1] <- "fat"
+rownames(men) <- NULL
+nrow(men)
+summary(men$fat)
+```
+
+That leaves `r nrow(men)` men between `r min(men$age)` and `r max(men$age)` years old, with `r f1(min(men$fat))` to `r f1(max(men$fat))` percent body fat.
+
+---
+
+## 2. Look at the data
+
+```{r correlations, fig.height = 5.5}
+cors <- cor(men)
+ord  <- order(cors["fat", ])
+long <- as.data.frame(as.table(cors[ord, ord]))
+names(long) <- c("a", "b", "r")
+
+ggplot(long, aes(a, b, fill = r)) +
+  geom_tile(colour = "white") +
+  geom_text(aes(label = sub("^(-?)0\\.", "\\1.", sub("^-0.0$", "0.0", formatC(r, format = "f", digits = 1)))), size = 2.6) +
+  scale_fill_gradient2(low = "#eb6834", mid = "white", high = "#2a78d6", limits = c(-1, 1), name = "r") +
+  labs(title = "Correlations, ordered by the correlation with body fat", x = NULL, y = NULL) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid = element_blank())
+```
+
+The abdomen has by far the strongest correlation with body fat, *r* = `r nz(cors["fat", "abdomen"])`. But the measurements are also strongly correlated **with each other**: a heavy man is large everywhere. Weight and hip correlate at `r nz(cors["weight", "hip"])`, weight and chest at `r nz(cors["weight", "chest"])`. The predictors carry the same information many times over, and this is exactly the situation in which stepwise methods struggle.
+
+---
+
+## 3. The method step by step, with formulas
+
+### Step 1: the trade-off
+
+Every predictor that is added lowers the sum of squared residuals, the **RSS**, even a column of random numbers. So a criterion must put a **price** on each predictor. The usual one is Akaike's information criterion. For a linear regression with $k$ estimated coefficients,
+
+$$\text{AIC} = n \log\!\left(\frac{\text{RSS}}{n}\right) + 2k$$
+
+The smaller the better: the first part rewards fit, and each coefficient costs 2. The BIC charges $\log(n)$ per coefficient instead of 2. With $n$ = `r nrow(men)` that is `r f2(log(nrow(men)))`, so BIC keeps fewer predictors.
+
+### Step 2: one step forward
+
+Start with no predictor. Try each of the 13 alone, and take the one with the smallest AIC:
+
+```{r step_by_hand}
+n <- nrow(men)
+aic_of <- function(vars) {                     # AIC of the model with these predictors
+  fit <- lm(reformulate(if (length(vars)) vars else "1", "fat"), data = men)
+  n * log(sum(resid(fit)^2) / n) + 2 * length(coef(fit))
+}
+first <- sapply(predictors, function(v) aic_of(v))
+c(none = aic_of(character(0)), head(sort(first), 4))
+```
+
+The abdomen wins by a wide margin. Keep it, try each of the other 12 next to it, and continue:
+
+```{r forward_by_hand}
+chosen <- character(0)
+path <- data.frame(step = 0, added = "(none)", AIC = aic_of(chosen))
+repeat {
+  left  <- setdiff(predictors, chosen)
+  tries <- sapply(left, function(v) aic_of(c(chosen, v)))
+  if (!length(left) || min(tries) >= tail(path$AIC, 1)) break    # nothing improves: stop
+  chosen <- c(chosen, names(which.min(tries)))
+  path   <- rbind(path, data.frame(step = nrow(path), added = tail(chosen, 1), AIC = min(tries)))
+}
+path
+```
+
+Forward selection stops after `r length(chosen)` predictors.
+
+### Step 3: backward, and both ways
+
+**Backward elimination** starts from the model with all 13 and removes, one at a time, the predictor whose removal lowers the AIC most. **Both directions** is forward selection that checks, after each addition, whether an earlier predictor can now go.
+
+### Step 4: what AIC means as a *p* value
+
+Removing one predictor is an improvement if the AIC falls, that is if the likelihood-ratio statistic of that predictor is below 2. In a large sample this statistic follows a $\chi^2$ distribution with 1 degree of freedom, so
+
+$$\text{AIC keeps a predictor when } p < P(\chi^2_1 > 2) = `r nz(pchisq(2, 1, lower.tail = FALSE), 3)`$$
+
+and BIC, with $n = `r nrow(men)`$, when $p < P(\chi^2_1 > \log n) = `r nz(pchisq(log(nrow(men)), 1, lower.tail = FALSE), 3)`$. The old versions of stepwise regression used *p* values directly, with "$F$ to enter" and "$F$ to remove". All of them are the same idea with a different price.
+
+### Step 5: how many models are we choosing from?
+
+With 13 candidates there are $2^{13}$ = `r num(2^13)` possible models. Stepwise looks at a small part of them, and reports the winner as if it had been the only one.
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+full  <- lm(fat ~ ., data = men)                     # all 13
+empty <- lm(fat ~ 1, data = men)                     # none
+everything <- formula(full)
+
+forward  <- step(empty, scope = everything, direction = "forward",  trace = 0)
+backward <- step(full,                      direction = "backward", trace = 0)
+both     <- step(empty, scope = everything, direction = "both",     trace = 0)
+bic      <- step(full, direction = "backward", trace = 0, k = log(nrow(men)))   # k: the price per coefficient
+
+vars_of <- function(fit) names(coef(fit))[-1]
+models  <- list("Forward, AIC" = forward, "Backward, AIC" = backward, "Both ways, AIC" = both, "Backward, BIC" = bic)
+chosen_table <- sapply(models, function(m) ifelse(predictors %in% vars_of(m), "x", ""))
+rownames(chosen_table) <- predictors
+print(chosen_table, quote = FALSE)
+in_all <- predictors[rowSums(chosen_table == "x") == length(models)]
+```
+
+The directions do **not** agree. Forward selection keeps `r length(vars_of(forward))` predictors and backward elimination `r length(vars_of(backward))`, and they share only `r length(intersect(vars_of(forward), vars_of(backward)))` (`r paste(intersect(vars_of(forward), vars_of(backward)), collapse = ", ")`). Forward takes weight, backward throws it out and takes height, neck and chest instead. The data are the same, the criterion is the same. Only the route differs.
+
+The output of the backward model looks like that of any regression:
+
+```{r backward_summary}
+summary(backward)
+```
+
+```{r backward_numbers}
+p_back <- summary(backward)$coefficients[-1, 4]
+aics   <- c(full = extractAIC(full)[2], sapply(models, function(m) extractAIC(m)[2]))
+round(aics, 1)
+```
+
+The tempting way to read it: $R^2$ = `r nz(summary(backward)$r.squared, 3)`, almost that of the full model (`r nz(summary(full)$r.squared, 3)`), with `r sum(p_back < .05)` predictors that have *p* < .05. Two details already look odd. First, the signs: a **larger** wrist and neck go with **less** fat. That part can be defended: given the abdomen, a big frame means less fat. Second, some predictors are in the model without being significant, because AIC's threshold is *p* < `r nz(pchisq(2, 1, lower.tail = FALSE), 3)`.
+
+The *p* values, the confidence intervals and the $R^2$ of this output were all computed as if we had chosen these `r length(vars_of(backward))` predictors **before** seeing the data. We did not. Section 5 measures what that costs.
+
+### All subsets
+
+`regsubsets()` does not take steps. It finds the best model of every size among all `r num(2^13)`:
+
+```{r all_subsets}
+subsets <- summary(regsubsets(fat ~ ., data = men, nvmax = 13))
+size <- 1:13
+best <- data.frame(size = size,
+                   adj_R2 = subsets$adjr2,
+                   AIC    = n * log(subsets$rss / n) + 2 * (size + 1),
+                   BIC    = n * log(subsets$rss / n) + log(n) * (size + 1))
+best$predictors <- apply(subsets$which[, -1], 1, function(w) paste(predictors[w], collapse = " "))
+best[c(1:4, which.min(best$AIC)), c("size", "adj_R2", "AIC", "predictors")]
+```
+
+```{r subsets_chart}
+curve <- rbind(data.frame(size = size, value = best$AIC - min(best$AIC), criterion = "AIC"),
+               data.frame(size = size, value = best$BIC - min(best$BIC), criterion = "BIC"))
+
+ggplot(curve, aes(size, value, colour = criterion)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 2) +
+  scale_colour_manual(values = c(AIC = "#2a78d6", BIC = "#eb6834"), name = NULL) +
+  scale_x_continuous(breaks = size) +
+  coord_cartesian(ylim = c(0, 40)) +
+  labs(title = "The best model of each size, compared with the best of all",
+       subtitle = "0 = the winner; differences of 1 or 2 mean next to nothing",
+       x = "number of predictors", y = "criterion minus its minimum") +
+  theme_bw() + theme(legend.position = "bottom")
+near_best <- sum(best$AIC - min(best$AIC) < 2)
+```
+
+The bottom of the AIC curve is **flat**: the best models of `r near_best` different sizes are within 2 points of the winner. The data cannot tell them apart. Searching all subsets finds the true minimum, but the minimum of a flat curve is decided by noise.
+
+---
+
+## 5. Testing the method
+
+### Test 1: an outcome with no relation to anything
+
+We **shuffle** the body-fat column. Now each man has the body fat of another man, and all 13 predictors are useless by construction. A good method should come back empty-handed:
+
+```{r shuffle}
+set.seed(2026)
+shuffled <- t(replicate(500, {
+  fake     <- men
+  fake$fat <- sample(fake$fat)
+  m  <- step(lm(fat ~ ., data = fake), trace = 0)
+  s  <- summary(m)
+  p  <- s$coefficients[-1, 4]
+  fs <- s$fstatistic
+  c(kept        = length(p),
+    significant = sum(p < .05),
+    R2          = s$r.squared,
+    p_model     = if (length(p)) pf(fs[[1]], fs[[2]], fs[[3]], lower.tail = FALSE) else 1)
+}))
+colMeans(shuffled[, 1:3])
+c(any_significant = mean(shuffled[, "significant"] > 0), model_significant = mean(shuffled[, "p_model"] < .05))
+```
+
+In 500 shuffled data sets, backward elimination kept `r f1(mean(shuffled[, "kept"]))` predictors on average. In `r pct(mean(shuffled[, "significant"] > 0))` of them at least one had *p* < .05, and in `r pct(mean(shuffled[, "p_model"] < .05))` the *F* test of the whole model was significant, where the promise is 5%. This is known as **Freedman's paradox** (Freedman, 1983): screen many noise variables, refit with the survivors, and the final model looks convincing.
+
+### Test 2: would the same predictors be chosen again?
+
+We cannot measure 250 new men, but we can draw 250 men from our own **with replacement**, many times, and repeat the whole selection on each of these bootstrap samples:
+
+```{r bootstrap}
+set.seed(2027)
+B <- 1000
+kept <- t(replicate(B, {
+  again <- men[sample(nrow(men), replace = TRUE), ]
+  m <- step(lm(fat ~ ., data = again), trace = 0)
+  predictors %in% names(coef(m))
+}))
+colnames(kept) <- predictors
+frequency <- sort(colMeans(kept), decreasing = TRUE)
+frequency
+
+as_text   <- apply(kept, 1, function(k) paste(predictors[k], collapse = " "))
+n_models  <- length(unique(as_text))
+our_model <- paste(predictors[predictors %in% vars_of(backward)], collapse = " ")
+c(different_models = n_models, most_common = max(table(as_text)), ours = sum(as_text == our_model))
+```
+
+```{r bootstrap_chart}
+freq_data <- data.frame(predictor = factor(names(frequency), levels = rev(names(frequency))),
+                        share = frequency, chosen = names(frequency) %in% vars_of(backward))
+
+ggplot(freq_data, aes(share, predictor, fill = chosen)) +
+  geom_col(width = 0.7) +
+  geom_vline(xintercept = 0.5, linetype = "dashed", colour = "grey40") +
+  scale_fill_manual(values = c(`TRUE` = "#2a78d6", `FALSE` = "grey70"),
+                    labels = c(`TRUE` = "in our backward model", `FALSE` = "not in it"), name = NULL) +
+  scale_x_continuous(labels = function(x) paste0(100 * x, "%"), limits = c(0, 1)) +
+  labs(title = "How often each predictor is chosen in 1,000 bootstrap samples",
+       x = "share of the samples", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Only `r sum(frequency > .9)` predictors, `r paste(names(frequency)[frequency > .9], collapse = " and ")`, are chosen nearly always. Most of the others are a coin toss. The 1,000 samples produced **`r num(n_models)` different models**; the most common one came up `r max(table(as_text))` times, and the model that backward elimination chose in our data only `r sum(as_text == our_model)` times. A statement such as "the predictors of body fat are age, height, neck, chest, abdomen, forearm and wrist" is a statement about this sample.
+
+### Test 3: are the coefficients right?
+
+A predictor with a weak effect gets in when, by luck, its effect looks strong in the sample. So among the selected, weak effects are **overestimated** (the "winner's curse"). To see this we need to know the truth, so we make one: new body-fat values that follow the full model exactly, with its coefficients and its residual spread.
+
+```{r winners_curse}
+set.seed(2028)
+truth <- coef(full)
+sims  <- 1000
+estimates <- matrix(NA, sims, length(predictors), dimnames = list(NULL, predictors))
+for (i in seq_len(sims)) {
+  new     <- men
+  new$fat <- fitted(full) + rnorm(nrow(men), 0, sigma(full))
+  b <- coef(step(lm(fat ~ ., data = new), trace = 0))
+  estimates[i, intersect(names(b), predictors)] <- b[intersect(names(b), predictors)]
+}
+curse <- data.frame(predictor = predictors, true = truth[predictors],
+                    selected = colMeans(!is.na(estimates)),
+                    mean_when_selected = colMeans(estimates, na.rm = TRUE))
+curse$ratio <- curse$mean_when_selected / curse$true
+curse <- curse[order(-curse$selected), ]
+print(data.frame(predictor = curse$predictor, round(curse[, -1], 2)), row.names = FALSE)
+```
+
+```{r winners_numbers}
+curse_of <- function(v, col) curse[curse$predictor == v, col]
+```
+
+The abdomen and the wrist are nearly always selected, and their average estimate is close to the truth. The forearm has a true coefficient of `r f2(curse_of("forearm", "true"))`; it is selected in `r pct(curse_of("forearm", "selected"))` of the samples, and then its average estimate is `r f2(curse_of("forearm", "mean_when_selected"))`, `r f1(curse_of("forearm", "ratio"))` times too large. (For the predictors that are strongly correlated with others, such as weight and hip, the coefficient also changes meaning when the others are left out, so the ratio mixes two things.)
+
+### Test 4: is the fit as good as it looks?
+
+The $R^2$ of a chosen model is too good, because the choice and the fit used the same men. **Cross-validation** measures honestly: hide a tenth of the men, do **everything** on the rest, predict the hidden ones. The word *everything* is important. If the predictors are chosen on all the men first and only the fit is cross-validated, the hidden men have already helped to choose, and the result is still too good.
+
+```{r cross_validation}
+set.seed(2029)
+cv_once <- function() {
+  fold <- sample(rep(1:10, length.out = nrow(men)))
+  pred <- matrix(NA, nrow(men), 8, dimnames = list(NULL, c("full", "backward", "chosen_before", "bic", "abdomen",
+                                                           "abdomen_weight", "lasso", "ridge")))
+  for (k in 1:10) {
+    train <- men[fold != k, ]
+    test  <- men[fold == k, ]
+    x  <- as.matrix(train[, predictors]); xt <- as.matrix(test[, predictors])
+    m  <- lm(fat ~ ., data = train)
+    out <- list(m,
+                step(m, trace = 0),                                # selection inside the fold: honest
+                lm(formula(backward), data = train),               # predictors chosen on all men: cheating
+                step(m, trace = 0, k = log(nrow(train))),
+                lm(fat ~ abdomen, data = train),
+                lm(fat ~ abdomen + weight, data = train))
+    pred[fold == k, 1:6] <- sapply(out, predict, newdata = test)
+    pred[fold == k, 7] <- predict(cv.glmnet(x, train$fat, alpha = 1), xt, s = "lambda.min")
+    pred[fold == k, 8] <- predict(cv.glmnet(x, train$fat, alpha = 0), xt, s = "lambda.min")
+  }
+  sqrt(colMeans((pred - men$fat)^2))
+}
+rmse <- rowMeans(replicate(20, cv_once()))          # 20 random splits, averaged
+rmse
+apparent <- sqrt(mean(resid(backward)^2))           # the same men used for choosing, fitting and judging
+apparent
+```
+
+```{r cv_chart}
+cv_data <- data.frame(
+  model = c("Full model, 13 predictors", "Backward, AIC", "Backward, AIC (cheating)",
+            "Backward, BIC", "Abdomen only", "Abdomen + weight", "Lasso", "Ridge"),
+  rmse = rmse)
+cv_data$model <- factor(cv_data$model, levels = cv_data$model[order(-cv_data$rmse)])
+
+ggplot(cv_data, aes(rmse, model)) +
+  geom_segment(aes(xend = apparent, yend = model), colour = "grey75") +
+  geom_point(size = 3, colour = "#2a78d6") +
+  geom_vline(xintercept = apparent, linetype = "dashed", colour = "#eb6834") +
+  labs(title = "Prediction error in men that the model has not seen",
+       subtitle = "Dashed: the error of the backward model on the men it was built from",
+       x = "root mean squared error (percentage points of body fat)", y = NULL) +
+  theme_bw() + theme(plot.title.position = "plot")
+```
+
+- On the men it was built from, the backward model misses by `r f2(apparent)` points. On new men, with an honest cross-validation, by `r f2(rmse[["backward"]])`.
+- If the selection is left out of the cross-validation, the error looks like `r f2(rmse[["chosen_before"]])`, better than it really is. This mistake is easy to make, and hard to see in a published paper.
+- Choosing did not help here. The full model, with all 13, has `r f2(rmse[["full"]])`, the lasso `r f2(rmse[["lasso"]])` and ridge `r f2(rmse[["ridge"]])`. Two predictors that a physician could have named beforehand, abdomen and weight, have `r f2(rmse[["abdomen_weight"]])`, and the abdomen alone `r f2(rmse[["abdomen"]])`.
+- Apart from the model with the abdomen alone, the differences are small next to the error itself: a tape measure predicts body fat to within about $\pm$ `r f1(2 * min(rmse))` points, whatever the model.
+
+---
+
+## 6. What to do instead
+
+| Your aim | Do this |
+|---|---|
+| **Explain**: test a theory, estimate an effect | Choose the predictors from theory before you look. Fit that model, report it, whatever the *p* values. Dropping a confounder because *p* > .05 does not make it harmless |
+| **Predict**, with enough data | Keep the full model, or shrink it: ridge, lasso or elastic net (see [regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd)) |
+| **Predict**, many correlated predictors | Principal components or partial least squares regression |
+| **A short formula** for practical use | Choose from the cost of the measurements first. If you must select by data, use backward elimination with AIC, report the bootstrap frequencies, shrink the coefficients, and validate with the selection **inside** the cross-validation |
+| **Explore** | Use whatever you like, and call it exploration. The test is the next data set |
+
+Two predictors, abdomen and weight, do almost as well as anything. This is the usual result with correlated predictors: many models are equally good, and which of them you use is a matter of convenience. What you cannot do is to say that the predictors that were left out do not matter.
+
+Is the choice of predictors **in blocks, planned before**, stepwise regression? No. That is [hierarchical regression](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd): the order comes from the theory, and the *p* values mean what they say.
+
+---
+
+## 7. Things to keep in mind
+
+- **The *p* values of a selected model are not *p* values.** They ignore the search. There are corrections for some procedures (post-selection inference; Taylor & Tibshirani, 2015), but the ordinary output of `summary()` is not one of them.
+- **"Not selected" does not mean "no effect".** Weight was not selected by backward elimination, although it correlates at `r nz(cors["fat", "weight"])` with body fat: its information was already in the other measurements.
+- **The starting point matters.** Backward elimination from the full model is usually preferred to forward selection, because it judges every predictor next to all the others (Heinze et al., 2018). It needs a full model that can be fitted: at the very least more rows than predictors, better 10 to 20 rows per candidate. Here there are `r f1(nrow(men) / 13)`.
+- **Count the candidates, not the survivors.** A model with 3 predictors chosen among 50 has the overfitting of a much larger model.
+- **Whole factors.** A factor with four levels is three columns that belong together: `step()` keeps or drops them together. Interactions should not stay without their main effects; `step()` respects that too.
+- **Missing values.** Adding a predictor with missing values changes the rows that are used, and the AICs are then not comparable. Decide on the rows first (or impute, see [missing data](EXAMPLE_MISSING_DATA.Rmd)).
+- **The odd rows matter.** We dropped two men and corrected one. With unstable selection a single unusual row can change the chosen set, so check [influence](EXAMPLE_ROBUST_REGRESSION.Rmd) before you select.
+
+---
+
+## 8. Reporting the results in APA style
+
+If you use selection, the report (APA 7th edition) must let the reader judge it: all the candidates, the algorithm and its criterion, the stability, and an honest estimate of the error. The numbers come from the R objects:
+
+```{r apa_numbers}
+s_back <- summary(backward)$coefficients
+ci_back <- confint(backward)
+apa_table <- data.frame(
+  Predictor = c("Intercept", vars_of(backward)),
+  b  = f2(s_back[, 1]),
+  SE = f2(s_back[, 2]),
+  CI = paste0("[", f2(ci_back[, 1]), ", ", f2(ci_back[, 2]), "]"),
+  freq = c("—", pct(frequency[vars_of(backward)])),
+  full = f2(coef(full)[c("(Intercept)", vars_of(backward))]))
+```
+
+**Method** (data analysis):
+
+> We developed a formula for percentage of body fat, measured by underwater weighing, in `r nrow(men)` men (Johnson, 1996), after correcting one height that was a typing error and excluding one man with an impossible value of 0% and one man of `r f1(raw$weight[39] * 0.45359237)` kg. The candidates were age, weight, height and 10 circumferences (13 in all; `r f1(nrow(men) / 13)` men per candidate). We used backward elimination with the AIC, starting from the model with all the candidates. Stability was assessed with 1,000 bootstrap samples, and prediction error with 10-fold cross-validation, repeated 20 times, in which the selection was repeated in every fold. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> Backward elimination kept `r length(vars_of(backward))` of the 13 candidates (Table 1), *R*² = `r nz(summary(backward)$r.squared)` (full model: *R*² = `r nz(summary(full)$r.squared)`). Only `r paste(names(frequency)[frequency > .9], collapse = " and ")` were selected in more than 90% of the bootstrap samples; the 1,000 samples gave `r num(n_models)` different models, and the model in Table 1 was chosen in `r sum(as_text == our_model)` of them. The cross-validated prediction error was `r f2(rmse[["backward"]])` percentage points (`r f2(apparent)` in the data used for the development), compared with `r f2(rmse[["full"]])` for the full model and `r f2(rmse[["abdomen_weight"]])` for a model with abdomen and weight only. Because of the selection, the confidence intervals in Table 1 are too narrow, and the table should not be read as a list of the determinants of body fat.
+
+**Table 1**
+
+*Body Fat (%) Predicted From Body Measurements: Model Chosen by Backward Elimination*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "95% CI", "Bootstrap inclusion", "*b* in the full model"),
+             align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(men)` men. Circumferences and height in cm, weight in kg, age in years. The standard errors and intervals ignore the selection. Bootstrap inclusion: the share of 1,000 bootstrap samples in which backward elimination chose the predictor.
+
+**Points to remember:**
+
+- List **all** the candidates, not only those that survived.
+- Name the algorithm, the direction and the criterion.
+- Report how stable the selection was.
+- Give the full model as well, at least in a supplement.
+- Validate with the selection inside.
+- Do not call the selected predictors "the significant predictors", nor the others "not significant".
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **What it is** | The computer adds or removes predictors one at a time, by AIC, BIC or *p* value |
+| **How (R)** | `step(lm(y ~ ., d))` backward with AIC; `k = log(n)` for BIC; `scope` and `direction` for forward; `leaps::regsubsets()` for all subsets |
+| **What it costs** | *p* values too small, intervals too narrow, weak effects too large, $R^2$ too high |
+| **What it found in noise** | A significant model in `r pct(mean(shuffled[, "p_model"] < .05))` of the shuffled data sets |
+| **How stable it was** | `r num(n_models)` different models in 1,000 bootstrap samples |
+| **Check it with** | Bootstrap inclusion frequencies, and cross-validation that repeats the selection |
+| **Better** | Predictors chosen beforehand, the full model, or shrinkage ([ridge, lasso](EXAMPLE_REGULARIZED_REGRESSION.Rmd)) |
+| **Not the same as** | [Hierarchical regression](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd), where the analyst decides the order |
+
+---
+
+## References
+
+Freedman, D. A. (1983). A note on screening regression equations. *The American Statistician*, *37*(2), 152–155. https://doi.org/10.1080/00031305.1983.10482729
+
+Harrell, F. E., Jr. (2015). *Regression modeling strategies: With applications to linear models, logistic and ordinal regression, and survival analysis* (2nd ed.). Springer.
+
+Heinze, G., Wallisch, C., & Dunkler, D. (2018). Variable selection – A review and recommendations for the practicing statistician. *Biometrical Journal*, *60*(3), 431–449. https://doi.org/10.1002/bimj.201700067
+
+Johnson, R. W. (1996). Fitting percentage of body fat to simple body measurements. *Journal of Statistics Education*, *4*(1). https://doi.org/10.1080/10691898.1996.11910505
+
+Smith, G. (2018). Step away from stepwise. *Journal of Big Data*, *5*, Article 32. https://doi.org/10.1186/s40537-018-0143-6
+
+Taylor, J., & Tibshirani, R. J. (2015). Statistical learning and selective inference. *Proceedings of the National Academy of Sciences*, *112*(25), 7629–7634. https://doi.org/10.1073/pnas.1507583112

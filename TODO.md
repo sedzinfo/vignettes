@@ -6,7 +6,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Simple linear: EXAMPLE_SIMPLE_LINEAR_REGRESSION
 - [x] Multiple linear: EXAMPLE_HIERARCHICAL_REGRESSION, EXAMPLE_GENERALIZED (Gaussian GLM)
 - [x] Hierarchical: EXAMPLE_HIERARCHICAL_REGRESSION
-- [ ] Stepwise
+- [x] Stepwise: EXAMPLE_STEPWISE_REGRESSION
 - [x] Polynomial: EXAMPLE_POLYNOMIAL_REGRESSION
 - [x] Weighted least squares: EXAMPLE_WEIGHTED_LEAST_SQUARES
 - [x] Generalized least squares: EXAMPLE_GENERALIZED_LEAST_SQUARES
