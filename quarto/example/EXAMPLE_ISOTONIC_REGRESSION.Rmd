@@ -1,0 +1,482 @@
+---
+title: "Isotonic Regression: Are the Bookmakers' Probabilities Right?"
+description: "Isotonic regression in R with isoreg(), on the betting odds and results of 20,000 football matches in six countries: the best curve that never goes down, the pool-adjacent-violators algorithm by hand, weights and ties, the calibration of probabilities (reliability diagrams, the Brier score split into miscalibration, discrimination and uncertainty), consistency bands and tests by simulation, a comparison with logistic recalibration on later seasons, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (60 small files, in less than a minute),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a curve we know only one thing about
+
+Before a football match a bookmaker offers **odds**. Odds of 2.00 for the home team mean: bet one euro, and get two back if it wins. So the bookmaker believes that the home team wins about half of the time. Every odd contains a **probability**.
+
+Are these probabilities right? If we take all the matches in which the bookmaker said 60%, did the home team win 60% of them? And those with 20%, or 80%? We want the curve that turns the bookmaker's probability into the true one.
+
+We do not know the shape of that curve. It may bend anywhere. But we know one thing: **it does not go down**. A match with a higher implied probability cannot be a match with a smaller chance, or the bookmaker would not be in business.
+
+**Isotonic regression** finds the best-fitting curve under this one condition. It needs no formula, no degree of a polynomial, no smoothing parameter. This page uses it for its most common modern job, checking and repairing probabilities, which is called **calibration**.
+
+```{r packages}
+library(ggplot2)
+library(isotone)   # gpava(): isotonic regression with weights and other loss functions
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+f4   <- function(x) formatC(x, format = "f", digits = 4, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The site Football-Data publishes results and odds as one CSV file per league and season, free and with no login. We take ten seasons of the first division of six countries, and the odds of one bookmaker (Bet365).
+
+```{r download}
+leagues <- c(England = "E0", Germany = "D1", Spain = "SP1", Italy = "I1", France = "F1", Greece = "G1")
+seasons <- c("1516", "1617", "1718", "1819", "1920", "2021", "2122", "2223", "2324", "2425")   # 2015-16 to 2024-25
+
+one_file <- function(country, season) {
+  url <- paste0("https://www.football-data.co.uk/mmz4281/", season, "/", leagues[[country]], ".csv")
+  d   <- read.csv(url, fileEncoding = "latin1")
+  data.frame(country, season, result = d$FTR,
+             odds_home = as.numeric(d$B365H), odds_draw = as.numeric(d$B365D), odds_away = as.numeric(d$B365A))
+}
+matches <- do.call(rbind, lapply(names(leagues), function(country)
+  do.call(rbind, lapply(seasons, function(s) one_file(country, s)))))
+matches <- matches[complete.cases(matches) & matches$result %in% c("H", "D", "A"), ]
+nrow(matches)
+table(matches$country)
+```
+
+`result` is `H` for a home win, `D` for a draw and `A` for an away win. The odds were collected before the match, on the Friday for the matches of a weekend and on the Tuesday for those of midweek.
+
+### From odds to probabilities
+
+Odds of $o$ are fair if the probability is $1/o$. But the three values of $1/o$ (home, draw, away) add up to more than 1, and the excess is the bookmaker's **margin**. The simplest correction divides by the sum:
+
+$$p_{\text{home}} = \frac{1/o_{\text{home}}}{1/o_{\text{home}} + 1/o_{\text{draw}} + 1/o_{\text{away}}}$$
+
+```{r implied}
+total <- 1 / matches$odds_home + 1 / matches$odds_draw + 1 / matches$odds_away
+matches$p <- (1 / matches$odds_home) / total          # the implied probability of a home win
+matches$y <- as.integer(matches$result == "H")        # what happened
+c(mean_margin = mean(total) - 1, mean_p = mean(matches$p), share_home_wins = mean(matches$y))
+```
+
+The margin is `r pct(mean(total) - 1)` on average. The mean implied probability of a home win is `r pct(mean(matches$p))`, and the home team did win `r pct(mean(matches$y))` of the matches. So the probabilities are nearly right **on average**. That says nothing about 20% or 80%.
+
+---
+
+## 2. Look at the data
+
+The usual way to check is to make bins: all the matches with 0 to 10%, with 10 to 20% and so on, and compare the mean probability with the share of home wins in each bin.
+
+```{r look}
+binned <- function(width) {
+  bin <- cut(matches$p, seq(0, 1, by = width))
+  d <- data.frame(p = tapply(matches$p, bin, mean), y = tapply(matches$y, bin, mean), n = as.vector(table(bin)))
+  d[d$n > 0, ]
+}
+bins <- rbind(cbind(binned(0.10), width = "10 bins"), cbind(binned(0.02), width = "50 bins"))
+
+ggplot(bins, aes(p, y)) +
+  geom_abline(linetype = "dashed", colour = "grey50") +
+  geom_line(colour = "#2a78d6", linewidth = 0.5) +
+  geom_point(aes(size = n), colour = "#2a78d6", alpha = 0.7) +
+  facet_wrap(~ width) +
+  scale_size_area(max_size = 4, name = "matches") +
+  coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(title = "Implied probability against what happened",
+       x = "bookmaker's probability of a home win", y = "share of home wins") +
+  theme_bw()
+```
+
+With few bins we may hide a bend, and with many bins the picture wobbles, and even **goes down** in places, which cannot be true. The number of bins is an arbitrary choice, and different choices can lead to different conclusions (Dimitriadis et al., 2021). Isotonic regression lets the data choose the bins.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: least squares with one condition
+
+Sort the matches by their probability, $p_1 \le p_2 \le \dots \le p_n$. We look for fitted values $\mu_1, \dots, \mu_n$ that minimise the sum of squares,
+
+$$\sum_i (y_i - \mu_i)^2 \qquad \text{subject to} \qquad \mu_1 \le \mu_2 \le \dots \le \mu_n$$
+
+There are as many $\mu$'s as matches, and no formula that connects them. Only the order is imposed.
+
+### Step 2: the algorithm, pool adjacent violators
+
+If the data are already in order, then $\mu_i = y_i$ and we are done. If two neighbours are in the wrong order (the second is smaller than the first), they are **violators**. The best we can do for them is to make them equal, at their mean. Then look again: the new mean may violate the order with its own neighbours. Keep pooling until no violators are left. This is the **pool-adjacent-violators algorithm**, PAVA (Ayer et al., 1955):
+
+```{r pava}
+pava <- function(y, w = rep(1, length(y)), trace = FALSE) {
+  value <- numeric(0); weight <- numeric(0); size <- integer(0)      # the blocks built so far
+  for (i in seq_along(y)) {
+    value <- c(value, y[i]); weight <- c(weight, w[i]); size <- c(size, 1L)
+    # as long as the last block is below the one before it, pool the two into their weighted mean
+    while (length(value) > 1 && value[length(value) - 1] >= value[length(value)]) {
+      k <- length(value)
+      value[k - 1]  <- (weight[k - 1] * value[k - 1] + weight[k] * value[k]) / (weight[k - 1] + weight[k])
+      weight[k - 1] <- weight[k - 1] + weight[k]
+      size[k - 1]   <- size[k - 1] + size[k]
+      value <- value[-k]; weight <- weight[-k]; size <- size[-k]
+    }
+    if (trace) cat("after value", i, ":", format(rep(round(value, 2), size)), "\n")
+  }
+  rep(value, size)
+}
+
+toy <- c(1, 3, 2, 4, 3, 3, 7)
+fit_toy <- pava(toy, trace = TRUE)
+```
+
+Follow it: the 3 and the 2 are in the wrong order, so both become 2.5. Then 4, 3 and 3 become 3.33. The result never goes down, and no other non-decreasing series is closer to the data.
+
+### Step 3: what the result looks like
+
+The fit is a **step function**: flat blocks with jumps between them. Each block is the mean of the $y$'s in it, so blocks are bins, whose number and borders were chosen by the data. There is also an explicit formula, the *max-min* formula:
+
+$$\hat\mu_i = \max_{s \le i}\; \min_{t \ge i}\; \text{mean}(y_s, \dots, y_t)$$
+
+In words: the largest, over all starting points to the left, of the smallest mean that a block ending to the right can have.
+
+```{r max_min}
+max_min <- sapply(seq_along(toy), function(i)
+  max(sapply(1:i, function(s) min(sapply(i:length(toy), function(t) mean(toy[s:t]))))))
+rbind(pava = fit_toy, max_min = max_min)
+```
+
+### Step 4: yes or no outcomes
+
+Here $y$ is 0 or 1, and the fitted values are probabilities. Least squares looks like the wrong criterion for that. But for isotonic regression it does not matter: the same fit **also maximises the binomial likelihood**, and it is the best for every other reasonable score (Barlow et al., 1972; Dimitriadis et al., 2021).
+
+### Step 5: ties and weights
+
+Several matches with exactly the same $p$ must get the same fitted value. We can replace them by one row with their mean, and the number of matches as its **weight**. PAVA with weights then takes weighted means, as in the code above.
+
+### Step 6: what is estimated, and how well
+
+There is nothing to tune. The price is a slower convergence: the error of a smooth parametric curve shrinks with $n^{-1/2}$, the error of an isotonic fit with $n^{-1/3}$. Ten times the data halve the error. It is a method for large samples.
+
+---
+
+## 4. Fitting the model and reading the output
+
+R has `isoreg()` in base:
+
+```{r fit}
+ord <- order(matches$p)
+p   <- matches$p[ord]
+y   <- matches$y[ord]
+iso <- isoreg(p, y)
+fitted_iso <- iso$yf
+n_blocks   <- length(unique(round(fitted_iso, 12)))
+n_blocks
+```
+
+The `r num(length(y))` matches became `r n_blocks` blocks. The same from our own function, and from `isotone::gpava()`, both on the table of tied probabilities with weights:
+
+```{r same_fit}
+different <- unique(p)                                      # p is sorted already
+which_one <- match(p, different)
+ties <- data.frame(p = different, y = as.vector(tapply(y, which_one, mean)), n = tabulate(which_one))
+by_hand <- pava(ties$y, ties$n)
+package <- gpava(z = ties$p, y = ties$y, weights = ties$n)$x
+c(different_probabilities = nrow(ties),
+  largest_difference_by_hand = max(abs(by_hand[which_one] - fitted_iso)),
+  largest_difference_package = max(abs(package[which_one] - fitted_iso)))
+```
+
+```{r blocks}
+blocks <- data.frame(value = round(fitted_iso, 12), p = p)
+blocks <- do.call(rbind, lapply(split(blocks, blocks$value), function(b)
+  data.frame(from = min(b$p), to = max(b$p), matches = nrow(b), home_wins = b$value[1])))
+rownames(blocks) <- NULL
+big <- blocks[order(-blocks$matches), ][1:5, ]
+round(big, 3)
+```
+
+Each row is a block: from which probability to which, how many matches, and the share of home wins in it, which is the fitted value for all of them. The five largest are shown. Blocks are wide where the data could not show a rise, and narrow where the rise was clear.
+
+```{r reliability, fig.height = 6}
+step <- data.frame(p = p, fit = fitted_iso)
+ggplot(step, aes(p, fit)) +
+  geom_abline(linetype = "dashed", colour = "grey50") +
+  geom_step(colour = "#2a78d6", linewidth = 0.9) +
+  geom_rug(data = step[seq(1, nrow(step), by = 10), ], aes(x = p), inherit.aes = FALSE, alpha = 0.1) +
+  coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(title = "Isotonic regression of the result on the implied probability",
+       subtitle = "Dashed: perfect calibration. The ticks show where the matches are (one in ten)",
+       x = "bookmaker's probability of a home win", y = "fitted probability of a home win") +
+  theme_bw()
+
+at <- function(q) approx(p, fitted_iso, xout = q, method = "constant", rule = 2, ties = "ordered")$y
+at(c(0.15, 0.35, 0.65, 0.85))
+```
+
+The curve is close to the diagonal, so the bookmaker is good. But it is not on it. Where the bookmaker says 15%, the home team won `r pct(at(0.15))`; at 35%, `r pct(at(0.35))`; at 65%, `r pct(at(0.65))`; at 85%, `r pct(at(0.85))`. The steps wobble (at 60% it won `r pct(at(0.6))`), but on the whole the curve is **steeper** than the diagonal: home teams with low chances win less often than their odds say, and those with high chances more often. This is the well-known **favourite–longshot bias** of betting markets (Snowberg & Wolfers, 2010). Part of it may come from our way of removing the margin: we shrank the three probabilities in the same proportion, and bookmakers may put more of the margin on the outsiders.
+
+---
+
+## 5. Is it more than chance?
+
+The fit has no standard errors. And a step function that follows the noise will never lie exactly on the diagonal, even if the probabilities are perfect. So we ask: **what would the fit look like if the bookmaker were right?** We can simulate that. Keep the probabilities, throw a new result for every match with exactly these probabilities, and fit again:
+
+```{r consistency}
+set.seed(7)
+reps <- 500
+grid <- seq(0.06, 0.90, by = 0.01)
+curve_at <- function(yy) approx(p, isoreg(p, yy)$yf, xout = grid, method = "constant", rule = 2, ties = "ordered")$y
+under_null <- replicate(reps, curve_at(rbinom(length(p), 1, p)))          # if the bookmaker were right
+band <- data.frame(p = grid, lower = apply(under_null, 1, quantile, 0.05),
+                   upper = apply(under_null, 1, quantile, 0.95), fit = curve_at(y))
+outside <- mean(band$fit < band$lower | band$fit > band$upper)
+below   <- grid[band$fit < band$lower]          # the probabilities where the fit is under the band
+above   <- grid[band$fit > band$upper]          # and over it
+c(share_outside = outside, points_below = length(below), of_them_under_50 = sum(below < 0.5),
+  points_above = length(above), of_them_over_50 = sum(above > 0.5))
+```
+
+```{r consistency_chart, fig.height = 6}
+ggplot(band, aes(p)) +
+  geom_ribbon(aes(ymin = lower - p, ymax = upper - p), fill = "grey75", alpha = 0.6) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_step(aes(y = fit - p), colour = "#2a78d6", linewidth = 0.9) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, " points")) +
+  labs(title = "Fitted minus implied probability",
+       subtitle = "Grey: where 90% of the fits would be if every probability were right",
+       x = "bookmaker's probability of a home win", y = NULL) +
+  theme_bw()
+```
+
+The chart shows the **difference** from the diagonal, which makes it easier to see. The fit leaves the 90% band at `r pct(outside, 0)` of the probabilities on the grid, where chance would give about 10%. And it does so with a pattern: of the `r length(below)` points under the band, `r sum(below < 0.5)` are for probabilities under 50%, and of the `r length(above)` points over it, `r sum(above > 0.5)` are for probabilities over 50%. The bias is real.
+
+### One number: the Brier score and its three parts
+
+The **Brier score** is the mean squared difference between the probability and the result, $\frac{1}{n}\sum (p_i - y_i)^2$. Smaller is better. Isotonic regression splits it into three parts that have a meaning (Dimitriadis et al., 2021):
+
+$$\underbrace{\text{Brier}(p)}_{\text{the score}} = \underbrace{\text{Brier}(p) - \text{Brier}(\hat\mu)}_{\text{miscalibration}} - \underbrace{\big[\text{Brier}(\bar y) - \text{Brier}(\hat\mu)\big]}_{\text{discrimination}} + \underbrace{\text{Brier}(\bar y)}_{\text{uncertainty}}$$
+
+- **Uncertainty** is the score of the constant $\bar y$, the share of home wins: how hard the matches are to predict without knowing anything.
+- **Discrimination** is how much better a perfectly recalibrated version of the probabilities would be: how well they **sort** the matches.
+- **Miscalibration** is what we lose because the numbers are not right.
+
+```{r decomposition}
+decompose <- function(p, y) {
+  o  <- order(p); p <- p[o]; y <- y[o]
+  mu <- isoreg(p, y)$yf
+  brier <- mean((p - y)^2); best <- mean((mu - y)^2); constant <- mean((mean(y) - y)^2)
+  c(brier = brier, miscalibration = brier - best, discrimination = constant - best, uncertainty = constant)
+}
+all_matches <- decompose(p, y)
+round(all_matches, 4)
+
+set.seed(8)
+null_mcb <- replicate(500, { yy <- rbinom(length(p), 1, p); decompose(p, yy)[["miscalibration"]] })
+p_mcb <- mean(c(null_mcb, all_matches[["miscalibration"]]) >= all_matches[["miscalibration"]])
+c(observed = all_matches[["miscalibration"]], mean_if_right = mean(null_mcb), p = p_mcb)
+```
+
+The miscalibration is `r f4(all_matches[["miscalibration"]])`. It is **never zero**, because the isotonic curve always fits a little better than the probabilities. If the bookmaker were right, it would be `r f4(mean(null_mcb))` on average by chance alone. Only `r sum(null_mcb >= all_matches[["miscalibration"]])` of the 500 simulated values reached the observed one, *p* `r pval(p_mcb)`. Compared with the discrimination of `r f4(all_matches[["discrimination"]])` it is tiny: what limits the bookmaker is how unpredictable football is, not the calibration.
+
+### Country by country
+
+```{r countries}
+set.seed(9)
+by_country <- do.call(rbind, lapply(names(leagues), function(country) {
+  d   <- matches[matches$country == country, ]
+  dec <- decompose(d$p, d$y)
+  nul <- replicate(500, decompose(d$p, rbinom(nrow(d), 1, d$p))[["miscalibration"]])
+  data.frame(country, matches = nrow(d), t(dec), expected = mean(nul),
+             p = mean(c(nul, dec[["miscalibration"]]) >= dec[["miscalibration"]]))
+}))
+print(cbind(by_country[, 1:2], round(by_country[, -(1:2)], 4)), row.names = FALSE)
+```
+
+```{r countries_chart, fig.height = 5.5}
+curves <- do.call(rbind, lapply(names(leagues), function(country) {
+  d <- matches[matches$country == country, ]
+  d <- d[order(d$p), ]
+  data.frame(country, p = d$p, fit = isoreg(d$p, d$y)$yf)
+}))
+curves$country <- factor(curves$country, levels = names(leagues))
+
+ggplot(curves, aes(p, fit)) +
+  geom_abline(linetype = "dashed", colour = "grey50") +
+  geom_step(aes(colour = country == "Greece"), linewidth = 0.8) +
+  facet_wrap(~ country) +
+  scale_colour_manual(values = c(`TRUE` = "#eb6834", `FALSE` = "#2a78d6"), guide = "none") +
+  coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
+  labs(title = "The same fit in each country", x = "bookmaker's probability of a home win", y = "fitted probability") +
+  theme_bw()
+
+greek <- by_country[by_country$country == "Greece", ]
+others <- by_country[by_country$country != "Greece", ]
+gr <- matches[matches$country == "Greece", ]
+gr_at <- function(q) approx(sort(gr$p), isoreg(gr$p, gr$y)$yf, xout = q, method = "constant", rule = 2, ties = "ordered")$y
+```
+
+One league is different. In **Greece** the miscalibration is `r f4(greek$miscalibration)`, `r f1(greek$miscalibration / greek$expected)` times what chance would give, where the other five have between `r f4(min(others$miscalibration))` and `r f4(max(others$miscalibration))`. When the odds said 80% for a Greek home team, it won `r pct(gr_at(0.8))` of the matches; when they said 45%, `r pct(gr_at(0.45))`. The same league has the largest discrimination (`r f3(greek$discrimination)`): a few teams are far stronger than the rest, and the odds followed this, but not far enough. Two explanations fit: fewer people bet on this league, so the odds are less sharp, and the margin there may be spread differently. The data cannot tell which.
+
+---
+
+## 6. Repairing the probabilities
+
+The fitted curve is also a **recalibration**: feed it a bookmaker's probability and take the fitted value instead. To see if this helps, we must not judge it on the matches it was built from. Build it on eight seasons, and judge it on the last two:
+
+```{r recalibration}
+train <- subset(matches, season %in% seasons[1:8])
+test  <- subset(matches, season %in% seasons[9:10])
+
+isotonic_fit <- function(d) {                 # returns a function: probability in, recalibrated probability out
+  o  <- order(d$p)
+  mu <- isoreg(d$p, d$y)$yf
+  function(q) approx(d$p[o], mu, xout = q, rule = 2, ties = mean)$y      # straight lines between the points
+}
+logit <- function(q) log(q / (1 - q))
+logistic_fit <- function(d) {                 # logistic regression of the result on the logit of the probability
+  m <- glm(y ~ logit(p), family = binomial, data = d)
+  function(q) unname(predict(m, data.frame(p = q), type = "response"))
+}
+brier <- function(q, y) mean((q - y)^2)
+judge <- function(tr, te) c(matches = nrow(te),
+                            bookmaker = brier(te$p, te$y),
+                            isotonic  = brier(isotonic_fit(tr)(te$p), te$y),
+                            logistic  = brier(logistic_fit(tr)(te$p), te$y))
+repair <- rbind(`all six countries` = judge(train, test),
+                `Greece only`       = judge(subset(train, country == "Greece"), subset(test, country == "Greece")))
+round(repair, 4)
+
+# is the gain more than luck? the change of the squared error, match by match, with its standard error
+gain <- function(tr, te, method) {
+  change <- (method(tr)(te$p) - te$y)^2 - (te$p - te$y)^2
+  c(change = mean(change), SE = sd(change) / sqrt(length(change)))
+}
+gains <- rbind(all_isotonic    = gain(train, test, isotonic_fit),
+               all_logistic    = gain(train, test, logistic_fit),
+               greece_isotonic = gain(subset(train, country == "Greece"), subset(test, country == "Greece"), isotonic_fit),
+               greece_logistic = gain(subset(train, country == "Greece"), subset(test, country == "Greece"), logistic_fit))
+round(gains, 5)
+
+logit_coefs <- coef(glm(y ~ logit(p), family = binomial, data = train))
+logit_coefs
+```
+
+**Logistic recalibration** (also known as Platt scaling) assumes a shape: a straight line between the logit of the bookmaker's probability and the logit of the true one, with two parameters. Its slope is `r f2(logit_coefs[[2]])`, above 1: the probabilities should be spread further apart.
+
+- For all the matches, the Brier score on the two later seasons goes from `r f4(repair[1, "bookmaker"])` to `r f4(repair[1, "isotonic"])` with isotonic regression and `r f4(repair[1, "logistic"])` with the logistic curve.
+- For Greece alone, from `r f4(repair[2, "bookmaker"])` to `r f4(repair[2, "isotonic"])` and `r f4(repair[2, "logistic"])`.
+
+The gains are tiny, as the decomposition promised: there was little miscalibration to remove. For all the matches, isotonic regression gained `r formatC(-gains["all_isotonic", "change"], format = "f", digits = 5)` with a standard error of `r formatC(gains["all_isotonic", "SE"], format = "f", digits = 5)`, and the logistic curve `r formatC(-gains["all_logistic", "change"], format = "f", digits = 5)` with a standard error of `r formatC(gains["all_logistic", "SE"], format = "f", digits = 5)`. The gains are alike in size, but that of the logistic curve is steadier: it moves every probability a little, while the isotonic curve moves them in jumps. In Greece the `r num(repair[2, "matches"])` matches of the last two seasons are too few to say anything. In general, isotonic regression needs thousands of cases, because with few it follows the noise; it wins when the true shape is not what the parametric curve assumes (Niculescu-Mizil & Caruana, 2005).
+
+---
+
+## 7. Things to keep in mind
+
+- **The condition must come from knowledge, not from the data.** Isotonic regression always returns a non-decreasing curve, also when the truth goes up and down. It cannot discover that the order is wrong. Use it only when the order is certain.
+- **The ends are the weak point.** The first and the last block are means of few cases, and they are pulled outwards: in a binary outcome they can be exactly 0 or 1. Do not trust the extremes, and do not take the logarithm of such a probability.
+- **Steps are not real.** The true curve is probably smooth. For predictions, straight lines between the block centres are better than jumps; for a smooth curve that does not go down, there are monotone splines (package `scam`).
+- **In-sample fit is optimistic.** The miscalibration measured with isotonic regression is positive even for perfect probabilities, so compare it with its value under simulation, as in section 5.
+- **A decreasing relation**: fit $-y$ and change the sign. **A single peak**: increasing up to each candidate and decreasing after it (unimodal regression).
+- **Other losses.** `gpava(..., solver = weighted.median)` gives an isotonic **median** (compare [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd)), and fractiles are available too.
+- **Other predictors.** Isotonic regression has one ordered predictor. For several, generalized additive models can force some of their curves to be monotone.
+- **The matches are not all independent**: the same teams play many times. The simulation treats them as independent given the probabilities.
+- **Not a way to win.** The bias is small next to the bookmaker's margin. A bet of one euro on every home team would have lost money in every range of the odds:
+
+```{r returns}
+matches$return <- matches$odds_home * matches$y - 1
+ranges <- cut(matches$p, c(0, 0.2, 0.4, 0.6, 0.8, 1))
+round(tapply(matches$return, ranges, mean), 3)      # euros won per euro
+```
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the condition and why it is justified, how ties were treated, the number of blocks, how the uncertainty was assessed, and the fitted values at some points. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(
+  Country        = by_country$country,
+  n              = num(by_country$matches),
+  Brier          = nz(by_country$brier, 3),
+  Miscalibration = nz(by_country$miscalibration, 4),
+  Expected       = nz(by_country$expected, 4),
+  p              = sapply(by_country$p, function(v) sub("^= ", "", pval(v))),
+  Discrimination = nz(by_country$discrimination, 3),
+  Uncertainty    = nz(by_country$uncertainty, 3))
+```
+
+**Method** (data analysis):
+
+> We compared the odds of one bookmaker with the results of `r num(nrow(matches))` first-division football matches in six countries, seasons 2015–16 to 2024–25. The odds were converted to probabilities by dividing their reciprocals by their sum. We estimated the probability of a home win as a non-decreasing function of the implied probability with isotonic regression (pool-adjacent-violators algorithm; de Leeuw et al., 2009), which is justified because a higher implied probability should not go with a lower chance of winning. Tied probabilities were pooled. Calibration was assessed with the CORP decomposition of the Brier score (Dimitriadis et al., 2021); its miscalibration component was compared with its distribution in 500 data sets simulated from the implied probabilities. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> The isotonic fit had `r n_blocks` blocks. Implied probabilities of 15%, 35%, 65% and 85% corresponded to fitted probabilities of `r pct(at(0.15))`, `r pct(at(0.35))`, `r pct(at(0.65))` and `r pct(at(0.85))`, so that home teams with low probabilities were overrated and those with high probabilities underrated. The Brier score was `r nz(all_matches[["brier"]], 3)`, with a miscalibration of `r nz(all_matches[["miscalibration"]], 4)` (`r nz(mean(null_mcb), 4)` expected under perfect calibration, *p* `r pval(p_mcb)`), a discrimination of `r nz(all_matches[["discrimination"]], 3)` and an uncertainty of `r nz(all_matches[["uncertainty"]], 3)`. Miscalibration was largest in Greece (Table 1). On the seasons 2023–24 and 2024–25, which were not used for the fit, isotonic recalibration changed the Brier score from `r nz(repair[1, "bookmaker"], 4)` to `r nz(repair[1, "isotonic"], 4)`.
+
+**Table 1**
+
+*Calibration of the Implied Probability of a Home Win, by Country*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Country", "Matches", "Brier score", "Miscalibration", "Expected by chance", "*p*", "Discrimination", "Uncertainty"),
+             align = "lrrrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Brier score = miscalibration − discrimination + uncertainty. Expected by chance: mean miscalibration in 500 simulated data sets in which the implied probabilities were right; *p*: the share of them with at least the observed miscalibration.
+
+**Points to remember:**
+
+- Say why the relation must be monotone.
+- Give the number of observations and of blocks, and fitted values at meaningful points.
+- Show the curve with a band, and say what the band means (here: if the probabilities were right).
+- If you use the curve to correct probabilities, judge it on new data, against a simple parametric correction.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | The relation can only go up (or only down), and its shape is unknown |
+| **The model** | Minimise $\sum w_i (y_i - \mu_i)^2$ subject to $\mu_1 \le \dots \le \mu_n$ |
+| **The algorithm** | Pool adjacent violators: replace neighbours in the wrong order by their mean, until none are left |
+| **How (R)** | `isoreg(x, y)`; with weights or medians, `isotone::gpava(z, y, weights, solver)` |
+| **The result** | A step function; every step is the mean of a block chosen by the data |
+| **Binary outcome** | The same fit maximises the likelihood |
+| **Uses** | Calibration of probabilities, dose and response, growth, ordered categories |
+| **Uncertainty** | Simulation under calibration, or the bootstrap |
+| **Weak points** | The ends, small samples, and an order that is not true |
+| **Related pages** | [Logistic regression with a rare outcome](EXAMPLE_IMBALANCED_LOGISTIC.Rmd) (calibration), [quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Ayer, M., Brunk, H. D., Ewing, G. M., Reid, W. T., & Silverman, E. (1955). An empirical distribution function for sampling with incomplete information. *The Annals of Mathematical Statistics*, *26*(4), 641–647. https://doi.org/10.1214/aoms/1177728423
+
+Barlow, R. E., Bartholomew, D. J., Bremner, J. M., & Brunk, H. D. (1972). *Statistical inference under order restrictions*. Wiley.
+
+de Leeuw, J., Hornik, K., & Mair, P. (2009). Isotone optimization in R: Pool-adjacent-violators algorithm (PAVA) and active set methods. *Journal of Statistical Software*, *32*(5), 1–24. https://doi.org/10.18637/jss.v032.i05
+
+Dimitriadis, T., Gneiting, T., & Jordan, A. I. (2021). Stable reliability diagrams for probabilistic classifiers. *Proceedings of the National Academy of Sciences*, *118*(8), Article e2016191118. https://doi.org/10.1073/pnas.2016191118
+
+Football-Data. (2026). *Historical football results and betting odds data* [Data set]. https://www.football-data.co.uk/data.php
+
+Niculescu-Mizil, A., & Caruana, R. (2005). Predicting good probabilities with supervised learning. In *Proceedings of the 22nd International Conference on Machine Learning* (pp. 625–632). ACM. https://doi.org/10.1145/1102351.1102430
+
+Snowberg, E., & Wolfers, J. (2010). Explaining the favorite–long shot bias: Is it risk-love or misperceptions? *Journal of Political Economy*, *118*(4), 723–746. https://doi.org/10.1086/655844
