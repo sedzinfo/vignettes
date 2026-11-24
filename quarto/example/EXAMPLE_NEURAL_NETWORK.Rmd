@@ -1,0 +1,374 @@
+---
+title: "Neural Network Regression: How Much Power Will the Plant Deliver?"
+description: "Neural network regression in R with nnet, on 9,568 hours of a power plant (UCI): what a neuron is, how bent lines add up to any curve, the loss with weight decay, backpropagation written by hand and checked against numerical derivatives, the same minimum as nnet, two classic mistakes, many starts and many different answers, overfitting on forty rows, choosing the size with cross-validation, why random folds flatter methods that remember, a comparison with a straight line, a GAM, nearest neighbours and a random forest on conditions that were left out, what the network has learned, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from UCI each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: many bent lines
+
+A straight line is the wrong shape for most things. [Splines](EXAMPLE_SPLINES_GAM.Rmd) bend it, one predictor at a time. A **neural network** goes further: it adds up many little bent lines, each of which looks at **all** predictors at once, and it finds out by itself where to bend and which predictors to combine.
+
+That sounds like magic and is ordinary regression: there are parameters (called *weights*), there is a sum of squared errors, and a computer makes the sum small. The site's page about [handwritten digits](EXAMPLE_MNIST.rmd) uses networks to sort things into classes. Here the network predicts a **number**: the electrical power of a plant from the weather.
+
+This page writes a network by hand, derivatives included, and finds the same solution as the package. Then it asks the question that matters more than the method: **what is a fair test?** The answer changes the ranking of the methods.
+
+```{r packages}
+library(ggplot2)
+library(nnet)        # nnet(): networks with one hidden layer (comes with R)
+library(mgcv)        # bam(): a GAM, to compare with
+# also used, with package::function: readxl (read_excel), ranger (ranger), FNN (knn.reg)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+rmse <- function(a, b) sqrt(mean((a - b)^2))
+```
+
+---
+
+## 1. The data
+
+```{r download}
+zip_file <- tempfile(fileext = ".zip")
+download.file("https://archive.ics.uci.edu/static/public/294/combined+cycle+power+plant.zip", zip_file, mode = "wb", quiet = TRUE)
+files <- unzip(zip_file, exdir = tempfile("ccpp"))
+raw   <- as.data.frame(readxl::read_excel(grep("xlsx$", files, value = TRUE), sheet = 1))
+names(raw) <- c("temperature", "vacuum", "pressure", "humidity", "power")
+c(rows = nrow(raw), exact_copies = sum(duplicated(raw)))
+plant <- unique(raw)
+summary(plant)
+```
+
+The data come from a combined cycle power plant (Tüfekci, 2014; Tüfekci & Kaya, 2014), in which gas turbines and a steam turbine work together. Each row is the average of **one hour** at full load, between 2006 and 2011. The outcome is the **net electrical power** (MW). The predictors are the **temperature** of the air (°C), the **pressure** of the air (mbar), the relative **humidity** (%), and the exhaust **vacuum** of the steam turbine (cm Hg). `r sum(duplicated(raw))` rows are exact copies of others; we drop them, so that no row can be in the training data and in the test at once. `r num(nrow(plant))` are left.
+
+Two details of this file will matter later. The file has been **shuffled**, and there is **no date**. And the vacuum takes only `r num(length(unique(plant$vacuum)))` different values, although it is given with two decimals.
+
+---
+
+## 2. Look at the data
+
+```{r scatter, fig.height = 5}
+set.seed(201); some <- plant[sample(nrow(plant), 2000), ]
+long <- do.call(rbind, lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) data.frame(predictor = v, x = some[[v]], power = some$power)))
+ggplot(long, aes(x, power)) + geom_point(alpha = 0.2, size = 0.7, colour = "#2a78d6") + facet_wrap(~ predictor, scales = "free_x") +
+  labs(title = "Power against each predictor", subtitle = "2,000 of the hours", x = NULL, y = "power (MW)") + theme_bw()
+round(cor(plant), 2)
+```
+
+Warm air is thin, and a gas turbine gets less of it: temperature alone has a correlation of `r f2(cor(plant$temperature, plant$power))` with power. The relationship is nearly straight, with a bend. So a straight line will already do well, and a network can only win by **details**.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: standardise
+
+Every variable gets mean 0 and SD 1 (with the mean and SD of the **training** data). Weights of different predictors then have comparable sizes, and the search starts in a sensible region.
+
+```{r standardise}
+standardise <- function(train, d) as.data.frame(scale(d, colMeans(train), apply(train, 2, sd)))
+z <- standardise(plant, plant)
+X <- as.matrix(z[, c("temperature", "vacuum", "pressure", "humidity")]); y <- z$power
+```
+
+### Step 2: one neuron
+
+A **neuron** takes a weighted sum of the predictors and sends it through an S-shaped function, the logistic function $\sigma(u) = 1/(1 + e^{-u})$, the one from logistic regression:
+
+$$h = \sigma(a_0 + a_1 x_1 + \dots + a_K x_K)$$
+
+It is flat on the left, flat on the right and rises in between. The weights decide where the rise is, how steep, and in which direction.
+
+### Step 3: the network
+
+The **hidden layer** has $J$ neurons. The output is a linear regression on them:
+
+$$\hat y = b_0 + \sum_{j=1}^{J} b_j\, \sigma\!\Big(a_{0j} + \sum_{k=1}^K a_{kj} x_k\Big)$$
+
+That makes $J(K + 1) + J + 1$ weights: with 4 predictors and 10 neurons, `r 10 * 5 + 11`. Already a few S-curves add up to all kinds of shapes:
+
+```{r neurons, fig.height = 4}
+x1 <- seq(-3, 3, length.out = 200)
+parts <- data.frame(x = rep(x1, 3), h = c(1.6 * plogis(-4 + 6 * x1), -2.2 * plogis(1 + 3 * x1), 1.5 * plogis(5 + 4 * x1)), neuron = rep(paste("neuron", 1:3), each = 200))
+ggplot(parts, aes(x, h)) + geom_line(aes(colour = neuron), linewidth = 0.8, linetype = "dashed") +
+  geom_line(data = data.frame(x = x1, h = tapply(parts$h, rep(1:200, 3), sum)), linewidth = 1.2) + scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a"), name = NULL) +
+  labs(title = "Three neurons (dashed) and their sum (black)", x = "x", y = NULL) + theme_bw()
+```
+
+With enough neurons such a sum can come as close as you like to any continuous function (Hornik et al., 1989). That is a statement about what is **possible**. It does not say how many neurons or how much data you need, nor that the search will find it.
+
+### Step 4: the loss
+
+As in least squares, with a penalty for large weights, called **weight decay** ($\lambda$). It is the penalty of [ridge regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd):
+
+$$E(w) = \sum_i (y_i - \hat y_i)^2 + \lambda \sum w^2$$
+
+### Step 5: the derivatives (backpropagation)
+
+To go downhill one needs the slope of $E$ in the direction of every weight. The chain rule gives it, from the output **backwards** (Rumelhart et al., 1986). With $r_i = -2(y_i - \hat y_i)$ and the output of neuron $j$ for row $i$, $h_{ij}$:
+
+$$\frac{\partial E}{\partial b_j} = \sum_i r_i\, h_{ij} + 2\lambda b_j, \qquad
+\frac{\partial E}{\partial a_{kj}} = \sum_i \underbrace{r_i\, b_j\, h_{ij}(1 - h_{ij})}_{\text{the error of neuron } j}\, x_{ik} + 2\lambda a_{kj}$$
+
+```{r backprop}
+forward <- function(w, X, J) {                                             # weights in the order that nnet uses
+  K <- ncol(X); A <- matrix(w[1:(J * (K + 1))], K + 1); b <- w[-(1:(J * (K + 1)))]
+  h <- plogis(cbind(1, X) %*% A)
+  list(h = h, b = b, yhat = drop(cbind(1, h) %*% b))
+}
+loss <- function(w, X, y, J, decay) sum((y - forward(w, X, J)$yhat)^2) + decay * sum(w^2)
+gradient <- function(w, X, y, J, decay) {
+  f <- forward(w, X, J); r <- -2 * (y - f$yhat)
+  neuron_error <- (r %o% f$b[-1]) * f$h * (1 - f$h)
+  c(crossprod(cbind(1, X), neuron_error), crossprod(cbind(1, f$h), r)) + 2 * decay * w
+}
+set.seed(202); w0 <- runif(2 * 5 + 3, -0.7, 0.7)                            # 2 neurons, 13 weights, a random start
+numeric_slope <- sapply(seq_along(w0), function(i) { d <- replace(numeric(13), i, 1e-5); (loss(w0 + d, X, y, 2, 0.1) - loss(w0 - d, X, y, 2, 0.1)) / 2e-5 })
+max(abs(numeric_slope / gradient(w0, X, y, 2, 0.1) - 1))                    # relative difference
+```
+
+The formula and the numerical slopes agree. (Always do this check when you write derivatives yourself.)
+
+### Step 6: go downhill
+
+R's optimiser `optim()` does the walking. `nnet()` gets the same start, so that we can compare:
+
+```{r same_as_nnet}
+by_hand <- optim(w0, loss, gradient, X = X, y = y, J = 2, decay = 0.1, method = "BFGS", control = list(maxit = 1000, abstol = 1e-4, reltol = 1e-8))
+package <- nnet(X, y, size = 2, decay = 0.1, linout = TRUE, Wts = w0, maxit = 1000, trace = FALSE)
+c(loss_at_the_start = loss(w0, X, y, 2, 0.1), loss_by_hand = by_hand$value, loss_nnet = package$value, largest_difference_in_the_weights = max(abs(by_hand$par - package$wts)))
+```
+
+The two arrive at the same place.
+
+### Two classic mistakes
+
+```{r mistakes}
+set.seed(203)
+forgot_scaling <- nnet(power ~ ., plant, size = 10, linout = TRUE, trace = FALSE, maxit = 400)
+forgot_linout  <- nnet(power ~ ., z, size = 10, trace = FALSE, maxit = 400)
+c(SD_of_power = sd(plant$power), RMSE_without_scaling = rmse(predict(forgot_scaling, plant), plant$power), RMSE_without_linout = sd(plant$power) * rmse(predict(forgot_linout, z), z$power))
+rbind(predictions_without_linout = range(predict(forgot_linout, z)), outcome_standardised = range(z$power))
+```
+
+Without standardising, the weighted sums are in the thousands, every neuron is stuck on its flat part, and the network predicts the mean (RMSE `r f1(rmse(predict(forgot_scaling, plant), plant$power))` MW, the SD of power). Without `linout = TRUE` the output itself goes through the S-function and cannot leave the interval from 0 to 1`r if (diff(range(predict(forgot_linout, z))) < 1e-3) paste0("; here every prediction is ", round(mean(predict(forgot_linout, z)), 2)) else ""`. No error message in either case.
+
+---
+
+## 4. Different starts, different answers
+
+A network has **many** minima. First on forty rows, with temperature as the only predictor, so that we can see the curves:
+
+```{r overfit_chart, fig.height = 4.5}
+set.seed(204); forty <- z[sample(nrow(z), 40), ]; grid <- data.frame(temperature = seq(-2.6, 2.9, length.out = 300))
+curves <- do.call(rbind, lapply(c(0, 0.1), function(dc) do.call(rbind, lapply(1:4, function(s) { set.seed(s); m <- nnet(power ~ temperature, forty, size = 15, decay = dc, linout = TRUE, trace = FALSE, maxit = 2000)
+  data.frame(temperature = grid$temperature, power = drop(predict(m, grid)), start = s, train_rmse = rmse(predict(m, forty), forty$power), setting = ifelse(dc == 0, "no decay", "decay 0.1")) }))))
+back <- function(v, name) v * sd(plant[[name]]) + mean(plant[[name]])
+ggplot(curves, aes(back(temperature, "temperature"), back(power, "power"), group = start, colour = factor(start))) + geom_line(linewidth = 0.7) +
+  geom_point(data = forty, aes(back(temperature, "temperature"), back(power, "power")), inherit.aes = FALSE, size = 1.4) + facet_wrap(~ setting) + coord_cartesian(ylim = c(415, 505)) + guides(colour = "none") +
+  labs(title = "15 neurons on 40 hours, four random starts each", x = "temperature (°C)", y = "power (MW)") + theme_bw()
+aggregate(train_rmse ~ setting, curves, function(v) round(range(v) * sd(plant$power), 2))
+```
+
+With 46 weights and 40 points the network without decay runs through the gaps as it likes: four starts, four curves, and the differences are largest where there are few data. A little decay makes the four curves the same. Now with all rows and all predictors:
+
+```{r starts}
+fits <- lapply(1:6, function(s) { set.seed(s); nnet(power ~ ., z, size = 10, decay = 0.1, linout = TRUE, trace = FALSE, maxit = 600) })
+loss_values <- sapply(fits, function(m) m$value); preds <- sapply(fits, function(m) back(drop(predict(m, z)), "power"))
+round(loss_values, 1)
+c(largest_difference_in_a_weight = max(apply(sapply(fits, function(m) m$wts), 1, function(v) diff(range(v)))), typical_SD_between_the_predictions = mean(apply(preds, 1, sd)), RMSE_of_the_first = rmse(preds[, 1], plant$power))
+```
+
+Six starts end at different places (loss between `r f1(min(loss_values))` and `r f1(max(loss_values))`), with quite different weights. But the predictions differ by only `r f2(mean(apply(preds, 1, sd)))` MW on average. So **single weights mean nothing**, and nobody should interpret them. The predictions are what one can use. Averaging the predictions of several networks (an *ensemble*) makes them more stable; section 6 shows by how much.
+
+---
+
+## 5. What is a fair test?
+
+How many neurons? The usual recipe is cross-validation with random folds. But look at the data again. `r pct(mean(duplicated(plant$vacuum) | duplicated(plant$vacuum, fromLast = TRUE), 0), 1)` of the rows share their value of the vacuum, to two decimals, with other rows: `r num(length(unique(plant$vacuum)))` values in `r num(nrow(plant))` hours. The most likely explanation is that the vacuum was recorded less often than the rest, and that rows with the same value come from the **same period**. The file does not say, and its order is destroyed. But if so, then random folds put hours of the same period in the training data **and** in the test. A method that remembers its neighbours would be rewarded for remembering.
+
+So we use two kinds of folds: **random** rows, and whole **groups** of rows with the same vacuum, so that the test has conditions that the model has never seen.
+
+```{r folds}
+set.seed(205)
+group   <- as.integer(factor(plant$vacuum)); n_group <- max(group)
+folds3  <- list(random = sample(rep(1:3, length.out = nrow(plant))), `new conditions` = sample(rep(1:3, length.out = n_group))[group])
+net_predict <- function(train, test, size, decay, starts = 1, maxit = 400) {
+  a <- standardise(train, train); b <- standardise(train, test)
+  p <- sapply(starts, function(s) { set.seed(s); drop(predict(nnet(power ~ ., a, size = size, decay = decay, linout = TRUE, trace = FALSE, maxit = maxit, MaxNWts = 5000), b)) })
+  mean(train$power) + sd(train$power) * p
+}
+grid <- expand.grid(size = c(2, 5, 10, 20), decay = c(0.01, 0.1, 1))
+cv <- do.call(cbind, lapply(folds3, function(f) sapply(seq_len(nrow(grid)), function(i) {
+  e <- numeric(nrow(plant)); for (k in 1:3) e[f == k] <- net_predict(plant[f != k, ], plant[f == k, ], grid$size[i], grid$decay[i])[, 1] - plant$power[f == k]
+  sqrt(mean(e^2)) })))
+print(round(cbind(grid, cv), 3), row.names = FALSE)
+```
+
+```{r cv_chart, fig.height = 4}
+cv_long <- data.frame(size = rep(grid$size, 2), decay = factor(rep(grid$decay, 2)), rmse = as.vector(cv), folds = rep(colnames(cv), each = nrow(grid)))
+ggplot(cv_long, aes(size, rmse, colour = decay)) + geom_line() + geom_point() + facet_wrap(~ folds) + scale_x_log10(breaks = c(2, 5, 10, 20)) + scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a")) +
+  labs(title = "Error of the network against its size, for two kinds of folds", x = "neurons", y = "RMSE (MW)") + theme_bw()
+best_r <- grid[which.min(cv[, "random"]), ]; best_g <- grid[which.min(cv[, "new conditions"]), ]
+rbind(random = cbind(best_r, rmse = min(cv[, "random"])), `new conditions` = cbind(best_g, rmse = min(cv[, "new conditions"])))
+```
+
+With random folds the larger networks keep getting better, and the best has `r best_r$size` neurons and a decay of `r best_r$decay`. With new conditions they get **worse**, unless a strong decay holds them back, and the best has `r best_g$size` neurons. All settings lie between `r f2(min(cv[, "new conditions"]))` and `r f2(max(cv[, "new conditions"]))` MW. What the larger networks gained with random folds was mostly **memory** of the vacuum values in the data.
+
+---
+
+## 6. The network against others
+
+Both kinds of folds again, with new folds, for seven methods: a straight line, a GAM, the 5 nearest neighbours, a random forest, the small network that the second kind of folds chose (`r best_g$size` neurons, decay `r best_g$decay`), the large one that random folds chose (`r best_r$size` neurons, decay `r best_r$decay`), and the average of three such large networks.
+
+```{r compare}
+set.seed(206)
+folds5 <- list(`random folds` = sample(rep(1:5, length.out = nrow(plant))), `new conditions` = sample(rep(1:5, length.out = n_group))[group])
+methods <- function(train, test) {
+  zt <- standardise(train, train); zn <- standardise(train, test); large <- net_predict(train, test, best_r$size, best_r$decay, starts = 1:3)
+  cbind(`straight line` = predict(lm(power ~ ., train), test),
+        GAM = as.numeric(predict(bam(power ~ s(temperature) + s(vacuum) + s(pressure) + s(humidity), data = train), test)),
+        `nearest neighbours` = FNN::knn.reg(zt[, 1:4], zn[, 1:4], train$power, k = 5)$pred,
+        `random forest` = predict(ranger::ranger(power ~ ., train, num.trees = 300, seed = 1), test)$predictions,
+        `small network` = net_predict(train, test, best_g$size, best_g$decay)[, 1], `large network` = large[, 1], `3 large networks, averaged` = rowMeans(large))
+}
+results <- do.call(rbind, lapply(names(folds5), function(kind) { f <- folds5[[kind]]
+  do.call(rbind, lapply(1:5, function(k) { p <- methods(plant[f != k, ], plant[f == k, ]); data.frame(folds = kind, fold = k, method = colnames(p), rmse = apply(p, 2, rmse, plant$power[f == k]), mse = apply(p, 2, function(v) sum((v - plant$power[f == k])^2))) })) }))
+total <- aggregate(mse ~ method + folds, results, sum); total$rmse <- sqrt(total$mse / nrow(plant))
+wide  <- reshape(total[, c("method", "folds", "rmse")], idvar = "method", timevar = "folds", direction = "wide"); names(wide) <- c("method", "new", "random")
+wide  <- wide[order(wide$new), ]; print(data.frame(method = wide$method, random_folds = round(wide$random, 2), new_conditions = round(wide$new, 2)), row.names = FALSE)
+```
+
+```{r compare_chart, fig.height = 4.5}
+results$method <- factor(results$method, levels = rev(wide$method[order(wide$random)]))
+ggplot(results, aes(rmse, method)) + geom_point(colour = "#2a78d6", alpha = 0.35, size = 1.8) + geom_point(data = transform(total, method = factor(method, levels = levels(results$method))), colour = "#eb6834", size = 3) + facet_wrap(~ folds) +
+  labs(title = "Error of seven methods, two kinds of folds", subtitle = "Orange: all rows. Blue: single folds", x = "RMSE (MW)", y = NULL) + theme_bw() + theme(plot.title.position = "plot")
+w  <- function(m, v) wide[[v]][wide$method == m]
+by_fold <- function(m) subset(results, folds == "new conditions" & method == m)$rmse
+c(folds_in_which_the_small_network_beats_the_forest = sum(by_fold("small network") < by_fold("random forest")), folds_in_which_the_average_beats_one_large_network = sum(by_fold("3 large networks, averaged") < by_fold("large network")))
+```
+
+- With **random folds** the random forest wins by far: `r f2(w("random forest", "random"))` MW, against `r f2(w("3 large networks, averaged", "random"))` for the averaged large networks, `r f2(w("GAM", "random"))` for the GAM and `r f2(w("straight line", "random"))` for the straight line. (In the paper that introduced the data, bagged trees came first among many methods, with folds of shuffled rows; Tüfekci, 2014.)
+- With **new conditions** the order is another one. The averaged large networks (`r f2(w("3 large networks, averaged", "new"))`), the small network (`r f2(w("small network", "new"))`) and the GAM (`r f2(w("GAM", "new"))`) are practically tied; the forest has `r f2(w("random forest", "new"))`, the straight line `r f2(w("straight line", "new"))`. The small network beats the forest in `r sum(by_fold("small network") < by_fold("random forest"))` of the 5 folds. The nearest neighbours, which were well ahead of the straight line before, are the last with `r f2(w("nearest neighbours", "new"))`.
+- The **stiff** methods (straight line, GAM, small network) have nearly the same error in both tests, for example `r f2(w("GAM", "random"))` and `r f2(w("GAM", "new"))` for the GAM. They cannot remember single periods. The flexible ones lose a lot: the forest goes from `r f2(w("random forest", "random"))` to `r f2(w("random forest", "new"))`, the large network from `r f2(w("large network", "random"))` to `r f2(w("large network", "new"))`.
+- **Averaging** three large networks changed the error from `r f2(w("large network", "new"))` to `r f2(w("3 large networks, averaged", "new"))` (new conditions) and from `r f2(w("large network", "random"))` to `r f2(w("3 large networks, averaged", "random"))` (random folds): it helped, at three times the cost.
+
+Which of the two tests is right? It depends on the use. To fill a missing hour in the past, random folds. To forecast the power of next week, the second, and even that may be too kind, since vacuum values close to the left-out ones are still in the training data. **Choose the folds so that the test is like the use.**
+
+The gain from all that flexibility is modest here. From the straight line to the best method with new conditions, the RMSE falls from `r f2(w("straight line", "new"))` to `r f2(min(wide$new))` MW.
+
+---
+
+## 7. What has the network learned?
+
+The **partial dependence** of a predictor: set it to a value in every row, predict, and average. For three large networks, the small one and the GAM:
+
+```{r partial, fig.height = 5}
+set.seed(207); bg <- plant[sample(nrow(plant), 400), ]; zbg <- standardise(plant, bg)
+one_net <- function(size, decay, s) { set.seed(s); nnet(power ~ ., z, size = size, decay = decay, linout = TRUE, trace = FALSE, maxit = 400) }
+nets <- c(lapply(1:3, function(s) one_net(best_r$size, best_r$decay, s)), list(one_net(best_g$size, best_g$decay, 1)))
+gam_all <- bam(power ~ s(temperature) + s(vacuum) + s(pressure) + s(humidity), data = plant)
+pd <- do.call(rbind, lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) { q <- seq(quantile(plant[[v]], 0.01), quantile(plant[[v]], 0.99), length.out = 25)
+  do.call(rbind, lapply(q, function(x0) { b2 <- bg; b2[[v]] <- x0; zb <- standardise(plant, b2)
+    data.frame(predictor = v, x = x0, model = c(paste("large", 1:3), "small", "GAM"), power = c(sapply(nets, function(m) mean(back(drop(predict(m, zb)), "power"))), mean(predict(gam_all, b2)))) })) }))
+pd$kind <- factor(ifelse(grepl("large", pd$model), "three large networks", ifelse(pd$model == "small", "small network", "GAM")), levels = c("three large networks", "small network", "GAM"))
+ggplot(pd, aes(x, power, group = model, colour = kind, linewidth = kind)) + geom_line() + facet_wrap(~ predictor, scales = "free_x") +
+  scale_colour_manual(values = c("grey60", "#2a78d6", "#eb6834"), name = NULL) + scale_linewidth_manual(values = c(0.5, 1, 1), guide = "none") +
+  labs(title = "Partial dependence of power on each predictor", x = NULL, y = "power (MW)") + theme_bw() + theme(legend.position = "bottom")
+span <- function(v, m) { p <- subset(pd, predictor == v & model == m); diff(range(p$power)) }
+spans <- sapply(c("temperature", "vacuum", "humidity", "pressure"), function(v) sapply(c("small", "GAM", "large 1"), function(m) span(v, m)))
+round(spans, 1)
+```
+
+In the small network, temperature moves the power by `r f1(spans["small", "temperature"])` MW over its range (from the 1st to the 99th percentile), the vacuum by `r f1(spans["small", "vacuum"])`, humidity by `r f1(spans["small", "humidity"])` and air pressure by `r f1(spans["small", "pressure"])`. The GAM draws nearly the same curves. The three large networks agree with them in the middle and fan out at the ends, where rows are few and where partial dependence asks for combinations that hardly occur (a cold hour with a high vacuum). When a network and a GAM show the same picture, the GAM is the better story: it can be written down, and it comes with intervals.
+
+---
+
+## 8. Things to keep in mind
+
+- **Standardise** the predictors and the outcome, with the means and SDs of the training data. In R's `nnet()` add `linout = TRUE` for a number.
+- **Try several starts**, set the seed, and average the predictions.
+- **Use decay** (or stop early). With enough of it the exact number of neurons matters little.
+- **Choose with folds that look like the use**: groups, sites, times, persons.
+- **Small tables**: for a few thousand rows and a handful of predictors, trees (random forest, boosting), GAMs and Gaussian processes are usually as good and less work. Networks pay off with images, sound, text and very many rows.
+- **Deeper networks** have several hidden layers and other functions (ReLU instead of $\sigma$), and are trained on small batches with packages such as `torch` or `keras3`. The principles on this page are the same.
+- **Outside the data** S-curves become flat, so the network predicts a constant. It never says that it does not know. ([Gaussian processes](EXAMPLE_GAUSSIAN_PROCESS.Rmd) do, with the limits shown there.)
+- **No intervals and no tests** come with it. Use the bootstrap, ensembles or conformal prediction for intervals.
+- **Weights are not effects.** Report partial dependence instead, and remember that predictors that belong together (temperature and vacuum, *r* = `r f2(cor(plant$temperature, plant$vacuum))`) make partial dependence an average over combinations that never occur.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the data and any dropped rows, the standardisation, the architecture and the number of weights, the loss, decay, optimiser and number of starts, how the settings were chosen, how the test was made, and the comparison with simple models. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Method = wide$method, random = f2(wide$random), new = f2(wide$new))
+n_weights <- function(size) size * 6 + 1
+```
+
+**Method** (data analysis):
+
+> The net hourly electrical power of a combined cycle power plant (*N* = `r num(nrow(plant))` hours at full load, after removing `r sum(duplicated(raw))` exact duplicates; Tüfekci, 2014) was predicted from air temperature, air pressure, relative humidity and exhaust vacuum. Neural networks with one hidden layer (logistic units, linear output) were fitted to standardised variables by minimising the sum of squared errors with a weight-decay penalty, with the quasi-Newton optimiser of the R package nnet (Venables & Ripley, 2002). Because the vacuum takes only `r num(length(unique(plant$vacuum)))` different values and hours with the same value probably come from the same period, cross-validation was done in two ways: with random folds and with folds of whole vacuum values. The number of hidden units (2–20) and the decay (0.01–1) were chosen by 3-fold cross-validation, which gave `r best_r$size` units (`r n_weights(best_r$size)` weights) and a decay of `r best_r$decay` with random folds, and `r best_g$size` units (`r n_weights(best_g$size)` weights) and a decay of `r best_g$decay` with folds of whole vacuum values. Both networks, the average of three large ones from different random starts, linear regression, a generalized additive model, 5-nearest neighbours, and a random forest were then compared with 5-fold cross-validation on new folds. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> With random folds, the random forest had the lowest root mean squared error (RMSE = `r f2(w("random forest", "random"))` MW; Table 1). With folds of whole vacuum values, its error was `r f2(w("random forest", "new"))` MW, and the average of three large networks (`r f2(w("3 large networks, averaged", "new"))` MW), the small network (`r f2(w("small network", "new"))` MW) and the generalized additive model (`r f2(w("GAM", "new"))` MW) were more accurate, with practically the same error; linear regression had an error of `r f2(w("straight line", "new"))` MW. A single large network went from `r f2(w("large network", "random"))` to `r f2(w("large network", "new"))` MW. In the small network, the partial dependence of power on temperature spanned `r f1(spans["small", "temperature"])` MW, on the vacuum `r f1(spans["small", "vacuum"])` MW.
+
+**Table 1**
+
+*Root Mean Squared Error (MW) of Seven Methods With Two Kinds of Cross-Validation*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Method", "Random folds", "Folds of whole vacuum values"), align = "lrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(nrow(plant))`. Five folds each, RMSE over all rows. Small network: `r best_g$size` hidden units; large networks: `r best_r$size`.
+
+**Points to remember:**
+
+- Report the size, the decay, the number of starts and the seeds.
+- Report a simple model next to the network.
+- Say how the folds were made, and why.
+- Do not interpret single weights.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Many rows, many predictors, unknown shapes and interactions, prediction is the goal |
+| **The model** | $\hat y = b_0 + \sum_j b_j\,\sigma(a_{0j} + \sum_k a_{kj}x_k)$ |
+| **Loss** | Squared errors plus $\lambda\sum w^2$ |
+| **Derivatives** | Chain rule, backwards: backpropagation |
+| **Settings** | Number of neurons, decay; several starts; average |
+| **How (R)** | `nnet::nnet(y ~ ., size = , decay = , linout = TRUE, maxit = )` on standardised data |
+| **Check** | Cross-validation with folds that look like the use; a simple model as comparison |
+| **Danger** | Not scaled, no `linout`, one start, random folds for grouped data |
+| **Related pages** | [Splines and GAMs](EXAMPLE_SPLINES_GAM.Rmd), [Gaussian processes](EXAMPLE_GAUSSIAN_PROCESS.Rmd), [nearest neighbours](EXAMPLE_K_NEAREST_NEIGHBOURS.Rmd), [handwritten digits](EXAMPLE_MNIST.rmd) |
+
+---
+
+## References
+
+Hornik, K., Stinchcombe, M., & White, H. (1989). Multilayer feedforward networks are universal approximators. *Neural Networks*, *2*(5), 359–366. https://doi.org/10.1016/0893-6080(89)90020-8
+
+Rumelhart, D. E., Hinton, G. E., & Williams, R. J. (1986). Learning representations by back-propagating errors. *Nature*, *323*(6088), 533–536. https://doi.org/10.1038/323533a0
+
+Tüfekci, P. (2014). Prediction of full load electrical power output of a base load operated combined cycle power plant using machine learning methods. *International Journal of Electrical Power & Energy Systems*, *60*, 126–140. https://doi.org/10.1016/j.ijepes.2014.02.027
+
+Tüfekci, P., & Kaya, H. (2014). *Combined cycle power plant* [Data set]. UCI Machine Learning Repository. https://doi.org/10.24432/C5002N
+
+Venables, W. N., & Ripley, B. D. (2002). *Modern applied statistics with S* (4th ed.). Springer. https://doi.org/10.1007/978-0-387-21706-2
