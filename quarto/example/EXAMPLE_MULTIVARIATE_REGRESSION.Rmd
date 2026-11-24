@@ -1,0 +1,488 @@
+---
+title: "Multivariate Regression: Two Blood Pressures, One Model"
+description: "Multivariate linear regression (several outcomes) in R with lm(cbind()), on the systolic and diastolic blood pressure of 3,800 US adults (NHANES 2021-2023): the matrix model by hand, what is the same as separate regressions and what is not, Pillai, Wilks, Hotelling-Lawley and Roy, testing whether a predictor has the same slope on both outcomes, confidence and prediction ellipses, joint against separate tests in small samples, checks, the bootstrap and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the CDC each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: two numbers that belong together
+
+Blood pressure is always two numbers, such as 120 over 80. The upper one, **systolic**, is the pressure when the heart beats; the lower one, **diastolic**, the pressure between the beats. They are measured together, in the same unit, on the same person.
+
+What goes with a higher blood pressure: age, sex, body weight? And do these raise **both** numbers, or one more than the other?
+
+We could run two regressions, one for each number. Many papers do. But then three questions cannot be answered:
+
+1. Does body weight matter for blood pressure **as a whole**? (one test, not two)
+2. Does it raise the two numbers **equally**? (a comparison between two regressions)
+3. Once age, sex and weight are known, do the two numbers **still go together**?
+
+**Multivariate regression** has several outcomes at once and answers all three. (The word is often used wrongly. *Multiple* regression has several predictors; *multivariate* regression has several outcomes.)
+
+```{r packages}
+library(foreign)   # read.xport(): the SAS transport files of the CDC (comes with R)
+library(ggplot2)
+library(car)       # Anova(), linearHypothesis() for models with several outcomes
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+NHANES, the US health survey, measures blood pressure three times with an automatic device. The files of August 2021 to August 2023 are free and need no login: blood pressure (`BPXO_L`), age and sex (`DEMO_L`), body measures (`BMX_L`) and a questionnaire about blood pressure (`BPQ_L`).
+
+```{r download}
+nhanes <- function(file) {
+  path <- tempfile(fileext = ".xpt")
+  download.file(paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/", file, ".xpt"),
+                path, mode = "wb", quiet = TRUE)
+  read.xport(path)
+}
+raw <- merge(nhanes("BPXO_L"), nhanes("DEMO_L")[, c("SEQN", "RIDAGEYR", "RIAGENDR", "RIDEXPRG")])
+raw <- merge(raw, nhanes("BMX_L")[, c("SEQN", "BMXBMI")])
+raw <- merge(raw, nhanes("BPQ_L")[, c("SEQN", "BPQ150")], all.x = TRUE)
+
+raw$sys <- rowMeans(raw[, paste0("BPXOSY", 1:3)], na.rm = TRUE)    # systolic: mean of the readings (mmHg)
+raw$dia <- rowMeans(raw[, paste0("BPXODI", 1:3)], na.rm = TRUE)    # diastolic
+adults <- subset(raw, RIDAGEYR >= 20 & RIDAGEYR < 80 & is.finite(sys) & is.finite(dia) & !is.na(BMXBMI) & !(RIDEXPRG %in% 1))
+people <- subset(adults, !(BPQ150 %in% 1))                          # not taking blood pressure medicine
+c(adults = nrow(adults), without_medicine = nrow(people))
+
+people <- data.frame(sys = people$sys, dia = people$dia,
+                     age    = (people$RIDAGEYR - 45) / 10,          # in decades, centred at 45 years
+                     male   = as.integer(people$RIAGENDR == 1),
+                     bmi    = (people$BMXBMI - 27) / 5,             # in steps of 5 kg/m², centred at 27
+                     years  = people$RIDAGEYR)
+round(sapply(people[, c("sys", "dia")], function(v) c(mean = mean(v), sd = sd(v))), 1)
+cor(people$sys, people$dia)
+```
+
+We keep the `r num(nrow(people))` adults aged 20 to 79 who do not take medicine for blood pressure (the medicine would hide what we look for) and are not pregnant. The two pressures correlate at `r nz(cor(people$sys, people$dia))`. The predictors are centred and scaled so that the numbers are easy to read: `age` in steps of ten years from 45, `bmi` (body mass index, kg/m²) in steps of 5 from 27, and `male`.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+long <- data.frame(years = rep(people$years, 2), mmHg = c(people$sys, people$dia),
+                   pressure = rep(c("systolic", "diastolic"), each = nrow(people)))
+long$pressure <- factor(long$pressure, levels = c("systolic", "diastolic"))
+
+ggplot(long, aes(years, mmHg, colour = pressure)) +
+  geom_jitter(alpha = 0.08, size = 0.7, width = 0.3) +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, linewidth = 1.1) +
+  scale_colour_manual(values = c(systolic = "#eb6834", diastolic = "#2a78d6"), name = NULL) +
+  labs(title = "Two blood pressures against age", x = "age (years)", y = "mmHg") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The two numbers do not age in the same way. The systolic pressure rises all life long. The diastolic rises until about 50 and then **falls**, because the arteries stiffen. One straight line will not do for both, so we give age a square: $age + age^2$ (see [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd)).
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: one equation per outcome, the same predictors
+
+$$\begin{aligned}
+\text{sys}_i &= \beta_{01} + \beta_{11}\,\text{age}_i + \beta_{21}\,\text{age}_i^2 + \beta_{31}\,\text{male}_i + \beta_{41}\,\text{bmi}_i + \varepsilon_{i1} \\
+\text{dia}_i &= \beta_{02} + \beta_{12}\,\text{age}_i + \beta_{22}\,\text{age}_i^2 + \beta_{32}\,\text{male}_i + \beta_{42}\,\text{bmi}_i + \varepsilon_{i2}
+\end{aligned}$$
+
+Nothing new so far. The new part is that the two errors of one person **may correlate**: somebody with a systolic pressure above the expected one probably has a high diastolic, too. The errors of a person come from a bivariate normal distribution with covariance matrix $\Sigma$:
+
+$$(\varepsilon_{i1}, \varepsilon_{i2}) \sim N(0, \Sigma), \qquad \Sigma = \begin{pmatrix} \sigma_1^2 & \sigma_{12} \\ \sigma_{12} & \sigma_2^2 \end{pmatrix}$$
+
+### Step 2: the same in matrices
+
+Put the outcomes side by side in a matrix $Y$ (one row per person, one column per outcome), the predictors in $X$, and the coefficients in $B$ (one column per outcome):
+
+$$Y = XB + E, \qquad \hat B = (X^\top X)^{-1} X^\top Y, \qquad \hat\Sigma = \frac{\hat E^\top \hat E}{n - q}$$
+
+with $q$ the number of columns of $X$. The formula of $\hat B$ works on each column of $Y$ separately. So **the coefficients are exactly those of two separate regressions**, and the correlation of the outcomes does not change them.
+
+```{r by_hand}
+Y <- as.matrix(people[, c("sys", "dia")])
+X <- model.matrix(~ age + I(age^2) + male + bmi, data = people)
+n <- nrow(X); q <- ncol(X)
+B     <- solve(crossprod(X), crossprod(X, Y))
+E     <- Y - X %*% B
+Sigma <- crossprod(E) / (n - q)
+round(B, 3)
+round(Sigma, 1)
+cov2cor(Sigma)[1, 2]               # the correlation of the two errors
+```
+
+### Step 3: what is new, the covariance of coefficients of different equations
+
+Two separate regressions give a variance for each coefficient, but nothing about how a coefficient of one equation goes with a coefficient of the other. The multivariate model gives it:
+
+$$\text{Cov}(\hat\beta_{j1}, \hat\beta_{j2}) = \hat\sigma_{12}\,\big[(X^\top X)^{-1}\big]_{jj}$$
+
+This is what is needed for tests **across** the equations, for example whether the slope of BMI is the same in both.
+
+### Step 4: the test of a predictor on all outcomes
+
+For one outcome, an *F* test compares two sums of squares, that of the hypothesis and that of the errors. For several outcomes the sums of squares become **matrices**, $H$ and $E$, with the sums of cross-products off the diagonal. $H$ is how much the matrix of errors grows when the predictor is left out:
+
+$$H = E_{\text{without}}^\top E_{\text{without}} - E^\top E$$
+
+Four statistics reduce the two matrices to one number. With the eigenvalues $\lambda_1, \lambda_2, \dots$ of $E^{-1}H$:
+
+| Statistic | Formula | Remark |
+|---|---|---|
+| **Pillai's trace** | $\sum \frac{\lambda_i}{1 + \lambda_i}$ | the most robust (Olson, 1976), the usual choice |
+| **Wilks' lambda** | $\prod \frac{1}{1 + \lambda_i}$ | the likelihood-ratio test; small is significant |
+| **Hotelling–Lawley trace** | $\sum \lambda_i$ | |
+| **Roy's largest root** | $\lambda_1$ | powerful when only one direction matters, not robust |
+
+For a predictor with one coefficient per outcome there is only one eigenvalue, the four agree, and the *F* test is exact.
+
+```{r pillai_by_hand}
+X0  <- X[, colnames(X) != "bmi"]                                     # the model without BMI
+E0  <- Y - X0 %*% solve(crossprod(X0), crossprod(X0, Y))
+H   <- crossprod(E0) - crossprod(E)
+lam <- Re(eigen(solve(crossprod(E), H))$values)[1]
+pillai <- lam / (1 + lam)
+p_out  <- ncol(Y)
+F_bmi  <- (pillai / p_out) / ((1 - pillai) / (n - q - p_out + 1))
+c(eigenvalue = lam, pillai = pillai, F = F_bmi, df1 = p_out, df2 = n - q - p_out + 1)
+```
+
+---
+
+## 4. Fitting the model and reading the output
+
+The outcomes are joined with `cbind()`:
+
+```{r fit}
+fit <- lm(cbind(sys, dia) ~ age + I(age^2) + male + bmi, data = people)
+summary(fit)
+```
+
+`summary()` prints two ordinary regressions, "Response sys" and "Response dia". They are exactly what `lm(sys ~ ...)` and `lm(dia ~ ...)` would print:
+
+```{r separate}
+sys_only <- lm(sys ~ age + I(age^2) + male + bmi, data = people)
+all.equal(coef(sys_only), coef(fit)[, "sys"])
+all.equal(summary(sys_only)$coefficients, summary(fit)[["Response sys"]]$coefficients)
+b <- coef(fit)
+s <- lapply(summary(fit), function(m) m$coefficients)
+```
+
+| Predictor | Systolic | Diastolic | In words |
+|---|---|---|---|
+| ten years more age, at 45 | `r f1(b["age", "sys"])` mmHg | `r f1(b["age", "dia"])` mmHg | three times as much for the upper number |
+| the square of age | `r f2(b["I(age^2)", "sys"])` | `r f2(b["I(age^2)", "dia"])` | the upper number rises in a straight line, the lower one bends down |
+| men against women | `r f1(b["male", "sys"])` | `r f1(b["male", "dia"])` | |
+| 5 kg/m² more BMI | `r f1(b["bmi", "sys"])` | `r f1(b["bmi", "dia"])` | twice as much for the **lower** number |
+
+The highest point of the diastolic curve is at the age where the slope is zero, $-\beta_{12} / (2\beta_{22})$ decades after 45: `r round(45 + 10 * -b["age", "dia"] / (2 * b["I(age^2)", "dia"]))` years.
+
+### The errors go together
+
+The correlation of the residuals is `r nz(cov2cor(Sigma)[1, 2])`. It answers question 3: two people of the same age, sex and BMI differ in **both** numbers in the same direction. This is the correlation of the two pressures **given** the predictors. It is even larger than the plain correlation of `r nz(cor(people$sys, people$dia))`, because after 50 age raises one number and lowers the other, which blurs the link.
+
+---
+
+## 5. Testing across the outcomes
+
+### Question 1: does a predictor matter for blood pressure as a whole?
+
+```{r joint}
+joint <- Anova(fit, test.statistic = "Pillai")       # Type II: each predictor given the others
+joint
+```
+
+`Anova()` from `car` tests each predictor given the others, on both outcomes together. For BMI it gives Pillai's trace = `r f3(pillai)`, *F*(`r p_out`, `r num(n - q - p_out + 1)`) = `r f1(F_bmi)`, as our hand calculation did. All are clearly significant with `r num(n)` people. The square of age is the interesting one: for the systolic pressure alone it is not significant (*p* `r pval(s[["Response sys"]]["I(age^2)", 4])`), and for the pair it is one of the strongest predictors.
+
+(`anova(fit)` without the `A` gives **sequential** tests, in the order of the formula. And the tests of a predictor that appears in two terms, as age does here, should be made together, by comparing with a model without both:)
+
+```{r age_together}
+no_age <- lm(cbind(sys, dia) ~ male + bmi, data = people)
+age_test <- anova(fit, no_age, test = "Pillai")
+age_test
+```
+
+### Question 2: is the slope the same for both outcomes?
+
+The hypothesis is $\beta_{41} = \beta_{42}$, that is $\beta_{41} - \beta_{42} = 0$: a contrast **between** the columns of $B$. In `linearHypothesis()` the matrix `P` combines the outcomes:
+
+```{r equal_slopes}
+P <- matrix(c(1, -1), ncol = 1, dimnames = list(c("sys", "dia"), "sys - dia"))
+equal_bmi <- linearHypothesis(fit, "bmi = 0", P = P)
+equal_bmi
+
+# by hand: the difference, and its standard error from the covariance of step 3
+XtX_inv <- solve(crossprod(X))
+contrast <- function(term) {
+  d  <- B[term, "sys"] - B[term, "dia"]
+  se <- sqrt((Sigma[1, 1] + Sigma[2, 2] - 2 * Sigma[1, 2]) * XtX_inv[term, term])
+  c(difference = d, SE = se, lower = d - qt(0.975, n - q) * se, upper = d + qt(0.975, n - q) * se,
+    t = d / se, p = 2 * pt(-abs(d / se), n - q))
+}
+contrasts <- t(sapply(c("age", "I(age^2)", "male", "bmi"), contrast))
+signif(contrasts, 3)
+```
+
+The slope of BMI is `r f2(abs(contrasts["bmi", "difference"]))` mmHg **smaller** for the systolic than for the diastolic pressure, 95% CI [`r f2(contrasts["bmi", "lower"])`, `r f2(contrasts["bmi", "upper"])`] for the difference, *t* = `r f2(contrasts["bmi", "t"])`. (The *F* of the output is $t^2$ = `r f1(contrasts["bmi", "t"]^2)`.) Without the covariance term, the standard error would be wrong. Two estimates that come from the same people are not independent:
+
+```{r naive_se}
+naive <- sqrt(s[["Response sys"]]["bmi", 2]^2 + s[["Response dia"]]["bmi", 2]^2)
+c(correct = contrasts["bmi", "SE"], as_if_independent = naive, ratio = naive / contrasts["bmi", "SE"])
+```
+
+Treating the two regressions as independent gives a standard error `r f1(naive / contrasts["bmi", "SE"])` times too large.
+
+There is a shorter way to the same test, worth knowing. The difference of the two pressures is a variable of its own, the **pulse pressure**. A regression of the difference on the predictors gives the difference of the slopes:
+
+```{r pulse}
+pulse <- lm(I(sys - dia) ~ age + I(age^2) + male + bmi, data = people)
+round(coef(summary(pulse))["bmi", ], 4)
+```
+
+---
+
+## 6. Two coefficients, one picture: ellipses
+
+### A confidence ellipse for the two slopes
+
+A confidence interval for each slope makes a rectangle. But the two estimates are correlated, and the region that contains the true **pair** with 95% confidence is an ellipse. It is the set of pairs that a joint *F* test does not reject:
+
+```{r ellipse}
+ellipse <- function(centre, V, radius) {          # points on an ellipse around a centre
+  angle <- seq(0, 2 * pi, length.out = 200)
+  t(centre + radius * t(chol(V)) %*% rbind(cos(angle), sin(angle)))
+}
+V_bmi  <- Sigma * XtX_inv["bmi", "bmi"]                                  # 2 x 2 covariance matrix of the two slopes
+radius <- sqrt(2 * (n - q) / (n - q - 1) * qf(0.95, 2, n - q - 1))
+region <- as.data.frame(ellipse(B["bmi", ], V_bmi, radius)); names(region) <- c("sys", "dia")
+ci     <- t(sapply(c("sys", "dia"), function(o) B["bmi", o] + c(-1, 1) * qt(0.975, n - q) * sqrt(V_bmi[o, o])))
+
+ggplot(region, aes(sys, dia)) +
+  annotate("rect", xmin = ci["sys", 1], xmax = ci["sys", 2], ymin = ci["dia", 1], ymax = ci["dia", 2], fill = "grey80", alpha = 0.6) +
+  geom_polygon(fill = "#2a78d6", alpha = 0.35) +
+  geom_abline(linetype = "dashed", colour = "#eb6834", linewidth = 0.8) +
+  annotate("point", x = B["bmi", "sys"], y = B["bmi", "dia"], size = 2.5) +
+  annotate("point", x = 0, y = 0, shape = 4, size = 3, stroke = 1.2) +
+  coord_cartesian(xlim = c(-0.1, 2.2), ylim = c(-0.1, 2.4)) +
+  labs(title = "The two slopes of BMI",
+       subtitle = "Blue: joint 95% region. Grey: the two separate 95% intervals.\nDashed: equal slopes. Cross: no effect",
+       x = "systolic: mmHg per 5 kg/m²", y = "diastolic: mmHg per 5 kg/m²") +
+  theme_bw()
+```
+
+The ellipse is far from the cross (no effect on either) and far from the dashed line (equal effects). It leans to the right, because the errors of the two outcomes correlate: if chance made one slope too large, it probably did the same to the other.
+
+### A prediction ellipse for one person
+
+For a man of 50 with a BMI of 32 the model predicts a pair. The uncertainty about **one** person is a 2 × 2 matrix: the errors of the person, plus those of the estimates.
+
+$$\hat y_0 = x_0^\top \hat B, \qquad \text{Cov} = \hat\Sigma\,\big(1 + x_0^\top (X^\top X)^{-1} x_0\big)$$
+
+```{r prediction}
+x0    <- c(1, (50 - 45) / 10, ((50 - 45) / 10)^2, 1, (32 - 27) / 5)      # a man, 50 years, BMI 32
+y0    <- drop(x0 %*% B)
+V0    <- Sigma * (1 + drop(t(x0) %*% XtX_inv %*% x0))
+y0
+pred  <- as.data.frame(ellipse(y0, V0, radius)); names(pred) <- c("sys", "dia")
+sides <- sapply(c("sys", "dia"), function(o) y0[[o]] + c(-1, 1) * qt(0.975, n - q) * sqrt(V0[o, o]))
+
+# how many people are inside their own ellipse, and inside their own rectangle?
+d2     <- rowSums((E %*% solve(Sigma)) * E)                               # squared distance from the prediction
+inside <- c(ellipse = mean(d2 <= radius^2),
+            rectangle = mean(abs(E[, 1]) <= 1.96 * sqrt(Sigma[1, 1]) & abs(E[, 2]) <= 1.96 * sqrt(Sigma[2, 2])))
+inside
+odd <- c(y0[["sys"]] + 1.5 * sqrt(V0[1, 1]), y0[["dia"]] - 1.5 * sqrt(V0[2, 2]))      # high above, low below
+d2_odd <- drop(t(odd - y0) %*% solve(V0) %*% (odd - y0))
+c(d2 = d2_odd, limit = radius^2)
+```
+
+```{r prediction_chart}
+ggplot(pred, aes(sys, dia)) +
+  annotate("rect", xmin = sides[1, "sys"], xmax = sides[2, "sys"], ymin = sides[1, "dia"], ymax = sides[2, "dia"], fill = "grey80", alpha = 0.5) +
+  geom_polygon(fill = "#2a78d6", alpha = 0.3) +
+  annotate("point", x = y0[["sys"]], y = y0[["dia"]], size = 2.5) +
+  annotate("point", x = odd[1], y = odd[2], colour = "#eb6834", size = 3) +
+  annotate("text", x = odd[1] + 1, y = odd[2] - 2.5, label = sprintf("%.0f / %.0f", odd[1], odd[2]), colour = "#eb6834", hjust = 0, size = 3.5) +
+  labs(title = "95% prediction region for a man of 50 with a BMI of 32",
+       subtitle = "Grey: each number by itself. Blue: the pair", x = "systolic (mmHg)", y = "diastolic (mmHg)") +
+  theme_bw()
+```
+
+The orange point, `r round(odd[1])` over `r round(odd[2])`, is inside both intervals: neither number is unusual. But the **combination** is: a high upper number with a low lower one is outside the ellipse. Only a model of the pair can see it. Of the people in the data, `r pct(inside[["ellipse"]], 1)` lie inside their ellipse and `r pct(inside[["rectangle"]], 1)` inside their rectangle, where 95% was promised.
+
+---
+
+## 7. Joint or separate tests? A small-sample experiment
+
+With `r num(n)` people everything is significant. The choice of the test matters in small studies. So we make small studies from our data: 5,000 random samples of 100 people, and in each the test of BMI in three ways. The joint test; the two separate tests, "significant if either is"; and the same with the Bonferroni correction ($p < .025$).
+
+```{r small_studies}
+set.seed(4)
+one_study <- function(shuffle) {
+  i  <- sample(n, 100)
+  Xs <- X[i, ]; Ys <- Y[i, ]
+  if (shuffle) Xs[, "bmi"] <- sample(Xs[, "bmi"])                        # BMI without any relation
+  XtXi <- solve(crossprod(Xs)); Bs <- XtXi %*% crossprod(Xs, Ys); Es <- Ys - Xs %*% Bs
+  S    <- crossprod(Es) / (100 - q)
+  p_each <- 2 * pt(-abs(Bs[5, ] / sqrt(diag(S) * XtXi[5, 5])), 100 - q)
+  T2   <- drop(t(Bs[5, ]) %*% solve(S * XtXi[5, 5]) %*% Bs[5, ])          # Hotelling's T², the same as Pillai here
+  df2  <- 100 - q - 1
+  c(joint = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05,
+    either = any(p_each < .05), bonferroni = any(p_each < .025),
+    joint_only = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05 & !any(p_each < .05))
+}
+power <- rowMeans(replicate(5000, one_study(FALSE)))
+null  <- rowMeans(replicate(5000, one_study(TRUE)))
+round(rbind(`BMI as it is` = power, `BMI shuffled (no relation)` = null), 3)
+```
+
+- **Shuffled BMI** should be significant in 5% of the studies. The joint test is, in `r pct(null[["joint"]], 1)`. "Either of the two" is in `r pct(null[["either"]], 1)`, too often, because it has two chances. Bonferroni has `r pct(null[["bonferroni"]], 1)`.
+- **The real BMI** is found by the joint test in `r pct(power[["joint"]])` of the studies, by Bonferroni in `r pct(power[["bonferroni"]])`. The joint test uses the direction of the effect: BMI moves the two numbers in a way that goes **against** their usual correlation (the lower one more than the upper), which makes it easier to see.
+- In `r pct(power[["joint_only"]])` of the studies the joint test found BMI although **neither** number was significant by itself.
+
+The opposite can happen too. When an effect goes along with the correlation, or concerns one outcome only, the separate tests can be more powerful. The joint test is the better protection against false findings, and the separate results tell what it found.
+
+---
+
+## 8. Checking the assumptions
+
+The assumptions are those of linear regression for each outcome, plus one covariance matrix for everybody and, for small samples, normal errors **together**. The squared Mahalanobis distance of the residual pairs should follow a $\chi^2$ distribution with 2 degrees of freedom:
+
+```{r mahalanobis}
+qq <- data.frame(expected = qchisq(ppoints(n), df = 2), observed = sort(d2))
+ggplot(qq, aes(expected, observed)) +
+  geom_abline(colour = "grey60") +
+  geom_point(colour = "#2a78d6", alpha = 0.5) +
+  labs(title = "Residual pairs against the bivariate normal distribution",
+       x = "expected squared distance (χ², 2 df)", y = "observed squared distance") +
+  theme_bw()
+
+spread <- sapply(c("sys", "dia"), function(o) tapply(E[, o], cut(people$years, c(19, 39, 59, 79)), sd))
+round(spread, 1)
+```
+
+Two assumptions fail. The distances have a **long tail**: people with very high pressures. And the spread of the systolic errors grows with age, from `r f1(spread[1, "sys"])` to `r f1(spread[3, "sys"])` mmHg. With `r num(n)` people the long tail does not matter for the coefficients, but unequal spread affects the standard errors. The **bootstrap** of persons needs neither assumption. It resamples whole rows, so the two outcomes of a person stay together:
+
+```{r bootstrap}
+set.seed(5)
+boot <- t(replicate(2000, {
+  i <- sample(n, replace = TRUE)
+  b <- solve(crossprod(X[i, ]), crossprod(X[i, ], Y[i, ]))
+  c(sys = b["bmi", "sys"], dia = b["bmi", "dia"], difference = b["bmi", "sys"] - b["bmi", "dia"])
+}))
+rbind(model_SE = c(sqrt(diag(V_bmi)), contrasts["bmi", "SE"]), bootstrap_SE = apply(boot, 2, sd))
+boot_ci <- apply(boot, 2, quantile, c(0.025, 0.975))
+round(boot_ci, 2)
+```
+
+The bootstrap standard errors are close to those of the model, and the conclusion about the difference stays: 95% CI [`r f2(boot_ci[1, "difference"])`, `r f2(boot_ci[2, "difference"])`].
+
+---
+
+## 9. Things to keep in mind
+
+- **Use it when the outcomes belong together** and are to be tested together, or when coefficients are compared between outcomes. For five unrelated outcomes, a joint test answers a question that nobody asked.
+- **All equations have the same predictors.** If they differ, the estimates of the equations are no longer those of separate regressions, and the model is **seemingly unrelated regression**.
+- **MANOVA** is the same model with groups as predictors.
+- **The joint test does not say which outcome.** After it, look at the coefficients, the ellipse, or contrasts such as $\beta_{41} - \beta_{42}$. A row of separate tests "protected" by the joint test does not control the error rate in general (Huberty & Morris, 1989).
+- **Comparing slopes needs the same unit.** Both pressures are in mmHg. For outcomes in different units, "equal slopes" depends on the units; standardise only if that comparison makes sense.
+- **Rows with one missing outcome are dropped.** A mixed model in long format, or a structural equation model with full information, can use them (see [missing data](EXAMPLE_MISSING_DATA.Rmd)).
+- **Repeated measures.** The same variable at several times is also a multivariate outcome, but the times are ordered and the covariances have a pattern. See [multilevel models](EXAMPLE_MULTILEVEL.Rmd).
+- **Not the US population.** NHANES is a complex sample with weights, which we did not use; we describe the people in the data. Excluding the people on medicine removes those with the highest pressures, mostly older and heavier, and flattens both slopes.
+- **Differences between people, not effects.** Nobody was assigned to a weight.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the outcomes and why they are analysed together, the multivariate test with its statistic and degrees of freedom, the coefficients of each outcome, and the residual correlation. The numbers come from the R objects:
+
+```{r apa_numbers}
+ci_sys <- confint(sys_only)
+ci_dia <- confint(lm(dia ~ age + I(age^2) + male + bmi, data = people))
+one_df_F <- function(term) {           # the exact joint test of one predictor
+  bj <- B[term, ]; T2 <- drop(t(bj) %*% solve(Sigma * XtX_inv[term, term]) %*% bj)
+  c(F = T2 * (n - q - 1) / (2 * (n - q)), pillai = T2 / (T2 + n - q))
+}
+joint_table <- t(sapply(rownames(B)[-1], one_df_F))
+apa_table <- data.frame(
+  Predictor = c("Age (10 years, from 45)", "Age squared", "Male", "BMI (5 kg/m², from 27)"),
+  sys = paste0(f2(B[-1, "sys"]), " [", f2(ci_sys[-1, 1]), ", ", f2(ci_sys[-1, 2]), "]"),
+  dia = paste0(f2(B[-1, "dia"]), " [", f2(ci_dia[-1, 1]), ", ", f2(ci_dia[-1, 2]), "]"),
+  diff = paste0(f2(contrasts[, "difference"]), " [", f2(contrasts[, "lower"]), ", ", f2(contrasts[, "upper"]), "]"),
+  V = nz(joint_table[, "pillai"], 3), F = f1(joint_table[, "F"]))
+df2 <- n - q - 1
+```
+
+**Method** (data analysis):
+
+> Systolic and diastolic blood pressure (mmHg, means of up to three readings) of `r num(n)` adults of NHANES, August 2021–August 2023, aged 20 to 79 and not taking antihypertensive medication, were analysed together in a multivariate linear regression on age (linear and squared), sex and body mass index, because they are measured on the same scale and correlate (*r* = `r nz(cor(people$sys, people$dia))`). Predictors were tested on both outcomes with Pillai's trace, and the equality of their coefficients between the outcomes with contrasts. Standard errors were checked with 2,000 bootstrap samples of persons. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package car (Fox & Weisberg, 2019).
+
+**Results:**
+
+> All predictors were related to the pair of blood pressures (Table 1). Age, linear and squared, was tested jointly, Pillai's trace = `r f3(age_test$Pillai[2])`, approximate *F*(`r age_test$"num Df"[2]`, `r num(age_test$"den Df"[2])`) = `r f1(age_test$"approx F"[2])`, *p* `r pval(age_test$"Pr(>F)"[2])`. For BMI, Pillai's trace = `r f3(pillai)`, *F*(`r p_out`, `r num(df2)`) = `r f1(F_bmi)`, *p* `r pval(pf(F_bmi, p_out, df2, lower.tail = FALSE))`: 5 kg/m² more went with `r f2(B["bmi", "sys"])` mmHg more systolic and `r f2(B["bmi", "dia"])` mmHg more diastolic pressure, and the two slopes differed, difference = `r f2(contrasts["bmi", "difference"])`, 95% CI [`r f2(contrasts["bmi", "lower"])`, `r f2(contrasts["bmi", "upper"])`], *t*(`r num(n - q)`) = `r f2(contrasts["bmi", "t"])`, *p* `r pval(contrasts["bmi", "p"])`. The model explained `r pct(summary(sys_only)$r.squared)` of the variance of the systolic and `r pct(summary(fit)[["Response dia"]]$r.squared)` of that of the diastolic pressure, and the residuals correlated at `r nz(cov2cor(Sigma)[1, 2])`.
+
+**Table 1**
+
+*Multivariate Regression of Systolic and Diastolic Blood Pressure*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "Systolic, *b* [95% CI]", "Diastolic, *b* [95% CI]", "Difference [95% CI]", "Pillai's trace", paste0("*F*(2, ", num(df2), ")")),
+             align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(n)`. Coefficients in mmHg. Difference: systolic minus diastolic. The *F* tests concern both outcomes.
+
+**Points to remember:**
+
+- Say why the outcomes are analysed together.
+- Name the multivariate statistic (Pillai's trace is the safe choice), with *F* and both degrees of freedom.
+- Report the coefficients of every outcome, and the correlation of the residuals.
+- Compare coefficients between outcomes only with a test that uses their covariance.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | Several continuous outcomes on the same people, with the same predictors, that should be tested or compared together |
+| **The model** | $Y = XB + E$, with correlated errors, $\Sigma$ |
+| **How (R)** | `fit <- lm(cbind(y1, y2) ~ x1 + x2, data = d)` |
+| **Same as separate regressions** | The coefficients, their standard errors and *t* tests |
+| **New** | Joint tests, contrasts between outcomes, residual correlation, joint regions |
+| **Joint tests** | `car::Anova(fit)` (each predictor given the others); `anova(fit, smaller)` for several terms |
+| **Between outcomes** | `car::linearHypothesis(fit, "x = 0", P = matrix(c(1, -1)))`, or regress the difference |
+| **Statistics** | Pillai, Wilks, Hotelling–Lawley, Roy; identical for a predictor with one coefficient |
+| **Checks** | Residual plots for each outcome, Mahalanobis distances, the bootstrap of persons |
+| **Related pages** | [Hierarchical regression](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd), [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd), [moderation, mediation and SEM](EXAMPLE_MODERATION_MEDIATION.Rmd) |
+
+---
+
+## References
+
+Fox, J., & Weisberg, S. (2019). *An R companion to applied regression* (3rd ed.). Sage.
+
+Huberty, C. J., & Morris, J. D. (1989). Multivariate analysis versus multiple univariate analyses. *Psychological Bulletin*, *105*(2), 302–308. https://doi.org/10.1037/0033-2909.105.2.302
+
+National Center for Health Statistics. (2024). *National Health and Nutrition Examination Survey, August 2021–August 2023* [Data set]. https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?Cycle=2021-2023
+
+Olson, C. L. (1976). On choosing a test statistic in multivariate analysis of variance. *Psychological Bulletin*, *83*(4), 579–586. https://doi.org/10.1037/0033-2909.83.4.579
