@@ -62,7 +62,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Regression trees: EXAMPLE_DECISION_TREE
 - [x] Random forest: EXAMPLE_RANDOM_FOREST
 - [x] Gradient boosting: EXAMPLE_GRADIENT_BOOSTING
-- [ ] Support vector regression
+- [x] Support vector regression: EXAMPLE_SUPPORT_VECTOR_REGRESSION
 - [ ] k-nearest neighbours
 - [ ] Gaussian process
 - [ ] Neural network (EXAMPLE_MNIST covers classification only)

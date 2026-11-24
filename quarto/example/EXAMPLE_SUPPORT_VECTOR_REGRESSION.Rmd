@@ -1,0 +1,343 @@
+---
+title: "Support Vector Regression: How Loud Is This Wing?"
+description: "Support vector regression in R with e1071, on NASA's wind tunnel measurements of airfoil noise: the epsilon-insensitive loss, cost, the kernel trick and support vectors by hand, tuning cost, gamma and epsilon by cross-validation, why splitting rows at random is a mistake when they come from the same experiment, a comparison with linear regression, a GAM and a random forest, partial dependence, scaling, outliers and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: noise from the edge of a wing
+
+When air flows over the blade of a fan, a wind turbine or a wing, it makes noise, even if nothing vibrates. In the 1980s NASA measured it in a wind tunnel: blades of different sizes, at different speeds and angles, and the sound level at many frequencies (Brooks et al., 1989). Can we predict the noise of a blade that was not measured?
+
+The relation is smooth, and complicated: the noise has a peak at some frequency, and the peak moves with the size, the speed and the angle. A linear regression cannot follow it. **Support vector regression** (SVR; Smola & Schölkopf, 2004) is one of the classic machine-learning methods for such problems. It has two ideas:
+
+1. **Errors below some size do not count.** Only the points that lie outside a tube around the curve have a say.
+2. **Curves from distances.** The prediction for a new case is a weighted sum of its similarities to some of the old ones.
+
+This page also shows something that has nothing to do with SVR and decides whether any of the results are true: **how the test data are separated from the training data**.
+
+```{r packages}
+library(e1071)      # svm()
+library(mgcv)       # gam(), for comparison (comes with R)
+library(ranger)     # random forest, for comparison
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+rmse <- function(a, b) sqrt(mean((a - b)^2))
+```
+
+---
+
+## 1. The data
+
+```{r download}
+zip <- tempfile(fileext = ".zip")
+download.file("https://archive.ics.uci.edu/static/public/291/airfoil+self+noise.zip", zip, mode = "wb", quiet = TRUE)
+wing <- read.table(unz(zip, "airfoil_self_noise.dat"), col.names = c("freq", "angle", "chord", "speed", "thick", "db"))
+wing$lf  <- log10(wing$freq)                                              # frequency in factors of ten
+wing$lt  <- log10(wing$thick)
+wing$run <- paste(wing$angle, wing$chord, wing$speed)                     # one experiment: the same blade, speed and angle
+c(rows = nrow(wing), experiments = length(unique(wing$run)))
+summary(wing$db)
+```
+
+The file is in the UCI machine learning repository. `db` is the sound level in decibels; the predictors are the frequency (log, `lf`), the angle of the blade (degrees), its length (`chord`, metres), the speed of the air (m/s) and the thickness of the boundary layer at the edge (log, `lt`), which is a property of the flow.
+
+The `r num(nrow(wing))` rows are **not** `r num(nrow(wing))` experiments. Each experiment, one blade at one speed and angle, gave a whole **spectrum** of about `r round(nrow(wing) / length(unique(wing$run)))` frequencies. There are `r length(unique(wing$run))` experiments.
+
+### Split by experiment, not by row
+
+If we put single rows at random into the training and the test set, then for nearly every test row its neighbours in the **same spectrum** are in the training set. A method that only connects the dots would look brilliant. But the question is about blades that were **not** measured. So whole experiments go to one side or the other:
+
+```{r split}
+set.seed(151)
+runs  <- unique(wing$run)
+test_runs <- sample(runs, round(0.25 * length(runs)))
+train <- subset(wing, !(run %in% test_runs))
+test  <- subset(wing, run %in% test_runs)
+c(train_rows = nrow(train), test_rows = nrow(test), train_experiments = length(unique(train$run)), test_experiments = length(unique(test$run)))
+```
+
+---
+
+## 2. Look at the data
+
+```{r look}
+set.seed(152)
+shown <- subset(wing, run %in% sample(runs, 9))
+ggplot(shown, aes(freq, db)) + geom_line(colour = "grey60") + geom_point(size = 1.3, colour = "#2a78d6") + facet_wrap(~ run) +
+  scale_x_log10(breaks = c(500, 2000, 8000)) + labs(title = "Nine experiments (angle, chord, speed)", x = "frequency (Hz, log scale)", y = "sound level (dB)") + theme_bw()
+```
+
+Each spectrum is smooth, with one hump. The position and the height of the hump change from experiment to experiment.
+
+---
+
+## 3. The method step by step, with formulas
+
+### Step 1: a tube instead of a line
+
+Least squares punishes every error, by its square. SVR does not punish errors smaller than $\varepsilon$ at all, and larger ones only in proportion:
+
+$$L_\varepsilon(e) = \max(0,\; |e| - \varepsilon)$$
+
+```{r loss_chart}
+e <- seq(-3, 3, by = 0.01)
+losses <- rbind(data.frame(e, loss = e^2, kind = "squared (least squares)"), data.frame(e, loss = abs(e), kind = "absolute (median regression)"), data.frame(e, loss = pmax(0, abs(e) - 1), kind = "ε-insensitive, ε = 1 (SVR)"))
+ggplot(losses, aes(e, loss, colour = kind)) + geom_line(linewidth = 1) + coord_cartesian(ylim = c(0, 4)) +
+  scale_colour_manual(values = c("#1baf7a", "#eb6834", "#2a78d6"), name = NULL) + labs(title = "Three ways to count an error", x = "error", y = "loss") + theme_bw() + theme(legend.position = "bottom")
+```
+
+### Step 2: as flat as possible
+
+For a linear function $f(x) = w^\top x + b$, SVR minimises
+
+$$\frac{1}{2}\lVert w \rVert^2 + C \sum_i L_\varepsilon\big(y_i - f(x_i)\big)$$
+
+The first part asks for a **flat** function (a penalty like that of [ridge regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd)), the second for small errors outside the tube. The **cost** $C$ is the exchange rate: a large $C$ follows the data, a small $C$ stays flat.
+
+### Step 3: support vectors
+
+The solution can be written with one weight per training case:
+
+$$f(x) = \sum_i \alpha_i\, (x_i^\top x) + b, \qquad -C \le \alpha_i \le C$$
+
+Cases strictly **inside** the tube have $\alpha_i = 0$: they could be deleted without changing anything. The others are the **support vectors**. In the formula the predictors appear only in products $x_i^\top x$ of two cases.
+
+### Step 4: the kernel
+
+So replace the product by any other measure of similarity, a **kernel** $K(x_i, x)$. The most used is the radial one,
+
+$$K(x_i, x) = \exp\!\left(-\gamma\, \lVert x_i - x \rVert^2\right)$$
+
+which is 1 for identical cases and falls to 0 with the distance. Now $f$ is a sum of bumps centred at the support vectors, and can take any smooth shape, without ever naming a formula. $\gamma$ decides how **wide** the bumps are: a small $\gamma$ gives a stiff function, a large one a wiggly function.
+
+### Step 5: check the formula by hand
+
+```{r by_hand}
+small <- svm(db ~ lf + angle + chord + speed + lt, data = train, cost = 10, gamma = 0.2, epsilon = 0.1)     # predictors and outcome are standardised inside
+vars  <- c("lf", "angle", "chord", "speed", "lt")
+Zt    <- scale(as.matrix(test[, vars]), center = small$x.scale$`scaled:center`, scale = small$x.scale$`scaled:scale`)
+SV    <- small$SV                                                                                              # the support vectors, standardised
+K     <- exp(-0.2 * outer(rowSums(Zt^2), rowSums(SV^2), "+") + 2 * 0.2 * Zt %*% t(SV))                          # exp(-gamma * squared distance)
+f_std <- drop(K %*% small$coefs) - small$rho
+by_hand <- f_std * small$y.scale$`scaled:scale` + small$y.scale$`scaled:center`
+max(abs(by_hand - predict(small, test)))
+c(support_vectors = small$tot.nSV, training_rows = nrow(train))
+```
+
+The prediction is what step 4 says. `r small$tot.nSV` of the `r num(nrow(train))` training rows are support vectors.
+
+---
+
+## 4. Tuning: cost, gamma, epsilon
+
+The three settings are chosen by cross-validation in the training set, again **by experiment**:
+
+```{r tuning}
+set.seed(153)
+train_runs <- unique(train$run)
+fold_of <- setNames(sample(rep(1:5, length.out = length(train_runs))), train_runs)
+fold <- fold_of[train$run]
+form <- db ~ lf + angle + chord + speed + lt
+cv_error <- function(cost, gamma, epsilon, folds = fold) {
+  err <- unlist(lapply(1:5, function(k) { m <- svm(form, data = train[folds != k, ], cost = cost, gamma = gamma, epsilon = epsilon); predict(m, train[folds == k, ]) - train$db[folds == k] }))
+  sqrt(mean(err^2))
+}
+grid <- expand.grid(cost = c(0.5, 2, 10, 50, 200), gamma = c(0.02, 0.05, 0.1, 0.2, 0.5, 1))
+grid$rmse <- mapply(cv_error, grid$cost, grid$gamma, 0.1)
+best <- grid[which.min(grid$rmse), ]
+eps  <- c(0.01, 0.05, 0.1, 0.2, 0.4)
+eps_rmse <- sapply(eps, function(e) cv_error(best$cost, best$gamma, e))
+best_eps <- eps[which.min(eps_rmse)]
+best; rbind(epsilon = eps, rmse = eps_rmse)
+```
+
+```{r tuning_chart}
+ggplot(grid, aes(factor(gamma), factor(cost), fill = rmse)) + geom_tile(colour = "white") + geom_text(aes(label = f2(rmse)), size = 3.4) +
+  scale_fill_gradient(low = "#1baf7a", high = "white", name = "dB") + labs(title = "Cross-validated error, whole experiments left out", x = "γ", y = "cost C") + theme_minimal() + theme(panel.grid = element_blank())
+```
+
+The best setting is $C$ = `r best$cost`, $\gamma$ = `r best$gamma` (error `r f2(best$rmse)` dB), a fairly **stiff** function. Large $\gamma$ with a large $C$, the most flexible corner, is bad. $\varepsilon$ matters little. ($\varepsilon$ is in standard deviations of the outcome: 0.1 is `r f1(0.1 * sd(train$db))` dB.)
+
+### The same tuning with rows at random
+
+```{r random_tuning}
+set.seed(154)
+random_fold <- sample(rep(1:5, length.out = nrow(train)))
+grid$rmse_random <- mapply(cv_error, grid$cost, grid$gamma, 0.1, MoreArgs = list(folds = random_fold))
+best_random <- grid[which.min(grid$rmse_random), ]
+best_random
+```
+
+If single **rows** are left out, the cross-validation promises an error of `r f2(best_random$rmse_random)` dB, and chooses $C$ = `r best_random$cost` and $\gamma$ = `r best_random$gamma`: the most flexible model. Whose promise is kept?
+
+---
+
+## 5. The test
+
+```{r test}
+svr      <- svm(form, data = train, cost = best$cost, gamma = best$gamma, epsilon = best_eps)
+svr_rand <- svm(form, data = train, cost = best_random$cost, gamma = best_random$gamma, epsilon = 0.1)
+linear   <- lm(form, data = train)
+poly2    <- lm(db ~ polym(lf, angle, chord, speed, lt, degree = 2, raw = TRUE), data = train)
+gam_fit  <- gam(db ~ te(lf, lt, k = 6) + s(angle, k = 6) + s(chord, k = 5) + speed, data = train, method = "REML")
+set.seed(155)
+forest   <- ranger(form, data = train, num.trees = 1000)
+preds <- list(`Linear regression` = predict(linear, test), `Quadratic regression` = predict(poly2, test), `GAM` = predict(gam_fit, test),
+              `Random forest` = predict(forest, test)$predictions, `SVR, tuned by experiment` = predict(svr, test), `SVR, tuned by rows at random` = predict(svr_rand, test))
+results <- data.frame(model = names(preds), test_rmse = sapply(preds, rmse, b = test$db), R2 = sapply(preds, function(p) 1 - sum((test$db - p)^2) / sum((test$db - mean(train$db))^2)), row.names = NULL)
+# the uncertainty comes from the experiments: bootstrap whole experiments of the test set
+set.seed(156)
+boot <- replicate(1000, { pick <- sample(test_runs, replace = TRUE); rows <- unlist(lapply(pick, function(r) which(test$run == r))); sapply(preds, function(p) rmse(p[rows], test$db[rows])) })
+results$low <- apply(boot, 1, quantile, 0.025); results$high <- apply(boot, 1, quantile, 0.975)
+print(transform(results, test_rmse = round(test_rmse, 2), R2 = round(R2, 2), low = round(low, 2), high = round(high, 2)), row.names = FALSE)
+get <- function(m, col = "test_rmse") results[results$model == m, col]
+```
+
+```{r test_chart}
+results$model <- factor(results$model, levels = results$model[order(-results$test_rmse)])
+ggplot(results, aes(test_rmse, model)) + geom_pointrange(aes(xmin = low, xmax = high), colour = "#2a78d6", linewidth = 0.9) +
+  geom_vline(xintercept = best_random$rmse_random, linetype = "dashed", colour = "#eb6834") +
+  labs(title = "Error on experiments that no model has seen", subtitle = "95% bootstrap intervals over experiments. Dashed: what tuning by rows at random promised", x = "root mean squared error (dB)", y = NULL) + theme_bw() + theme(plot.title.position = "plot")
+```
+
+- The SVR tuned by experiment misses new experiments by `r f2(get("SVR, tuned by experiment"))` dB, linear regression by `r f2(get("Linear regression"))`.
+- The SVR tuned by rows had **promised `r f2(best_random$rmse_random)`** and delivers **`r f2(get("SVR, tuned by rows at random"))`**.
+- The quadratic regression has `r f2(get("Quadratic regression"))`, the GAM `r f2(get("GAM"))`, and the random forest `r f2(get("Random forest"))`. The test set has `r length(test_runs)` experiments, the intervals are wide and overlap, and the ranking of the good models is not certain.
+
+Published results on these data often report errors of 1 to 2 dB, from random splits. They are right about a question that nobody has: predicting a frequency of a spectrum of which the neighbouring frequencies are known.
+
+```{r spectra_chart}
+few <- test_runs[1:6]
+show <- subset(test, run %in% few)
+show$SVR <- predict(svr, show); show$linear <- predict(linear, show)
+long <- rbind(data.frame(show[, c("run", "freq")], db = show$SVR, what = "SVR"), data.frame(show[, c("run", "freq")], db = show$linear, what = "linear regression"))
+ggplot(show, aes(freq, db)) + geom_point(size = 1.4, colour = "grey30") + geom_line(data = long, aes(colour = what), linewidth = 0.8) + facet_wrap(~ run) +
+  scale_colour_manual(values = c(SVR = "#2a78d6", `linear regression` = "#eb6834"), name = NULL) + scale_x_log10(breaks = c(500, 2000, 8000)) +
+  labs(title = "Six experiments of the test set: measured (points) and predicted", x = "frequency (Hz, log scale)", y = "dB") + theme_bw() + theme(legend.position = "bottom")
+```
+
+---
+
+## 6. What has the model learned?
+
+SVR has no coefficients to read. **Partial dependence** shows the average prediction as one predictor changes:
+
+```{r partial}
+pd <- function(v, values) sapply(values, function(x) { z <- train; z[[v]] <- x; mean(predict(svr, z)) })
+pd_data <- do.call(rbind, lapply(list(c("lf", "log10 frequency"), c("angle", "angle (degrees)"), c("chord", "chord (m)"), c("speed", "speed (m/s)")), function(p) {
+  values <- seq(min(train[[p[1]]]), max(train[[p[1]]]), length.out = 25); data.frame(x = values, db = pd(p[1], values), what = p[2]) }))
+pd_data$what <- factor(pd_data$what, levels = unique(pd_data$what))
+ggplot(pd_data, aes(x, db)) + geom_line(colour = "#2a78d6", linewidth = 1) + facet_wrap(~ what, scales = "free_x") + labs(title = "Partial dependence of the sound level", x = NULL, y = "predicted dB") + theme_bw()
+range_of <- tapply(pd_data$db, pd_data$what, function(v) diff(range(v)))
+round(range_of, 1)
+```
+
+The frequency changes the prediction most (by `r f1(range_of[[1]])` dB over its range), then the length of the blade (`r f1(range_of[["chord (m)"]])` dB) and the angle (`r f1(range_of[["angle (degrees)"]])`), and the speed least (`r f1(range_of[["speed (m/s)"]])`). The peak that moves with the conditions is an **interaction**, which such averages hide.
+
+---
+
+## 7. Scaling, outliers, size
+
+```{r scaling}
+noscale <- svm(form, data = train, cost = best$cost, gamma = best$gamma, epsilon = best_eps, scale = FALSE)
+set.seed(157)
+spoiled <- train; bad <- sample(nrow(spoiled), 20); spoiled$db[bad] <- spoiled$db[bad] + 60               # 20 wrong measurements
+out_svr <- svm(form, data = spoiled, cost = best$cost, gamma = best$gamma, epsilon = best_eps)
+out_gam <- update(gam_fit, data = spoiled)
+c(SVR = get("SVR, tuned by experiment"), SVR_unscaled = rmse(predict(noscale, test), test$db), SVR_with_outliers = rmse(predict(out_svr, test), test$db),
+  GAM = get("GAM"), GAM_with_outliers = rmse(predict(out_gam, test), test$db))
+sv_share <- sapply(c(0.01, 0.1, 0.4, 0.8), function(e) svm(form, data = train, cost = best$cost, gamma = best$gamma, epsilon = e)$tot.nSV / nrow(train))
+setNames(round(sv_share, 2), paste("epsilon", c(0.01, 0.1, 0.4, 0.8)))
+```
+
+- **Scale the predictors.** The kernel adds squared distances. Without scaling, degrees of angle count thousands of times more than metres of chord, and the error rises to `r f1(rmse(predict(noscale, test), test$db))` dB. `svm()` scales by default; the same centre and scale must be used for new data, as `predict()` does.
+- **Outliers** count in proportion and not by their square. Twenty wrong values moved the error of the SVR to `r f2(rmse(predict(out_svr, test), test$db))` and that of the GAM to `r f2(rmse(predict(out_gam, test), test$db))` dB.
+- **$\varepsilon$ decides how many support vectors there are**: `r pct(sv_share[1])` of the rows with 0.01, `r pct(sv_share[3])` with 0.4. Fewer support vectors make a smaller and faster model.
+
+---
+
+## 8. Things to keep in mind
+
+- **Keep together what belongs together**: experiments, patients, schools, days. In the split **and** in the tuning.
+- **Tune on a grid of factors** (1, 10, 100, ...), then refine. The three settings interact.
+- **No intervals, no tests.** SVR gives a number. For uncertainty use bootstrap, conformal prediction, or a Gaussian process, its probabilistic relative.
+- **No extrapolation.** Far from all support vectors the radial kernel gives 0 and the prediction returns to the constant $b$.
+- **Slow for large data**: the time grows with the square to the cube of the rows. Above some ten thousand rows take boosting, forests or neural networks.
+- **Categorical predictors** must be coded as dummies, and they are then measured by the same distance as the rest.
+- **Other kernels**: linear (many predictors, few rows), polynomial. The radial one is the usual start.
+- **A simple model is often close**. Always fit one.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the unit of splitting, the preprocessing, the kernel, the tuning grid and its validation, the chosen settings, and the test error with its uncertainty and with simpler models. The numbers come from the R objects:
+
+```{r apa_numbers}
+o <- order(results$test_rmse)
+apa_table <- data.frame(Model = as.character(results$model)[o], rmse = f2(results$test_rmse[o]), ci = paste0("[", f2(results$low[o]), ", ", f2(results$high[o]), "]"), r2 = f2(results$R2[o]))
+```
+
+**Method** (data analysis):
+
+> We predicted the sound level of airfoils (`r num(nrow(wing))` measurements from `r length(runs)` wind tunnel experiments; Brooks et al., 1989) from log frequency, angle of attack, chord length, air speed and the log thickness of the boundary layer with support vector regression with a radial kernel (Smola & Schölkopf, 2004). Predictors and outcome were standardised with the training data. A random quarter of the **experiments** was the test set. Cost, γ and ε were chosen by five-fold cross-validation in the training set, with whole experiments in one fold. Linear and quadratic regression, a generalized additive model and a random forest served for comparison. Confidence intervals of the test error are from 1,000 bootstrap samples of experiments. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package e1071.
+
+**Results:**
+
+> The selected settings were *C* = `r best$cost`, γ = `r best$gamma` and ε = `r best_eps` (cross-validated RMSE = `r f2(best$rmse)` dB), with `r svr$tot.nSV` support vectors. On `r length(test_runs)` experiments that were not used for training, the RMSE was `r f2(get("SVR, tuned by experiment"))` dB, 95% CI [`r f2(get("SVR, tuned by experiment", "low"))`, `r f2(get("SVR, tuned by experiment", "high"))`], compared with `r f2(get("Linear regression"))` for linear regression (Table 1). Cross-validation with single measurements left out at random would have suggested an RMSE of `r f2(best_random$rmse_random)` dB, and the model chosen in this way had `r f2(get("SVR, tuned by rows at random"))` dB on new experiments.
+
+**Table 1**
+
+*Prediction of Sound Level in Experiments Not Used for Training*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Model", "RMSE (dB)", "95% CI", "*R*²"), align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* `r nrow(test)` measurements of `r length(test_runs)` experiments. Intervals from a bootstrap of experiments.
+
+**Points to remember:**
+
+- Say what was kept together in the split.
+- Report the kernel, the grid and the chosen settings.
+- Give the test error in the unit of the outcome, with an interval, next to a simple model.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Prediction of a continuous outcome with smooth nonlinear relations, up to some ten thousand rows |
+| **Loss** | Errors below $\varepsilon$ are free, larger ones count in proportion |
+| **The function** | $f(x) = \sum_i \alpha_i K(x_i, x) + b$, a sum over the support vectors |
+| **How (R)** | `e1071::svm(y ~ x, data, cost, gamma, epsilon)` |
+| **Settings** | Cost (fit against flatness), $\gamma$ (width of the bumps), $\varepsilon$ (width of the tube) |
+| **Needs** | Scaling; tuning with independent units left out |
+| **Does not give** | Coefficients, tests, intervals, extrapolation |
+| **Related pages** | [Regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd), [random forest](EXAMPLE_RANDOM_FOREST.Rmd), [gradient boosting](EXAMPLE_GRADIENT_BOOSTING.Rmd), [splines and GAMs](EXAMPLE_SPLINES_GAM.Rmd) |
+
+---
+
+## References
+
+Brooks, T. F., Pope, D. S., & Marcolini, M. A. (1989). *Airfoil self-noise and prediction* (NASA Reference Publication 1218). National Aeronautics and Space Administration.
+
+Brooks, T., Pope, D., & Marcolini, M. (1989). *Airfoil self-noise* [Data set]. UCI Machine Learning Repository. https://doi.org/10.24432/C5VW2C
+
+Cortes, C., & Vapnik, V. (1995). Support-vector networks. *Machine Learning*, *20*(3), 273–297. https://doi.org/10.1007/BF00994018
+
+Smola, A. J., & Schölkopf, B. (2004). A tutorial on support vector regression. *Statistics and Computing*, *14*(3), 199–222. https://doi.org/10.1023/B:STCO.0000035301.49549.88
