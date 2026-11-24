@@ -1,0 +1,347 @@
+---
+title: "Regression Discontinuity: Does Winning by a Hair Help You Win Again?"
+description: "Regression discontinuity in R on 1,390 elections to the US Senate: why a narrow win is like a coin toss, comparing means in a window, local linear regression by hand with the triangular kernel, the same numbers as rdrobust, how the bandwidth trades bias against noise, robust bias-corrected intervals and what they are, the density test by hand and with rddensity, placebo outcomes, placebo cutoffs and the donut, why global polynomials are a bad idea, a simulation of the coverage of the intervals, what the number means, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a win by a hair
+
+A party that holds a seat has a better chance to keep it. Is that because it **holds** the seat: more press, more donations, more favours? Or because it holds the seat where people like the party anyway? The states that the Democrats won and the states that they lost differ in everything. Comparing them says nothing about the seat itself.
+
+But some elections were **very** close. A party that won by 0.3 points and a party that lost by 0.3 points had about the same voters, the same year and the same kind of candidates. Rain in one city, and the result would have been the other way round. At the cutoff of zero, winning is close to a **coin toss**. So compare those who just won with those who just lost (Lee, 2008).
+
+The design is called **regression discontinuity** (RD). It works whenever a *treatment* is given by a threshold in a *running variable* (score, age, income, votes) that nobody controls exactly. Thistlethwaite and Campbell (1960) invented it for scholarships that were given above a test score.
+
+```{r packages}
+library(ggplot2)
+library(rdrobust)    # rdrobust(): local polynomial estimation with robust intervals
+library(rddensity)   # rddensity(): does the density of the running variable jump?
+# also used, with package::function: sandwich (robust variances)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+pval <- function(p) ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+```{r download}
+senate <- read.csv("https://raw.githubusercontent.com/rdpackages/rdrobust/master/R/rdrobust_senate.csv")
+str(senate)
+senate$won <- as.numeric(senate$margin >= 0)
+s <- subset(senate, !is.na(vote))
+c(elections = nrow(senate), with_next_election = nrow(s), democrat_won = sum(s$won))
+```
+
+The elections to the US Senate from `r min(senate$year)` to `r max(senate$year)` (Cattaneo et al., 2015; the file comes with the R package *rdrobust*). For every election:
+
+- `margin`: the **running variable**, the vote share of the Democratic candidate minus the share of the strongest opponent, in percentage points. Above 0 the Democrat won.
+- `vote`: the **outcome**, the Democratic share in the **next** election for the same seat, normally six years later. It is missing for `r sum(is.na(senate$vote))` elections.
+- `termshouse`, `termssenate`: earlier terms of the Democratic candidate in the House and in the Senate. `population`: of the state. `class`: which third of the Senate the seat belongs to.
+
+---
+
+## 2. Look at the data
+
+```{r rd_plot, fig.height = 5}
+bins <- function(d, width) { b <- floor(d$margin / width); data.frame(margin = tapply(d$margin, b, mean), vote = tapply(d$vote, b, mean), n = as.numeric(table(b))) }
+near <- subset(s, abs(margin) < 50); bm <- bins(near, 2.5)
+ggplot(near, aes(margin, vote)) + geom_point(alpha = 0.15, size = 0.8) + geom_point(data = bm, aes(size = n), colour = "#2a78d6") + geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(data = subset(near, margin < 0), method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") + geom_smooth(data = subset(near, margin >= 0), method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") + scale_size_area(max_size = 5, guide = "none") +
+  labs(title = "Democratic share in the next election against the margin now", subtitle = "Blue: means of bins 2.5 points wide. Orange: a smooth curve on each side", x = "margin of the Democratic candidate (points)", y = "next share (%)") + theme_bw()
+naive <- t.test(vote ~ won, s)
+c(mean_lost = naive$estimate[[1]], mean_won = naive$estimate[[2]], difference = diff(naive$estimate)[[1]])
+```
+
+Seats that the Democrats won have `r f1(diff(naive$estimate))` points more in the next election than seats they lost. That number mixes the effect of holding the seat with the colour of the state. The curves rise on both sides, as they must. What we want is the **jump at zero**.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: what is estimated
+
+Write $Y(1)$ for the next share if the party wins now, $Y(0)$ if it loses, and $X$ for the margin. If both average curves are **continuous** at the cutoff, then
+
+$$\tau = E[Y(1) - Y(0) \mid X = 0] = \lim_{x \downarrow 0} E[Y \mid X = x] - \lim_{x \uparrow 0} E[Y \mid X = x]$$
+
+Nothing is assumed about the rest of the line. The effect is for elections **at the cutoff**.
+
+### Step 2: a window
+
+The simplest answer: take the elections with a margin below 1 point (or 2, or 5) and compare the two groups with a *t* test.
+
+```{r windows}
+windows <- do.call(rbind, lapply(c(0.5, 1, 2, 3, 5, 10), function(k) { z <- subset(s, abs(margin) < k); t <- t.test(vote ~ won, z); data.frame(window = k, lost = sum(z$won == 0), won = sum(z$won), difference = diff(t$estimate)[[1]], low = -t$conf.int[2], high = -t$conf.int[1]) }))
+print(round(windows, 2), row.names = FALSE)
+```
+
+The narrower the window, the more alike the two groups, and the fewer the elections. In the wide windows the slope of the curves gets into the comparison: winners by 8 points are in other states than losers by 8 points.
+
+### Step 3: a line on each side
+
+Better than a narrow window: allow for the slope. Fit a straight line on each side, only with the elections within a **bandwidth** $h$, and give more weight to those near the cutoff (*triangular kernel*):
+
+$$\min \sum_i w_i \left(y_i - \alpha - \tau D_i - \beta x_i - \gamma D_i x_i\right)^2, \qquad w_i = \max(0,\ 1 - |x_i|/h)$$
+
+$D$ is 1 for a win, and $\tau$ is the jump. The package chooses $h$; we take its value (Step 4) and do the rest by hand:
+
+```{r by_hand}
+fit_rd <- rdrobust(s$vote, s$margin)
+h <- fit_rd$bws["h", "left"]
+local <- function(h, p, d = s) {                                         # weighted least squares on each side, p: degree; returns the jump and its robust (HC0) SE
+  side <- function(keep) { X <- outer(d$margin[keep], 0:p, "^"); w <- 1 - abs(d$margin[keep]) / h; A <- solve(crossprod(X, w * X)); b <- A %*% crossprod(X, w * d$vote[keep]); e <- drop(d$vote[keep] - X %*% b); V <- A %*% crossprod(X * (w * e)) %*% A; c(b[1], V[1, 1]) }
+  l <- side(d$margin < 0 & d$margin > -h); r <- side(d$margin >= 0 & d$margin < h)
+  c(jump = r[1] - l[1], SE = sqrt(l[2] + r[2]))
+}
+z <- subset(s, abs(margin) < h); z$w <- 1 - abs(z$margin) / h
+wls <- lm(vote ~ won * margin, z, weights = w)
+rbind(by_hand = local(h, 1), lm_with_weights = c(coef(wls)[["won"]], sqrt(sandwich::vcovHC(wls, type = "HC0")["won", "won"])),
+      rdrobust_hc0 = with(rdrobust(s$vote, s$margin, h = h, vce = "hc0"), c(coef["Conventional", 1], se["Conventional", 1])))
+```
+
+Three times the same: a jump of `r f1(local(h, 1)[["jump"]])` points. The line through the points on the left ends at `r f1(coef(wls)[["(Intercept)"]])`%, the one on the right starts at `r f1(coef(wls)[["(Intercept)"]] + coef(wls)[["won"]])`%.
+
+### Step 4: how wide?
+
+A wide bandwidth uses many elections (little noise), but the curve may bend, and the straight line misses the edge (bias). A narrow one is the reverse. The error is roughly
+
+$$\text{MSE}(h) \approx h^4 B^2 + \frac{V}{n h},$$
+
+with $B$ from the curvature at the cutoff and $V$ from the scatter there. The best $h$ is proportional to $(V/(B^2 n))^{1/5}$. `rdrobust()` estimates $B$ and $V$ from the data and finds *h* = `r f1(h)` points, which keeps `r sum(abs(s$margin) < h)` elections.
+
+```{r bandwidth_chart, fig.height = 4.5}
+hs  <- seq(4, 60, by = 1); bw <- t(sapply(hs, function(v) c(local(v, 1), local(v, 2))))
+bwd <- rbind(data.frame(h = hs, est = bw[, 1], se = bw[, 2], fit = "straight lines"), data.frame(h = hs, est = bw[, 3], se = bw[, 4], fit = "quadratic curves"))
+bwd$fit <- factor(bwd$fit, levels = c("straight lines", "quadratic curves"))
+ggplot(subset(bwd, h >= 6), aes(h, est)) + geom_ribbon(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), fill = "#2a78d6", alpha = 0.2) + geom_line(colour = "#2a78d6", linewidth = 0.9) + geom_vline(xintercept = h, linetype = "dashed") + geom_hline(yintercept = 0) + facet_wrap(~ fit) +
+  labs(title = "Estimated jump for every bandwidth", subtitle = "Dashed: the bandwidth chosen by rdrobust", x = "bandwidth (points of margin)", y = "jump in the next share") + theme_bw()
+```
+
+With straight lines the estimate lies between `r f1(min(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))` and `r f1(max(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))` for all bandwidths from 10 to 60. The interval never includes 0.
+
+### Step 5: the interval that knows about the bias
+
+The best bandwidth for the **estimate** leaves a bias: at the minimum of the formula above it is exactly half a standard error. So the usual interval (estimate ± 1.96 *SE*) is centred at the wrong place, and contains the truth in `r pct(pnorm(1.96 - 0.5) - pnorm(-1.96 - 0.5))` instead of 95% of the samples. Calonico et al. (2014) subtract an estimate of the bias, and add the noise of **that** estimate to the standard error: the **robust bias-corrected** interval. It sounds complicated and has a simple core: if the bias is estimated with the same bandwidth, it is exactly the **local quadratic** fit.
+
+```{r robust_by_hand}
+rb <- rdrobust(s$vote, s$margin, h = h, b = h, vce = "hc0")
+rbind(local_quadratic_by_hand = local(h, 2), rdrobust_robust_same_bandwidth = c(rb$coef["Robust", 1], rb$se["Robust", 1]))
+```
+
+By default `rdrobust()` uses a larger bandwidth for the bias (`r f1(fit_rd$bws["b", "left"])` points), which is less noisy.
+
+---
+
+## 4. Reading the output
+
+```{r output}
+summary(fit_rd)
+res <- data.frame(estimate = fit_rd$coef[, 1], SE = fit_rd$se[, 1], low = fit_rd$ci[, 1], high = fit_rd$ci[, 2]); round(res, 2)
+ci <- fit_rd$ci["Robust", ]
+```
+
+- **Estimate**: `r f1(fit_rd$coef["Conventional", 1])` percentage points. This is the local linear estimate, and it is what one reports as the effect.
+- **Interval**: the robust one, [`r f1(ci[1])`, `r f1(ci[2])`]. It is **not** centred at the estimate. That is on purpose.
+- **Standard errors** are by default of the nearest-neighbour type (they compare each election with its neighbours instead of the line), so they differ slightly from ours.
+
+A party that just wins a seat gets about `r f1(fit_rd$coef["Conventional", 1])` points more in the next election than a party that just loses it.
+
+---
+
+## 5. Can we believe it?
+
+The assumption (continuity) cannot be tested directly. Four checks come close.
+
+### Could someone steer the margin?
+
+If candidates could **just** push themselves over the line, there would be too few narrow losses and too many narrow wins (McCrary, 2008). Count:
+
+```{r density}
+counts <- do.call(rbind, lapply(c(0.5, 1, 2, 3, 5, 10), function(k) { l <- sum(s$margin < 0 & s$margin > -k); r <- sum(s$margin >= 0 & s$margin < k); data.frame(within = k, lost = l, won = r, p = binom.test(r, l + r)$p.value) }))
+print(transform(counts, p = round(p, 3)), row.names = FALSE)
+dens <- suppressWarnings(rddensity(s$margin))
+c(T = dens$test$t_jk, p = dens$test$p_jk)
+ggplot(subset(s, abs(margin) < 30), aes(margin, fill = margin >= 0)) + geom_histogram(breaks = seq(-30, 30, by = 2), colour = "white") + scale_fill_manual(values = c("#eb6834", "#2a78d6"), guide = "none") +
+  labs(title = "Number of elections by margin", subtitle = "A jump at zero would be suspicious", x = "margin (points)", y = "elections") + theme_bw()
+```
+
+No sign of steering: for example `r counts$lost[counts$within == 1]` narrow losses and `r counts$won[counts$within == 1]` narrow wins within 1 point (*p* `r pval(counts$p[counts$within == 1])`), and the density test of Cattaneo et al. (2020) has *p* `r pval(dens$test$p_jk)`. (Simple counts are for narrow windows only. Within 10 points there are `r counts$lost[counts$within == 10]` losses and `r counts$won[counts$within == 10]` wins, and the slope of the distribution begins to matter; the density test allows for it.)
+
+### Do things jump that cannot be affected?
+
+What was fixed **before** the election must not jump at the cutoff. We have the state's population, the terms of the candidate, the year, and, best of all, the result of the **previous** election for the same seat (made from the file itself):
+
+```{r placebo_outcomes}
+o <- order(senate$state, senate$class, senate$year); sorted <- senate[o, ]
+key <- paste(sorted$state, sorted$class); lag1 <- function(v) ave(v, key, FUN = function(x) c(NA, head(x, -1)))
+sorted$previous_margin <- ifelse(sorted$year - lag1(sorted$year) == 6, lag1(sorted$margin), NA); sorted$log_population <- log(sorted$population)
+placebo <- do.call(rbind, lapply(c("previous_margin", "termshouse", "termssenate", "log_population", "year"), function(v) { m <- rdrobust(sorted[[v]], sorted$margin)
+  data.frame(variable = v, jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2], p = m$pv["Robust", 1], bandwidth = m$bws["h", "left"], n = sum(m$N_h)) }))
+print(data.frame(placebo[1], round(placebo[2:6], 3), n = placebo$n), row.names = FALSE)
+```
+
+`r if (all(placebo$p > .05)) "None of the five jumps is significant." else paste(sum(placebo$p < .05), "of the five have p < .05.")` The margin of the previous election jumps by `r f1(placebo$jump[1])` points, with an interval from `r f1(placebo$low[1])` to `r f1(placebo$high[1])`: not zero for certain, but no pattern either.
+
+### Placebo cutoffs and the donut
+
+At other values of the margin nobody wins or loses anything, so there should be no jump. And the result should not depend on the few elections right at the edge:
+
+```{r placebo_cutoffs, fig.height = 4.5}
+cuts <- do.call(rbind, lapply(c(-20, -15, -10, -5, 0, 5, 10, 15, 20), function(k) { zz <- if (k < 0) subset(s, margin < 0) else if (k > 0) subset(s, margin >= 0) else s; m <- rdrobust(zz$vote, zz$margin, c = k)
+  data.frame(cutoff = k, jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2], p = m$pv["Robust", 1], n = sum(m$N_h)) }))
+print(round(cuts, 3), row.names = FALSE)
+donut <- do.call(rbind, lapply(c(0, 0.25, 0.5, 1, 2), function(k) { zz <- subset(s, abs(margin) >= k); m <- rdrobust(zz$vote, zz$margin); data.frame(left_out_within = k, removed = nrow(s) - nrow(zz), jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2]) }))
+print(round(donut, 2), row.names = FALSE)
+ggplot(cuts, aes(cutoff, jump)) + geom_hline(yintercept = 0, linetype = "dashed") + geom_linerange(aes(ymin = low, ymax = high, colour = cutoff == 0), linewidth = 0.8) + geom_point(aes(colour = cutoff == 0), size = 2.6) + scale_colour_manual(values = c("#2a78d6", "#eb6834"), guide = "none") + scale_x_continuous(breaks = cuts$cutoff) +
+  labs(title = "The jump at the real cutoff (orange) and at eight false ones", subtitle = "Robust 95% intervals", x = "cutoff (points of margin)", y = "jump") + theme_bw()
+false_cuts <- subset(cuts, cutoff != 0); odd <- subset(false_cuts, p < .05)
+```
+
+Of the eight false cutoffs, `r nrow(odd)` has *p* < .05: at `r paste(odd$cutoff, collapse = ", ")` a "jump" of `r f1(odd$jump)` points, from `r odd$n` elections. Among eight tests that happens by chance in about a third of the cases ($1 - 0.95^8$ = `r f2(1 - 0.95^8)`), and here the interval is very wide. We report it all the same. Without the elections within 0.5 points (`r donut$removed[3]` of them) the effect is `r f1(donut$jump[3])`, without those within 1 point `r f1(donut$jump[4])`; without those within 2 points it is `r f1(donut$jump[5])`, and the interval begins near zero.
+
+---
+
+## 6. What not to do: a global polynomial
+
+Before local regression became common, people fitted a high polynomial in the running variable to **all** data and read off the jump:
+
+```{r global_polynomials}
+global <- do.call(rbind, lapply(1:6, function(p) { m <- lm(vote ~ won * poly(margin, p, raw = TRUE), s); data.frame(degree = p, jump = coef(m)[["won"]], SE = sqrt(sandwich::vcovHC(m, type = "HC1")["won", "won"])) }))
+print(round(global, 2), row.names = FALSE)
+```
+
+The answer goes from `r f1(min(global$jump))` to `r f1(max(global$jump))` with the degree, and each has a small standard error that knows nothing of the choice. A polynomial lets elections that were won by 80 points have a say about the edge (Gelman & Imbens, 2019). Local lines do not.
+
+---
+
+## 7. Are the intervals right? A simulation
+
+We make a population that looks like ours: the curve is a polynomial of degree 4 on each side (so the true jump is known), the margins come from the data, the noise is normal. Draw 500 samples and let `rdrobust()` do everything, bandwidth included.
+
+```{r simulation}
+sim_rd <- function(degree, reps = 500) {
+  ml <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 0); mr <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 1)
+  mu <- ifelse(s$won == 1, predict(mr, s), predict(ml, s)); truth <- coef(mr)[[1]] - coef(ml)[[1]]; sigma <- sd(s$vote - mu)
+  r <- replicate(reps, { i <- sample(nrow(s), replace = TRUE); m <- rdrobust(mu[i] + rnorm(nrow(s), 0, sigma), s$margin[i], masspoints = "off")
+    c(m$coef["Conventional", 1], m$ci["Conventional", 1] < truth & truth < m$ci["Conventional", 2], m$ci["Robust", 1] < truth & truth < m$ci["Robust", 2], m$bws["h", "left"]) })
+  data.frame(degree = degree, true_jump = truth, mean_estimate = mean(r[1, ]), mean_bandwidth = mean(r[4, ]), coverage_usual = mean(r[2, ]), coverage_robust = mean(r[3, ]))
+}
+set.seed(221); sims <- do.call(rbind, lapply(3:5, sim_rd))
+print(round(sims, 3), row.names = FALSE)
+```
+
+`r if (min(sims$coverage_usual) < 0.93) paste0("The usual interval contains the truth in ", pct(min(sims$coverage_usual), 1), " to ", pct(max(sims$coverage_usual), 1), " of the samples, depending on how much the curve bends at the edge. The robust interval has ", pct(min(sims$coverage_robust), 1), " to ", pct(max(sims$coverage_robust), 1), ". ") else paste0("Both intervals contain the truth in about 95% of the samples (usual: ", pct(min(sims$coverage_usual), 1), " to ", pct(max(sims$coverage_usual), 1), "; robust: ", pct(min(sims$coverage_robust), 1), " to ", pct(max(sims$coverage_robust), 1), "). ")`Where the true curve bends strongly at the edge, the local linear estimate is too low on average (degree 4: `r f1(sims$mean_estimate[2])` instead of `r f1(sims$true_jump[2])`), and the robust interval is what saves us.
+
+---
+
+## 8. What the number means
+
+- It is the effect **at the cutoff**, for elections that were nearly tied. A safe seat may be different.
+- It is the advantage of the **party** that holds the seat, not of the person: the candidate in the next election may be a new one.
+- What about **winning** again? The same design with the outcome "the Democrat gets more than half of the votes next time":
+
+```{r winning}
+s$wins_next <- as.numeric(s$vote > 50)
+win <- rdrobust(s$wins_next, s$margin); clustered <- rdrobust(s$vote, s$margin, cluster = s$state)
+c(jump_in_the_probability_to_win = win$coef["Conventional", 1], low = win$ci["Robust", 1], high = win$ci["Robust", 2])
+c(effect_on_the_share_clustered_by_state = clustered$coef["Conventional", 1], low = clustered$ci["Robust", 1], high = clustered$ci["Robust", 2])
+```
+
+A narrow win raises the probability of a majority next time by `r f1(100 * win$coef["Conventional", 1])` percentage points, 95% CI [`r f1(100 * win$ci["Robust", 1])`, `r f1(100 * win$ci["Robust", 2])`]. (With more than two candidates more than half is stricter than winning.) With standard errors clustered by state, the interval for the share is [`r f1(clustered$ci["Robust", 1])`, `r f1(clustered$ci["Robust", 2])`]: no important change.
+
+---
+
+## 9. Things to keep in mind
+
+- **Draw the plot first.** If you cannot see the jump, be careful with the number.
+- **Know the rule.** Is the threshold applied strictly? Do other things change at the same threshold (another law at age 18)? Then the jump is the effect of all of them.
+- **Fuzzy RD**: when crossing the threshold only raises the **probability** of treatment, divide the jump in the outcome by the jump in the treatment. That is [instrumental variables](EXAMPLE_INSTRUMENTAL_VARIABLES.Rmd) at the cutoff: `rdrobust(y, x, fuzzy = treatment)`.
+- **Discrete running variables** (age in years, whole test points): there is no "just above"; the methods need care.
+- **Control variables** are not needed. They can shorten the interval (`covs =`), and must be fixed before the treatment.
+- **Report the bandwidth**, its selection, the kernel, the number of observations on each side within it, and the robust interval. Show other bandwidths.
+- **Power is low**: only the observations near the edge count. Here `r sum(fit_rd$N_h)` of `r num(nrow(s))`.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the rule and the running variable, the cutoff, the estimator (degree, kernel, bandwidth and how it was chosen), the numbers of observations on each side within the bandwidth, the estimate with a robust interval, and the checks. The numbers come from the R objects:
+
+```{r apa_numbers}
+line <- function(label, m, scale = 1) data.frame(Outcome = label, n = paste(m$N_h, collapse = " / "), h = f1(m$bws["h", "left"]), jump = f2(scale * m$coef["Conventional", 1]), ci = paste0("[", f2(scale * m$ci["Robust", 1]), ", ", f2(scale * m$ci["Robust", 2]), "]"), p = sub("= ", "", pval(m$pv["Robust", 1])))
+pm <- function(v) rdrobust(sorted[[v]], sorted$margin)
+apa_table <- rbind(line("Share in the next election (%)", fit_rd), line("Majority in the next election (percentage points)", win, 100), line("Margin of the previous election (placebo)", pm("previous_margin")), line("Earlier terms in the House (placebo)", pm("termshouse")), line("Earlier terms in the Senate (placebo)", pm("termssenate")), line("Log population (placebo)", pm("log_population")))
+```
+
+**Method** (data analysis):
+
+> The effect of holding a US Senate seat on the party's share in the next election was estimated with a sharp regression discontinuity design (Lee, 2008), using `r num(nrow(s))` elections between `r min(s$year)` and `r max(s$year)` (Cattaneo et al., 2015). The running variable was the Democratic margin of victory, with a cutoff of zero. We fitted local linear regressions with a triangular kernel on each side of the cutoff, with the bandwidth that minimises the mean squared error, and report robust bias-corrected 95% confidence intervals (Calonico et al., 2014; R package rdrobust). The assumption that parties could not steer the margin was examined with the density test of Cattaneo et al. (2020), and the continuity assumption with predetermined outcomes, false cutoffs, and the removal of the elections nearest the cutoff. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> A narrow win raised the party's share in the next election by `r f1(fit_rd$coef["Conventional", 1])` percentage points, robust 95% CI [`r f1(ci[1])`, `r f1(ci[2])`], *p* `r pval(fit_rd$pv["Robust", 1])` (bandwidth `r f1(h)` points; `r fit_rd$N_h[1]` elections below and `r fit_rd$N_h[2]` above the cutoff; Table 1), and the probability of a majority by `r f1(100 * win$coef["Conventional", 1])` percentage points, 95% CI [`r f1(100 * win$ci["Robust", 1])`, `r f1(100 * win$ci["Robust", 2])`]. There was no evidence of a discontinuity in the density of the margin (*T* = `r f2(dens$test$t_jk)`, *p* `r pval(dens$test$p_jk)`) or in the predetermined variables (*p* ≥ `r sub("^0", "", formatC(min(placebo$p), format = "f", digits = 3))`). Of eight false cutoffs, `r nrow(odd)` showed a jump with *p* < .05. Estimates for bandwidths between 10 and 60 points ranged from `r f1(min(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))` to `r f1(max(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))`.
+
+**Table 1**
+
+*Discontinuities at a Margin of Zero*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Outcome", "*n* below / above", "Bandwidth", "Jump", "Robust 95% CI", "*p*"), align = "lrrrll", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Local linear regression, triangular kernel, bandwidth chosen to minimise the mean squared error separately for each outcome. *n*: elections within the bandwidth.
+
+**Points to remember:**
+
+- Report the estimate of the local linear fit and the robust interval.
+- Give the bandwidth, and the number of observations on each side of it.
+- Show the plot, the density test and the placebo outcomes.
+- Say that the effect is for the units at the cutoff.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | A treatment is given by a threshold in a running variable that nobody controls exactly |
+| **The effect** | The jump of the regression function at the cutoff |
+| **Estimator** | Weighted lines on each side, within a bandwidth: `lm(y ~ D * x, weights = triangle)` |
+| **Bandwidth** | Minimises the mean squared error (`rdrobust`) |
+| **Interval** | Robust bias-corrected (with the same bandwidth for the bias: the local quadratic fit) |
+| **How (R)** | `rdrobust(y, x, c = 0)`, `rddensity(x)`, `rdplot(y, x)` |
+| **Checks** | Density, placebo outcomes, false cutoffs, donut, other bandwidths |
+| **Not** | Global polynomials |
+| **Related pages** | [Instrumental variables](EXAMPLE_INSTRUMENTAL_VARIABLES.Rmd), [LOESS](EXAMPLE_LOESS.Rmd), [simple regression](EXAMPLE_SIMPLE_LINEAR_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Calonico, S., Cattaneo, M. D., & Titiunik, R. (2014). Robust nonparametric confidence intervals for regression-discontinuity designs. *Econometrica*, *82*(6), 2295–2326. https://doi.org/10.3982/ECTA11757
+
+Cattaneo, M. D., Frandsen, B. R., & Titiunik, R. (2015). Randomization inference in the regression discontinuity design: An application to party advantages in the U.S. Senate. *Journal of Causal Inference*, *3*(1), 1–24. https://doi.org/10.1515/jci-2013-0010
+
+Cattaneo, M. D., Jansson, M., & Ma, X. (2020). Simple local polynomial density estimators. *Journal of the American Statistical Association*, *115*(531), 1449–1455. https://doi.org/10.1080/01621459.2019.1635480
+
+Gelman, A., & Imbens, G. (2019). Why high-order polynomials should not be used in regression discontinuity designs. *Journal of Business & Economic Statistics*, *37*(3), 447–456. https://doi.org/10.1080/07350015.2017.1366909
+
+Lee, D. S. (2008). Randomized experiments from non-random selection in U.S. House elections. *Journal of Econometrics*, *142*(2), 675–697. https://doi.org/10.1016/j.jeconom.2007.05.004
+
+McCrary, J. (2008). Manipulation of the running variable in the regression discontinuity design: A density test. *Journal of Econometrics*, *142*(2), 698–714. https://doi.org/10.1016/j.jeconom.2007.05.005
+
+Thistlethwaite, D. L., & Campbell, D. T. (1960). Regression-discontinuity analysis: An alternative to the ex post facto experiment. *Journal of Educational Psychology*, *51*(6), 309–317. https://doi.org/10.1037/h0044319

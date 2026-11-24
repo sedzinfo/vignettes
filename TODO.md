@@ -69,7 +69,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 
 ## Causal and other
 - [x] Instrumental variables (2SLS): EXAMPLE_INSTRUMENTAL_VARIABLES
-- [ ] Regression discontinuity
+- [x] Regression discontinuity: EXAMPLE_REGRESSION_DISCONTINUITY
 - [ ] Difference-in-differences
 - [ ] Bayesian regression
 - [x] Moderation / mediation: EXAMPLE_MODERATION_MEDIATION
