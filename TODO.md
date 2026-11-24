@@ -44,7 +44,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Gamma: EXAMPLE_GAMMA
 - [x] Beta: EXAMPLE_BETA
 - [x] Inverse Gaussian: EXAMPLE_INVERSE_GAUSSIAN
-- [ ] Tweedie
+- [x] Tweedie: EXAMPLE_TWEEDIE
 
 ## Survival
 - [ ] Cox

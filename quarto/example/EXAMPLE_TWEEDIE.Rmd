@@ -1,0 +1,351 @@
+---
+title: "Tweedie Regression: How Much Rain Falls on Corfu?"
+description: "Tweedie regression in R with mgcv and statmod, on 70 years of daily rain on the Greek island of Corfu: one model for many zeros and a skewed amount, the compound Poisson-gamma distribution (showers and their size), estimating the power, rain ratios by season and after a wet day, the probability of a dry day, where a single dispersion fails, a dispersion that changes with the season, comparison with a two-part model, a trend that hides two opposite trends, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from NOAA each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: zeros and amounts in one model
+
+Corfu is one of the rainiest places in Greece. But on most days it does not rain at all. On the others there may fall half a millimetre or a hundred. How does the rain of a day depend on the season, and on whether it rained the day before? Has it changed in 70 years?
+
+The outcome is an **amount** that is exactly zero most of the time and otherwise positive and skewed. Insurance claims look the same (most policies have no claim in a year), and so do catches of fish, spending on a product, and hours of unpaid work. [Two-part models](EXAMPLE_HURDLE_TWO_PART.Rmd) treat the zeros and the amounts separately, with two sets of coefficients. **Tweedie regression** treats them **together**, with one distribution and one set of coefficients for the mean.
+
+There is a physical picture behind it: a day's rain is the sum of the rain of several **showers**. The number of showers is random, and may be zero. Then the rain is exactly zero.
+
+```{r packages}
+library(mgcv)       # gam() with family tw(): estimates the power (comes with R)
+library(statmod)    # tweedie(): the family for glm()
+library(sandwich)   # vcovCL(): standard errors for days of the same year
+library(lmtest)     # coeftest()
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+NOAA keeps the daily records of more than 100,000 weather stations in one archive (GHCN-Daily; Menne et al., 2012), one CSV file per station, free and with no login. The station of Corfu airport starts in 1955.
+
+```{r download}
+raw  <- read.csv("https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/GR000016641.csv")
+rain <- data.frame(date = as.Date(raw$DATE), mm = raw$PRCP / 10)                 # the file has tenths of a millimetre
+rain$year  <- as.integer(format(rain$date, "%Y"))
+rain$month <- as.integer(format(rain$date, "%m"))
+rain <- subset(rain, !is.na(mm) & year <= 2024)
+rain$before <- rain$mm[match(rain$date - 1, rain$date)]                          # the rain of the day before
+rain <- subset(rain, !is.na(before))
+rain$wet_before <- as.integer(rain$before > 0)
+rain$decade <- (rain$year - 1990) / 10
+angle <- 2 * pi * as.integer(format(rain$date, "%j")) / 365.25                   # the season, as a wave with two harmonics
+rain$sin1 <- sin(angle); rain$cos1 <- cos(angle); rain$sin2 <- sin(2 * angle); rain$cos2 <- cos(2 * angle)
+nrow(rain)
+c(dry_days = mean(rain$mm == 0), mean = mean(rain$mm), largest = max(rain$mm), mm_per_year = 365.25 * mean(rain$mm))
+```
+
+There are `r num(nrow(rain))` days with a record for the day and the day before, from `r min(rain$year)` to `r max(rain$year)`. `r pct(mean(rain$mm == 0))` of them are dry. The mean is `r f1(mean(rain$mm))` mm a day, about `r num(round(365.25 * mean(rain$mm)))` mm a year.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 6}
+by_month <- do.call(rbind, lapply(split(rain, rain$month), function(d) data.frame(month = d$month[1], mean = mean(d$mm), dry = mean(d$mm == 0), mean_wet = mean(d$mm[d$mm > 0]))))
+by_month$name <- factor(month.abb[by_month$month], levels = month.abb)
+pa <- ggplot(subset(rain, mm > 0), aes(mm)) + geom_histogram(binwidth = 2, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  coord_cartesian(xlim = c(0, 100)) +
+  labs(title = "Rain on wet days", subtitle = paste0(pct(mean(rain$mm == 0), 0), " of the days are dry, and not in this chart"), x = "mm", y = "days") + theme_bw()
+long <- rbind(data.frame(name = by_month$name, value = by_month$mean, what = "mean rain per day (mm)"),
+              data.frame(name = by_month$name, value = 100 * (1 - by_month$dry), what = "wet days (%)"),
+              data.frame(name = by_month$name, value = by_month$mean_wet, what = "mean rain on a wet day (mm)"))
+long$what <- factor(long$what, levels = unique(long$what))
+pb <- ggplot(long, aes(name, value)) + geom_col(fill = "#2a78d6") + facet_wrap(~ what, scales = "free_y", ncol = 3) +
+  labs(x = NULL, y = NULL) + theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 7))
+patchwork::wrap_plots(pa, pb, ncol = 1)
+```
+
+November is the wettest month (`r f1(by_month$mean[11])` mm a day) and July the driest (`r f1(by_month$mean[7])`). Two things change with the season: how **often** it rains and how **much** falls when it does. They do not go quite together.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: showers
+
+The number of showers on a day is Poisson with mean $\lambda$. Each shower brings a gamma-distributed amount, independently of the others, with mean $\alpha\theta$. The rain of the day is their sum. If the Poisson number is 0, the sum is 0:
+
+$$y = \sum_{k=1}^{N} g_k, \qquad N \sim \text{Poisson}(\lambda), \qquad P(y = 0) = e^{-\lambda}$$
+
+This is the **compound Poisson–gamma** distribution. Dunn (2004) used it for rain.
+
+### Step 2: the same distribution, written as a Tweedie
+
+Tweedie distributions are those whose variance is a power of the mean:
+
+$$\text{Var}(y) = \phi\,\mu^p$$
+
+$p = 0$ is the normal, $p = 1$ the Poisson, $p = 2$ the [gamma](EXAMPLE_GAMMA.Rmd), $p = 3$ the [inverse Gaussian](EXAMPLE_INVERSE_GAUSSIAN.Rmd) (Jørgensen, 1987). For $1 < p < 2$ it **is** the compound Poisson–gamma, with a heap at exactly zero and a continuous part above. The two ways of writing it are connected:
+
+$$\lambda = \frac{\mu^{2-p}}{\phi\,(2 - p)}, \qquad \alpha = \frac{2 - p}{p - 1}, \qquad \theta = \phi\,(p - 1)\,\mu^{p-1}$$
+
+```{r simulate}
+set.seed(111)
+mu <- 3; p <- 1.6; phi <- 8
+lambda <- mu^(2 - p) / (phi * (2 - p)); alpha <- (2 - p) / (p - 1); theta <- phi * (p - 1) * mu^(p - 1)
+showers <- rpois(200000, lambda)
+y_sim   <- rgamma(200000, shape = alpha * showers, scale = theta)        # the sum of n gammas is a gamma (0 showers: 0)
+c(mean = mean(y_sim), variance = var(y_sim), theory = phi * mu^p, dry = mean(y_sim == 0), theory_dry = exp(-lambda))
+```
+
+### Step 3: the regression
+
+$$\log\mu_i = x_i^\top\beta$$
+
+With the log link, $e^\beta$ is a ratio of mean amounts, "rain ratios" here. One coefficient per predictor, for everything: if the mean goes up, the formulas of step 2 make showers more frequent **and** larger at the same time.
+
+### Step 4: estimating $p$
+
+Given $p$, the $\beta$'s are estimated like those of any generalized linear model, from the mean and the variance function alone. $p$ itself is estimated by maximum likelihood. The density has no simple formula (it is an infinite series), but `mgcv` and the package `tweedie` compute it (Dunn & Smyth, 2005).
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+fit <- gam(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = tw(), data = rain, method = "ML")
+summary(fit)
+p_hat   <- fit$family$getTheta(TRUE)
+phi_hat <- fit$scale
+b <- coef(fit); se <- sqrt(diag(vcov(fit)))
+```
+
+- **`Tweedie(p = ...)`**: the estimated power, `r f2(p_hat)`, between Poisson and gamma as it should be.
+- **`wet_before`**: $e^{`r f2(b[["wet_before"]])`}$ = `r f2(exp(b[["wet_before"]]))`: after a wet day, the mean rain is **`r f1(exp(b[["wet_before"]]))` times** that after a dry day, in the same season.
+- **`sin1` ... `cos2`**: the wave of the season, to be read as a picture.
+- **`decade`**: $e^{`r f3(b[["decade"]])`}$ = `r f3(exp(b[["decade"]]))`: the mean rain changed by `r pct(exp(b[["decade"]]) - 1)` per decade, *p* `r pval(summary(fit)$p.table["decade", 4])`, **given** the season and whether the day before was wet. If wet days became rarer, part of that is already in `wet_before`. Section 7 asks about the trend without this condition.
+- **`Scale est.`** = `r f1(phi_hat)`: the dispersion $\phi$.
+
+The same as a plain GLM, with the power fixed at its estimate:
+
+```{r glm}
+fit_glm <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = tweedie(var.power = p_hat, link.power = 0), data = rain)
+round(rbind(gam = b, glm = coef(fit_glm)), 4)
+round(rbind(gam_ML = se, glm = coef(summary(fit_glm))[, 2]), 4)
+c(dispersion_ML = phi_hat, dispersion_Pearson = summary(fit_glm)$dispersion)
+```
+
+The coefficients agree. The standard errors do not, because the two estimate $\phi$ differently. `gam()` uses maximum likelihood, which trusts the Tweedie distribution, zeros and all; `glm()` uses the Pearson statistic, which looks only at the variance. If the distribution were right, the two $\phi$ would agree. They are `r f1(phi_hat)` and `r f1(summary(fit_glm)$dispersion)`: the largest rains are larger than the model expects. For honest intervals we use the larger ones.
+
+```{r season_chart}
+grid <- expand.grid(day = 1:365, wet_before = 0:1); ag <- 2 * pi * grid$day / 365.25
+grid <- transform(grid, sin1 = sin(ag), cos1 = cos(ag), sin2 = sin(2 * ag), cos2 = cos(2 * ag), decade = 0)
+grid$mean <- predict(fit, grid, type = "response")
+grid$dry  <- exp(-grid$mean^(2 - p_hat) / (phi_hat * (2 - p_hat)))
+grid$after <- ifelse(grid$wet_before == 1, "after a wet day", "after a dry day")
+ggplot(grid, aes(as.Date("2023-12-31") + day, mean, colour = after)) + geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("#eb6834", "#2a78d6"), name = NULL) + scale_x_date(date_labels = "%b", date_breaks = "2 months") +
+  labs(title = "Mean rain by day of the year", x = NULL, y = "mm per day") + theme_bw() + theme(legend.position = "bottom")
+```
+
+---
+
+## 5. Does it get the zeros right?
+
+A Tweedie model has an opinion about the probability of a dry day, $e^{-\lambda}$, without a parameter of its own for it. Over the whole year:
+
+```{r zeros}
+lambda_i <- fitted(fit)^(2 - p_hat) / (phi_hat * (2 - p_hat))
+c(observed_dry = mean(rain$mm == 0), expected_dry = mean(exp(-lambda_i)))
+check <- data.frame(month = 1:12, mean_obs = tapply(rain$mm, rain$month, mean), mean_fit = tapply(fitted(fit), rain$month, mean),
+                    dry_obs = tapply(rain$mm == 0, rain$month, mean), dry_fit = tapply(exp(-lambda_i), rain$month, mean))
+round(check, 2)
+```
+
+Overall, the model expects `r pct(mean(exp(-lambda_i)))` dry days, and there are `r pct(mean(rain$mm == 0))`. Excellent. **Month by month it fails.** In July it expects `r pct(check$dry_fit[7], 0)` dry days, and `r pct(check$dry_obs[7], 0)` are dry; in December `r pct(check$dry_fit[12], 0)`, and `r pct(check$dry_obs[12], 0)`. With one $\phi$ for the whole year, the probability of a dry day follows from the mean, and on Corfu it varies **more** than that. In summer, wet days are rarer than the mean suggests, and bring more rain than the model expects of them; in winter they are more frequent and lighter.
+
+### A dispersion that changes with the season
+
+Let $\phi$ depend on the season too. `mgcv` has a family for it, `twlss()`, with three formulas: for the mean, for the power and for the dispersion.
+
+```{r twlss}
+fit2 <- gam(list(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, ~ 1, ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade),
+            family = twlss(), data = rain)
+eta2 <- predict(fit2, type = "link")                                        # three linear predictors: log(mean), power (transformed), log(phi)
+mu2  <- exp(eta2[, 1]); p2 <- 1.01 + 0.98 * plogis(eta2[, 2]); phi2 <- exp(eta2[, 3])   # the power is kept between 1.01 and 1.99
+lambda2 <- mu2^(2 - p2) / (phi2 * (2 - p2))
+check$mean_fit2 <- tapply(mu2, rain$month, mean); check$dry_fit2 <- tapply(exp(-lambda2), rain$month, mean)
+c(AIC_one_dispersion = AIC(fit), AIC_seasonal_dispersion = AIC(fit2), power = p2[[1]])
+round(tapply(phi2, rain$month, mean), 1)                                    # the dispersion by month
+dry_error <- c(one = max(abs(check$dry_fit - check$dry_obs)), seasonal = max(abs(check$dry_fit2 - check$dry_obs)))
+dry_error
+```
+
+```{r zeros_chart}
+zero_data <- rbind(data.frame(month = 1:12, dry = check$dry_obs, what = "observed"), data.frame(month = 1:12, dry = check$dry_fit, what = "Tweedie, one dispersion"),
+                   data.frame(month = 1:12, dry = check$dry_fit2, what = "Tweedie, dispersion by season and day before"))
+ggplot(zero_data, aes(month, dry, colour = what, linetype = what)) + geom_line(linewidth = 0.9) + geom_point(size = 2) +
+  scale_colour_manual(values = c("grey30", "#2a78d6", "#eb6834"), breaks = c("observed", "Tweedie, dispersion by season and day before", "Tweedie, one dispersion"), name = NULL) +
+  scale_linetype_manual(values = c("solid", "dashed", "solid"), breaks = c("observed", "Tweedie, dispersion by season and day before", "Tweedie, one dispersion"), name = NULL) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  labs(title = "Dry days by month", x = NULL, y = NULL) + theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+```
+
+The AIC falls by `r num(round(AIC(fit) - AIC(fit2)))`, and the largest error in the share of dry days falls from `r f1(100 * dry_error[["one"]])` to `r f1(100 * dry_error[["seasonal"]])` percentage points. The model for the mean does not change its meaning. It now knows that the same mean can come from a few heavy or from many light showers.
+
+---
+
+## 6. Against a two-part model
+
+A [two-part model](EXAMPLE_HURDLE_TWO_PART.Rmd) has separate coefficients for **whether** and **how much**: a logistic regression and a gamma regression.
+
+```{r two_part}
+whether <- glm(I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = binomial, data = rain)
+amount  <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = Gamma("log"), data = subset(rain, mm > 0))
+mean_two <- predict(whether, rain, type = "response") * predict(amount, rain, type = "response")
+shape <- 1 / MASS::gamma.dispersion(amount)                                  # ML estimate of the dispersion of the gamma
+ll_two <- as.numeric(logLik(whether)) + sum(dgamma(amount$y, shape = shape, scale = fitted(amount) / shape, log = TRUE))
+aic_two <- -2 * ll_two + 2 * (length(coef(whether)) + length(coef(amount)) + 1)
+ll_tw <- c(`Tweedie` = AIC(fit), `Tweedie, varying dispersion` = AIC(fit2), `two-part (logistic + gamma)` = aic_two)
+round(ll_tw)
+compare <- cbind(Tweedie_ratio = exp(coef(fit)[c("wet_before", "decade")]), odds_of_rain = exp(coef(whether)[c("wet_before", "decade")]),
+                 amount_ratio = exp(coef(amount)[c("wet_before", "decade")]))
+round(compare, 3)
+```
+
+By the AIC the order is: `r paste(names(sort(ll_tw)), collapse = ", then ")`. The row of `wet_before` shows what the Tweedie model adds up: after a wet day the **odds of rain** are `r f1(compare["wet_before", "odds_of_rain"])` times as high, and the **amount**, if it rains, `r f2(compare["wet_before", "amount_ratio"])` times. The Tweedie ratio of `r f1(compare["wet_before", "Tweedie_ratio"])` is the total of both.
+
+| | Tweedie | Two-part |
+|---|---|---|
+| Coefficients per predictor | one: the effect on the mean | two: whether, and how much |
+| Zeros | follow from the mean and $\phi$ | a model of their own |
+| Best for | totals (rain per month, cost per policy) and simple reporting | understanding the process |
+| Sum of several days or policies | stays Tweedie with the same $p$ | leaves the model |
+
+---
+
+## 7. The trend that is not one
+
+Has the rain of Corfu changed? Now we leave `wet_before` out, because a change of it would be part of the answer, and we let the days of a year be related (cluster-robust standard errors). The total with a Tweedie model, and the two parts:
+
+```{r trend}
+by_year <- function(m, d) coeftest(m, vcov = vcovCL(m, cluster = d$year))["decade", ]
+wet_days <- subset(rain, mm > 0)
+tw0 <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + decade, family = tweedie(var.power = p_hat, link.power = 0), data = rain)
+st <- by_year(tw0, rain)
+sw <- by_year(glm(I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain), rain)
+sa <- by_year(glm(mm ~ sin1 + cos1 + sin2 + cos2 + decade, family = Gamma("log"), data = wet_days), wet_days)
+s1 <- by_year(glm(I(mm >= 1) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain), rain)
+signif(rbind(`total (Tweedie)` = st, `whether (logistic)` = sw, `how much (gamma)` = sa, `at least 1 mm (logistic)` = s1), 3)
+yearly <- do.call(rbind, lapply(split(rain, rain$year), function(d) data.frame(year = d$year[1], days = nrow(d), wet = mean(d$mm > 0), wet1 = mean(d$mm >= 1), per_wet = mean(d$mm[d$mm > 0]), mean = mean(d$mm))))
+yearly <- subset(yearly, days >= 350)
+```
+
+```{r trend_chart}
+yl <- rbind(data.frame(year = yearly$year, value = 100 * yearly$wet, what = "wet days (%)"), data.frame(year = yearly$year, value = yearly$per_wet, what = "rain on a wet day (mm)"),
+            data.frame(year = yearly$year, value = yearly$mean, what = "rain per day (mm)"))
+yl$what <- factor(yl$what, levels = c("wet days (%)", "rain on a wet day (mm)", "rain per day (mm)"))
+ggplot(yl, aes(year, value)) + geom_point(size = 1.2, colour = "grey40") + geom_smooth(method = "lm", formula = y ~ x, colour = "#eb6834", fill = "#eb6834", alpha = 0.2) +
+  facet_wrap(~ what, scales = "free_y") + labs(title = "Corfu, year by year", x = NULL, y = NULL) + theme_bw()
+```
+
+The **total** changed by `r pct(exp(st[[1]]) - 1)` per decade, which is not distinguishable from zero (*p* `r pval(st[[4]])`). But over the decades the **odds of a wet day fell**, by `r pct(1 - exp(sw[[1]]))` per decade (*p* `r pval(sw[[4]])`), and the **rain on a wet day rose**, by `r pct(exp(sa[[1]]) - 1)` per decade (*p* `r pval(sa[[4]])`). In the mean, the two nearly cancel. Fewer wet days with more rain each would be a real change of the climate. But it could also be a change of the **measurement**: if small amounts of a few tenths of a millimetre were recorded less often, there would be fewer wet days with a larger average. Counting only days with at least 1 mm, the odds change by `r pct(exp(s1[[1]]) - 1)` per decade (*p* `r pval(s1[[4]])`). `r if (s1[[4]] > .05) "So most of the trend is in the smallest amounts, and the suspicion of the measurement is justified." else "So the fall is not only a matter of the smallest amounts."` One station with changed instruments cannot settle it.
+
+---
+
+## 8. Things to keep in mind
+
+- **$1 < p < 2$ only** for data with zeros. If the estimate runs to one of the limits, think again about the model.
+- **One coefficient for everything** is the strength and the weakness. If a predictor acts differently on whether and on how much, a Tweedie model gives the sum of the two and hides the parts.
+- **Check the zeros in groups**, not only overall.
+- **The standard errors depend on how $\phi$ is estimated.** Report which. Robust (sandwich) errors are a good alternative.
+- **Comparing AIC** works only if $p$ and $\phi$ are estimated by maximum likelihood. A `glm()` with the family of `statmod` has no AIC of its own (`tweedie::AICtweedie()` computes it).
+- **Exposure**: for claims per policy and year, use `offset(log(exposure))`, or weights. This is the standard model for the *pure premium* in car insurance (Smyth & Jørgensen, 2002).
+- **Dependence.** Days are not independent. We let the day before into the model; the correlation of neighbouring residuals is then `r f2(acf(residuals(fit, type = "pearson"), plot = FALSE)$acf[2])`.
+- **Extremes.** A Tweedie model is for means. For the size of a flood, use extreme-value models.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the share of zeros, the power and how it was estimated, the dispersion and what it depends on, the ratios with intervals, and the check of the zeros. The numbers come from the R objects:
+
+```{r apa_numbers}
+s_glm <- coef(summary(fit_glm))
+low <- exp(s_glm[, 1] - 1.96 * s_glm[, 2]); high <- exp(s_glm[, 1] + 1.96 * s_glm[, 2])
+keep <- c("wet_before", "decade")
+apa_table <- data.frame(Predictor = c("Wet day before", "Decade"), tw = paste0(f2(exp(s_glm[keep, 1])), " [", f2(low[keep]), ", ", f2(high[keep]), "]"),
+                        or = paste0(f2(exp(coef(whether)[keep])), " [", f2(exp(confint.default(whether)[keep, 1])), ", ", f2(exp(confint.default(whether)[keep, 2])), "]"),
+                        am = paste0(f2(exp(coef(amount)[keep])), " [", f2(exp(confint.default(amount)[keep, 1])), ", ", f2(exp(confint.default(amount)[keep, 2])), "]"))
+```
+
+**Method** (data analysis):
+
+> Daily rain at Corfu airport, 1955–2024 (*N* = `r num(nrow(rain))` days; Menne et al., 2012), was zero on `r pct(mean(rain$mm == 0))` of the days and right-skewed on the others. We used a generalized linear model with a Tweedie (compound Poisson–gamma) distribution and a log link, with two harmonics of the season, an indicator of rain on the day before, and a linear trend in decades. The power parameter was estimated by maximum likelihood; standard errors use the Pearson estimate of the dispersion. A second model let the dispersion depend on the same predictors (Wood et al., 2016). Results were compared with a two-part model (logistic and gamma regression). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages mgcv and statmod.
+
+**Results:**
+
+> The power was `r f2(p_hat)`. After a wet day the mean rain was `r f2(exp(s_glm["wet_before", 1]))` times that after a dry day, 95% CI [`r f2(low[["wet_before"]])`, `r f2(high[["wet_before"]])`]. Given the season and the day before, there was no trend in the mean, ratio per decade = `r f2(exp(s_glm["decade", 1]))`, 95% CI [`r f2(low[["decade"]])`, `r f2(high[["decade"]])`] (Table 1); without the day before, ratio = `r f2(exp(st[[1]]))`, *p* `r pval(st[[4]])`. The model expected `r pct(mean(exp(-lambda_i)))` dry days overall (observed `r pct(mean(rain$mm == 0))`), but missed the share of single months by up to `r f1(100 * dry_error[["one"]])` percentage points; with a dispersion that depended on the season and the day before, the largest error was `r f1(100 * dry_error[["seasonal"]])` points. In a two-part model without the day before, the odds of a wet day decreased over the decades, *OR* = `r f2(exp(sw[[1]]))` per decade, *p* `r pval(sw[[4]])`, while the rain on wet days increased, ratio = `r f2(exp(sa[[1]]))`, *p* `r pval(sa[[4]])`.
+
+**Table 1**
+
+*Daily Rain on Corfu: Tweedie and Two-Part Models*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "Tweedie: ratio of means", "Two-part: odds ratio of a wet day", "Two-part: ratio of amounts"), align = "lrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Estimates with 95% confidence intervals. All models also contain two harmonics of the season.
+
+**Points to remember:**
+
+- Report the share of zeros, $p$, $\phi$ and their estimation.
+- Give ratios of means.
+- Check the expected zeros in meaningful groups.
+- Say what one coefficient for both parts can hide.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Exact zeros and positive skewed amounts, and the interest is in the mean or the total |
+| **The distribution** | A Poisson number of gamma amounts; $\text{Var} = \phi\mu^p$ with $1 < p < 2$ |
+| **Dry probability** | $\exp\{-\mu^{2-p} / [\phi(2 - p)]\}$ |
+| **How (R)** | `mgcv::gam(y ~ x, family = tw())` estimates $p$; `glm(y ~ x, family = statmod::tweedie(var.power = p, link.power = 0))` |
+| **Reading it** | $e^\beta$: ratio of means, zeros included |
+| **Varying dispersion** | `mgcv::gam(list(y ~ x, ~ 1, ~ z), family = twlss())` |
+| **Alternative** | Two-part model, when whether and how much are separate questions |
+| **Related pages** | [Two-part models](EXAMPLE_HURDLE_TWO_PART.Rmd), [gamma](EXAMPLE_GAMMA.Rmd), [splines and GAMs](EXAMPLE_SPLINES_GAM.Rmd) |
+
+---
+
+## References
+
+Dunn, P. K. (2004). Occurrence and quantity of precipitation can be modelled simultaneously. *International Journal of Climatology*, *24*(10), 1231–1239. https://doi.org/10.1002/joc.1063
+
+Dunn, P. K., & Smyth, G. K. (2005). Series evaluation of Tweedie exponential dispersion model densities. *Statistics and Computing*, *15*(4), 267–280. https://doi.org/10.1007/s11222-005-4070-y
+
+Jørgensen, B. (1987). Exponential dispersion models. *Journal of the Royal Statistical Society: Series B*, *49*(2), 127–145. https://doi.org/10.1111/j.2517-6161.1987.tb01685.x
+
+Menne, M. J., Durre, I., Vose, R. S., Gleason, B. E., & Houston, T. G. (2012). An overview of the Global Historical Climatology Network-Daily database. *Journal of Atmospheric and Oceanic Technology*, *29*(7), 897–910. https://doi.org/10.1175/JTECH-D-11-00103.1
+
+Smyth, G. K., & Jørgensen, B. (2002). Fitting Tweedie's compound Poisson model to insurance claims data: Dispersion modelling. *ASTIN Bulletin*, *32*(1), 143–157. https://doi.org/10.2143/AST.32.1.1020
+
+Wood, S. N., Pya, N., & Säfken, B. (2016). Smoothing parameter and model selection for general smooth models. *Journal of the American Statistical Association*, *111*(516), 1548–1563. https://doi.org/10.1080/01621459.2016.1180986
