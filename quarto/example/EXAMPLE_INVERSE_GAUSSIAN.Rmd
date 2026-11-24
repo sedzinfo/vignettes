@@ -1,0 +1,336 @@
+---
+title: "Inverse Gaussian Regression: How Much Faster Do We Recognise Common Words?"
+description: "Inverse Gaussian regression in R with glm() and lme4, on reaction times in a lexical decision task: the distribution of the time to reach a threshold, a variance that grows with the cube of the mean, identity against log link, why transforming reaction times changes interactions, comparison with the normal, gamma and log-normal, mixed models with crossed subjects and words, checks and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: milliseconds
+
+You see a string of letters and must press a button as fast as you can: is it a word or not? *Cat* takes less time than *vole*. The more **frequent** a word is in the language, the faster we recognise it. By how many milliseconds? And is the gain larger for people who learned English as a foreign language?
+
+Reaction times are the daily bread of experimental psychology, and they have an awkward distribution: always positive, with a long tail to the right, and more variable when they are slower. The usual remedy is to transform them (the logarithm, or $-1/RT$) until they look normal, and to run a linear model. But a transformed time is no longer a time. "The logarithm is 0.03 smaller" is not an answer to "how many milliseconds?". Worse: **an interaction that exists in milliseconds may vanish in logarithms**, and the other way round (Lo & Andrews, 2015).
+
+A **generalized linear model** does not transform the data. It chooses a distribution that has the right shape, and keeps the **mean in milliseconds**. The **inverse Gaussian** is such a distribution, and it comes with a theory of what a reaction time is.
+
+```{r packages}
+library(lme4)       # glmer(): generalized linear mixed models
+library(ggplot2)
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+```
+
+---
+
+## 1. The data
+
+The experiment is in the package `languageR`, the companion of Baayen (2008): 21 people decided for 79 English nouns (animals and plants) whether they are words. We read it from its copy on GitHub:
+
+```{r download}
+path <- tempfile(fileext = ".rda")
+download.file("https://raw.githubusercontent.com/cran/languageR/master/data/lexdec.rda", path, mode = "wb", quiet = TRUE)
+load(path)
+words <- with(lexdec, data.frame(subject = Subject, word = Word, rt = exp(RT),        # the file has the log of the milliseconds
+                                 correct = Correct == "correct", foreign = as.integer(NativeLanguage == "Other"),
+                                 freq = Frequency - mean(Frequency), length = Length - mean(Length)))
+c(trials = nrow(words), wrong = sum(!words$correct))
+words <- subset(words, correct)                                                       # the usual practice: correct answers only
+c(trials = nrow(words), subjects = length(unique(words$subject)), words = length(unique(words$word)))
+summary(words$rt)
+```
+
+`rt` is the reaction time in milliseconds. `freq` is the logarithm of the frequency of the word in a large collection of texts, centred: one unit more means about 2.7 times as frequent. `foreign` is 1 for the participants whose native language is not English, `length` the number of letters, centred. There are `r num(nrow(words))` correct answers.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 6}
+pa <- ggplot(words, aes(rt)) + geom_histogram(binwidth = 25, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  labs(title = "Reaction times", x = "milliseconds", y = "answers") + theme_bw()
+bysub <- aggregate(rt ~ subject + foreign, data = words, FUN = function(v) c(mean = mean(v), sd = sd(v)))
+bysub <- data.frame(mean = bysub$rt[, "mean"], sd = bysub$rt[, "sd"], native = ifelse(bysub$foreign == 1, "other", "English"))
+pb <- ggplot(bysub, aes(mean, sd, colour = native)) + geom_point(size = 2.6) +
+  scale_colour_manual(values = c(English = "#2a78d6", other = "#eb6834"), name = "native language") +
+  labs(title = "Mean and standard deviation of each person", x = "mean (ms)", y = "SD (ms)") + theme_bw() + theme(legend.position = "bottom")
+patchwork::wrap_plots(pa, pb, ncol = 1)
+power <- coef(lm(log(sd) ~ log(mean), data = bysub))[[2]]
+power
+```
+
+The distribution has a long right tail, and **slow people are more variable**: the SD grows with the mean, and faster than in proportion. On a log–log scale the slope is `r f1(power)` (a slope of 1 would be proportional, as for the [gamma](EXAMPLE_GAMMA.Rmd); 1.5 is the inverse Gaussian).
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a story about a decision
+
+Imagine that the brain collects evidence. It starts at zero, drifts upwards with speed $v$, and shakes randomly on the way. When it reaches a threshold $a$, the button is pressed. The time of the **first passage** through the threshold has an **inverse Gaussian** distribution (also called the Wald distribution; Folks & Chhikara, 1978), with
+
+$$\mu = \frac{a}{v} \;\text{(mean)}, \qquad \lambda = a^2 \;\text{(shape)}$$
+
+A simulation of such random walks:
+
+```{r walks}
+set.seed(101)
+v <- 0.1; a <- 30; steps <- 1500                                       # drift per millisecond, threshold
+walk <- function() { w <- cumsum(v + rnorm(steps)); hit <- which(w >= a)[1]; list(path = w, time = hit) }
+times <- replicate(4000, walk()$time)
+few   <- do.call(rbind, lapply(1:6, function(i) { w <- walk(); n <- if (is.na(w$time)) steps else w$time; data.frame(walk = i, t = 1:n, x = w$path[1:n]) }))
+pa <- ggplot(few, aes(t, x, group = walk, colour = factor(walk))) + geom_line(linewidth = 0.4) + geom_hline(yintercept = a, linetype = "dashed") +
+  guides(colour = "none") + labs(title = "Six decisions: evidence until the threshold", x = "milliseconds", y = "evidence") + theme_bw()
+dig <- function(x, mu, lambda) sqrt(lambda / (2 * pi * x^3)) * exp(-lambda * (x - mu)^2 / (2 * mu^2 * x))     # the density
+curve_data <- data.frame(t = 10:1200); curve_data$d <- dig(curve_data$t, a / v, a^2)
+pb <- ggplot(data.frame(times), aes(times)) + geom_histogram(aes(y = after_stat(density)), binwidth = 25, fill = "grey80", colour = "white", na.rm = TRUE) +
+  geom_line(data = curve_data, aes(t, d), colour = "#eb6834", linewidth = 1) +
+  labs(title = "4,000 such times, and the inverse Gaussian density", x = "milliseconds", y = "density") + theme_bw()
+patchwork::wrap_plots(pa, pb, ncol = 1)
+c(mean_of_simulation = mean(times, na.rm = TRUE), theory = a / v)
+```
+
+### Step 2: the variance
+
+$$E(y) = \mu, \qquad \text{Var}(y) = \frac{\mu^3}{\lambda} = \phi\,\mu^3$$
+
+The variance grows with the **cube** of the mean. Compare: constant for the normal, $\mu$ for Poisson, $\mu^2$ for the gamma, $\mu^3$ for the inverse Gaussian. Slow conditions are much more variable, and have a longer tail.
+
+### Step 3: the mean, and its link
+
+$$\mu_i = x_i^\top\beta \;\;\text{(identity link)} \qquad\text{or}\qquad \log\mu_i = x_i^\top\beta \;\;\text{(log link)}$$
+
+With the **identity** link, effects are in milliseconds and add up. With the **log** link they are percentages and multiply. (The textbook link is $1/\mu^2$, which nobody can read.) The choice is about **how effects combine**, and it decides what "no interaction" means.
+
+### Step 4: the weights
+
+The likelihood equations weight each observation by the inverse of its variance, $1/\mu^3$. The slow, noisy conditions count less. By hand, for the identity link, this is a repeated weighted least squares:
+
+```{r by_hand}
+X <- model.matrix(~ freq * foreign, data = words); y <- words$rt
+beta <- coef(lm(rt ~ freq * foreign, data = words))                    # start from OLS
+for (it in 1:50) {
+  mu <- drop(X %*% beta); new <- coef(lm.wfit(X, y, w = 1 / mu^3))     # identity link: plain weighted least squares
+  if (max(abs(new - beta)) < 1e-9) break
+  beta <- new
+}
+fit <- glm(rt ~ freq * foreign, family = inverse.gaussian(link = "identity"), data = words, start = coef(lm(rt ~ freq * foreign, data = words)))
+rbind(by_hand = beta, glm = coef(fit))
+```
+
+(`glm()` needs starting values with the identity link. The coefficients of OLS are good ones.)
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+summary(fit)
+b <- coef(fit); s <- coef(summary(fit))
+phi <- summary(fit)$dispersion
+```
+
+- **`(Intercept)`**: `r f0(b[[1]])` ms, the mean for a native speaker and a word of average frequency.
+- **`freq`**: `r f1(b[["freq"]])`: for native speakers, each unit of log frequency saves `r f1(abs(b[["freq"]]))` ms.
+- **`foreign`**: the others are `r f0(b[["foreign"]])` ms slower at average frequency.
+- **`freq:foreign`**: `r f1(b[["freq:foreign"]])`: for them, one unit of frequency saves `r f1(abs(b[["freq:foreign"]]))` ms **more**, that is `r f1(abs(b[["freq"]] + b[["freq:foreign"]]))` ms in all.
+- **`Dispersion`** = `r formatC(phi, format = "e", digits = 2)`: $\phi = 1/\lambda$. The predicted SD at a mean of $\mu$ is $\sqrt{\phi\mu^3}$: `r f0(sqrt(phi * 500^3))` ms at 500 ms and `r f0(sqrt(phi * 700^3))` ms at 700 ms.
+
+These standard errors treat the `r num(nrow(words))` answers as independent. They are not, and section 6 repairs that. First, the distribution.
+
+---
+
+## 5. Which distribution, and which scale?
+
+```{r distributions}
+start_ms <- coef(lm(rt ~ freq * foreign, data = words))
+fams <- list(`normal, identity`           = glm(rt ~ freq * foreign, family = gaussian, data = words),
+             `gamma, identity`            = glm(rt ~ freq * foreign, family = Gamma("identity"), data = words, start = start_ms),
+             `inverse Gaussian, identity` = fit,
+             `inverse Gaussian, log`      = glm(rt ~ freq * foreign, family = inverse.gaussian("log"), data = words))
+logs <- lm(log(rt) ~ freq * foreign, data = words)
+aics <- c(sapply(fams, AIC), `log-normal` = AIC(logs) + 2 * sum(log(words$rt)))      # on the scale of milliseconds
+sort(round(aics, 1))
+```
+
+The inverse Gaussian describes the reaction times best, then the log-normal and the gamma, and the normal distribution is far behind: an AIC `r f0(aics[["normal, identity"]] - aics[["inverse Gaussian, identity"]])` points larger. Between the two links there is little to choose.
+
+### The interaction depends on the scale
+
+Does frequency help the foreign speakers more? Ask in four ways:
+
+```{r scales}
+inv <- lm(I(-1000 / rt) ~ freq * foreign, data = words)
+int <- rbind(`milliseconds (inverse Gaussian, identity)` = s["freq:foreign", 1:4],
+             `ratios (inverse Gaussian, log link)`       = coef(summary(fams[[4]]))["freq:foreign", 1:4],
+             `log(RT), least squares`                    = coef(summary(logs))["freq:foreign", 1:4],
+             `-1000/RT, least squares`                   = coef(summary(inv))["freq:foreign", 1:4])
+colnames(int) <- c("estimate", "SE", "t", "p")
+round(int, 4)
+```
+
+In milliseconds the interaction is clear, *t* = `r f1(int[1, "t"])`. On the log scale it is weaker, *t* = `r f1(int[3, "t"])`, and for the reciprocal weaker again, *t* = `r f1(int[4, "t"])`. It is the **same data**. Slow people have larger differences of every kind, in milliseconds. A transformation that compresses long times compresses this too. Here the interaction survives; in other data it disappears, or even turns round. So the scale must be chosen for a **reason**: a theory in milliseconds (stages that add up) needs milliseconds. Whether the times look normal is no argument, because a generalized linear model does not need them to.
+
+```{r scale_chart}
+grid <- expand.grid(freq = seq(-2.8, 3, by = 0.1), foreign = 0:1)
+grid$rt <- predict(fit, grid, type = "response")
+grid$native <- ifelse(grid$foreign == 1, "other", "English")
+bins <- aggregate(rt ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign, data = words, FUN = mean)
+bins$freq <- aggregate(freq ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign, data = words, FUN = mean)$freq
+bins$native <- ifelse(bins$foreign == 1, "other", "English")
+ggplot(grid, aes(freq, rt, colour = native)) + geom_line(linewidth = 1) + geom_point(data = bins, size = 2.4) +
+  scale_colour_manual(values = c(English = "#2a78d6", other = "#eb6834"), name = "native language") +
+  labs(title = "Mean reaction time and word frequency", subtitle = "Lines: inverse Gaussian model. Points: means in sixths of the frequency",
+       x = "log frequency (centred)", y = "milliseconds") + theme_bw() + theme(legend.position = "bottom")
+```
+
+---
+
+## 6. People and words: a mixed model
+
+Each person answered many times, and each word was answered by many people. Fast people are fast for all words, hard words are hard for everybody. The answers are **crossed** in subjects and words, and both are samples from larger populations. A generalized linear **mixed** model has a random intercept for each (Baayen et al., 2008; Lo & Andrews, 2015):
+
+$$\mu_{ij} = x_{ij}^\top\beta + u_i + w_j, \qquad u_i \sim N(0, \sigma_u^2), \quad w_j \sim N(0, \sigma_w^2)$$
+
+```{r mixed}
+mixed <- glmer(rt ~ freq * foreign + (1 | subject) + (1 | word), data = words,
+               family = inverse.gaussian(link = "identity"), control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
+sm <- coef(summary(mixed))
+round(sm, 4)
+VarCorr(mixed)
+```
+
+```{r mixed_compare}
+compare <- data.frame(term = names(b), glm = b, SE_glm = s[, 2], mixed = sm[, 1], SE_mixed = sm[, 2], row.names = NULL)
+print(cbind(term = compare$term, round(compare[, -1], 2)), row.names = FALSE)
+linear <- lmer(rt ~ freq * foreign + (1 | subject) + (1 | word), data = words)
+loglin <- lmer(log(rt) ~ freq * foreign + (1 | subject) + (1 | word), data = words)
+t_int <- c(inverse_gaussian = sm["freq:foreign", 3], normal = coef(summary(linear))["freq:foreign", 3], log_normal = coef(summary(loglin))["freq:foreign", 3])
+t_int
+t_lang <- c(glm = s["foreign", 3], mixed = sm["foreign", 3])
+t_lang
+```
+
+- The difference between the two language groups is about the same (`r f0(sm["foreign", 1])` ms), but its standard error is `r f1(sm["foreign", 2] / s["foreign", 2])` times as large: it compares `r sum(tapply(words$foreign, words$subject, mean) == 0)` with `r sum(tapply(words$foreign, words$subject, mean) == 1)` **people**, not hundreds of answers. The *t* falls from `r f1(t_lang[["glm"]])` to `r f1(t_lang[["mixed"]])`.
+- The effect of frequency compares **words**: its standard error grows a little.
+- The interaction is a comparison **within** people and words, and it becomes **more** precise, because the mixed model removes their differences: *SE* `r f1(sm["freq:foreign", 2])` instead of `r f1(s["freq:foreign", 2])`.
+- People differ by an SD of `r f0(attr(VarCorr(mixed)$subject, "stddev"))` ms, words by `r f0(attr(VarCorr(mixed)$word, "stddev"))` ms.
+
+The standard errors of `glmer()` with this family are known to be rough, and Lo and Andrews recommend it nevertheless for the fit. With only 21 people, treat a *z* of 2 as weak evidence. Random slopes (a personal effect of frequency) would be the next step.
+
+---
+
+## 7. Checking the model
+
+```{r checks, fig.height = 6}
+pig <- function(x, mu, lambda) pnorm(sqrt(lambda / x) * (x / mu - 1)) + exp(2 * lambda / mu) * pnorm(-sqrt(lambda / x) * (x / mu + 1))    # the distribution function
+quantile_res <- function(y, mu, phi) qnorm(pmin(pmax(pig(y, mu, 1 / phi), 1e-12), 1 - 1e-12))
+phi_m  <- sum(residuals(mixed, type = "pearson")^2) / (nrow(words) - 6)
+chk <- rbind(data.frame(r = quantile_res(words$rt, fitted(fit), phi), model = "inverse Gaussian, no random effects"),
+             data.frame(r = quantile_res(words$rt, fitted(mixed), phi_m), model = "inverse Gaussian, mixed"),
+             data.frame(r = rstandard(lm(rt ~ freq * foreign, data = words)), model = "normal, no random effects"),
+             data.frame(r = as.numeric(scale(resid(linear))), model = "normal, mixed"))
+chk <- do.call(rbind, lapply(split(chk, chk$model), function(d) cbind(d, q = qqnorm(d$r, plot.it = FALSE)$x)))
+ggplot(chk, aes(q, r)) + geom_abline(colour = "grey60") + geom_point(alpha = 0.3, size = 0.8, colour = "#2a78d6") + facet_wrap(~ model) +
+  coord_cartesian(ylim = c(-5, 8)) +
+  labs(title = "Quantile residuals against the normal distribution", x = "normal quantile", y = "residual") + theme_bw()
+tail_share <- tapply(chk$r, chk$model, function(v) mean(v > 3))
+round(100 * tail_share, 2)
+```
+
+If the model is right, the points lie on the line. The normal models have a long right tail: `r f1(100 * tail_share[["normal, mixed"]])`% of the residuals of the mixed normal model are above 3 SD, where 0.13% are expected. The inverse Gaussian models follow the line better over most of the range, and their tail is shorter (`r f1(100 * tail_share[["inverse Gaussian, mixed"]])`% for the mixed one), but still too long: a few very slow answers (lapses of attention) remain. They are usually cut off by a rule that is fixed **before** looking at the results.
+
+---
+
+## 8. Things to keep in mind
+
+- **The theory of the single threshold** is a simplification. Reaction times also contain the time to see and to press. Adding a constant gives the *shifted Wald*, and a normal or exponential part the *ex-Wald* (Heathcote, 2004). Two thresholds, with errors, lead to the diffusion model.
+- **Use it as a convenient shape**, not as proof of the theory. The log-normal or the gamma may fit as well in other data.
+- **Identity link: watch the sign.** Nothing keeps the mean positive. With reaction times it is never a problem; with small means it is.
+- **Choose the link and the scale before you see the interaction.** An interaction that exists on one scale only is *removable*: say so, and say which scale your theory speaks.
+- **Outliers and cut-offs.** Report the rule and how many answers it removed.
+- **Errors.** We left out wrong answers. If one condition has more of them, speed and accuracy must be analysed together.
+- **Random effects** for people **and** items. Averaging over words first, or over people, hides one of the two.
+- **Starting values** are needed for the identity link. Scale and centre the predictors, or `glmer()` will not converge.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the distribution and the link with reasons, the exclusions, the random effects, the estimates in milliseconds, and the comparison with other distributions if the choice matters. The numbers come from the R objects:
+
+```{r apa_numbers}
+ci_low <- sm[, 1] - 1.96 * sm[, 2]; ci_high <- sm[, 1] + 1.96 * sm[, 2]
+apa_table <- data.frame(Term = c("Intercept", "Frequency (log, centred)", "Native language other than English", "Frequency × native language"),
+                        b = f1(sm[, 1]), SE = f1(sm[, 2]), CI = paste0("[", f1(ci_low), ", ", f1(ci_high), "]"), z = f2(sm[, 3]),
+                        p = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))))
+```
+
+**Method** (data analysis):
+
+> Reaction times of correct lexical decisions (`r num(nrow(words))` answers of `r length(unique(words$subject))` participants to `r length(unique(words$word))` words; Baayen, 2008) were analysed with a generalized linear mixed model with an inverse Gaussian distribution and an identity link (Lo & Andrews, 2015), so that effects are in milliseconds. The inverse Gaussian was preferred to the normal, gamma and log-normal distributions by the AIC. Fixed effects were log word frequency (centred), native language (English or other) and their interaction; participants and words had random intercepts. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package lme4 (Bates et al., 2015).
+
+**Results:**
+
+> Native speakers recognised words of average frequency in `r f0(sm[1, 1])` ms. More frequent words were recognised faster, *b* = `r f1(sm["freq", 1])` ms per log unit, *SE* = `r f1(sm["freq", 2])`, *z* = `r f2(sm["freq", 3])`, *p* `r pval(sm["freq", 4])`, and participants with another native language were slower, *b* = `r f1(sm["foreign", 1])` ms, *SE* = `r f1(sm["foreign", 2])`, *z* = `r f2(sm["foreign", 3])`, *p* `r pval(sm["foreign", 4])`. They also gained more from frequency, *b* = `r f1(sm["freq:foreign", 1])` ms, *SE* = `r f1(sm["freq:foreign", 2])`, *z* = `r f2(sm["freq:foreign", 3])`, *p* `r pval(sm["freq:foreign", 4])` (Table 1). The interaction had the same sign on the log scale (*t* = `r f2(t_int[["log_normal"]])`).
+
+**Table 1**
+
+*Inverse Gaussian Mixed Model of Reaction Times (ms)*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Term", "*b*", "*SE*", "95% CI", "*z*", "*p*"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Identity link. Random intercepts: participants *SD* = `r f0(attr(VarCorr(mixed)$subject, "stddev"))` ms, words *SD* = `r f0(attr(VarCorr(mixed)$word, "stddev"))` ms.
+
+**Points to remember:**
+
+- Give the distribution, the link, and why.
+- Report effects in milliseconds.
+- State the random effects and the exclusions.
+- If the result depends on the scale, show it on more than one.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Positive, right-skewed outcomes whose variance grows very fast with the mean: reaction times, times to a threshold |
+| **The distribution** | Time of the first passage of a drifting random walk; $\text{Var} = \phi\mu^3$ |
+| **How (R)** | `glm(y ~ x, family = inverse.gaussian("identity"), start = ...)`; mixed: `lme4::glmer()` |
+| **Links** | Identity: milliseconds that add; log: ratios that multiply |
+| **Against transforming** | Keeps the mean and the unit; interactions depend on the scale |
+| **Against the gamma** | The variance grows with $\mu^3$ instead of $\mu^2$ |
+| **Checks** | Quantile residuals, AIC against gamma and log-normal |
+| **Related pages** | [Gamma regression](EXAMPLE_GAMMA.Rmd), [multilevel models](EXAMPLE_MULTILEVEL.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd) |
+
+---
+
+## References
+
+Baayen, R. H. (2008). *Analyzing linguistic data: A practical introduction to statistics using R*. Cambridge University Press. https://doi.org/10.1017/CBO9780511801686
+
+Baayen, R. H., Davidson, D. J., & Bates, D. M. (2008). Mixed-effects modeling with crossed random effects for subjects and items. *Journal of Memory and Language*, *59*(4), 390–412. https://doi.org/10.1016/j.jml.2007.12.005
+
+Bates, D., Mächler, M., Bolker, B., & Walker, S. (2015). Fitting linear mixed-effects models using lme4. *Journal of Statistical Software*, *67*(1), 1–48. https://doi.org/10.18637/jss.v067.i01
+
+Folks, J. L., & Chhikara, R. S. (1978). The inverse Gaussian distribution and its statistical application—A review. *Journal of the Royal Statistical Society: Series B*, *40*(3), 263–275. https://doi.org/10.1111/j.2517-6161.1978.tb01039.x
+
+Heathcote, A. (2004). Fitting Wald and ex-Wald distributions to response time data: An example using functions for the S-PLUS package. *Behavior Research Methods, Instruments, & Computers*, *36*(4), 678–694. https://doi.org/10.3758/BF03206550
+
+Lo, S., & Andrews, S. (2015). To transform or not to transform: Using generalized linear mixed models to analyse reaction time data. *Frontiers in Psychology*, *6*, Article 1171. https://doi.org/10.3389/fpsyg.2015.01171
