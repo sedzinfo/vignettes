@@ -7,7 +7,1093 @@
     <atom:link href="https://sedzinfo.github.io/vignettes/feed.xml" rel="self" type="application/rss+xml"/>
     <description>Tutorials in R with the code on every page: psychometrics, adaptive testing, scale validation, statistics, machine learning and data visualisation with real data.</description>
     <language>en</language>
-    <lastBuildDate>Tue, 24 Nov 2026 12:08:23 +0200</lastBuildDate>
+    <lastBuildDate>Tue, 24 Nov 2026 14:05:00 +0200</lastBuildDate>
+    <item>
+      <title>Ordinal Logistic Regression: What Makes People Satisfied With Their Job?</title>
+      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC.html</link>
+      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC.html</guid>
+      <pubDate>Tue, 24 Nov 2026 14:05:00 +0200</pubDate>
+      <category>R</category>
+      <category>Worked Examples in R</category>
+      <description>Ordinal logistic regression (the proportional odds model) in R with MASS::polr(), on the 2022 General Social Survey: how autonomy, respect, job security, stress and working from home go with the job satisfaction of about 2,200 US workers, with odds ratios, thresholds, predicted probabilities, the proportional odds assumption and APA reporting.</description>
+      <content:encoded><![CDATA[<p><em>Ordinal logistic regression (the proportional odds model) in R with MASS::polr(), on the 2022 General Social Survey: how autonomy, respect, job security, stress and working from home go with the job satisfaction of about 2,200 US workers, with odds ratios, thresholds, predicted probabilities, the proportional odds assumption and APA reporting.</em></p>
+<section id="the-question-four-answers-in-order" class="level2">
+<h2 class="anchored" data-anchor-id="the-question-four-answers-in-order">The question: four answers in order</h2>
+<p>Since 1972 the General Social Survey (GSS) has asked Americans: <em>“On the whole, how satisfied are you with the work you do — would you say you are very satisfied, moderately satisfied, a little dissatisfied, or very dissatisfied?”</em> In 2022 it also asked them about the job itself: are they free to decide how to do their work, are they treated with respect, is the job secure, how often is it stressful, how often do they work from home?</p>
+<p>This page asks: <strong>which of these go with being more satisfied with one’s job?</strong> Does working from home make people happier with their work, or is it something else?</p>
+<p>The answer has four values <strong>in order</strong>: very dissatisfied, a little dissatisfied, moderately satisfied, very satisfied. But nobody knows how far apart they are: the step from “a little dissatisfied” to “moderately satisfied” may be bigger than the step from “moderately” to “very”. The type of outcome decides the type of regression:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Outcome</th>
+<th>Regression</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Two categories</td>
+<td><a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_GENERALIZED.html">logistic</a></td>
+<td>hired or not</td>
+</tr>
+<tr class="even">
+<td><strong>Ordered categories</strong></td>
+<td><strong>ordinal logistic</strong></td>
+<td><strong>job satisfaction: very dissatisfied … very satisfied</strong></td>
+</tr>
+<tr class="odd">
+<td>Unordered categories</td>
+<td><a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html">multinomial logistic</a></td>
+<td>how someone left a job: quit, retired, laid off…</td>
+</tr>
+</tbody>
+</table>
+<p>Three other ways to analyse the answers, and what each gets wrong:</p>
+<ul>
+<li><strong>A linear regression on the scores 1 to 4</strong> assumes the four answers are equally far apart, and predicts answers such as 3.4 that nobody can give.</li>
+<li><strong>A logistic regression of satisfied against dissatisfied</strong> throws away the difference between “moderately” and “very” satisfied, where most people are.</li>
+<li><strong>A multinomial logistic regression</strong> ignores the order, and needs a whole set of coefficients for every answer: 27 parameters here instead of 11.</li>
+</ul>
+<p>The ordinal logistic regression uses the order and needs <strong>one coefficient per predictor</strong>.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(MASS)      # polr(): ordinal logistic regression (comes with R)
+library(ordinal)   # clm(), nominal_test(): checks the proportional odds assumption
+library(haven)     # read_dta(): reads the Stata files of the GSS
+library(ggplot2)
+# one colour per answer, from red (dissatisfied) to blue (satisfied), the same in every chart
+satisfaction &lt;- c("Very dissatisfied", "A little dissatisfied", "Moderately satisfied", "Very satisfied")
+colours &lt;- setNames(c("#c23b3a", "#ec8a85", "#6da7ec", "#1c5cab"), satisfaction)
+ink     &lt;- setNames(c("white", "#0b0b0b", "#0b0b0b", "white"), satisfaction)  # labels on the bars
+# number formats for the text
+f2   &lt;- function(x) formatC(x, format = "f", digits = 2)
+nz   &lt;- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
+pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))
+pct  &lt;- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+num  &lt;- function(x) trimws(format(x, big.mark = ","))</code></pre></div></div>
+</details>
+</div>
+<hr>
+</section>
+<section id="the-data" class="level2">
+<h2 class="anchored" data-anchor-id="the-data">1. The data</h2>
+<p>The <a href="https://gss.norc.org/">GSS</a> is run by NORC at the University of Chicago. Its data are free and need no login: one file per survey year. 2022 is the latest year with the <strong>Quality of Working Life</strong> module, a set of questions about work designed by the National Institute for Occupational Safety and Health (NIOSH) and asked of everyone who had a job. The Stata file comes in a zip of 6 MB.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">options(timeout = max(300, getOption("timeout")))   # allow slow downloads
+zip &lt;- tempfile(fileext = ".zip")
+download.file("https://gss.norc.org/content/dam/gss/get-the-data/documents/stata/2022_stata.zip",
+              zip, mode = "wb", quiet = TRUE)
+dta &lt;- unzip(zip, files = "2022/GSS2022.dta", exdir = tempdir())
+# the questions we need, out of the 1,297 columns in the file
+columns &lt;- c("satjob", "wkfreedm", "respect", "jobsecok", "stress", "wrkhome", "wrkslf", "age", "mode")
+raw &lt;- read_dta(dta, col_select = tidyselect::all_of(columns))
+nrow(raw)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 4149</code></pre>
+</div>
+</div>
+<p>Each answer is stored as a number with a label. “Don’t know”, “no answer”, “skipped on the web” and “not asked” (people without a job are not asked about their job) are special missing codes, which <code>read_dta()</code> turns into <code>NA</code>:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">attr(raw$satjob, "labels")[1:4]       # the four answers and their codes</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>       very satisfied  moderately satisfied a little dissatisfied     very dissatisfied 
+                    1                     2                     3                     4 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">table(raw$satjob, useNA = "ifany")    # NA: not asked or not answered</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+   1    2    3    4 &lt;NA&gt; 
+1268 1237  316  132 1196 </code></pre>
+</div>
+</div>
+<p>The codes run from very satisfied (1) to very dissatisfied (4). We turn them round, so that a higher number always means <strong>more</strong> of something: more satisfied, more freedom, more often stressed. The predictors:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Predictor</th>
+<th>Question</th>
+<th>Answers, coded</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>autonomy</code></td>
+<td>I am given a lot of freedom to decide how to do my own work</td>
+<td>1 not at all true, 2 not too true, 3 somewhat true, 4 very true</td>
+</tr>
+<tr class="even">
+<td><code>respect</code></td>
+<td>At the place where I work, I am treated with respect</td>
+<td>1 strongly disagree, 2 disagree, 3 agree, 4 strongly agree</td>
+</tr>
+<tr class="odd">
+<td><code>security</code></td>
+<td>The job security is good</td>
+<td>1 not at all true … 4 very true</td>
+</tr>
+<tr class="even">
+<td><code>stress</code></td>
+<td>How often do you find your work stressful?</td>
+<td>1 never, 2 hardly ever, 3 sometimes, 4 often, 5 always</td>
+</tr>
+<tr class="odd">
+<td><code>home</code></td>
+<td>How often do you work at home as part of your job?</td>
+<td>never; some days (from a few times a year to more than once a week); mainly at home</td>
+</tr>
+<tr class="even">
+<td><code>self_employed</code></td>
+<td>Are you self-employed or do you work for someone else?</td>
+<td>no, yes</td>
+</tr>
+<tr class="odd">
+<td><code>age10</code></td>
+<td>Age</td>
+<td>in decades: 4.1 = 41 years</td>
+</tr>
+</tbody>
+</table>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">n &lt;- function(x) as.numeric(x)   # drops the labels, keeps the NAs
+d &lt;- data.frame(
+  satisfaction  = factor(5 - n(raw$satjob), levels = 1:4, labels = satisfaction, ordered = TRUE),
+  autonomy      = 5 - n(raw$wkfreedm),
+  respect       = 5 - n(raw$respect),
+  security      = 5 - n(raw$jobsecok),
+  stress        = 6 - n(raw$stress),
+  home          = cut(n(raw$wrkhome), c(0, 1, 5, 6), labels = c("Never", "Some days", "Mainly")),
+  self_employed = factor(ifelse(n(raw$wrkslf) == 1, "Yes", "No"), levels = c("No", "Yes")),
+  age10         = n(raw$age) / 10,
+  web           = factor(ifelse(n(raw$mode) == 4, "Yes", "No"), levels = c("No", "Yes")))  # answered on the web
+vars &lt;- c("satisfaction", "autonomy", "respect", "security", "stress", "home", "self_employed", "age10")
+d &lt;- d[complete.cases(d[vars]), ]
+nrow(d)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2167</code></pre>
+</div>
+</div>
+<p><code>factor(..., ordered = TRUE)</code> makes an <strong>ordered factor</strong>: R now knows that “very satisfied” is above “moderately satisfied”. <code>polr()</code> needs it. That leaves 2,167 people who answered all the questions.</p>
+<p>The four questions with agree or true answers are treated as <strong>numbers</strong>: one coefficient for each step up the scale. This assumes every step has the same effect; section 7 checks it.</p>
+<hr>
+</section>
+<section id="look-at-the-data" class="level2">
+<h2 class="anchored" data-anchor-id="look-at-the-data">2. Look at the data</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">overall &lt;- prop.table(table(d$satisfaction))
+round(100 * overall, 1)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+    Very dissatisfied A little dissatisfied  Moderately satisfied        Very satisfied 
+                  3.5                   9.8                  42.2                  44.5 </code></pre>
+</div>
+</div>
+<p>Most people are satisfied with their work: 45% very and 42% moderately. Only 3.5% are very dissatisfied, a typical skew for job satisfaction. How does satisfaction change with each predictor?</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r"># the answers to each question, in words
+answers &lt;- list(autonomy = c("Not at all true", "Not too true", "Somewhat true", "Very true"),
+                respect  = c("Strongly disagree", "Disagree", "Agree", "Strongly agree"),
+                security = c("Not at all true", "Not too true", "Somewhat true", "Very true"),
+                stress   = c("Never", "Hardly ever", "Sometimes", "Often", "Always"),
+                home     = c("Never", "Some days", "Mainly"))
+questions &lt;- c(autonomy = "Autonomy", respect = "Respect", security = "Security",
+               stress = "Stress", home = "From home")
+# stacked bars of shares (each bar adds up to 100%), one panel per question, larger shares labelled
+stacked &lt;- function(m, x_label) {
+  ggplot(m, aes(share, answer, fill = satisfaction)) +
+    geom_col(width = 0.8, colour = "white", linewidth = 0.3, position = position_stack(reverse = TRUE)) +
+    geom_text(aes(label = ifelse(share &gt;= 0.07, pct(share), ""), colour = satisfaction),
+              position = position_stack(vjust = 0.5, reverse = TRUE), size = 3, show.legend = FALSE) +
+    facet_grid(question ~ ., scales = "free_y", space = "free_y") +
+    scale_fill_manual(values = colours) +
+    scale_colour_manual(values = ink, guide = "none") +
+    scale_x_continuous(labels = scales::percent, expand = c(0, 0)) +
+    scale_y_discrete(labels = function(x) sub("^[^:]*: ", "", x)) +   # drop the question from the label
+    labs(x = x_label, y = NULL, fill = NULL) +
+    theme_bw() +
+    theme(legend.position = "bottom", plot.margin = margin(5.5, 18, 5.5, 5.5)) +  # room for "100%"
+    guides(fill = guide_legend(nrow = 2))
+}
+# how satisfied the people who gave each answer are, with the number of people
+observed &lt;- do.call(rbind, lapply(names(answers), function(v) {
+  answer &lt;- factor(answers[[v]][as.integer(d[[v]])], levels = answers[[v]])
+  shares &lt;- as.data.frame(prop.table(table(answer, satisfaction = d$satisfaction), 1), responseName = "share")
+  size   &lt;- table(answer)
+  # "Autonomy: Very true (1,065)"; the question keeps the labels of different panels apart
+  labels &lt;- paste0(questions[[v]], ": ", names(size), " (", num(as.vector(size)), ")")
+  shares$answer   &lt;- factor(labels[as.integer(shares$answer)], levels = rev(labels))
+  shares$question &lt;- factor(questions[[v]], levels = questions)
+  shares
+}))
+stacked(observed, "share of the people who gave this answer (number of people)")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Plot: 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC_files/figure-html/look-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">share &lt;- function(v) prop.table(table(d[[v]], d$satisfaction), 1)
+by_respect  &lt;- share("respect")
+by_autonomy &lt;- share("autonomy")
+by_stress   &lt;- share("stress")
+by_home     &lt;- share("home")
+dissatisfied &lt;- c("Very dissatisfied", "A little dissatisfied")</code></pre></div></div>
+</details>
+</div>
+<ul>
+<li><strong>Respect</strong>: 63% of the people who strongly agree that they are treated with respect are very satisfied, against 13% of those who disagree. 41% of those who disagree are dissatisfied. The 48 people who strongly disagree do not follow the pattern; the group is small, and its shares are uncertain.</li>
+<li><strong>Autonomy</strong> and <strong>job security</strong> go the same way: the more of them, the more people are very satisfied.</li>
+<li><strong>Stress</strong>: 72% of the people whose work is never stressful are very satisfied, and 24% of those whose work is always stressful.</li>
+<li><strong>Working from home</strong>: 48% of the people who work from home on some days are very satisfied, against 42% of those who never do. A small difference, in favour of working from home.</li>
+</ul>
+<p>But the predictors go together. People who can work from home also tend to be freer to decide how to do their work:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">round(100 * prop.table(table(home = d$home, autonomy = d$autonomy), 1))   # % of each row</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>           autonomy
+home         1  2  3  4
+  Never      5 13 39 44
+  Some days  2  9 35 55
+  Mainly     3  5 35 57</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">free &lt;- prop.table(table(d$home, d$autonomy), 1)[, "4"]</code></pre></div></div>
+</details>
+</div>
+<p>55% of the people who work from home on some days say “very true” to the freedom question, against 44% of those who never do. So is it working from home that goes with satisfaction, or the freedom? The model can tell: it estimates the effect of each predictor holding the others constant.</p>
+<hr>
+</section>
+<section id="the-model-step-by-step-with-formulas" class="level2">
+<h2 class="anchored" data-anchor-id="the-model-step-by-step-with-formulas">3. The model step by step, with formulas</h2>
+<section id="step-1-cut-the-scale-in-three-places" class="level3">
+<h3 class="anchored" data-anchor-id="step-1-cut-the-scale-in-three-places">Step 1: cut the scale in three places</h3>
+<p>Four ordered answers can be split into “this answer or lower” against “higher” in three places:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Split <span class="math inline">\(j\)</span></th>
+<th>Lower: <span class="math inline">\(Y \le j\)</span></th>
+<th>Higher: <span class="math inline">\(Y &gt; j\)</span></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>1</td>
+<td>very dissatisfied</td>
+<td>a little dissatisfied or more</td>
+</tr>
+<tr class="even">
+<td>2</td>
+<td>dissatisfied (very or a little)</td>
+<td>satisfied (moderately or very)</td>
+</tr>
+<tr class="odd">
+<td>3</td>
+<td>moderately satisfied or less</td>
+<td>very satisfied</td>
+</tr>
+</tbody>
+</table>
+<p><span class="math inline">\(P(Y_i \le j)\)</span> is a <strong>cumulative probability</strong>: the probability that person <span class="math inline">\(i\)</span> gives answer <span class="math inline">\(j\)</span> or a lower one.</p>
+</section>
+<section id="step-2-one-logistic-regression-per-split-with-the-same-slopes" class="level3">
+<h3 class="anchored" data-anchor-id="step-2-one-logistic-regression-per-split-with-the-same-slopes">Step 2: one logistic regression per split, with the same slopes</h3>
+<p><span class="math display">\[\text{logit}\,P(Y_i \le j) = \ln\frac{P(Y_i \le j)}{P(Y_i &gt; j)} = \theta_j - (\beta_1 x_{1i} + \dots + \beta_p x_{pi}), \qquad j = 1, 2, 3\]</span></p>
+<p>Each split has its own intercept, <span class="math inline">\(\theta_j\)</span>, called a <strong>threshold</strong> or <strong>cut-point</strong>. The slopes <span class="math inline">\(\beta\)</span> are <strong>the same at all three splits</strong>: a predictor changes the odds of a higher answer by the same factor wherever the scale is cut. This is the <strong>proportional odds</strong> assumption, and the model is also called the proportional odds model.</p>
+<p>The thresholds increase, <span class="math inline">\(\theta_1 &lt; \theta_2 &lt; \theta_3\)</span>, because <span class="math inline">\(P(Y \le j)\)</span> can only grow with <span class="math inline">\(j\)</span>. The minus sign makes a positive <span class="math inline">\(\beta\)</span> mean <strong>higher</strong> answers: here, more satisfied. R’s <code>polr()</code> and <code>clm()</code> and SPSS’s PLUM write the model this way; some programs, for example SAS, write it with a plus sign, and their coefficients have the opposite sign.</p>
+</section>
+<section id="step-3-from-the-splits-to-the-four-answers" class="level3">
+<h3 class="anchored" data-anchor-id="step-3-from-the-splits-to-the-four-answers">Step 3: from the splits to the four answers</h3>
+<p>Write <span class="math inline">\(\eta_i = \beta_1 x_{1i} + \dots + \beta_p x_{pi}\)</span>. Then</p>
+<p><span class="math display">\[P(Y_i \le j) = \frac{1}{1 + e^{-(\theta_j - \eta_i)}}\]</span></p>
+<p>and the probability of each answer is the difference between two cumulative probabilities:</p>
+<p><span class="math display">\[P(Y_i = 1) = P(Y_i \le 1) \qquad P(Y_i = j) = P(Y_i \le j) - P(Y_i \le j - 1) \qquad P(Y_i = 4) = 1 - P(Y_i \le 3)\]</span></p>
+<p>The four probabilities are between 0 and 1 and add up to 1.</p>
+</section>
+<section id="step-4-what-a-coefficient-means" class="level3">
+<h3 class="anchored" data-anchor-id="step-4-what-a-coefficient-means">Step 4: what a coefficient means</h3>
+<p><span class="math inline">\(e^{\beta}\)</span> is a <strong>cumulative odds ratio</strong>: the number by which the odds of a higher answer rather than a lower one are multiplied for each step up the predictor, with the other predictors held constant. With proportional odds the same number holds at every split. An odds ratio of 2 for respect means that one step up the respect scale doubles the odds of being very satisfied rather than less satisfied, <strong>and</strong> doubles the odds of being satisfied rather than dissatisfied, <strong>and</strong> doubles the odds of being anything but very dissatisfied.</p>
+</section>
+<section id="step-5-the-picture-behind-the-model-a-hidden-satisfaction-scale" class="level3">
+<h3 class="anchored" data-anchor-id="step-5-the-picture-behind-the-model-a-hidden-satisfaction-scale">Step 5: the picture behind the model, a hidden satisfaction scale</h3>
+<p>Imagine that each person has a hidden, continuous satisfaction, <span class="math inline">\(Y^*\)</span>, which depends on the predictors plus a random part:</p>
+<p><span class="math display">\[Y^*_i = \eta_i + \varepsilon_i, \qquad \varepsilon_i \sim \text{logistic}(0, 1)\]</span></p>
+<p>The person answers by where <span class="math inline">\(Y^*\)</span> falls among the thresholds: “very dissatisfied” below <span class="math inline">\(\theta_1\)</span>, “a little dissatisfied” between <span class="math inline">\(\theta_1\)</span> and <span class="math inline">\(\theta_2\)</span>, “moderately satisfied” between <span class="math inline">\(\theta_2\)</span> and <span class="math inline">\(\theta_3\)</span>, “very satisfied” above <span class="math inline">\(\theta_3\)</span>. The predictors move the whole distribution of <span class="math inline">\(Y^*\)</span> to the right or to the left; the thresholds stay where they are. This gives exactly the formulas of steps 2 and 3. With a normal <span class="math inline">\(\varepsilon\)</span> instead of a logistic one, it is the <strong>ordinal probit</strong> model (<code>polr(..., method = "probit")</code>). Section 5 draws the picture with the fitted numbers.</p>
+</section>
+<section id="step-6-how-r-finds-the-numbers" class="level3">
+<h3 class="anchored" data-anchor-id="step-6-how-r-finds-the-numbers">Step 6: how R finds the numbers</h3>
+<p>By maximum likelihood: R looks for the thresholds and the <span class="math inline">\(\beta\)</span>’s that make the answers people actually gave as probable as possible,</p>
+<p><span class="math display">\[\ln L = \sum_i \ln P(Y_i = \text{the answer that person } i \text{ gave})\]</span></p>
+</section>
+<section id="step-7-count-the-parameters" class="level3">
+<h3 class="anchored" data-anchor-id="step-7-count-the-parameters">Step 7: count the parameters</h3>
+<p>Three thresholds, plus one slope for each of autonomy, respect, security, stress, self-employment and age, plus two for working from home (three groups): <strong>11 parameters</strong>. A multinomial model with the same predictors needs 9 coefficients for each of the three answers other than the reference: 27.</p>
+<hr>
+</section>
+</section>
+<section id="fitting-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-the-model">4. Fitting the model</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">fit &lt;- polr(satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10,
+            data = d, Hess = TRUE)
+summary(fit)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Call:
+polr(formula = satisfaction ~ autonomy + respect + security + 
+    stress + home + self_employed + age10, data = d, Hess = TRUE)
+Coefficients:
+                    Value Std. Error t value
+autonomy          0.39481    0.06005   6.574
+respect           0.72743    0.07253  10.030
+security          0.38234    0.05863   6.521
+stress           -0.37740    0.04807  -7.852
+homeSome days     0.15549    0.10266   1.515
+homeMainly       -0.07595    0.12017  -0.632
+self_employedYes  0.45185    0.14198   3.182
+age10             0.15250    0.03194   4.775
+Intercepts:
+                                           Value   Std. Error t value
+Very dissatisfied|A little dissatisfied     0.6519  0.3782     1.7239
+A little dissatisfied|Moderately satisfied  2.3162  0.3722     6.2236
+Moderately satisfied|Very satisfied         4.8746  0.3856    12.6427
+Residual Deviance: 4065.195 
+AIC: 4087.195 </code></pre>
+</div>
+</div>
+<p><code>Hess = TRUE</code> keeps the matrix that <code>summary()</code> needs for the standard errors; without it, <code>summary()</code> fits the model again.</p>
+<section id="how-to-read-the-output" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-output">How to read the output</h3>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">b     &lt;- coef(fit)                          # the slopes
+theta &lt;- fit$zeta                           # the thresholds
+se    &lt;- sqrt(diag(vcov(fit)))[names(b)]
+z     &lt;- b / se
+p     &lt;- 2 * pnorm(-abs(z))                 # summary() prints no p values: compute them
+or    &lt;- exp(b)                             # odds ratios
+ci    &lt;- exp(confint(fit))                  # their 95% confidence intervals (profile likelihood)</code></pre></div></div>
+</details>
+</div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Part</th>
+<th>Meaning</th>
+<th>Here</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Coefficients</code></td>
+<td>One slope <span class="math inline">\(\beta\)</span> per predictor term, with its standard error and <span class="math inline">\(t = \beta / SE\)</span>. Positive: more satisfied</td>
+<td><code>respect</code>: <span class="math inline">\(\beta\)</span> = 0.73, <em>SE</em> = 0.07</td>
+</tr>
+<tr class="even">
+<td><code>Intercepts</code></td>
+<td>The thresholds <span class="math inline">\(\theta_j\)</span>, named after the two answers they separate</td>
+<td><code>Moderately satisfied|Very satisfied</code>: 4.87</td>
+</tr>
+<tr class="odd">
+<td><code>Residual Deviance</code></td>
+<td><span class="math inline">\(-2 \ln L\)</span>: how badly the model fits; smaller is better. Used for the tests in section 6</td>
+<td>4,065</td>
+</tr>
+<tr class="even">
+<td><code>AIC</code></td>
+<td>The deviance plus 2 for every parameter, for comparing models fitted to the same data</td>
+<td>4,087</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>There are no <em>p</em> values.</strong> The <code>t value</code> is really a <span class="math inline">\(z\)</span>: compare it with the normal distribution. For <code>respect</code>, <em>z</em> = 10.03, <em>p</em> &lt; .001.</li>
+<li><strong>The thresholds</strong> are the cut-points on the hidden scale for someone with every predictor at 0. Here that person does not exist (autonomy and respect start at 1, age at 18), so the thresholds mean little on their own; they are needed for the predicted probabilities.</li>
+<li><strong>One coefficient per predictor</strong>, not one per answer: that is the gain over the multinomial model.</li>
+</ul>
+<p>The odds ratios:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">terms &lt;- c(autonomy = "Autonomy (per step)", respect = "Respect (per step)",
+           security = "Job security (per step)", stress = "Stress (per step)",
+           "homeSome days" = "Works from home some days (vs never)",
+           homeMainly = "Works mainly from home (vs never)",
+           self_employedYes = "Self-employed (vs employee)", age10 = "Age (per 10 years)")
+or_table &lt;- data.frame(Predictor    = terms,
+                       `Odds ratio` = f2(or[names(terms)]),
+                       `95% CI`     = paste0("[", f2(ci[names(terms), 1]), ", ", f2(ci[names(terms), 2]), "]"),
+                       p            = sapply(p[names(terms)], function(x) sub("= ", "", pval(x))),
+                       check.names = FALSE, row.names = NULL)
+knitr::kable(or_table, align = "lrrr")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 54%">
+<col style="width: 16%">
+<col style="width: 19%">
+<col style="width: 10%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Predictor</th>
+<th style="text-align: right;">Odds ratio</th>
+<th style="text-align: right;">95% CI</th>
+<th style="text-align: right;">p</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Autonomy (per step)</td>
+<td style="text-align: right;">1.48</td>
+<td style="text-align: right;">[1.32, 1.67]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Respect (per step)</td>
+<td style="text-align: right;">2.07</td>
+<td style="text-align: right;">[1.80, 2.39]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Job security (per step)</td>
+<td style="text-align: right;">1.47</td>
+<td style="text-align: right;">[1.31, 1.64]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Stress (per step)</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">[0.62, 0.75]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Works from home some days (vs never)</td>
+<td style="text-align: right;">1.17</td>
+<td style="text-align: right;">[0.96, 1.43]</td>
+<td style="text-align: right;">.130</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Works mainly from home (vs never)</td>
+<td style="text-align: right;">0.93</td>
+<td style="text-align: right;">[0.73, 1.17]</td>
+<td style="text-align: right;">.527</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Self-employed (vs employee)</td>
+<td style="text-align: right;">1.57</td>
+<td style="text-align: right;">[1.19, 2.08]</td>
+<td style="text-align: right;">.001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Age (per 10 years)</td>
+<td style="text-align: right;">1.16</td>
+<td style="text-align: right;">[1.09, 1.24]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>All at the same values of the other predictors:</p>
+<ul>
+<li><strong>Respect</strong> matters most: each step up the scale, for example from “agree” to “strongly agree”, multiplies the odds of a higher satisfaction answer by 2.07.</li>
+<li><strong>Autonomy</strong> (1.48 per step) and <strong>job security</strong> (1.47) also go with more satisfaction.</li>
+<li><strong>Stress</strong> goes the other way: each step more often stressful cuts the odds of a higher answer by 31% (odds ratio 0.69).</li>
+<li><strong>The self-employed</strong> have 1.57 times the odds of employees of a higher answer, and the odds rise by 16% with every 10 years of age.</li>
+<li><strong>Working from home</strong>: the confidence intervals include 1. Once autonomy, respect, security and stress are held constant, there is no clear difference between those who work from home and those who never do.</li>
+</ul>
+<p>Working from home <strong>alone</strong> does go with more satisfaction, as section 2 showed:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre><code class="language-r">home_alone &lt;- polr(satisfaction ~ home, data = d)
+round(exp(coef(home_alone)), 2)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>homeSome days    homeMainly 
+         1.38          1.25 </code></pre>
+</div>
+</div>
+<p>On its own, working from home some days has an odds ratio of 1.38; with the other predictors, 1.17. The jobs that can be done from home also give more freedom and security, and these, not the place of work, carry the difference.</p>
+</section>
+<section id="the-same-numbers-by-hand" class="level3">
+<h3 class="anchored" data-anchor-id="the-same-numbers-by-hand">The same numbers by hand</h3>
+<p>Steps 2 and 3 for a typical worker: the median answer to each question, the median age, never works from home, an employee.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre><code class="language-r">sapply(d[c("autonomy", "respect", "security", "stress", "age10")], median)   # the medians</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>autonomy  respect security   stress    age10 
+     3.0      3.0      4.0      3.0      4.1 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre><code class="language-r">x    &lt;- c(autonomy = 3, respect = 3, security = 4, stress = 3,
+          "homeSome days" = 0, homeMainly = 0, self_employedYes = 0, age10 = 4.1)
+eta  &lt;- sum(b * x[names(b)])                      # the place on the hidden scale
+cum  &lt;- plogis(theta - eta)                       # step 3: P(Y &lt;= j), j = 1, 2, 3
+prob &lt;- setNames(diff(c(0, cum, 1)), satisfaction)  # P(Y = j)
+round(prob, 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>    Very dissatisfied A little dissatisfied  Moderately satisfied        Very satisfied 
+                0.023                 0.088                 0.507                 0.381 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb27"><pre><code class="language-r"># new people for predict(), with the factor levels of the model
+people &lt;- function(...) {
+  x &lt;- data.frame(...)
+  for (v in intersect(names(x), c("home", "self_employed"))) x[[v]] &lt;- factor(x[[v]], levels = levels(d[[v]]))
+  x
+}
+typical &lt;- people(autonomy = 3, respect = 3, security = 4, stress = 3, home = "Never",
+                  self_employed = "No", age10 = 4.1)
+round(predict(fit, newdata = typical, type = "probs"), 3)   # the same, from R</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>    Very dissatisfied A little dissatisfied  Moderately satisfied        Very satisfied 
+                0.023                 0.088                 0.507                 0.381 </code></pre>
+</div>
+</div>
+<p>The typical worker is moderately satisfied with probability 51% and very satisfied with probability 38%.</p>
+<hr>
+</section>
+</section>
+<section id="predicted-probabilities-the-easiest-way-to-read-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="predicted-probabilities-the-easiest-way-to-read-the-model">5. Predicted probabilities: the easiest way to read the model</h2>
+<section id="the-hidden-scale" class="level3">
+<h3 class="anchored" data-anchor-id="the-hidden-scale">The hidden scale</h3>
+<p>Step 5 of section 3, with the fitted numbers: the hidden satisfaction of the typical worker if they disagree, and if they strongly agree, that they are treated with respect. Everything else stays the same.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre><code class="language-r">two &lt;- people(autonomy = 3, respect = c(2, 4), security = 4, stress = 3, home = "Never",
+              self_employed = "No", age10 = 4.1)
+person &lt;- c("Disagrees that they are treated with respect", "Strongly agrees that they are treated with respect")
+centre &lt;- eta + b[["respect"]] * (c(2, 4) - 3)        # eta of each: the typical worker has respect = 3
+probs2 &lt;- predict(fit, newdata = two, type = "probs")
+grid   &lt;- seq(-2.5, 11, by = 0.01)
+curves &lt;- do.call(rbind, lapply(1:2, function(k)
+  data.frame(person = person[k], y = grid, density = dlogis(grid, centre[k]),
+             answer = cut(grid, c(-Inf, theta, Inf), labels = satisfaction))))
+curves$person &lt;- factor(curves$person, levels = person)
+# the probability of each answer, printed above its part of the scale
+middle &lt;- c(theta[1] - 0.9, (theta[1] + theta[2]) / 2, (theta[2] + theta[3]) / 2, theta[3] + 1.6)
+labels &lt;- data.frame(person = factor(rep(person, each = 4), levels = person),
+                     y = rep(middle, 2), share = as.vector(t(probs2)))
+ggplot(curves, aes(y, density)) +
+  geom_area(aes(fill = answer, group = answer), position = "identity") +
+  geom_line(linewidth = 0.4, colour = "grey20") +
+  # the thresholds stop below their names, the centre at the top of the curve
+  geom_segment(data = data.frame(x = theta), aes(x = x, xend = x, y = 0, yend = 0.31),
+               inherit.aes = FALSE, linetype = "dashed", colour = "grey40") +
+  geom_segment(data = data.frame(person = factor(person, levels = person), x = centre),
+               aes(x = x, xend = x, y = 0, yend = dlogis(0)), inherit.aes = FALSE, colour = "grey20") +
+  geom_text(data = labels, aes(y, 0.29, label = pct(share)), size = 3.2, colour = "grey15") +
+  geom_text(data = data.frame(person = factor(rep(person, each = 3), levels = person), y = rep(theta, 2),
+                              label = rep(paste0("theta[", 1:3, "]"), 2)),
+            aes(y, 0.33, label = label), parse = TRUE, size = 3.4, colour = "grey30") +
+  facet_wrap(~ person, ncol = 1) +
+  scale_fill_manual(values = colours) +
+  scale_y_continuous(limits = c(0, 0.345), expand = c(0, 0)) +
+  labs(title = "Where the hidden satisfaction of the typical worker falls",
+       subtitle = "Dashed lines: the thresholds. Solid line: the centre of the distribution, eta.\nThe percentages are the areas: the probability of each answer.",
+       x = "hidden satisfaction (Y*)", y = "density", fill = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(nrow = 2))</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Latent – The hidden scale" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC_files/figure-html/latent-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Strongly agreeing instead of disagreeing moves the centre of the distribution by <span class="math inline">\(2\beta\)</span> = 1.45 to the right. The thresholds stay where they are, so more of the area falls above <span class="math inline">\(\theta_3\)</span>: the probability of “very satisfied” goes from 23% to 56%.</p>
+</section>
+<section id="predicted-probabilities-one-predictor-at-a-time" class="level3">
+<h3 class="anchored" data-anchor-id="predicted-probabilities-one-predictor-at-a-time">Predicted probabilities, one predictor at a time</h3>
+<p>The typical worker again, changing one predictor at a time:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">vary &lt;- function(v, values) {
+  x &lt;- typical[rep(1, length(values)), ]
+  x[[v]] &lt;- values
+  pr &lt;- predict(fit, newdata = x, type = "probs")
+  labels &lt;- paste0(questions[[v]], ": ", answers[[v]][values])
+  data.frame(question = factor(questions[[v]], levels = questions),
+             answer = factor(rep(labels, 4), levels = rev(labels)),
+             satisfaction = factor(rep(satisfaction, each = length(values)), levels = satisfaction),
+             share = as.vector(pr))
+}
+predicted &lt;- rbind(vary("respect", 1:4), vary("autonomy", 1:4), vary("stress", 1:5))
+predicted$question &lt;- droplevels(predicted$question)
+stacked(predicted, "predicted probability of each answer, for the typical worker")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Profiles – Predicted probabilities, one predictor at a time" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC_files/figure-html/profiles-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre><code class="language-r">p_resp   &lt;- predict(fit, newdata = transform(typical[rep(1, 4), ], respect = 1:4), type = "probs")
+p_stress &lt;- predict(fit, newdata = transform(typical[rep(1, 5), ], stress = 1:5), type = "probs")</code></pre></div></div>
+</details>
+</div>
+<ul>
+<li><strong>From “strongly disagree” to “strongly agree”</strong> that they are treated with respect, the probability that the typical worker is very satisfied rises from 13% to 56%, and the probability of being dissatisfied (very or a little) falls from 35% to 6%.</li>
+<li><strong>From work that is never stressful to work that is always stressful</strong>, “very satisfied” falls from 57% to 22%.</li>
+<li><strong>The odds ratio is the same at every step, the change in probability is not.</strong> Each step up the respect scale multiplies the odds by 2.07, but moves the probability of “very satisfied” by 10, 15, 18 percentage points: the effect on a probability depends on where a person starts.</li>
+</ul>
+<p>Unlike the observed shares of section 2, these predictions follow the pattern of the model: every step up the respect scale helps, including the step from “strongly disagree” to “disagree”, which the few people who strongly disagree did not show.</p>
+<hr>
+</section>
+</section>
+<section id="testing-the-predictors-and-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="testing-the-predictors-and-the-model">6. Testing the predictors and the model</h2>
+<p>The <strong>likelihood-ratio test</strong> compares the deviances of two nested models. First the whole model against a model with thresholds only, then each predictor: drop it and see how much worse the model gets.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre><code class="language-r">null &lt;- polr(satisfaction ~ 1, data = d)
+model_test &lt;- anova(null, fit)
+model_test</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Likelihood ratio tests of ordinal regression models
+Response: satisfaction
+                                                                  Model Resid. df Resid. Dev   Test    Df LR stat. Pr(Chi)
+1                                                                     1      2164   4632.148                              
+2 autonomy + respect + security + stress + home + self_employed + age10      2156   4065.195 1 vs 2     8 566.9527       0</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre><code class="language-r">tests &lt;- drop1(fit, test = "Chisq")
+tests</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Single term deletions
+Model:
+satisfaction ~ autonomy + respect + security + stress + home + 
+    self_employed + age10
+              Df    AIC     LRT  Pr(&gt;Chi)    
+&lt;none&gt;           4087.2                      
+autonomy       1 4128.6  43.387 4.491e-11 ***
+respect        1 4188.0 102.836 &lt; 2.2e-16 ***
+security       1 4127.8  42.591 6.748e-11 ***
+stress         1 4148.2  62.972 2.096e-15 ***
+home           2 4086.9   3.657  0.160641    
+self_employed  1 4095.6  10.395  0.001264 ** 
+age10          1 4108.2  23.048 1.580e-06 ***
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre><code class="language-r">mcfadden &lt;- 1 - deviance(fit) / deviance(null)   # McFadden's pseudo-R squared
+mcfadden</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.1223952</code></pre>
+</div>
+</div>
+<ul>
+<li><strong>Every predictor except working from home is significant.</strong> The <span class="math inline">\(\chi^2\)</span> values rank them: respect (102.84), stress (62.97), autonomy (43.39) and job security (42.59), then age and self-employment. Working from home: <span class="math inline">\(\chi^2\)</span>(2) = 3.66, <em>p</em> = .161.</li>
+<li><strong>McFadden’s pseudo-<span class="math inline">\(R^2\)</span></strong> = 0.12: one minus the deviance of the model divided by the deviance of the model with thresholds only. It runs much lower than the <span class="math inline">\(R^2\)</span> of a linear regression; use it to compare models fitted to the same data.</li>
+</ul>
+<p>Is the order worth using? The same predictors in a multinomial model, which ignores the order:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre><code class="language-r">multi &lt;- nnet::multinom(formula(fit), data = d, trace = FALSE)
+data.frame(model      = c("ordinal (polr)", "multinomial (multinom)"),
+           parameters = c(length(b) + length(theta), length(coef(multi))),
+           AIC        = round(c(AIC(fit), AIC(multi)), 1))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                   model parameters    AIC
+1         ordinal (polr)         11 4087.2
+2 multinomial (multinom)         27 4115.9</code></pre>
+</div>
+</div>
+<p>The ordinal model fits better by AIC, with 11 parameters instead of 27: the multinomial model spends 16 more parameters and gains less than they cost.</p>
+<p>How often does the model pick the right answer, if it picks the most likely one for each person?</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre><code class="language-r">guess &lt;- predict(fit, type = "class")
+table(observed = d$satisfaction, predicted = guess)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                       predicted
+observed                Very dissatisfied A little dissatisfied Moderately satisfied Very satisfied
+  Very dissatisfied                     6                    12                   48              9
+  A little dissatisfied                 4                    10                  165             34
+  Moderately satisfied                  1                    16                  574            323
+  Very satisfied                        1                     8                  289            667</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre><code class="language-r">accuracy  &lt;- mean(as.character(guess) == as.character(d$satisfaction))
+base_rate &lt;- max(overall)   # always guessing the most common answer
+c(model = accuracy, most_common_answer = base_rate)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>             model most_common_answer 
+         0.5800646          0.4453161 </code></pre>
+</div>
+</div>
+<p>58% right, against 45% for always guessing the most common answer. The model almost never predicts the two dissatisfied answers: they are rare, so for almost nobody are they the <strong>most</strong> likely answer. As in the <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html">multinomial example</a>, the predicted probabilities carry the information, not the single best guess.</p>
+<hr>
+</section>
+<section id="the-proportional-odds-assumption" class="level2">
+<h2 class="anchored" data-anchor-id="the-proportional-odds-assumption">7. The proportional odds assumption</h2>
+<p>The model gives each predictor <strong>one</strong> slope for all three splits. Does it need three? A visual check first: fit a separate logistic regression at each split and compare the slopes.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre><code class="language-r">splits &lt;- do.call(rbind, lapply(1:3, function(j) {
+  dj &lt;- transform(d, higher = as.integer(satisfaction) &gt; j)   # TRUE above split j
+  m  &lt;- glm(update(formula(fit), higher ~ .), family = binomial, data = dj)
+  data.frame(split = j, term = names(coef(m))[-1], b = coef(m)[-1], se = sqrt(diag(vcov(m)))[-1])
+}))
+short &lt;- c(autonomy = "Autonomy", respect = "Respect", security = "Job security", stress = "Stress",
+           "homeSome days" = "Home: some days", homeMainly = "Home: mainly",
+           self_employedYes = "Self-employed", age10 = "Age (10 years)")
+splits$term &lt;- factor(short[splits$term], levels = short)
+common      &lt;- data.frame(term = factor(short, levels = short), b = b[names(short)])
+ggplot(splits, aes(split, b)) +
+  geom_hline(yintercept = 0, colour = "grey75") +
+  geom_hline(data = common, aes(yintercept = b), colour = "#1c5cab", linetype = "dashed") +
+  geom_errorbar(aes(ymin = b - 1.96 * se, ymax = b + 1.96 * se), width = 0.15, colour = "grey30") +
+  geom_point(size = 2.2, colour = "grey15") +
+  facet_wrap(~ term, ncol = 4, scales = "free_y") +
+  scale_x_continuous(breaks = 1:3, limits = c(0.6, 3.4)) +
+  labs(title = "The slope of each predictor at each split",
+       subtitle = "Points: the slope from a separate logistic regression, with its 95% CI.\nDashed line: the one slope of the ordinal model.\nSplits: 1 very dissatisfied | the rest, 2 dissatisfied | satisfied, 3 very satisfied | the rest",
+       x = "split", y = "slope (log odds of a higher answer)") +
+  theme_bw()</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Splits – 7. The proportional odds assumption" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC_files/figure-html/splits-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre><code class="language-r">security_splits &lt;- splits$b[splits$term == short[["security"]]]</code></pre></div></div>
+</details>
+</div>
+<p>If the proportional odds assumption holds, the three points of each panel scatter around the dashed line, within their error bars. Most do. The clearest exception is <strong>job security</strong>: its slope grows from 0.07 at the first split to 0.45 at the third. Good job security seems to separate the very satisfied from the moderately satisfied more than it protects against being very dissatisfied. The confidence intervals are wide at the first split, though: only 75 people are very dissatisfied.</p>
+<p>The formal test: fit the same model with <code>clm()</code> from the package <code>ordinal</code>, which can relax the assumption one predictor at a time. <code>nominal_test()</code> does that for each predictor and compares the two models with a likelihood-ratio test:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre><code class="language-r"># the same model as polr(), with the same estimates
+clm_fit &lt;- clm(satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10, data = d)
+nominal &lt;- nominal_test(clm_fit)
+nominal</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Tests of nominal effects
+formula: satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10
+              Df  logLik    AIC    LRT Pr(&gt;Chi)
+&lt;none&gt;           -2032.6 4087.2                
+autonomy       2 -2032.5 4091.0 0.1898   0.9095
+respect        2 -2031.5 4088.9 2.2979   0.3170
+security       2 -2030.8 4087.6 3.5963   0.1656
+stress         2 -2032.3 4090.7 0.4917   0.7821
+home           4 -2031.4 4092.9 2.3305   0.6752
+self_employed  2 -2032.5 4090.9 0.2827   0.8682
+age10          2 -2032.2 4090.4 0.7607   0.6836</code></pre>
+</div>
+</div>
+<p>No predictor needs its own slopes: the smallest <em>p</em> is .166, for job security. The differences that the chart shows could be chance. The <strong>Brant test</strong> (Brant, 1990), in the package <code>brant</code>, is a common alternative that answers the same question.</p>
+<section id="if-the-assumption-fails-a-partial-proportional-odds-model" class="level3">
+<h3 class="anchored" data-anchor-id="if-the-assumption-fails-a-partial-proportional-odds-model">If the assumption fails: a partial proportional odds model</h3>
+<p>If a predictor did fail the test, it could get one slope per split while the others keep one slope: a <strong>partial proportional odds</strong> model (Peterson &amp; Harrell, 1990). In <code>clm()</code>, the predictors in <code>nominal</code> get their own slopes:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre><code class="language-r">partial &lt;- clm(satisfaction ~ autonomy + respect + stress + home + self_employed + age10,
+               nominal = ~ security, data = d)
+coef(partial)[grep("security", names(coef(partial)))]</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>   Very dissatisfied|A little dissatisfied.security A little dissatisfied|Moderately satisfied.security        Moderately satisfied|Very satisfied.security 
+                                         -0.1968220                                          -0.3232832                                          -0.4471662 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre><code class="language-r">anova(clm_fit, partial)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Likelihood ratio tests of cumulative link models:
+        formula:                                                                             nominal:  link: threshold:
+clm_fit satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10 ~1        logit flexible  
+partial satisfaction ~ autonomy + respect + stress + home + self_employed + age10            ~security logit flexible  
+        no.par    AIC  logLik LR.stat df Pr(&gt;Chisq)
+clm_fit     11 4087.2 -2032.6                      
+partial     13 4087.6 -2030.8  3.5963  2     0.1656</code></pre>
+</div>
+</div>
+<p><code>clm()</code> writes these slopes as shifts of the thresholds, so the effect of security on a <strong>higher</strong> answer is the number shown with its sign changed: 0.20, 0.32, 0.45 at the three splits. The likelihood-ratio test is the same as the <code>security</code> row of <code>nominal_test()</code>, and the AIC is a little worse: two more parameters that do not pay for themselves. We keep the simple model. If several predictors failed, the alternatives are a model with every slope free (<code>nominal = ~ .</code>, the generalized ordered logit) or the <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html">multinomial model</a>.</p>
+</section>
+<section id="four-more-things-to-keep-in-mind" class="level3">
+<h3 class="anchored" data-anchor-id="four-more-things-to-keep-in-mind">Four more things to keep in mind</h3>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre><code class="language-r"># answers given as categories instead of numbers: one coefficient per answer
+fit_steps &lt;- update(fit, . ~ . - autonomy - respect - security - stress +
+                      factor(autonomy) + factor(respect) + factor(security) + factor(stress))
+steps_test &lt;- anova(fit, fit_steps)
+stress_steps &lt;- coef(fit_steps)[paste0("factor(stress)", 2:5)]   # hardly ever ... always, against never
+# the people who answered on the web against those interviewed in person or by phone
+very_by_mode &lt;- prop.table(table(d$web, d$satisfaction), 1)[, "Very satisfied"]
+fit_mode &lt;- update(fit, . ~ . + web)
+round(cbind(without_mode = coef(fit), with_mode = coef(fit_mode)[names(coef(fit))]), 2)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                 without_mode with_mode
+autonomy                 0.39      0.39
+respect                  0.73      0.73
+security                 0.38      0.37
+stress                  -0.38     -0.37
+homeSome days            0.16      0.17
+homeMainly              -0.08     -0.06
+self_employedYes         0.45      0.44
+age10                    0.15      0.15</code></pre>
+</div>
+</div>
+<ul>
+<li><strong>Equal steps.</strong> The four scored questions count each step up the scale the same. Treating the answers as categories instead, with a coefficient for each answer, fits somewhat better, <span class="math inline">\(\chi^2\)</span>(9) = 21.73, <em>p</em> = .010: the steps are not all equal. For stress, for example, the coefficients of “hardly ever”, “sometimes”, “often” and “always” against “never” are -0.64, -0.83, -1.41, -1.59, not evenly spaced. The scored model is easier to read and tells the same story.</li>
+<li><strong>Web or interview.</strong> In 2022 most people answered the GSS on the web. 41% of them said “very satisfied”, against 49% of those interviewed in person or by phone, as people often give more positive answers when an interviewer is listening. Adding the mode to the model leaves the other coefficients almost unchanged (above).</li>
+<li><strong>The sample, not the population.</strong> These are unweighted estimates for the people in the survey. To describe all US workers, use the GSS weights (<code>wtssps</code>) and the design of the survey, for example with <code>svyolr()</code> in the package <code>survey</code> (Lumley, 2010).</li>
+<li><strong>Association, not cause.</strong> People who like their work may also see their workplace in a better light, and judge it more respectful and more secure. One survey at one point in time cannot tell which comes first.</li>
+</ul>
+<hr>
+</section>
+</section>
+<section id="reporting-the-results-in-apa-style" class="level2">
+<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">8. Reporting the results in APA style</h2>
+<p>A report (APA 7th edition) needs the outcome and its order, the predictors and how they were scored, the model test, the check of the proportional odds assumption and the odds ratios with their uncertainty. The numbers come from the R objects, so the text below always matches the results:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre><code class="language-r">n_model &lt;- nrow(d)
+lr      &lt;- model_test$"LR stat."[2]
+lr_df   &lt;- model_test$"   Df"[2]
+lr_p    &lt;- model_test$"Pr(Chi)"[2]
+ci_text &lt;- function(t) paste0("95% CI [", f2(ci[t, 1]), ", ", f2(ci[t, 2]), "]")</code></pre></div></div>
+</details>
+</div>
+<p><strong>Method</strong> (data analysis):</p>
+<blockquote class="blockquote">
+<p>We analysed the 2,167 employed respondents to the 2022 General Social Survey (Davern et al., 2024) who answered the job satisfaction question and the Quality of Working Life questions used here. Job satisfaction (very dissatisfied, a little dissatisfied, moderately satisfied, very satisfied) was analysed with an ordinal logistic regression (proportional odds model). The predictors were autonomy, respect at work and job security (each scored 1–4) and work stress (scored 1–5), with higher scores meaning more; how often the respondent worked from home (never, some days, mainly); self-employment; and age. The proportional odds assumption was checked with likelihood-ratio tests of nominal effects. Analyses were conducted in R (Version 4.6.2; R Core Team, 2026) with the <em>MASS</em> (Venables &amp; Ripley, 2002) and <em>ordinal</em> (Christensen, 2026) packages.</p>
+</blockquote>
+<p><strong>Results:</strong></p>
+<blockquote class="blockquote">
+<p>The predictors improved the fit over a thresholds-only model, χ²(8) = 566.95, <em>p</em> &lt; .001, McFadden’s <em>R</em>² = .12, and no predictor departed from the proportional odds assumption (smallest <em>p</em> = .166). Holding the other predictors constant, respondents who felt more respected at work were more satisfied with their job, <em>OR</em> = 2.07, 95% CI [1.80, 2.39], as were those with more autonomy, <em>OR</em> = 1.48, 95% CI [1.32, 1.67], and better job security, <em>OR</em> = 1.47, 95% CI [1.31, 1.64]. More frequent stress went with lower satisfaction, <em>OR</em> = 0.69, 95% CI [0.62, 0.75]. Self-employed and older respondents were more satisfied (Table 1). How often respondents worked from home was not related to job satisfaction once the other predictors were held constant, χ²(2) = 3.66, <em>p</em> = .161.</p>
+</blockquote>
+<p><strong>Table 1</strong></p>
+<p><em>Odds Ratios From an Ordinal Logistic Regression of Job Satisfaction, General Social Survey 2022</em></p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 54%">
+<col style="width: 16%">
+<col style="width: 19%">
+<col style="width: 10%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Predictor</th>
+<th style="text-align: right;">Odds ratio</th>
+<th style="text-align: right;">95% CI</th>
+<th style="text-align: right;">p</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Autonomy (per step)</td>
+<td style="text-align: right;">1.48</td>
+<td style="text-align: right;">[1.32, 1.67]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Respect (per step)</td>
+<td style="text-align: right;">2.07</td>
+<td style="text-align: right;">[1.80, 2.39]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Job security (per step)</td>
+<td style="text-align: right;">1.47</td>
+<td style="text-align: right;">[1.31, 1.64]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Stress (per step)</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">[0.62, 0.75]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Works from home some days (vs never)</td>
+<td style="text-align: right;">1.17</td>
+<td style="text-align: right;">[0.96, 1.43]</td>
+<td style="text-align: right;">.130</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Works mainly from home (vs never)</td>
+<td style="text-align: right;">0.93</td>
+<td style="text-align: right;">[0.73, 1.17]</td>
+<td style="text-align: right;">.527</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Self-employed (vs employee)</td>
+<td style="text-align: right;">1.57</td>
+<td style="text-align: right;">[1.19, 2.08]</td>
+<td style="text-align: right;">.001</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Age (per 10 years)</td>
+<td style="text-align: right;">1.16</td>
+<td style="text-align: right;">[1.09, 1.24]</td>
+<td style="text-align: right;">&lt; .001</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><em>Note.</em> <em>N</em> = 2,167. Odds ratios above 1 mean higher job satisfaction. Autonomy, respect and job security were scored 1–4 and stress 1–5, higher scores meaning more; age is in decades. Confidence intervals are profile-likelihood intervals.</p>
+<p><strong>Points to remember:</strong></p>
+<ul>
+<li>Say which way the outcome runs, and whether an odds ratio above 1 means a higher or a lower answer: programs differ.</li>
+<li>Report odds ratios with 95% confidence intervals, and say that they hold the other predictors constant.</li>
+<li>Give the model test (<span class="math inline">\(\chi^2\)</span> with its degrees of freedom) and a pseudo-<span class="math inline">\(R^2\)</span>, and say which one.</li>
+<li>Report the check of the proportional odds assumption, and what you did if it failed.</li>
+<li>Predicted probabilities for typical people are easier to understand than odds ratios; show them where they help.</li>
+<li>Cite R and the packages; <code>citation("MASS")</code> and <code>citation("ordinal")</code> give the references.</li>
+</ul>
+<hr>
+</section>
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">9. Summary</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td><strong>When</strong></td>
+<td>The outcome is a category with three or more values in a natural order</td>
+</tr>
+<tr class="even">
+<td><strong>Why not linear regression</strong></td>
+<td>It assumes equal steps between the answers and predicts values nobody can give</td>
+</tr>
+<tr class="odd">
+<td><strong>Why not multinomial logistic regression</strong></td>
+<td>It ignores the order and needs a set of coefficients for every answer</td>
+</tr>
+<tr class="even">
+<td><strong>How (R)</strong></td>
+<td><code>MASS::polr(y ~ x, data, Hess = TRUE)</code>, with <code>y</code> an ordered factor; or <code>ordinal::clm()</code></td>
+</tr>
+<tr class="odd">
+<td><strong>Output</strong></td>
+<td>Thresholds (one per split) and one slope per predictor; <code>exp()</code> of a slope is a cumulative odds ratio</td>
+</tr>
+<tr class="even">
+<td><strong>Easiest to read</strong></td>
+<td>Predicted probabilities: <code>predict(fit, newdata, type = "probs")</code></td>
+</tr>
+<tr class="odd">
+<td><strong>Tests</strong></td>
+<td>Likelihood-ratio tests with <code>anova()</code> and <code>drop1()</code>; McFadden’s pseudo-<span class="math inline">\(R^2\)</span></td>
+</tr>
+<tr class="even">
+<td><strong>Assumptions</strong></td>
+<td>Independent observations; proportional odds (the same slopes at every split)</td>
+</tr>
+<tr class="odd">
+<td><strong>If proportional odds fails</strong></td>
+<td>A partial proportional odds model, <code>clm(..., nominal = ~ x)</code>; or a multinomial model</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>Agresti, A. (2010). <em>Analysis of ordinal categorical data</em> (2nd ed.). Wiley.</p>
+<p>Brant, R. (1990). Assessing proportionality in the proportional odds model for ordinal logistic regression. <em>Biometrics</em>, <em>46</em>(4), 1171–1178. https://doi.org/10.2307/2532457</p>
+<p>Christensen, R. H. B. (2026). <em>ordinal: Regression models for ordinal data</em> (R package version 2026.7-26). https://CRAN.R-project.org/package=ordinal</p>
+<p>Davern, M., Bautista, R., Freese, J., Herd, P., &amp; Morgan, S. L. (2024). <em>General Social Survey 1972–2022</em> (Release 4) [Data set]. NORC at the University of Chicago. https://gss.norc.org/</p>
+<p>Lumley, T. (2010). <em>Complex surveys: A guide to analysis using R</em>. Wiley.</p>
+<p>McCullagh, P. (1980). Regression models for ordinal data. <em>Journal of the Royal Statistical Society: Series B (Methodological)</em>, <em>42</em>(2), 109–142.</p>
+<p>Peterson, B., &amp; Harrell, F. E., Jr.&nbsp;(1990). Partial proportional odds models for ordinal response variables. <em>Journal of the Royal Statistical Society: Series C (Applied Statistics)</em>, <em>39</em>(2), 205–217.</p>
+<p>Venables, W. N., &amp; Ripley, B. D. (2002). <em>Modern applied statistics with S</em> (4th ed.). Springer.</p>
+<p>Wickham, H., Miller, E., &amp; Smith, D. (2025). <em>haven: Import and export ‘SPSS’, ‘Stata’ and ‘SAS’ files</em> (R package version 2.5.5). https://doi.org/10.32614/CRAN.package.haven</p>
+<!-- -->
+</section>
+<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_ORDINAL_LOGISTIC.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
+    </item>
     <item>
       <title>Multinomial Logistic Regression: How Did Federal Employees Leave in 2025?</title>
       <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html</link>
@@ -8081,1084 +9167,6 @@ pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))</c
 </section>
 <!-- /see-also -->
 <p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MISSING_DATA.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
-    </item>
-    <item>
-      <title>Multilevel (Hierarchical Linear) Models: Students Within Schools</title>
-      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html</link>
-      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html</guid>
-      <pubDate>Sun, 22 Nov 2026 00:50:19 +0200</pubDate>
-      <category>R</category>
-      <category>Worked Examples in R</category>
-      <description>Hierarchical linear (multilevel) models in R with nlme: 7,185 students in 160 schools, the ICC, random slopes, cross-level interactions and APA reporting.</description>
-      <content:encoded><![CDATA[<p><em>Hierarchical linear (multilevel) models in R with nlme: 7,185 students in 160 schools, the ICC, random slopes, cross-level interactions and APA reporting.</em></p>
-<section id="the-problem-students-inside-schools" class="level2">
-<h2 class="anchored" data-anchor-id="the-problem-students-inside-schools">The problem: students inside schools</h2>
-<p>In 1982 the <strong>High School and Beyond</strong> survey gave a mathematics test to students of US high schools, public and Catholic. We use the classic subset of 7,185 students in 160 schools, and ask two questions:</p>
-<ol type="1">
-<li>Students from richer families score higher in maths. <strong>Is that gap the same in every school?</strong></li>
-<li>Do <strong>school characteristics</strong>, such as being a Catholic school or having richer students on average, change the scores and the gap?</li>
-</ol>
-<p>The students are not 7,185 independent people. They come in <strong>groups</strong>: students of the same school share teachers, neighbourhoods and resources, so their scores are more alike than the scores of students from different schools. Ordinary regression ignores this, which causes two problems:</p>
-<ul>
-<li><strong>Wrong standard errors.</strong> Ordinary regression treats every student as new information, so it is far too confident about anything measured at the school level (section 4).</li>
-<li><strong>The wrong question.</strong> Ordinary regression gives one slope for everyone. The interesting questions here are about how the slopes differ between schools (sections 6 to 8).</li>
-</ul>
-<p>A <strong>multilevel model</strong> handles both. It has one equation for the students (level 1) and one for the schools (level 2). The same models are also called <strong>hierarchical linear models</strong> (HLM), <strong>mixed (effects) models</strong> and <strong>random-effects models</strong>. They are not the same as “hierarchical regression” in the sense of entering predictors in blocks and testing <span class="math inline">\(\Delta R^2\)</span>, which has its own tutorial: <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION.html">Hierarchical Regression</a>.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(nlme)       # lme(): multilevel models (comes with R)
-library(ggplot2)
-library(patchwork)  # put plots side by side</code></pre></div></div>
-</details>
-</div>
-<hr>
-</section>
-<section id="the-data" class="level2">
-<h2 class="anchored" data-anchor-id="the-data">1. The data</h2>
-<p>The <code>nlme</code> package has the students in <code>MathAchieve</code> and the schools in <code>MathAchSchool</code>. We join them and give the columns short names:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">students &lt;- as.data.frame(MathAchieve)
-hsb &lt;- merge(students[, c("School", "Minority", "Sex", "SES", "MathAch")],
-             MathAchSchool[, c("School", "Size", "Sector")], by = "School")
-names(hsb) &lt;- c("school", "minority", "sex", "ses", "math", "size", "sector")
-hsb$school &lt;- factor(hsb$school)
-c(students = nrow(hsb), schools = nlevels(hsb$school))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>students  schools 
-    7185      160 </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">table(sector = MathAchSchool$Sector)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>sector
-  Public Catholic 
-      90       70 </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">summary(as.numeric(table(hsb$school)))   # students per school</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-  14.00   35.00   47.00   44.91   54.00   67.00 </code></pre>
-</div>
-</div>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Variable</th>
-<th>Level</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><code>math</code></td>
-<td>student</td>
-<td>Mathematics achievement test score (from -2.8 to 25)</td>
-</tr>
-<tr class="even">
-<td><code>ses</code></td>
-<td>student</td>
-<td>Socio-economic status: a standardised composite of parental education, occupation and income</td>
-</tr>
-<tr class="odd">
-<td><code>school</code></td>
-<td>school</td>
-<td>School identifier: the <strong>grouping</strong> variable</td>
-</tr>
-<tr class="even">
-<td><code>sector</code></td>
-<td>school</td>
-<td>Public or Catholic</td>
-</tr>
-</tbody>
-</table>
-<section id="splitting-ses-into-a-school-part-and-a-student-part" class="level3">
-<h3 class="anchored" data-anchor-id="splitting-ses-into-a-school-part-and-a-student-part">Splitting SES into a school part and a student part</h3>
-<p>A student’s SES says two things: how well off their family is, and (through their classmates) how well off their <strong>school</strong> is. We split it in two:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">hsb$ses_school &lt;- ave(hsb$ses, hsb$school)       # the average SES of the student's school
-hsb$ses_within &lt;- hsb$ses - hsb$ses_school       # the student's SES compared with their schoolmates
-head(hsb[, c("school", "sector", "ses", "ses_school", "ses_within", "math")])</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>  school sector    ses ses_school  ses_within   math
-1   1224 Public -1.528  -0.434383 -1.09361702  5.876
-2   1224 Public -0.588  -0.434383 -0.15361702 19.708
-3   1224 Public -0.528  -0.434383 -0.09361702 20.349
-4   1224 Public -0.668  -0.434383 -0.23361702  8.781
-5   1224 Public -0.158  -0.434383  0.27638298 17.898
-6   1224 Public  0.022  -0.434383  0.45638298  4.583</code></pre>
-</div>
-</div>
-<ul>
-<li><code>ses_school</code> is the <strong>school mean</strong> SES: the same for every student of a school, so it is a school-level variable.</li>
-<li><code>ses_within</code> is the student’s SES <strong>centred within the school</strong>: positive for students better off than their schoolmates, negative for those worse off. Its mean in every school is 0.</li>
-</ul>
-<p>This is called <strong>group-mean centring</strong>. Section 7 shows why it matters: the two parts have very different effects.</p>
-<hr>
-</section>
-</section>
-<section id="look-at-the-data" class="level2">
-<h2 class="anchored" data-anchor-id="look-at-the-data">2. Look at the data</h2>
-<p>Eight schools, chosen at random, four of each sector. Each point is a student, and each line is an ordinary regression fitted to that school alone:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">set.seed(3)
-pick &lt;- c(sample(unique(as.character(hsb$school[hsb$sector == "Public"])), 4),
-          sample(unique(as.character(hsb$school[hsb$sector == "Catholic"])), 4))
-few &lt;- subset(hsb, school %in% pick)
-few$label &lt;- with(few, paste0(sector, " school ", school, "\n(", ave(math, school, FUN = length), " students)"))
-ggplot(few, aes(ses, math)) +
-  geom_point(alpha = 0.5, size = 1.2, colour = "grey40") +
-  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, aes(colour = sector), linewidth = 1.1) +
-  facet_wrap(~label, ncol = 4) +
-  scale_colour_manual(values = c(Public = "#0082c8", Catholic = "#E74C3C")) +
-  labs(title = "Maths score against family SES in eight schools", x = "SES", y = "maths score") +
-  theme(legend.position = "none")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Eight schools – 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL_files/figure-html/eight_schools-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>All 160 schools, one line per school, drawn over the range of <code>ses_within</code> of its students:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">per_school &lt;- lmList(math ~ ses_within | school, data = hsb)   # an ordinary regression in every school
-ols &lt;- data.frame(school = rownames(coef(per_school)), coef(per_school), check.names = FALSE)
-names(ols)[2:3] &lt;- c("intercept", "slope")
-ols$sector &lt;- MathAchSchool$Sector[match(ols$school, MathAchSchool$School)]
-ols$n      &lt;- as.numeric(table(hsb$school)[ols$school])
-rng &lt;- aggregate(ses_within ~ school, hsb, range)
-ols$x0 &lt;- rng$ses_within[match(ols$school, rng$school), 1]
-ols$x1 &lt;- rng$ses_within[match(ols$school, rng$school), 2]
-ggplot(ols) +
-  geom_segment(aes(x = x0, xend = x1, y = intercept + slope * x0, yend = intercept + slope * x1, colour = sector),
-               alpha = 0.45) +
-  facet_wrap(~sector) +
-  scale_colour_manual(values = c(Public = "#0082c8", Catholic = "#E74C3C")) +
-  labs(title = "One regression line per school", x = "SES compared with schoolmates (ses_within)",
-       y = "maths score") +
-  theme(legend.position = "none")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="All schools – 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL_files/figure-html/all_schools-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Three things stand out:</p>
-<ul>
-<li>The lines start at very different <strong>heights</strong>: some schools score much higher than others, whatever the SES of their students. The intercepts (the school averages) go from 4.2 to 19.7.</li>
-<li>The <strong>slopes</strong> differ too: in some schools SES matters a lot, in others hardly at all (from -2 to 6.3). Some of this is real, and some is noise: a school of 14 students gives a very rough slope.</li>
-<li>The <strong>Catholic</strong> lines look higher and flatter.</li>
-</ul>
-<p>A multilevel model turns these impressions into estimates with honest uncertainty. We build it in steps, adding one idea at a time.</p>
-<hr>
-</section>
-<section id="step-0-the-null-model-or-how-much-do-schools-differ" class="level2">
-<h2 class="anchored" data-anchor-id="step-0-the-null-model-or-how-much-do-schools-differ">3. Step 0: the null model, or how much do schools differ?</h2>
-<p>The simplest multilevel model has no predictors. Student <span class="math inline">\(i\)</span> in school <span class="math inline">\(j\)</span>:</p>
-<p><span class="math display">\[\text{Level 1 (students):}\qquad \text{math}_{ij} = \beta_{0j} + r_{ij}, \qquad r_{ij} \sim N(0, \sigma^2)\]</span></p>
-<p><span class="math display">\[\text{Level 2 (schools):}\qquad \beta_{0j} = \gamma_{00} + u_{0j}, \qquad u_{0j} \sim N(0, \tau_{00})\]</span></p>
-<ul>
-<li><span class="math inline">\(\beta_{0j}\)</span> is the average score of school <span class="math inline">\(j\)</span>.</li>
-<li><span class="math inline">\(\gamma_{00}\)</span> (“gamma”) is the average over all schools: a <strong>fixed effect</strong>, one number for everyone.</li>
-<li><span class="math inline">\(u_{0j}\)</span> is how far school <span class="math inline">\(j\)</span> is from that average: a <strong>random effect</strong>, one per school. We do not estimate 160 separate numbers; we estimate their <strong>variance</strong> <span class="math inline">\(\tau_{00}\)</span> (“tau”).</li>
-<li><span class="math inline">\(r_{ij}\)</span> is how far student <span class="math inline">\(i\)</span> is from their school’s average, with variance <span class="math inline">\(\sigma^2\)</span>.</li>
-</ul>
-<p>Putting the two levels together gives one equation, which is what R fits: <span class="math inline">\(\text{math}_{ij} = \gamma_{00} + u_{0j} + r_{ij}\)</span>.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">m0 &lt;- lme(math ~ 1, random = ~ 1 | school, data = hsb)
-summary(m0)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Linear mixed-effects model fit by REML
-  Data: hsb 
-       AIC      BIC   logLik
-  47122.79 47143.43 -23558.4
-Random effects:
- Formula: ~1 | school
-        (Intercept) Residual
-StdDev:    2.934966 6.256862
-Fixed effects:  math ~ 1 
-               Value Std.Error   DF  t-value p-value
-(Intercept) 12.63697 0.2443936 7025 51.70747       0
-Standardized Within-Group Residuals:
-        Min          Q1         Med          Q3         Max 
--3.06312473 -0.75387398  0.02670132  0.76062171  2.74262579 
-Number of Observations: 7185
-Number of Groups: 160 </code></pre>
-</div>
-</div>
-<section id="how-to-read-the-output" class="level3">
-<h3 class="anchored" data-anchor-id="how-to-read-the-output">How to read the output</h3>
-<ul>
-<li><strong><code>Linear mixed-effects model fit by REML</code></strong>: the estimation method. REML (restricted maximum likelihood) gives better variance estimates than ordinary maximum likelihood (ML). Section 9 explains when to switch to ML.</li>
-<li><strong><code>AIC</code>, <code>BIC</code>, <code>logLik</code></strong>: the fit of the model, used to compare models (lower AIC and BIC is better).</li>
-<li><strong><code>Random effects</code></strong>: the standard deviations of the random parts. <code>(Intercept)</code> is <span class="math inline">\(\sqrt{\tau_{00}}\)</span>, how much the school averages differ, and <code>Residual</code> is <span class="math inline">\(\sigma\)</span>, how much students differ within a school.</li>
-<li><strong><code>Fixed effects</code></strong>: the <span class="math inline">\(\gamma\)</span>s, with standard errors, degrees of freedom, <em>t</em> and <em>p</em>, read like a regression table. Here there is only <span class="math inline">\(\gamma_{00}\)</span> = 12.64, the average school score.</li>
-<li><strong><code>DF</code></strong>: <code>lme()</code> counts the degrees of freedom at the level of each predictor. Student-level effects get about as many as there are students, school-level effects about as many as there are <strong>schools</strong> (we will see 157 for them below).</li>
-<li><strong><code>Standardized Within-Group Residuals</code></strong>: a summary of the level-1 residuals; roughly symmetric around 0 is good.</li>
-<li><strong><code>Number of Observations</code></strong> and <strong><code>Number of Groups</code></strong>: 7185 students in 160 schools.</li>
-</ul>
-</section>
-<section id="the-intraclass-correlation-icc" class="level3">
-<h3 class="anchored" data-anchor-id="the-intraclass-correlation-icc">The intraclass correlation (ICC)</h3>
-<p><code>VarCorr()</code> gives the variances:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">VarCorr(m0)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>school = pdLogChol(1) 
-            Variance  StdDev  
-(Intercept)  8.614025 2.934966
-Residual    39.148322 6.256862</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">vc &lt;- function(m) { v &lt;- VarCorr(m); setNames(as.numeric(v[, "Variance"]), rownames(v)) }   # variances as numbers
-tau00 &lt;- vc(m0)["(Intercept)"]
-sigma2 &lt;- vc(m0)["Residual"]
-icc &lt;- unname(tau00 / (tau00 + sigma2))
-icc</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 0.1803518</code></pre>
-</div>
-</div>
-<p><span class="math display">\[\text{ICC} = \frac{\tau_{00}}{\tau_{00} + \sigma^2} = \frac{8.61}{8.61 + 39.15} = 0.18\]</span></p>
-<p>About 18% of the differences in maths scores lie <strong>between schools</strong>, and 82% between students of the same school. The ICC is also the correlation between the scores of two students of the same school. Any ICC above about 0.05 is a good reason for a multilevel model, and 0.18 is a lot.</p>
-<hr>
-</section>
-</section>
-<section id="what-ignoring-the-schools-does" class="level2">
-<h2 class="anchored" data-anchor-id="what-ignoring-the-schools-does">4. What ignoring the schools does</h2>
-<p>Compare ordinary regression with a multilevel model that has the same two predictors, SES and sector:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">fit_ols &lt;- lm(math ~ ses + sector, data = hsb)
-fit_mlm &lt;- lme(math ~ ses + sector, random = ~ 1 | school, data = hsb)
-se_ols &lt;- summary(fit_ols)$coefficients[, "Std. Error"]
-se_mlm &lt;- summary(fit_mlm)$tTable[, "Std.Error"]
-round(data.frame(estimate_ols = coef(fit_ols), se_ols, estimate_mlm = fixef(fit_mlm), se_mlm,
-                 se_ratio = se_mlm / se_ols), 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>               estimate_ols se_ols estimate_mlm se_mlm se_ratio
-(Intercept)          11.793  0.106       11.719  0.228    2.149
-ses                   2.949  0.098        2.375  0.105    1.078
-sectorCatholic        1.935  0.152        2.101  0.341    2.237</code></pre>
-</div>
-</div>
-<p>The <strong>Catholic</strong> coefficient has a standard error 2.2 times larger in the multilevel model. Ordinary regression acts as if it had 7,185 independent pieces of information about Catholic schools. In fact there are only 160 schools, and the students of each school share most of what makes their school different.</p>
-<p>The <strong>design effect</strong> says how much the clustering inflates the variance of an estimate. With <span class="math inline">\(\bar m\)</span> students per school:</p>
-<p><span class="math display">\[\text{design effect} = 1 + (\bar m - 1) \times \text{ICC} = 1 + (44.9 - 1) \times 0.18 = 8.9\]</span></p>
-<p>so standard errors of school-level effects can be up to <span class="math inline">\(\sqrt{8.9} = 3\)</span> times too small. (The ratio above is smaller because SES already explains part of the differences between schools.) Too-small standard errors mean confidence intervals that are too narrow and <em>p</em> values that are too small: findings that look stronger than they are.</p>
-<hr>
-</section>
-<section id="step-1-a-student-level-predictor" class="level2">
-<h2 class="anchored" data-anchor-id="step-1-a-student-level-predictor">5. Step 1: a student-level predictor</h2>
-<p>Now add the student’s SES, centred within the school:</p>
-<p><span class="math display">\[\text{Level 1:}\qquad \text{math}_{ij} = \beta_{0j} + \beta_{1}\,\text{ses\_within}_{ij} + r_{ij}\]</span></p>
-<p><span class="math display">\[\text{Level 2:}\qquad \beta_{0j} = \gamma_{00} + u_{0j}, \qquad \beta_{1} = \gamma_{10}\]</span></p>
-<p>The slope <span class="math inline">\(\beta_1\)</span> is the same in every school for now (it has no <span class="math inline">\(u\)</span>).</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">m1 &lt;- lme(math ~ ses_within, random = ~ 1 | school, data = hsb)
-summary(m1)$tTable</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                Value Std.Error   DF  t-value      p-value
-(Intercept) 12.636139 0.2444873 7024 51.68422 0.000000e+00
-ses_within   2.191172 0.1086546 7024 20.16640 5.756752e-88</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre><code class="language-r">VarCorr(m1)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>school = pdLogChol(1) 
-            Variance  StdDev  
-(Intercept)  8.672288 2.944875
-Residual    37.010413 6.083618</code></pre>
-</div>
-</div>
-<p>Within a school, a student one SD higher in SES than their schoolmates scores about <strong>2.19 points</strong> higher.</p>
-<p>How much did SES explain? Compare the variances with the null model. The proportion by which a variance shrinks is the multilevel version of <span class="math inline">\(R^2\)</span>, one for each level:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre><code class="language-r">c(sigma2_null = unname(sigma2), sigma2_step1 = unname(vc(m1)["Residual"]),
-  level1_R2 = unname(1 - vc(m1)["Residual"] / sigma2))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code> sigma2_null sigma2_step1    level1_R2 
- 39.14832200  37.01041300   0.05461049 </code></pre>
-</div>
-</div>
-<p>SES explains about 5.5% of the differences between students of the same school. The school variance <span class="math inline">\(\tau_{00}\)</span> did not go down (8.67, against 8.61): it cannot, because <code>ses_within</code> has the same mean, 0, in every school. To explain why schools differ we need school-level predictors (section 7).</p>
-<hr>
-</section>
-<section id="step-2-random-slopes-or-does-family-background-matter-equally-in-every-school" class="level2">
-<h2 class="anchored" data-anchor-id="step-2-random-slopes-or-does-family-background-matter-equally-in-every-school">6. Step 2: random slopes, or does family background matter equally in every school?</h2>
-<p>Let the slope differ between schools:</p>
-<p><span class="math display">\[\text{Level 1:}\qquad \text{math}_{ij} = \beta_{0j} + \beta_{1j}\,\text{ses\_within}_{ij} + r_{ij}\]</span></p>
-<p><span class="math display">\[\text{Level 2:}\qquad \beta_{0j} = \gamma_{00} + u_{0j}, \qquad \beta_{1j} = \gamma_{10} + u_{1j}\]</span></p>
-<p>Now each school has its own slope <span class="math inline">\(\beta_{1j}\)</span>, spread around the average slope <span class="math inline">\(\gamma_{10}\)</span> with variance <span class="math inline">\(\tau_{11}\)</span>. The intercepts and slopes may be correlated, with covariance <span class="math inline">\(\tau_{01}\)</span>. In R, <code>random = ~ ses_within | school</code> means “an intercept and a <code>ses_within</code> slope for every school”:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre><code class="language-r">m2 &lt;- lme(math ~ ses_within, random = ~ ses_within | school, data = hsb)
-summary(m2)$tTable</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                Value Std.Error   DF  t-value      p-value
-(Intercept) 12.636193 0.2445038 7024 51.68097 0.000000e+00
-ses_within   2.193196 0.1282586 7024 17.09980 2.936628e-64</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre><code class="language-r">VarCorr(m2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>school = pdLogChol(ses_within) 
-            Variance   StdDev    Corr  
-(Intercept)  8.6809690 2.9463484 (Intr)
-ses_within   0.6939876 0.8330592 0.019 
-Residual    36.7002004 6.0580690       </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">tau11 &lt;- unname(vc(m2)["ses_within"])</code></pre></div></div>
-</details>
-</div>
-<ul>
-<li>The average slope is still about 2.19.</li>
-<li>The slopes vary with a standard deviation of <span class="math inline">\(\sqrt{\tau_{11}}\)</span> = 0.83. If they are normally distributed, about 95% of schools have a slope between <span class="math inline">\(2.19 \pm 1.96 \times 0.83\)</span>, that is from 0.56 to 3.83. In practically every school richer students do better, but in some schools the gap is several times larger than in others.</li>
-<li><code>Corr</code> is the correlation of the intercepts and slopes, near 0 here: high-scoring schools do not have steeper or flatter slopes.</li>
-</ul>
-<section id="is-the-slope-variance-real-a-likelihood-ratio-test" class="level3">
-<h3 class="anchored" data-anchor-id="is-the-slope-variance-real-a-likelihood-ratio-test">Is the slope variance real? A likelihood-ratio test</h3>
-<p>Compare the models with and without the random slope:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre><code class="language-r">lrt &lt;- anova(m1, m2)
-lrt</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>   Model df      AIC      BIC    logLik   Test  L.Ratio p-value
-m1     1  4 46732.00 46759.51 -23362.00                        
-m2     2  6 46726.23 46767.51 -23357.12 1 vs 2 9.761657  0.0076</code></pre>
-</div>
-</div>
-<p>The random slope adds two parameters (the variance <span class="math inline">\(\tau_{11}\)</span> and the covariance <span class="math inline">\(\tau_{01}\)</span>), and the likelihood-ratio test (<code>L.Ratio</code>) is 9.76, <em>p</em> = 0.0076. Both models have the same fixed effects, so comparing their REML fits is fine.</p>
-<p>The <em>p</em> value is <strong>conservative</strong> (too large). The test asks whether <span class="math inline">\(\tau_{11} = 0\)</span>, and a variance cannot be negative, so 0 is at the edge of its possible values. The correct reference distribution is a 50:50 mixture of <span class="math inline">\(\chi^2\)</span> with 1 and 2 degrees of freedom (Self &amp; Liang, 1987; Stram &amp; Lee, 1994):</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb33"><pre><code class="language-r">LR &lt;- lrt$L.Ratio[2]
-c(p_naive = pchisq(LR, df = 2, lower.tail = FALSE),
-  p_mixture = 0.5 * pchisq(LR, df = 1, lower.tail = FALSE) + 0.5 * pchisq(LR, df = 2, lower.tail = FALSE))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>    p_naive   p_mixture 
-0.007590724 0.004686308 </code></pre>
-</div>
-</div>
-<p>Either way, the SES gap <strong>does</strong> differ between schools.</p>
-</section>
-<section id="the-same-sequence-with-one-call-report_hlr" class="level3">
-<h3 class="anchored" data-anchor-id="the-same-sequence-with-one-call-report_hlr">The same sequence with one call: <code>report_hlr()</code></h3>
-<p>The rwf package fits this sequence of models in one call: no random effect at all (an ordinary regression fitted with <code>gls()</code>), a random intercept, the predictor, and a random slope, compared step by step with likelihood-ratio tests. It uses ML (see section 9), so the numbers differ slightly from the REML fits above:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre><code class="language-r">steps &lt;- report_hlr(df = hsb, corlist = which(names(hsb) == "math"), factorlist = which(names(hsb) == "school"),
-                    predictor = "ses_within", random_effect = "school")
-steps[, c("model", "fixed", "random", "df", "AIC", "BIC", "logLik", "Test", "L.Ratio", "p.value")]</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                       model             fixed               random df      AIC      BIC    logLik   Test    L.Ratio       p.value
-1                       base          math ~ 1                 &lt;NA&gt;  2 48103.73 48117.49 -24049.87                NA            NA
-2           random_intercept          math ~ 1          ~1 | school  3 47121.81 47142.45 -23557.91 1 vs 2 983.921822 5.611909e-216
-3 random_intercept_predictor math ~ ses_within          ~1 | school  4 46728.41 46755.93 -23360.21 2 vs 3 395.398363  5.529267e-88
-4     random_intercept_slope math ~ ses_within ~ses_within | school  6 46722.98 46764.26 -23355.49 3 vs 4   9.433005  8.946412e-03</code></pre>
-</div>
-</div>
-<p>Read it row by row. The first test (<code>1 vs 2</code>) asks whether schools differ at all: an enormous likelihood ratio, the ICC of section 3 in test form. The second (<code>2 vs 3</code>) tests SES, the third (<code>3 vs 4</code>) the random slope.</p>
-</section>
-<section id="what-the-model-believes-about-each-school-shrinkage" class="level3">
-<h3 class="anchored" data-anchor-id="what-the-model-believes-about-each-school-shrinkage">What the model believes about each school: shrinkage</h3>
-<p>The model gives an estimate of the intercept and slope of every school (<code>coef(m2)</code>). They are <strong>not</strong> the same as the separate regressions of section 2:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre><code class="language-r">eb &lt;- coef(m2)                                   # the multilevel estimate for each school
-ols$intercept_mlm &lt;- eb[ols$school, "(Intercept)"]
-ols$slope_mlm     &lt;- eb[ols$school, "ses_within"]
-g &lt;- fixef(m2)
-s1 &lt;- ggplot(ols, aes(intercept, intercept_mlm, size = n)) +
-  geom_abline(linetype = "dashed") +
-  geom_hline(yintercept = g[1], colour = "#E74C3C") +
-  geom_point(alpha = 0.5, colour = "#0082c8") +
-  scale_size_area(max_size = 3.5) +
-  labs(title = "Intercepts (school averages)", x = "separate regression", y = "multilevel model", size = "students")
-s2 &lt;- ggplot(ols, aes(slope, slope_mlm, size = n)) +
-  geom_abline(linetype = "dashed") +
-  geom_hline(yintercept = g[2], colour = "#E74C3C") +
-  geom_point(alpha = 0.5, colour = "#0082c8") +
-  scale_size_area(max_size = 3.5) +
-  labs(title = "SES slopes", x = "separate regression", y = "multilevel model", size = "students")
-s1 + s2 + plot_layout(guides = "collect")   # one legend for both panels</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="What the model believes about each school: shrinkage" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL_files/figure-html/shrinkage-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre><code class="language-r">round(rbind(separate_regressions = range(ols$slope), multilevel_model = range(ols$slope_mlm)), 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                      [,1] [,2]
-separate_regressions -2.02 6.27
-multilevel_model      0.78 3.41</code></pre>
-</div>
-</div>
-<p>The multilevel estimates are pulled from the dashed diagonal (each school on its own) towards the red line (the average of all schools). This is called <strong>shrinkage</strong>, and the estimates are called <strong>empirical Bayes</strong> estimates. For a school average in the random-intercept model the formula is:</p>
-<p><span class="math display">\[\hat\beta_{0j} = \lambda_j\,\bar y_j + (1 - \lambda_j)\,\hat\gamma_{00}, \qquad \lambda_j = \frac{\tau_{00}}{\tau_{00} + \sigma^2 / n_j}\]</span></p>
-<p><span class="math inline">\(\lambda_j\)</span> is the <strong>reliability</strong> of school <span class="math inline">\(j\)</span>’s own mean: close to 1 when the school has many students (its own mean is trustworthy), smaller when it has few. In the null model:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb40"><pre><code class="language-r">n_j &lt;- as.numeric(table(hsb$school))
-lambda &lt;- tau00 / (tau00 + sigma2 / n_j)
-round(c(smallest_school = min(lambda), median = median(lambda), largest_school = max(lambda)), 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>smallest_school          median  largest_school 
-           0.75            0.91            0.94 </code></pre>
-</div>
-</div>
-<p>The <strong>slopes</strong> shrink much more than the intercepts. A slope estimated from 14 to 67 students is very noisy, and the slopes truly differ only a little (<span class="math inline">\(\sqrt{\tau_{11}}\)</span> = 0.83), so most of the spread of the separate slopes (from -2 to 6.3) is noise. The model keeps the part it believes is real (from 0.8 to 3.4). The negative slopes of a few small schools were flukes.</p>
-<hr>
-</section>
-</section>
-<section id="step-3-school-level-predictors-within-and-between" class="level2">
-<h2 class="anchored" data-anchor-id="step-3-school-level-predictors-within-and-between">7. Step 3: school-level predictors, within and between</h2>
-<p>Why do some schools score higher? Add two school-level predictors to the intercept equation: the school’s mean SES and its sector (Catholic = 1, public = 0):</p>
-<p><span class="math display">\[\text{Level 2:}\qquad \beta_{0j} = \gamma_{00} + \gamma_{01}\,\text{ses\_school}_j + \gamma_{02}\,\text{Catholic}_j + u_{0j}, \qquad \beta_{1j} = \gamma_{10} + u_{1j}\]</span></p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb42"><pre><code class="language-r">m3 &lt;- lme(math ~ ses_within + ses_school + sector, random = ~ ses_within | school, data = hsb)
-summary(m3)$tTable</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                   Value Std.Error   DF   t-value      p-value
-(Intercept)    12.063419 0.1991480 7024 60.575153 0.000000e+00
-ses_within      2.194980 0.1284185 7024 17.092388 3.317645e-64
-ses_school      5.246300 0.3683306  157 14.243455 4.423748e-30
-sectorCatholic  1.372171 0.3055220  157  4.491234 1.365339e-05</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre><code class="language-r">VarCorr(m3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>school = pdLogChol(ses_within) 
-            Variance   StdDev   Corr  
-(Intercept)  2.3851744 1.544401 (Intr)
-ses_within   0.7006628 0.837056 0.18  
-Residual    36.7097503 6.058857       </code></pre>
-</div>
-</div>
-<ul>
-<li><strong>Catholic</strong> schools score 1.37 points higher than public schools with the same mean SES.</li>
-<li>Note the <strong><code>DF</code></strong>: 157 for the school-level predictors, because there are 160 schools; 7024 for the student-level one.</li>
-<li>The school variance fell from 8.68 to 2.39: school SES and sector explain <strong>73%</strong> of the differences between school averages.</li>
-</ul>
-<section id="within-and-between-two-different-ses-effects" class="level3">
-<h3 class="anchored" data-anchor-id="within-and-between-two-different-ses-effects">Within and between: two different SES effects</h3>
-<p>The two SES coefficients are very different:</p>
-<ul>
-<li><strong>Within</strong> a school, one SD more family SES goes with 2.19 points more.</li>
-<li><strong>Between</strong> schools, a school whose students are on average one SD better off scores 5.25 points higher.</li>
-</ul>
-<p>The difference is the <strong>contextual effect</strong>: the extra score that comes from being in a better-off school, for two students with the <strong>same</strong> family SES. To get it directly, with its own standard error, use the uncentred SES together with the school mean (Raudenbush &amp; Bryk, 2002). There the school-mean coefficient <strong>is</strong> the contextual effect:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb46"><pre><code class="language-r">m_ctx &lt;- lme(math ~ ses + ses_school, random = ~ 1 | school, data = hsb)
-summary(m_ctx)$tTable</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                Value Std.Error   DF  t-value      p-value
-(Intercept) 12.683308 0.1493802 7024 84.90621 0.000000e+00
-ses          2.191172 0.1086673 7024 20.16404 6.021818e-88
-ses_school   3.675002 0.3776705  158  9.73071 7.953398e-18</code></pre>
-</div>
-</div>
-<p>Two students from equally well-off families differ by about 3.7 points if one attends a school whose mean SES is one unit higher.</p>
-<p>What if we had not split SES? A model with the raw SES only gives a single slope:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb48"><pre><code class="language-r">m_raw &lt;- lme(math ~ ses, random = ~ 1 | school, data = hsb)
-round(c(raw_ses_slope = unname(fixef(m_raw)["ses"]), within = unname(fixef(m3)["ses_within"]),
-        between = unname(fixef(m3)["ses_school"])), 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>raw_ses_slope        within       between 
-         2.39          2.19          5.25 </code></pre>
-</div>
-</div>
-<p>The raw slope (2.39) is a blend of the within and the between effects, and answers neither question. Decide <strong>which</strong> question you are asking, and centre accordingly (Enders &amp; Tofighi, 2007):</p>
-<ul>
-<li><strong>Group-mean centring</strong> (<code>ses_within</code>, plus <code>ses_school</code> at level 2) separates the within and the between effects. Use it when the student-level effect is the question, and for random slopes.</li>
-<li><strong>Grand-mean centring</strong> (SES minus the overall mean) keeps the blend but makes the intercept the score of an average student. Use it when the student-level predictor is only a control.</li>
-</ul>
-<hr>
-</section>
-</section>
-<section id="step-4-cross-level-interactions-or-why-do-slopes-differ" class="level2">
-<h2 class="anchored" data-anchor-id="step-4-cross-level-interactions-or-why-do-slopes-differ">8. Step 4: cross-level interactions, or why do slopes differ?</h2>
-<p>Section 6 showed that the SES gap differs between schools. Can school characteristics explain <strong>why</strong>? Put the school predictors into the slope equation too:</p>
-<p><span class="math display">\[\beta_{1j} = \gamma_{10} + \gamma_{11}\,\text{ses\_school}_j + \gamma_{12}\,\text{Catholic}_j + u_{1j}\]</span></p>
-<p>Substituting into level 1 gives products of a student-level and a school-level variable: <strong>cross-level interactions</strong>.</p>
-<p><span class="math display">\[\text{math}_{ij} = \gamma_{00} + \gamma_{01}\,\text{ses\_school}_j + \gamma_{02}\,\text{Catholic}_j + \gamma_{10}\,\text{ses\_within}_{ij} + \gamma_{11}\,\text{ses\_school}_j \times \text{ses\_within}_{ij} + \gamma_{12}\,\text{Catholic}_j \times \text{ses\_within}_{ij} + u_{0j} + u_{1j}\,\text{ses\_within}_{ij} + r_{ij}\]</span></p>
-<p>In R, <code>ses_within * (ses_school + sector)</code> writes all of these terms:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb50"><pre><code class="language-r">m4 &lt;- lme(math ~ ses_within * (ses_school + sector), random = ~ ses_within | school, data = hsb)
-summary(m4)$tTable</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                              Value Std.Error   DF   t-value      p-value
-(Intercept)               12.127931 0.1992951 7022 60.854147 0.000000e+00
-ses_within                 2.945043 0.1555906 7022 18.928149 5.697836e-78
-ses_school                 5.332878 0.3691743  157 14.445420 1.255094e-30
-sectorCatholic             1.226578 0.3062783  157  4.004782 9.554485e-05
-ses_within:ses_school      1.039249 0.2988794 7022  3.477152 5.098400e-04
-ses_within:sectorCatholic -1.642680 0.2397649 7022 -6.851211 7.943710e-12</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb52"><pre><code class="language-r">VarCorr(m4)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>school = pdLogChol(ses_within) 
-            Variance   StdDev    Corr  
-(Intercept)  2.3797629 1.5426480 (Intr)
-ses_within   0.1010237 0.3178422 0.391 
-Residual    36.7211868 6.0598009       </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb54"><pre><code class="language-r">b4 &lt;- fixef(m4)</code></pre></div></div>
-</details>
-</div>
-<p>Read the interactions as changes in the SES slope:</p>
-<ul>
-<li>In a <strong>public</strong> school of average SES, the SES slope is 2.95.</li>
-<li>In a <strong>Catholic</strong> school of average SES, it is 2.95 <span class="math inline">\(-\)</span> 1.64 = <strong>1.30</strong>: the gap between richer and poorer students is less than half as large.</li>
-<li>In <strong>better-off</strong> schools the slope is steeper: 1.04 more per unit of school mean SES.</li>
-</ul>
-<p>The slope variance fell from 0.70 to 0.10: sector and school SES explain <strong>86%</strong> of the differences in SES slopes. Is any slope variance left?</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb55"><pre><code class="language-r">m4_no_slope &lt;- update(m4, random = ~ 1 | school)
-anova(m4_no_slope, m4)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>            Model df      AIC      BIC    logLik   Test  L.Ratio p-value
-m4_no_slope     1  8 46520.79 46575.82 -23252.39                        
-m4              2 10 46523.66 46592.45 -23251.83 1 vs 2 1.124097    0.57</code></pre>
-</div>
-</div>
-<p>No (<em>p</em> = 0.57, and still clearly above .05 after halving it for the boundary). Once we know a school’s sector and mean SES, its SES slope is predictable; the remaining differences between schools are in their average scores. A simpler final model with a random intercept only would be defensible here; we keep the random slope to show the full model.</p>
-<p>The model’s predictions show the pattern:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb57"><pre><code class="language-r">grid &lt;- expand.grid(ses_within = seq(-2, 2, length.out = 50), sector = c("Public", "Catholic"),
-                    ses_school = c(-0.5, 0, 0.5))
-grid$sector &lt;- factor(grid$sector, levels = levels(hsb$sector))
-grid$math &lt;- predict(m4, newdata = grid, level = 0)        # level = 0: the fixed effects, for a typical school
-grid$school_ses &lt;- factor(grid$ses_school, labels = c("poorer schools (mean SES -0.5)", "average schools (0)",
-                                                      "richer schools (+0.5)"))
-ggplot(grid, aes(ses_within, math, colour = sector)) +
-  geom_line(linewidth = 1.1) +
-  facet_wrap(~school_ses) +
-  scale_colour_manual(values = c(Public = "#0082c8", Catholic = "#E74C3C")) +
-  labs(title = "Predicted maths score: the SES gap is smaller in Catholic schools",
-       x = "SES compared with schoolmates", y = "predicted maths score", colour = NULL) +
-  theme(legend.position = "bottom")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Predictions – 8. Step 4: cross-level interactions, or why do slopes differ?" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL_files/figure-html/predictions-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>The Catholic advantage is largest for the students who are <strong>worse off than their schoolmates</strong>. For students well above their schoolmates the two sectors predict about the same score, and the lines cross. Richer schools (right) score higher in both sectors and have steeper lines.</p>
-<p>A word of caution: students are not randomly assigned to Catholic schools. Families who choose them may differ in ways that SES does not capture, so these are associations, not proof that Catholic schools <strong>cause</strong> a smaller gap (Coleman et al., 1982, started a long debate about exactly this).</p>
-<hr>
-</section>
-<section id="comparing-all-the-models" class="level2">
-<h2 class="anchored" data-anchor-id="comparing-all-the-models">9. Comparing all the models</h2>
-<p><strong>REML or ML?</strong> REML estimates the variances better, so report REML fits. But REML likelihoods can only be compared between models with the <strong>same fixed effects</strong> (as in section 6). To test fixed effects with a likelihood-ratio test, refit with <code>method = "ML"</code>:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb58"><pre><code class="language-r">anova(update(m2, method = "ML"), update(m3, method = "ML"), update(m4, method = "ML"))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                          Model df      AIC      BIC    logLik   Test   L.Ratio p-value
-update(m2, method = "ML")     1  6 46722.98 46764.26 -23355.49                         
-update(m3, method = "ML")     2  8 46554.14 46609.18 -23269.07 1 vs 2 172.83591  &lt;.0001
-update(m4, method = "ML")     3 10 46516.43 46585.23 -23248.21 2 vs 3  41.71416  &lt;.0001</code></pre>
-</div>
-</div>
-<p>Both steps improve the model a lot. All the models side by side:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb60"><pre><code class="language-r">models &lt;- list("0: null" = m0, "1: + SES within" = m1, "2: + random slope" = m2,
-               "3: + school SES, sector" = m3, "4: + cross-level interactions" = m4)
-get_v &lt;- function(m, name) { v &lt;- vc(m); if (name %in% names(v)) unname(v[name]) else NA }
-round(t(sapply(models, function(m) {
-  ml &lt;- update(m, method = "ML")
-  c(tau00 = get_v(m, "(Intercept)"), tau11 = get_v(m, "ses_within"), sigma2 = get_v(m, "Residual"),
-    parameters = attr(logLik(ml), "df"), AIC_ML = AIC(ml), BIC_ML = BIC(ml))
-})), 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                              tau00 tau11 sigma2 parameters   AIC_ML   BIC_ML
-0: null                        8.61    NA  39.15          3 47121.81 47142.45
-1: + SES within                8.67    NA  37.01          4 46728.41 46755.93
-2: + random slope              8.68  0.69  36.70          6 46722.98 46764.26
-3: + school SES, sector        2.39  0.70  36.71          8 46554.14 46609.18
-4: + cross-level interactions  2.38  0.10  36.72         10 46516.43 46585.23</code></pre>
-</div>
-</div>
-<p>And the variance each step explained, against the model before it at the same level:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-<col style="width: 20%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Variance</th>
-<th>From</th>
-<th>To</th>
-<th>Explained by</th>
-<th>Share explained</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><span class="math inline">\(\sigma^2\)</span>, students within schools</td>
-<td>39.15 (step 0)</td>
-<td>37.01 (step 1)</td>
-<td>student SES</td>
-<td>5.5%</td>
-</tr>
-<tr class="even">
-<td><span class="math inline">\(\tau_{00}\)</span>, school averages</td>
-<td>8.68 (step 2)</td>
-<td>2.39 (step 3)</td>
-<td>school SES and sector</td>
-<td>73%</td>
-</tr>
-<tr class="odd">
-<td><span class="math inline">\(\tau_{11}\)</span>, SES slopes</td>
-<td>0.70 (step 3)</td>
-<td>0.10 (step 4)</td>
-<td>school SES and sector</td>
-<td>86%</td>
-</tr>
-</tbody>
-</table>
-<hr>
-</section>
-<section id="checking-the-assumptions" class="level2">
-<h2 class="anchored" data-anchor-id="checking-the-assumptions">10. Checking the assumptions</h2>
-<p>A multilevel model assumes, at <strong>each</strong> level, normally distributed random parts with constant variance: the student residuals <span class="math inline">\(r_{ij}\)</span> and the school effects <span class="math inline">\(u_{0j}\)</span> and <span class="math inline">\(u_{1j}\)</span>.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb62"><pre><code class="language-r">d &lt;- data.frame(fitted = fitted(m4), residual = resid(m4, type = "normalized"))
-re &lt;- ranef(m4)
-qq &lt;- function(x, title) ggplot(data.frame(x = x), aes(sample = x)) +
-  stat_qq(alpha = 0.4, colour = "#0082c8") + stat_qq_line() +
-  labs(title = title, x = "normal quantiles", y = "sample quantiles")
-d1 &lt;- ggplot(d, aes(fitted, residual)) +
-  geom_point(alpha = 0.15, size = 0.8) +
-  geom_hline(yintercept = 0, colour = "#E74C3C") +
-  labs(title = "Student residuals against fitted", x = "fitted maths score", y = "standardised residual")
-(d1 + qq(d$residual, "Student residuals")) / (qq(re[, "(Intercept)"], "School intercepts (u0)") +
-                                              qq(re[, "ses_within"], "School slopes (u1)"))</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Diagnostics – 10. Checking the assumptions" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL_files/figure-html/diagnostics-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<ul>
-<li><strong>Student residuals against fitted</strong>: a band around 0 with no curve in it. Its sharp upper edge on the right is the <strong>ceiling</strong> of the test: the top score is 25, so a student predicted to score 20 cannot be more than 5 points above the prediction. The lower edge on the left is the floor, for the same reason.</li>
-<li><strong>Student residuals</strong>: close to the line in the middle; the tails are shorter than those of a normal distribution, again because of the floor and the ceiling. With 7,185 students, this hardly affects the estimates.</li>
-<li><strong>School intercepts and slopes</strong>: close to the line. With 160 schools that is what matters for the level-2 estimates. The slopes are strongly shrunken (section 6), so their spread is small.</li>
-</ul>
-<hr>
-</section>
-<section id="the-same-models-in-lme4" class="level2">
-<h2 class="anchored" data-anchor-id="the-same-models-in-lme4">11. The same models in lme4</h2>
-<p>The <code>lme4</code> package is the other common choice. Its <code>lmer()</code> writes the random part inside the formula, in brackets:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb63"><pre><code class="language-r">m4_lmer &lt;- lme4::lmer(math ~ ses_within * (ses_school + sector) + (ses_within | school), data = hsb)
-round(cbind(nlme = fixef(m4), lme4 = lme4::fixef(m4_lmer)), 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                            nlme   lme4
-(Intercept)               12.128 12.128
-ses_within                 2.945  2.945
-ses_school                 5.333  5.333
-sectorCatholic             1.227  1.227
-ses_within:ses_school      1.039  1.039
-ses_within:sectorCatholic -1.643 -1.643</code></pre>
-</div>
-</div>
-<p>The estimates are the same. Translation table:</p>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Model</th>
-<th>nlme</th>
-<th>lme4</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Random intercept</td>
-<td><code>lme(y ~ x, random = ~ 1 | g)</code></td>
-<td><code>lmer(y ~ x + (1 | g))</code></td>
-</tr>
-<tr class="even">
-<td>Random intercept and slope</td>
-<td><code>lme(y ~ x, random = ~ x | g)</code></td>
-<td><code>lmer(y ~ x + (x | g))</code></td>
-</tr>
-<tr class="odd">
-<td>ML instead of REML</td>
-<td><code>method = "ML"</code></td>
-<td><code>REML = FALSE</code></td>
-</tr>
-<tr class="even">
-<td>Variances</td>
-<td><code>VarCorr(m)</code></td>
-<td><code>VarCorr(m)</code></td>
-</tr>
-<tr class="odd">
-<td>School-level estimates</td>
-<td><code>coef(m)</code>, <code>ranef(m)</code></td>
-<td><code>coef(m)</code>, <code>ranef(m)</code></td>
-</tr>
-</tbody>
-</table>
-<p><code>lmer()</code> does not print <em>p</em> values for the fixed effects, because their degrees of freedom are not obvious. The <code>lmerTest</code> package adds them (with Satterthwaite’s approximation); <code>lme()</code> gives them directly, as above.</p>
-<hr>
-</section>
-<section id="reporting-the-results-in-apa-style" class="level2">
-<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">12. Reporting the results in APA style</h2>
-<p>A report (APA 7th edition) should give the structure of the data, the ICC, how the model was built, the fixed effects with their uncertainty, the variance components, and the tests of the random effects. We collect the numbers from the R objects:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb65"><pre><code class="language-r">tt  &lt;- summary(m4)$tTable
-ci  &lt;- intervals(m4, which = "fixed")$fixed
-v4  &lt;- vc(m4)
-lr_slope &lt;- anova(m1, m2)
-ml_test  &lt;- anova(update(m3, method = "ML"), update(m4, method = "ML"))
-f2   &lt;- function(x) formatC(x, format = "f", digits = 2)
-nz   &lt;- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
-pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))</code></pre></div></div>
-</details>
-</div>
-<p><strong>Method</strong> (data analysis):</p>
-<blockquote class="blockquote">
-<p>Mathematics achievement scores of 7,185 students nested in 160 high schools (70 Catholic, 90 public; 14 to 67 students per school) were analysed with two-level linear models (students within schools), estimated by restricted maximum likelihood in R (Version 4.6.2; R Core Team, 2026) with the <em>nlme</em> package. Student socio-economic status (SES) was centred on the school mean, and the school mean SES was entered as a school-level predictor. Models were built in steps: a null model, student SES, a random SES slope, school-level predictors (mean SES and sector), and cross-level interactions. Fixed effects were compared with likelihood-ratio tests of maximum-likelihood fits.</p>
-</blockquote>
-<p><strong>Results:</strong></p>
-<blockquote class="blockquote">
-<p>In the null model, 18% of the variance in mathematics achievement lay between schools (ICC = .18). Students with higher SES than their schoolmates scored higher, and this within-school SES slope varied between schools, χ²(2) = 9.76, <em>p</em> = .008. In the final model (Table 1), students in Catholic schools scored higher than students in public schools with the same mean SES, <em>b</em> = 1.23, 95% CI [0.62, 1.83], and school mean SES was strongly related to achievement, <em>b</em> = 5.33, 95% CI [4.60, 6.06]. The within-school SES slope was 2.95 in public schools of average SES, smaller in Catholic schools, <em>b</em> = -1.64, 95% CI [-2.11, -1.17], and larger in schools with higher mean SES, <em>b</em> = 1.04, 95% CI [0.45, 1.63]. Adding the cross-level interactions improved the model, χ²(2) = 41.71, <em>p</em> &lt; .001, and reduced the slope variance by 86%.</p>
-</blockquote>
-<p><strong>Table 1</strong></p>
-<p><em>Two-Level Model of Mathematics Achievement</em></p>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 40%">
-<col style="width: 8%">
-<col style="width: 6%">
-<col style="width: 6%">
-<col style="width: 8%">
-<col style="width: 9%">
-<col style="width: 20%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Effect</th>
-<th style="text-align: right;"><em>b</em></th>
-<th style="text-align: right;"><em>SE</em></th>
-<th style="text-align: right;"><em>df</em></th>
-<th style="text-align: right;"><em>t</em></th>
-<th style="text-align: right;"><em>p</em></th>
-<th style="text-align: right;">95% CI</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;"><strong>Fixed effects</strong></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Intercept</td>
-<td style="text-align: right;">12.13</td>
-<td style="text-align: right;">0.20</td>
-<td style="text-align: right;">7022</td>
-<td style="text-align: right;">60.85</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[11.74, 12.52]</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Student SES (within school)</td>
-<td style="text-align: right;">2.95</td>
-<td style="text-align: right;">0.16</td>
-<td style="text-align: right;">7022</td>
-<td style="text-align: right;">18.93</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[2.64, 3.25]</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">School mean SES</td>
-<td style="text-align: right;">5.33</td>
-<td style="text-align: right;">0.37</td>
-<td style="text-align: right;">157</td>
-<td style="text-align: right;">14.45</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[4.60, 6.06]</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Catholic (vs public)</td>
-<td style="text-align: right;">1.23</td>
-<td style="text-align: right;">0.31</td>
-<td style="text-align: right;">157</td>
-<td style="text-align: right;">4.00</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[0.62, 1.83]</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Student SES × school mean SES</td>
-<td style="text-align: right;">1.04</td>
-<td style="text-align: right;">0.30</td>
-<td style="text-align: right;">7022</td>
-<td style="text-align: right;">3.48</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[0.45, 1.63]</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Student SES × Catholic</td>
-<td style="text-align: right;">-1.64</td>
-<td style="text-align: right;">0.24</td>
-<td style="text-align: right;">7022</td>
-<td style="text-align: right;">-6.85</td>
-<td style="text-align: right;">&lt; .001</td>
-<td style="text-align: right;">[-2.11, -1.17]</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;"><strong>Random effects</strong></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Intercept variance (τ00)</td>
-<td style="text-align: right;">2.38</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">SES slope variance (τ11)</td>
-<td style="text-align: right;">0.10</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Residual variance (σ²)</td>
-<td style="text-align: right;">36.72</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<p><em>Note.</em> <em>N</em> = 7,185 students in 160 schools. Restricted maximum likelihood estimates. Student SES is centred on the school mean. Variances are given in the <em>b</em> column.</p>
-<p><strong>Points to remember:</strong></p>
-<ul>
-<li>Report the <strong>ICC</strong> of the null model, and the number of groups and of observations per group.</li>
-<li>Say how the predictors were <strong>centred</strong>: it changes what the coefficients mean.</li>
-<li>Report the <strong>variance components</strong>, not only the fixed effects, and how the random slopes were tested (and that the test is conservative, or corrected for the boundary).</li>
-<li>Say whether the likelihood-ratio tests of fixed effects used <strong>ML</strong> fits.</li>
-<li>Cite R and the packages; <code>citation()</code> and <code>citation("nlme")</code> in R give the exact references.</li>
-</ul>
-<hr>
-</section>
-<section id="summary" class="level2">
-<h2 class="anchored" data-anchor-id="summary">13. Summary</h2>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<td><strong>When</strong></td>
-<td>Observations come in groups (students in schools, employees in teams, patients in hospitals, repeated measurements in people)</td>
-</tr>
-<tr class="even">
-<td><strong>Why not OLS</strong></td>
-<td>Observations in a group are alike (ICC &gt; 0), so standard errors are too small, especially for group-level predictors</td>
-</tr>
-<tr class="odd">
-<td><strong>Step 0: null model</strong></td>
-<td><code>lme(y ~ 1, random = ~ 1 | g)</code>; ICC = <span class="math inline">\(\tau_{00} / (\tau_{00} + \sigma^2)\)</span></td>
-</tr>
-<tr class="even">
-<td><strong>Level-1 predictors</strong></td>
-<td>Centre within the group to get the within effect; add the group mean for the between effect</td>
-</tr>
-<tr class="odd">
-<td><strong>Random slopes</strong></td>
-<td><code>random = ~ x | g</code>; test with a likelihood-ratio test, which is conservative at the boundary</td>
-</tr>
-<tr class="even">
-<td><strong>Level-2 predictors</strong></td>
-<td>Explain the differences between group averages (less <span class="math inline">\(\tau_{00}\)</span>)</td>
-</tr>
-<tr class="odd">
-<td><strong>Cross-level interactions</strong></td>
-<td><code>x * w</code>, with <code>x</code> at level 1 and <code>w</code> at level 2: explain why slopes differ (less <span class="math inline">\(\tau_{11}\)</span>)</td>
-</tr>
-<tr class="even">
-<td><strong>Estimation</strong></td>
-<td>REML to report; ML to compare models with different fixed effects</td>
-</tr>
-<tr class="odd">
-<td><strong>Group estimates</strong></td>
-<td>Shrunk towards the average, more so for small groups and noisy slopes</td>
-</tr>
-<tr class="even">
-<td><strong>R</strong></td>
-<td><code>nlme::lme()</code>, or <code>lme4::lmer()</code> with <code>lmerTest</code> for <em>p</em> values; <code>rwf::report_hlr()</code> for the step-by-step sequence</td>
-</tr>
-</tbody>
-</table>
-<hr>
-</section>
-<section id="references" class="level2">
-<h2 class="anchored" data-anchor-id="references">References</h2>
-<p>Bates, D., Mächler, M., Bolker, B., &amp; Walker, S. (2015). Fitting linear mixed-effects models using lme4. <em>Journal of Statistical Software</em>, <em>67</em>(1), 1–48.</p>
-<p>Coleman, J. S., Hoffer, T., &amp; Kilgore, S. (1982). <em>High school achievement: Public, Catholic, and private schools compared</em>. Basic Books.</p>
-<p>Enders, C. K., &amp; Tofighi, D. (2007). Centering predictor variables in cross-sectional multilevel models: A new look at an old issue. <em>Psychological Methods</em>, <em>12</em>(2), 121–138.</p>
-<p>Hox, J. J., Moerbeek, M., &amp; van de Schoot, R. (2018). <em>Multilevel analysis: Techniques and applications</em> (3rd ed.). Routledge.</p>
-<p>Pinheiro, J. C., &amp; Bates, D. M. (2000). <em>Mixed-effects models in S and S-PLUS</em>. Springer.</p>
-<p>Pinheiro, J., Bates, D., &amp; R Core Team. (2026). <em>nlme: Linear and nonlinear mixed effects models</em> (R package version 3.1-172). https://CRAN.R-project.org/package=nlme</p>
-<p>Raudenbush, S. W., &amp; Bryk, A. S. (2002). <em>Hierarchical linear models: Applications and data analysis methods</em> (2nd ed.). Sage.</p>
-<p>Self, S. G., &amp; Liang, K.-Y. (1987). Asymptotic properties of maximum likelihood estimators and likelihood ratio tests under nonstandard conditions. <em>Journal of the American Statistical Association</em>, <em>82</em>(398), 605–610.</p>
-<p>Snijders, T. A. B., &amp; Bosker, R. J. (2012). <em>Multilevel analysis: An introduction to basic and advanced multilevel modeling</em> (2nd ed.). Sage.</p>
-<p>Stram, D. O., &amp; Lee, J. W. (1994). Variance components testing in the longitudinal mixed effects model. <em>Biometrics</em>, <em>50</em>(4), 1171–1177.</p>
-<!-- -->
-</section>
-<!-- see-also: written by .github/scripts/add_see_also.py -->
-<section id="see-also" class="level2">
-<h2 class="anchored" data-anchor-id="see-also">See also</h2>
-<ul>
-<li><a href="https://sedzinfo.github.io/rwf/">rwf</a>: the R package behind <code>report_hlr()</code> on this page</li>
-</ul>
-</section>
-<!-- /see-also -->
-<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
     </item>
   </channel>
 </rss>
