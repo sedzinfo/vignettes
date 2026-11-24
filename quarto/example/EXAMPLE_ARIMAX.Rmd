@@ -1,0 +1,323 @@
+---
+title: "Time-Series Regression (ARIMAX): Did the Seat Belt Law Save Drivers?"
+description: "Regression with ARIMA errors in R with arima() and the forecast package, on 16 years of monthly road casualties in Great Britain around the seat belt law of 1983: why least squares misjudges time series, seasonal differences, choosing the order with the ACF and AICc, the step effect of a law with petrol price and traffic as covariates, residual checks, the world without the law, placebo dates and a control group, spurious regression, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page runs in seconds
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: one law, one country, one date
+
+On 31 January 1983 wearing a seat belt became compulsory for drivers and front-seat passengers in Great Britain. Did it save lives? The government asked two statisticians to find out (Harvey & Durbin, 1986).
+
+There is no control group. The law came for everybody on the same day. All there is are the **numbers of casualties, month by month**, for years before and two years after. The question is whether the series **stepped down** at the date of the law, by more than its usual ups and downs.
+
+A regression with a dummy variable for "after the law" seems to do it. But months that follow each other are not independent: a bad autumn affects several months, the economy goes in waves, and every December is worse than every June. Ordinary least squares takes neighbouring months for new information, and its standard errors are wrong.
+
+**Regression with ARIMA errors** (often called ARIMAX) has two parts: a regression for what we want to know, and an ARIMA model for how the rest moves over time. Used for a question like this, it is called **interrupted time series** or *intervention analysis* (Box & Tiao, 1975).
+
+```{r packages}
+library(forecast)   # Arima(), auto.arima(), forecast()
+library(ggplot2)
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data come with R, as the time series `Seatbelts`: 192 months, from January 1969 to December 1984.
+
+```{r data}
+head(Seatbelts, 2)
+road <- data.frame(date = as.numeric(time(Seatbelts)), as.data.frame(Seatbelts))
+y    <- log(Seatbelts[, "drivers"])                                  # log of the car drivers killed or seriously injured
+X    <- cbind(law = Seatbelts[, "law"], petrol = log(Seatbelts[, "PetrolPrice"]), km = log(Seatbelts[, "kms"]))
+c(months = nrow(road), months_with_the_law = sum(road$law))
+```
+
+`drivers` is the number of car drivers killed or seriously injured in the month, `rear` the same for **rear-seat** passengers, whom the law did not concern. `kms` is the distance driven, `PetrolPrice` the price of petrol, and `law` is 1 from February 1983. We take logarithms: effects on casualties are percentages, and a seasonal swing that grows with the level becomes constant.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 5.5}
+long <- rbind(data.frame(date = road$date, n = road$drivers, who = "drivers"), data.frame(date = road$date, n = road$rear, who = "rear-seat passengers (no law)"))
+ggplot(long, aes(date, n)) + geom_line(colour = "grey40", linewidth = 0.5) + geom_vline(xintercept = 1983 + 1/12, colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~ who, ncol = 1, scales = "free_y") + labs(title = "Killed or seriously injured, per month", subtitle = "Dashed line: the seat belt law", x = NULL, y = NULL) + theme_bw()
+before <- mean(road$drivers[road$date >= 1982 & road$date < 1983]); after <- mean(road$drivers[road$date >= 1983 + 1/12 & road$date < 1984 + 1/12])
+c(mean_1982 = before, mean_of_the_first_year = after, change = after / before - 1)
+```
+
+The drivers' series has a strong yearly wave, a fall after the oil crisis of 1973–74, slow drifts, and a drop at the dashed line. In the year after the law there were `r pct(1 - after / before)` fewer casualties than in 1982. The series of the rear passengers shows no such drop. But how much of the drop is the law, and how much would have happened anyway?
+
+---
+
+## 3. Why least squares is not enough
+
+```{r ols}
+month <- factor(cycle(y))
+ols <- lm(y ~ X[, "law"] + X[, "petrol"] + X[, "km"] + month)
+round(coef(summary(ols))[2:4, ], 3)
+r_acf <- acf(resid(ols), plot = FALSE, lag.max = 24)$acf[-1]
+round(r_acf[1:12], 2)
+lb_ols <- Box.test(resid(ols), lag = 24, type = "Ljung-Box"); lb_ols$p.value
+```
+
+With a dummy for each month of the year, OLS finds an effect of the law of `r f2(coef(ols)[[2]])` on the log scale. But the residuals correlate with those of the next month at `r f2(r_acf[1])`, and with those of two months later at `r f2(r_acf[2])`. The **Ljung–Box** test of the first 24 autocorrelations has *p* `r pval(lb_ols$p.value)`. The standard errors are too small, and they cannot be repaired by a formula that does not know how the series moves.
+
+---
+
+## 4. The model step by step, with formulas
+
+### Step 1: regression with errors that remember
+
+$$y_t = \beta_1\,\text{law}_t + \beta_2\,\text{petrol}_t + \beta_3\,\text{km}_t + n_t$$
+
+$n_t$ is everything else, and it follows a time-series model. The $\beta$'s have their usual meaning.
+
+### Step 2: ARIMA, three ingredients
+
+- **AR(p)**: today's value depends on the last ones, $n_t = \phi_1 n_{t-1} + \dots + e_t$.
+- **MA(q)**: today's value depends on the last *shocks*, $n_t = e_t + \theta_1 e_{t-1} + \dots$.
+- **I(d)**: the series is **differenced** $d$ times to remove a drift, $n_t - n_{t-1}$.
+
+### Step 3: the season
+
+The same three for the same month of last year, with capital letters: ARIMA$(p,d,q)(P,D,Q)_{12}$. A **seasonal difference** ($D = 1$), $n_t - n_{t-12}$, compares each month with the same month a year ago. It removes the yearly wave even if it changes slowly. When the errors are differenced, the regression is too: the law is compared as a *change*.
+
+### Step 4: what the estimate does
+
+With AR(1) errors, the likelihood is that of the regression on **quasi-differenced** data, $y_t - \phi y_{t-1}$ against $x_t - \phi x_{t-1}$ (see [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)). The new information of each month is only what the last month did not already say. By hand, for AR(1) errors and month dummies:
+
+```{r by_hand}
+months <- model.matrix(~ month)[, -1]; Xm <- matrix(X, ncol = 3, dimnames = list(NULL, colnames(X)))
+Z  <- cbind(months, Xm); XX <- cbind(1, Z); n <- length(y)
+profile_ll <- function(phi) {                                       # exact likelihood for a given phi (Prais-Winsten)
+  q <- function(v) c(sqrt(1 - phi^2) * v[1], v[-1] - phi * v[-n])
+  f <- lm.fit(apply(XX, 2, q), q(as.numeric(y))); s2 <- mean(f$residuals^2)
+  -n / 2 * (log(2 * pi * s2) + 1) + 0.5 * log(1 - phi^2)
+}
+phi_hat <- optimize(profile_ll, c(-0.99, 0.99), maximum = TRUE)$maximum
+q <- function(v) c(sqrt(1 - phi_hat^2) * v[1], v[-1] - phi_hat * v[-n])
+hand <- setNames(lm.fit(apply(XX, 2, q), q(as.numeric(y)))$coefficients, c("(Intercept)", colnames(Z)))
+ar1 <- arima(y, order = c(1, 0, 0), xreg = Z, method = "ML")
+rbind(by_hand = c(phi = phi_hat, hand[c("law", "petrol", "km")]), arima = coef(ar1)[c("ar1", "law", "petrol", "km")])
+```
+
+---
+
+## 5. Choosing the order
+
+```{r choose}
+auto <- auto.arima(y, xreg = X, stepwise = FALSE, approximation = FALSE)      # searches over the orders, with the AICc
+auto
+candidates <- list(`(1,0,0)(0,1,1)` = c(1, 0, 0), `(1,0,1)(0,1,1)` = c(1, 0, 1), `(2,0,1)(0,1,1)` = c(2, 0, 1), `(0,1,1)(0,1,1)` = c(0, 1, 1), `(1,0,3)(0,1,1)` = c(1, 0, 3))
+fits <- lapply(candidates, function(o) Arima(y, order = o, seasonal = c(0, 1, 1), xreg = X))
+comp <- t(sapply(fits, function(m) c(AICc = m$aicc, law = coef(m)[["law"]], SE = sqrt(vcov(m)["law", "law"]),
+                                     Ljung_Box_p = Box.test(resid(m), 24, fitdf = length(coef(m)) - 3, type = "Ljung-Box")$p.value)))
+round(comp, 3)
+```
+
+`auto.arima()` chooses the smallest AICc among many models. (AICs can only be compared between models with the **same differences**: the one with $d = 1$ is in another league.) What matters more than the winner is the column `law`: whatever the order, the effect is between `r f2(min(comp[, "law"]))` and `r f2(max(comp[, "law"]))`. The OLS estimate of `r f2(coef(ols)[[2]])` was smaller, probably because the month dummies and the straight regression could not follow the slow drifts. We take the winner.
+
+```{r fit}
+fit <- auto
+b <- coef(fit)[c("law", "petrol", "km")]; se <- sqrt(diag(vcov(fit)))[c("law", "petrol", "km")]
+tab <- cbind(b, SE = se, z = b / se, p = 2 * pnorm(-abs(b / se)), effect = exp(b) - 1)
+round(tab, 4)
+ci <- exp(b[["law"]] + c(-1.96, 1.96) * se[["law"]]) - 1
+```
+
+- **`law`** = `r f3(b[["law"]])`: the number of drivers killed or seriously injured was $e^{`r f3(b[["law"]])`}$ = `r f2(exp(b[["law"]]))` times what it would have been, a fall of **`r pct(1 - exp(b[["law"]]))`**, 95% CI [`r pct(-ci[2])`, `r pct(-ci[1])`].
+- **`petrol`** = `r f2(b[["petrol"]])`: 10% higher petrol prices go with about `r f1(abs(10 * b[["petrol"]]))`% fewer casualties, with the distance held constant.
+- **`km`** is not clearly different from zero once the season and the memory are in the model.
+- The first coefficients (`ar1`, `ma1`, ..., `sma1`) describe the memory. They are not effects, and nobody reports them one by one.
+
+---
+
+## 6. Checking the model
+
+If the model is right, the residuals are **white noise**: no pattern left.
+
+```{r checks, fig.height = 5.5}
+res <- data.frame(date = road$date, r = as.numeric(resid(fit)))[-(1:13), ]
+a <- acf(res$r, plot = FALSE, lag.max = 24)
+pa <- ggplot(res, aes(date, r)) + geom_hline(yintercept = 0, colour = "grey60") + geom_line(colour = "#2a78d6", linewidth = 0.4) + labs(title = "Residuals", x = NULL, y = NULL) + theme_bw()
+pb <- ggplot(data.frame(lag = a$lag[-1], r = a$acf[-1]), aes(lag, r)) + geom_hline(yintercept = c(-1, 1) * 1.96 / sqrt(nrow(res)), linetype = "dashed", colour = "#eb6834") +
+  geom_segment(aes(xend = lag, yend = 0), linewidth = 0.9, colour = "#2a78d6") + geom_hline(yintercept = 0) + labs(title = "Their autocorrelations", x = "lag (months)", y = NULL) + theme_bw()
+patchwork::wrap_plots(pa, pb, ncol = 1)
+lb <- Box.test(resid(fit), lag = 24, fitdf = length(coef(fit)) - 3, type = "Ljung-Box")
+c(Ljung_Box = lb$statistic, p = lb$p.value, Shapiro_p = shapiro.test(res$r)$p.value)
+```
+
+The Ljung–Box test has *p* `r pval(lb$p.value)`, so the residuals are not perfectly white: two or three autocorrelations at long lags (18 and 22 months) lie just outside the dashed limits, where one in twenty does by chance. Compared with the OLS residuals, nearly all of the memory is in the model. The other orders of the table do no better, and the effect of the law is nearly the same in all of them.
+
+---
+
+## 7. The world without the law
+
+Fit the model to the months **before** the law only, and let it forecast the two years after, with the petrol prices and distances that really occurred:
+
+```{r counterfactual}
+last   <- c(1983, 1)
+y_pre  <- window(y, end = last)
+X_pre  <- window(X[, c("petrol", "km")], end = last); X_post <- window(X[, c("petrol", "km")], start = c(1983, 2))
+pre    <- Arima(y_pre, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = X_pre)
+fc     <- forecast(pre, xreg = X_post, level = 95)
+post   <- subset(road, law == 1)
+cf     <- data.frame(date = post$date, observed = post$drivers, expected = exp(as.numeric(fc$mean)), low = exp(as.numeric(fc$lower)), high = exp(as.numeric(fc$upper)))
+saved  <- sum(cf$expected - cf$observed)
+c(observed = sum(cf$observed), expected = sum(cf$expected), difference = saved, share = saved / sum(cf$expected))
+below <- mean(cf$observed < cf$low)
+below
+```
+
+```{r counterfactual_chart}
+ggplot(subset(road, date >= 1978), aes(date, drivers)) +
+  geom_ribbon(data = cf, aes(date, ymin = low, ymax = high), inherit.aes = FALSE, fill = "#2a78d6", alpha = 0.2) +
+  geom_line(colour = "grey40") + geom_line(data = cf, aes(date, expected), colour = "#2a78d6", linewidth = 0.9) +
+  geom_vline(xintercept = 1983 + 1/12, linetype = "dashed", colour = "#eb6834") +
+  labs(title = "Observed (grey), and forecast from the years before the law (blue, 95% band)", x = NULL, y = "drivers killed or seriously injured") + theme_bw() + theme(plot.title = element_text(size = 11))
+```
+
+In the `r nrow(cf)` months the forecast expected `r f0(sum(cf$expected))` casualties, and `r f0(sum(cf$observed))` happened: `r f0(saved)` fewer, or `r pct(saved / sum(cf$expected))`. In `r pct(below)` of the months the number was below the 95% band.
+
+---
+
+## 8. Attacks on the result
+
+### A control: the rear seats
+
+If the fall came from better weather, better roads or less traffic, the **rear-seat** passengers, whom the law did not concern, would have profited too:
+
+```{r control}
+y_rear <- log(Seatbelts[, "rear"]); y_front <- log(Seatbelts[, "front"])
+same_order <- function(v) Arima(v, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = X)
+rear  <- same_order(y_rear); front <- same_order(y_front)
+eff <- function(m) { bb <- coef(m)[["law"]]; s <- sqrt(vcov(m)["law", "law"]); 100 * c(effect = exp(bb) - 1, low = exp(bb - 1.96 * s) - 1, high = exp(bb + 1.96 * s) - 1) }
+controls <- rbind(drivers = eff(fit), `front-seat passengers` = eff(front), `rear-seat passengers` = eff(rear))
+round(controls, 1)
+```
+
+The effect in percent: drivers `r f0(controls[1, 1])`, front-seat passengers `r f0(controls[2, 1])`, **rear-seat passengers `r f0(controls[3, 1])`**, 95% CI [`r f0(controls[3, 2])`, `r f0(controls[3, 3])`]. Those whom the law did not concern saw no change that can be told from zero.
+
+### Placebo laws
+
+Pretend that the law came at other dates, in the years **before** it existed, and estimate the "effect" each time:
+
+```{r placebo}
+dates <- seq(1971, 1981, by = 0.5)
+placebo <- sapply(dates, function(d) {
+  fake <- as.numeric(time(y_pre) >= d)
+  m <- try(Arima(y_pre, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = cbind(law = fake, X_pre)), silent = TRUE)
+  if (inherits(m, "try-error")) NA else coef(m)[["law"]]
+})
+pl <- data.frame(date = c(dates, 1983.08), b = c(placebo, b[["law"]]), kind = c(rep("invented dates", length(dates)), "the real law"))
+ggplot(pl, aes(date, 100 * (exp(b) - 1), fill = kind)) + geom_col(width = 0.35) + scale_fill_manual(values = c("grey65", "#eb6834"), name = NULL) +
+  labs(title = "The 'effect' of invented laws, and of the real one", x = NULL, y = "change of casualties (%)") + theme_bw() + theme(legend.position = "bottom")
+larger <- sum(placebo <= b[["law"]], na.rm = TRUE)
+c(placebos = sum(!is.na(placebo)), as_large_as_the_law = larger)
+```
+
+None of the invented dates should give much. A group of them does: those of the middle of the 1970s, after the oil crisis of the winter of 1973–74 had brought speed limits and empty roads. But `r larger` of the `r sum(!is.na(placebo))` invented dates gave a fall as large as the law's. The method finds **any** step, whatever its cause. That the step of February 1983 is the law, and not something else that happened at the same time, is an argument from outside the model, and the rear seats are its best support.
+
+---
+
+## 9. Things to keep in mind
+
+- **Two models share the name ARIMAX.** Regression with ARIMA errors (here, and in `arima(xreg = )`) has coefficients with the usual meaning. Models with lags of $y$ next to $x$ (*transfer functions*) have not: there $\beta$ is only the immediate effect.
+- **Spurious regression.** Two unrelated series that drift will correlate. Two random walks:
+
+```{r spurious}
+set.seed(131)
+spur <- replicate(1000, { a <- cumsum(rnorm(100)); b <- cumsum(rnorm(100)); c(levels = summary(lm(a ~ b))$coefficients[2, 4] < .05, differences = summary(lm(diff(a) ~ diff(b)))$coefficients[2, 4] < .05) })
+rowMeans(spur)
+```
+
+- OLS finds a "significant" relation between two independent random walks in `r pct(mean(spur["levels", ]))` of the cases; after differencing, in `r pct(mean(spur["differences", ]))`. With series that drift, difference or model the drift.
+- **Shape of the effect.** We assumed a sudden, permanent step. A law may work slowly, fade, or change the slope. Think first; a step is only the simplest shape.
+- **Few points after the change** make it hard to tell a step from the beginning of something else.
+- **Anticipation.** People may change before the date. Here many put on their belts in January 1983.
+- **Covariates must not be changed by the intervention**, and for forecasts their future values must be known.
+- **Counts.** These are large, so logs of them are fine. For small counts use time-series models for counts.
+- **Structural models** (level, slope and season that evolve) are the alternative that Harvey and Durbin used. They found nearly the same effect.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the series and its length, the transformation, the order of the ARIMA model and how it was chosen, the checks, the effect with its interval, and the evidence that it is the intervention. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(Predictor = c("Seat belt law", "Petrol price (log)", "Distance driven (log)"), b = f3(tab[, "b"]), SE = f3(tab[, "SE"]), z = f2(tab[, "z"]),
+                        p = sapply(tab[, "p"], function(p) sub("^= ", "", pval(p))), CI = paste0("[", f3(b - 1.96 * se), ", ", f3(b + 1.96 * se), "]"))
+order_text <- paste0("ARIMA(", paste(arimaorder(fit)[1:3], collapse = ","), ")(", paste(arimaorder(fit)[4:6], collapse = ","), ")")
+```
+
+**Method** (data analysis):
+
+> The monthly number of car drivers killed or seriously injured in Great Britain, January 1969–December 1984 (192 months; Harvey & Durbin, 1986), was analysed on the log scale with a regression with ARIMA errors (interrupted time series; Schaffer et al., 2021). The seat belt law was coded as a step from February 1983; the log petrol price and the log distance driven were covariates. The order of the ARIMA model was chosen with the corrected AIC (Hyndman & Khandakar, 2008); residuals were checked with the Ljung–Box test. As controls we analysed front- and rear-seat passengers, invented dates before the law, and the forecast of the period after the law from the period before it. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package forecast.
+
+**Results:**
+
+> The selected model was `r order_text`~12~; its residuals showed little autocorrelation, Ljung–Box *Q*(24) = `r f1(lb$statistic)`, *p* `r pval(lb$p.value)`. The law was followed by a fall of `r pct(1 - exp(b[["law"]]))` in the number of drivers killed or seriously injured, *b* = `r f3(b[["law"]])`, *SE* = `r f3(se[["law"]])`, 95% CI for the change [`r pct(ci[1])`, `r pct(ci[2])`] (Table 1). The forecast from the years before the law expected `r f0(saved)` more casualties in `r nrow(cf)` months than were observed (`r pct(saved / sum(cf$expected))`). For rear-seat passengers, whom the law did not concern, the change was `r f0(controls[3, 1])`%, 95% CI [`r f0(controls[3, 2])`%, `r f0(controls[3, 3])`%].
+
+**Table 1**
+
+*Regression With ARIMA Errors of the Log Number of Drivers Killed or Seriously Injured*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "*z*", "*p*", "95% CI"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = 192 months. Errors: `r order_text`~12~. AICc = `r f1(fit$aicc)`.
+
+**Points to remember:**
+
+- Say what shape of effect was assumed (step, slope, pulse) and that it was chosen beforehand.
+- Report the order, the selection and the residual check, and how the effect changes with other orders.
+- Give the effect in percent, with an interval.
+- Show a control series or placebo dates.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | One long time series, predictors or an intervention, and errors that remember |
+| **The model** | $y_t = x_t^\top\beta + n_t$, with $n_t$ an ARIMA$(p,d,q)(P,D,Q)_s$ process |
+| **How (R)** | `forecast::auto.arima(y, xreg = X)`, or `arima(y, order, seasonal, xreg)` |
+| **Choosing** | AICc (same differences), then white-noise residuals |
+| **Reading it** | $\beta$ as in any regression; on logs, $e^\beta - 1$ is a percentage |
+| **Checks** | ACF of the residuals, Ljung–Box |
+| **For interventions** | Forecast without the intervention, control series, placebo dates |
+| **Danger** | Spurious regression of drifting series |
+| **Related pages** | [Generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd), [panel data](EXAMPLE_PANEL_DATA.Rmd) |
+
+---
+
+## References
+
+Box, G. E. P., & Tiao, G. C. (1975). Intervention analysis with applications to economic and environmental problems. *Journal of the American Statistical Association*, *70*(349), 70–79. https://doi.org/10.1080/01621459.1975.10480264
+
+Harvey, A. C., & Durbin, J. (1986). The effects of seat belt legislation on British road casualties: A case study in structural time series modelling. *Journal of the Royal Statistical Society: Series A*, *149*(3), 187–227. https://doi.org/10.2307/2981553
+
+Hyndman, R. J., & Khandakar, Y. (2008). Automatic time series forecasting: The forecast package for R. *Journal of Statistical Software*, *27*(3), 1–22. https://doi.org/10.18637/jss.v027.i03
+
+Schaffer, A. L., Dobbins, T. A., & Pearson, S.-A. (2021). Interrupted time series analysis using autoregressive integrated moving average (ARIMA) models: A guide for evaluating large-scale health interventions. *BMC Medical Research Methodology*, *21*, Article 58. https://doi.org/10.1186/s12874-021-01235-8
