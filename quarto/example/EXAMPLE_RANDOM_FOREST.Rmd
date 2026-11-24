@@ -1,0 +1,722 @@
+---
+title: "Random Forest Regression: How Many Bikes Will People Rent This Hour?"
+description: "Random forest regression in R with ranger, on two years of hourly bike rentals in Washington, DC (17,379 hours): bagging and random predictor subsets, out-of-bag error, tuning with cross-validation by day, a test-set comparison with a linear regression and a single tree, permutation importance, partial dependence, prediction intervals, the limits of a forest and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the UCI repository each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: how many bikes, and why?
+
+A bike-sharing company in Washington, DC wants to know **how many bikes people will rent in the next hour**. Too few bikes at the stations and customers walk away; too many and bikes (and staff) sit idle. The company has two years of hourly records: the number of rentals, the hour, the day, the season and the weather.
+
+The pattern is not a straight line. Rentals peak in the morning and in the late afternoon on working days (the commute), and in the middle of the day at the weekend. They rise with temperature, but fall again when it gets too hot. Rain cuts them. The effect of the hour **depends on** the day type: an **interaction**. A linear regression needs you to know all of this in advance and write it into the formula.
+
+A **random forest** (Breiman, 2001) learns such shapes by itself. It is an average of hundreds of regression trees, each grown on a different random sample of the data. This page builds one step by step, and asks four questions:
+
+1. How well does it predict hours it has never seen, compared with a linear regression and a single tree?
+2. Which predictors does it use, and what does the relation to each look like?
+3. How sure can we be of one prediction?
+4. What can a forest **not** do?
+
+How a single regression tree grows and is pruned is explained in the [decision tree example](EXAMPLE_DECISION_TREE.rmd). The forest is also the main alternative to [gradient boosting](EXAMPLE_GRADIENT_BOOSTING.Rmd), the other popular way to combine trees. For a linear model with many predictors, see [regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd).
+
+```{r packages}
+library(ranger)    # fast random forests, with permutation importance and quantile regression forests
+library(rpart)     # a single regression tree, for comparison
+library(ggplot2)
+
+# colours in the order of the site: one per series, the same in every chart
+blue <- "#2a78d6"; orange <- "#eb6834"; green <- "#1baf7a"; yellow <- "#eda100"; pink <- "#e87ba4"
+palette <- c(blue, orange, green, yellow, pink)
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0)
+f1   <- function(x) formatC(x, format = "f", digits = 1)
+f2   <- function(x) formatC(x, format = "f", digits = 2)
+nz   <- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+num  <- function(x) trimws(format(x, big.mark = ","))
+
+# the three measures of error used throughout
+rmse    <- function(o, p) sqrt(mean((o - p)^2))
+metrics <- function(o, p) c(RMSE = rmse(o, p), MAE = mean(abs(o - p)), R2 = 1 - sum((o - p)^2) / sum((o - mean(o))^2))
+```
+
+---
+
+## 1. The data
+
+The **Bike Sharing Dataset** (Fanaee-T & Gama, 2014) comes from the UCI Machine Learning Repository. It describes the Capital Bikeshare system in Washington, DC, for 2011 and 2012: one row for each hour. It is free, needs no login, and is released under a CC BY 4.0 licence (cite the paper). The zip file is 280 KB and downloads in about two seconds.
+
+```{r download}
+options(timeout = max(300, getOption("timeout")))   # allow slow downloads
+zip <- tempfile(fileext = ".zip")
+download.file("https://archive.ics.uci.edu/static/public/275/bike+sharing+dataset.zip",
+              zip, mode = "wb", quiet = TRUE)
+folder <- tempfile()
+unzip(zip, files = "hour.csv", exdir = folder)
+raw <- read.csv(file.path(folder, "hour.csv"))
+dim(raw)
+```
+
+The outcome is `cnt`, the number of rentals in the hour. The file also has `casual` and `registered`, the same count split by type of customer: they add up to the outcome, so they are **not** used as predictors. The weather variables come scaled to 0 to 1; we put them back in degrees and percentages.
+
+| Predictor | Meaning |
+|---|---|
+| `year`, `month`, `hour` | When: 2011 or 2012; 1 to 12; 0 to 23 |
+| `weekday` | Day of the week, 0 (Sunday) to 6 |
+| `holiday`, `workingday` | A public holiday; neither weekend nor holiday |
+| `weather` | 1 clear or few clouds, 2 mist or cloud, 3 light rain or snow, 4 heavy rain or snow |
+| `temp` | Temperature, in degrees Celsius |
+| `feels` | "Feels like" temperature, in degrees Celsius |
+| `humidity` | Relative humidity, % |
+| `wind` | Wind speed, on the scale of the data (0 to 67; the documentation gives no unit) |
+
+```{r recode}
+d <- data.frame(
+  date       = as.Date(raw$dteday),
+  rentals    = raw$cnt,
+  year       = factor(raw$yr + 2011),
+  month      = raw$mnth,
+  hour       = raw$hr,
+  weekday    = raw$weekday,
+  holiday    = raw$holiday,
+  workingday = raw$workingday,
+  weather    = raw$weathersit,
+  temp       = raw$temp * 41,
+  feels      = raw$atemp * 50,
+  humidity   = raw$hum * 100,
+  wind       = raw$windspeed * 67)
+predictors <- c("year", "month", "hour", "weekday", "holiday", "workingday", "weather",
+                "temp", "feels", "humidity", "wind")
+formula_rf <- reformulate(predictors, "rentals")
+sum(is.na(d))
+```
+
+There are `r num(nrow(d))` hours and no missing values. A random forest needs no scaling and no dummy variables: it only asks of each predictor whether a value is above or below a cut-point.
+
+### Split the data by day, not by hour
+
+To judge a model we keep some data out of the fitting and test on it. The obvious way is to put a random 25% of the **hours** in a test set. Here that would be a mistake. The hours of one day are almost copies of each other: the same weather, the same day type, the same season. A test hour with its neighbours in the training set is easy to predict, and the test error would be too optimistic.
+
+So we cut by **day**: 25% of the days, with all their hours, go to the test set.
+
+```{r split}
+set.seed(1)
+all_days  <- unique(d$date)
+test_days <- sample(all_days, round(0.25 * length(all_days)))
+in_test   <- d$date %in% test_days
+tr <- d[!in_test, ]   # training set
+te <- d[in_test, ]    # test set, kept out until section 6
+c(training = nrow(tr), test = nrow(te))
+```
+
+The training set has `r num(nrow(tr))` hours and the test set `r num(nrow(te))`, from `r length(test_days)` days that the model never sees.
+
+---
+
+## 2. Look at the data
+
+```{r outcome}
+summary(d$rentals)
+```
+
+The median hour has `r f0(median(d$rentals))` rentals, the mean `r f0(mean(d$rentals))` and the maximum `r f0(max(d$rentals))`: a right-skewed count. Now the hour of the day, for working days and for other days:
+
+```{r look_hour}
+by_hour <- aggregate(rentals ~ hour + workingday, tr, mean)
+by_hour$day <- factor(ifelse(by_hour$workingday == 1, "Working day", "Weekend or holiday"),
+                      levels = c("Working day", "Weekend or holiday"))
+peak_work <- by_hour[by_hour$workingday == 1, ][which.max(by_hour$rentals[by_hour$workingday == 1]), ]
+morning   <- by_hour[by_hour$workingday == 1 & by_hour$hour < 12, ][which.max(by_hour$rentals[by_hour$workingday == 1 & by_hour$hour < 12]), ]
+peak_off  <- by_hour[by_hour$workingday == 0, ][which.max(by_hour$rentals[by_hour$workingday == 0]), ]
+
+ggplot(by_hour, aes(hour, rentals, colour = day)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c(blue, orange)) +
+  scale_x_continuous(breaks = seq(0, 23, 3)) +
+  labs(title = "Rentals by hour of the day", x = "hour", y = "mean rentals per hour", colour = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+On working days there are two peaks, the commute: the morning one at `r morning$hour`:00 (`r f0(morning$rentals)` rentals) and the higher evening one at `r peak_work$hour`:00 (`r f0(peak_work$rentals)`). At the weekend there is one broad hill with its top at `r peak_off$hour`:00 (`r f0(peak_off$rentals)` rentals). The same hour has a different effect on a working day and on a weekend day, so **hour and day type interact**.
+
+```{r look_temp}
+ggplot(tr, aes(temp, rentals)) +
+  geom_point(alpha = 0.12, colour = blue, size = 0.8) +
+  geom_smooth(method = "gam", formula = y ~ s(x, bs = "cs"), colour = orange, se = FALSE) +
+  labs(title = "Rentals and temperature", x = "temperature (°C)", y = "rentals per hour") +
+  theme_bw()
+cor_temp <- cor(d$temp, d$feels)
+```
+
+Warmer hours have more rentals, up to a point. The cloud is very wide at every temperature, because the hour of the day matters as much. Note also that `temp` and `feels` carry almost the same information: their correlation is `r nz(cor_temp, 3)`. This will matter for the importance of the predictors in section 7.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a single regression tree
+
+A regression tree splits the predictor space in boxes by a series of questions ("is the hour before 7?"). It predicts the **mean outcome of the training hours** in each box. At each split it looks for the predictor and cut-point that reduce the sum of squared errors the most. A tree grown deep fits the training data closely, and changes a lot if the data change a little: it has a **low bias and a high variance**. (The [decision tree example](EXAMPLE_DECISION_TREE.rmd) shows this in detail.)
+
+### Step 2: bagging, an average of trees on bootstrap samples
+
+Draw $B$ **bootstrap samples** from the $n$ training hours: each takes $n$ hours at random **with replacement**. Grow a tree $T_b$ on each. The prediction is the average:
+
+$$\hat f(x) = \frac{1}{B} \sum_{b=1}^{B} T_b(x)$$
+
+This is **bagging** (bootstrap aggregating; Breiman, 1996). Averaging reduces variance and leaves the bias almost unchanged, so deep, unpruned trees (high variance, low bias) are the best things to average.
+
+### Step 3: why averaging helps only as far as the trees differ
+
+If the $B$ trees each had variance $\sigma^2$ and were independent, the average would have variance $\sigma^2 / B$. But trees grown on overlapping samples of the same data are **correlated**. If each pair has correlation $\rho$, the variance of the average is
+
+$$\text{Var}\big(\hat f(x)\big) = \rho \sigma^2 + \frac{1 - \rho}{B}\,\sigma^2$$
+
+The second term disappears as $B$ grows. The first does not: **more trees cannot push the variance below $\rho\sigma^2$.** To gain more, the trees must become less alike. The chart shows the formula for $\sigma^2 = 1$:
+
+```{r variance_formula, fig.height = 4}
+variance <- expand.grid(B = c(1:10, seq(15, 500, 5)), rho = c(0, 0.2, 0.5, 0.8))
+variance$var <- with(variance, rho + (1 - rho) / B)
+variance$rho <- factor(variance$rho)
+
+ggplot(variance, aes(B, var, colour = rho)) +
+  geom_line(linewidth = 0.9) +
+  scale_x_log10() +
+  scale_colour_manual(values = palette) +
+  labs(title = "Variance of an average of B trees",
+       subtitle = "Each tree has variance 1; rho is the correlation between two trees",
+       x = "number of trees, B (log scale)", y = "variance of the average", colour = "rho") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+### Step 4: random predictor subsets make the trees less alike
+
+If one predictor is much stronger than the others (here: the hour), every bagged tree splits on it first, and the trees come out similar: $\rho$ stays high. The **random forest** adds a second source of randomness: at **each split** the tree may choose only among `mtry` predictors drawn at random from the $p$ available. A split on the hour is then not available at many of the splits, so other predictors get their chance, and the trees differ.
+
+- `mtry` = $p$: no restriction, which is plain bagging.
+- A smaller `mtry`: less correlation between the trees (lower $\rho$) but each tree is a little weaker (higher bias). The best value is somewhere in between, and is found by tuning (section 5).
+- The defaults: `ranger()` uses $\lfloor\sqrt{p}\rfloor$; the package `randomForest` uses $p/3$ for regression.
+
+The other settings are the **minimum node size** (a node with fewer hours is not split further; small = deep trees) and the **number of trees**, $B$.
+
+### Step 5: out-of-bag error, a free test set
+
+A bootstrap sample leaves out a fraction
+
+$$\left(1 - \frac{1}{n}\right)^n \to e^{-1} \approx `r nz(exp(-1), 3)`$$
+
+of the hours: about a third. For each hour $i$, average only the trees that **did not** see it, to get its out-of-bag (OOB) prediction $\hat f_{\text{oob}}(x_i)$. The OOB error is
+
+$$\text{RMSE}_{\text{oob}} = \sqrt{\frac{1}{n}\sum_{i=1}^{n}\big(y_i - \hat f_{\text{oob}}(x_i)\big)^2}$$
+
+It needs no separate test set, and comes with the fit. It works when the rows are independent. Here they are not (see the warning in section 1), and section 5 shows what that does.
+
+### Step 6: the full algorithm
+
+1. For $b = 1, \dots, B$: draw a bootstrap sample; grow a deep tree on it, and at every split choose the best cut among `mtry` randomly drawn predictors.
+2. Predict with the average of the $B$ trees.
+3. No pruning is needed: the average takes care of the variance.
+
+---
+
+## 4. Fitting a first forest
+
+```{r first_fit}
+set.seed(2)
+first <- ranger(formula_rf, data = tr, num.trees = 500, seed = 2)
+first
+```
+
+With `ranger()` the formula is the usual one, `num.trees` is $B$, and `mtry` and `min.node.size` default to `r first$mtry` and `r first$min.node.size`. The printout reports the **OOB prediction error (MSE)** and an OOB $R^2$.
+
+```{r first_numbers}
+oob_rmse_first  <- sqrt(first$prediction.error)
+test_rmse_first <- rmse(te$rentals, predict(first, te)$predictions)
+```
+
+The OOB RMSE is `r f1(oob_rmse_first)` rentals per hour. We have not looked at the test set yet; to see what the OOB figure is worth, we compare it with the test RMSE now (once, and not to choose anything): `r f1(test_rmse_first)`. The OOB error is **too optimistic**. Every hour is OOB for a third of the trees, but the other hours of the same day are in the bootstrap sample of those trees and help to predict it. For tuning we need an error that respects the days.
+
+---
+
+## 5. Tuning: `mtry`, minimum node size and the number of trees
+
+### Cross-validation by day
+
+We use **5-fold cross-validation with whole days in the folds**: fit on four fifths of the training days, predict the fifth that was left out, and average the RMSE of the five folds. The OOB error is computed alongside, to see how far it is from the cross-validated one.
+
+```{r tuning}
+set.seed(3)
+train_days <- sort(unique(tr$date))
+fold_of    <- setNames(sample(rep(1:5, length.out = length(train_days))), train_days)
+fold       <- fold_of[as.character(tr$date)]   # the fold of every training hour
+
+tune <- function(mtry, min.node.size, num.trees) {
+  cv <- sapply(1:5, function(k) {
+    m <- ranger(formula_rf, tr[fold != k, ], num.trees = num.trees, mtry = mtry,
+                min.node.size = min.node.size, seed = 1)
+    rmse(tr$rentals[fold == k], predict(m, tr[fold == k, ])$predictions)
+  })
+  oob <- ranger(formula_rf, tr, num.trees = num.trees, mtry = mtry,
+                min.node.size = min.node.size, seed = 1)$prediction.error
+  c(cv = mean(cv), oob = sqrt(oob))
+}
+
+grid <- expand.grid(mtry = c(2, 4, 8, 11), min.node.size = c(1, 5, 20))
+grid[c("cv", "oob")] <- t(mapply(tune, grid$mtry, grid$min.node.size, num.trees = 200))
+best <- grid[which.min(grid$cv), ]
+best
+```
+
+A small grid, 4 values of `mtry` by 3 minimum node sizes, with 200 trees per forest. The best cross-validated RMSE is `r f1(best$cv)`, at `mtry` = `r best$mtry` and a minimum node size of `r best$min.node.size`.
+
+```{r tuning_chart}
+grid$node <- factor(grid$min.node.size)
+ggplot(grid, aes(mtry, cv, colour = node)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 2) +
+  scale_colour_manual(values = palette) +
+  scale_x_continuous(breaks = unique(grid$mtry)) +
+  labs(title = "Cross-validated error over the tuning grid",
+       x = "mtry: predictors tried at each split (11 = bagging)", y = "cross-validated RMSE",
+       colour = "minimum node size") +
+  theme_bw() + theme(legend.position = "bottom")
+oob_best <- grid[which.min(grid$oob), ]
+```
+
+- **`mtry`** matters most. With `mtry` = 2 the error is `r f1(grid$cv[grid$mtry == 2 & grid$min.node.size == best$min.node.size])`: the trees are too weak and often cannot use the hour. With `mtry` = 11 (bagging) it is `r f1(grid$cv[grid$mtry == 11 & grid$min.node.size == best$min.node.size])`: the trees are too alike. The best value is in between.
+- **Minimum node size** matters little, up to 20 hours; deep trees are fine, as the theory says. A very large value would make the trees shallow and add bias.
+- **The OOB error says the same about the ranking, but not about the level.** Its best value is `r f1(oob_best$oob)`, at `mtry` = `r oob_best$mtry`; the cross-validated error of the same setting is `r f1(oob_best$cv)`. The OOB figure for the chosen setting, `r f1(best$oob)`, is much lower than its cross-validated `r f1(best$cv)`.
+
+### The number of trees
+
+More trees never hurt (the variance only falls), but at some point they stop helping. They only cost time.
+
+```{r trees}
+trees <- data.frame(B = c(10, 50, 100, 200, 500, 1000))
+res <- sapply(trees$B, function(B) tune(best$mtry, best$min.node.size, B))
+trees <- rbind(data.frame(B = trees$B, RMSE = res["cv", ], error = "Cross-validated by day"),
+               data.frame(B = trees$B, RMSE = res["oob", ], error = "Out-of-bag"))
+
+ggplot(trees, aes(B, RMSE, colour = error)) +
+  geom_line(linewidth = 0.9) + geom_point(size = 2) +
+  scale_x_log10(breaks = c(10, 50, 100, 200, 500, 1000)) +
+  scale_colour_manual(values = c(blue, orange)) +
+  labs(title = "Error against the number of trees", x = "number of trees, B (log scale)",
+       y = "RMSE", colour = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+cv_trees <- trees[trees$error == "Cross-validated by day", ]
+```
+
+The cross-validated RMSE falls from `r f1(cv_trees$RMSE[1])` with 10 trees to `r f1(cv_trees$RMSE[cv_trees$B == 200])` with 200 and `r f1(cv_trees$RMSE[cv_trees$B == 1000])` with 1,000: after a few hundred trees nothing is gained. We use **500 trees**. The OOB curve is lower all the way, the gap that section 4 explained.
+
+Cross-validated hyperparameters are a choice made on the training data. The test set has not been used for any of it.
+
+---
+
+## 6. The test set: forest, linear regression and single tree
+
+The final forest is fitted on the **whole training set** with the settings found above. Two baselines go with it, fitted on the same hours:
+
+- A **linear regression** with the same predictors. It is given every help that a linear model can use: the hour, the month, the weekday and the weather as categories (one coefficient for each value), temperature, humidity and wind as numbers. It has no interactions: it does not know that the hours work differently on working days. (`feels` is left out of it, as it duplicates `temp`.)
+- A **single regression tree** with `rpart`, pruned by cross-validation (see the [decision tree example](EXAMPLE_DECISION_TREE.rmd)).
+
+```{r final_fit}
+set.seed(4)
+forest <- ranger(formula_rf, data = tr, num.trees = 500, mtry = best$mtry, min.node.size = best$min.node.size,
+                 importance = "impurity", quantreg = TRUE, seed = 4)
+
+linear <- lm(rentals ~ year + factor(month) + factor(hour) + factor(weekday) + holiday + workingday +
+               factor(weather) + temp + humidity + wind, data = tr)
+
+set.seed(5)
+big_tree <- rpart(formula_rf, tr, control = rpart.control(cp = 0.0005, xval = 10))
+cp_best  <- big_tree$cptable[which.min(big_tree$cptable[, "xerror"]), "CP"]
+tree     <- prune(big_tree, cp = cp_best)
+leaves   <- sum(tree$frame$var == "<leaf>")
+
+pred <- data.frame(forest = predict(forest, te)$predictions,
+                   linear = predict(linear, te),
+                   tree   = predict(tree, te))
+results <- t(sapply(pred, function(p) metrics(te$rentals, p)))
+results <- results[c("linear", "tree", "forest"), ]
+data.frame(Model = c("Linear regression", paste0("Single tree (", leaves, " leaves)"), "Random forest"),
+           round(results, 2), row.names = NULL)
+```
+
+```{r test_chart, fig.height = 4.2}
+long <- data.frame(model = factor(rep(c("Linear regression", "Single tree", "Random forest"), each = nrow(te)),
+                                  levels = c("Linear regression", "Single tree", "Random forest")),
+                   observed  = te$rentals,
+                   predicted = c(pred$linear, pred$tree, pred$forest))
+ggplot(long, aes(predicted, observed)) +
+  geom_point(alpha = 0.2, size = 0.7, colour = blue) +
+  geom_abline(colour = orange, linewidth = 0.8) +
+  facet_wrap(~ model) +
+  labs(title = "Predicted and observed rentals in the test set",
+       subtitle = "The orange line is a perfect prediction", x = "predicted rentals per hour", y = "observed rentals per hour") +
+  theme_bw()
+```
+
+On `r num(nrow(te))` hours that none of the models has seen:
+
+- The **random forest** is wrong by `r f1(results["forest", "RMSE"])` rentals per hour (RMSE) and by `r f1(results["forest", "MAE"])` on average (MAE), and explains `r pct(results["forest", "R2"], 1)` of the variance ($R^2$).
+- The **single tree** has an RMSE of `r f1(results["tree", "RMSE"])`: `r pct(results["tree", "RMSE"] / results["forest", "RMSE"] - 1)` worse. It has `r leaves` leaves, and it is still less accurate: one tree is noisy, the average of 500 is not.
+- The **linear regression** has an RMSE of `r f1(results["linear", "RMSE"])`, `r pct(results["linear", "RMSE"] / results["forest", "RMSE"] - 1)` worse than the forest, $R^2$ = `r nz(results["linear", "R2"])`. In the chart it predicts negative rentals for some hours, and it misses the peaks: it cannot give the morning and evening peaks without an interaction of hour and day type.
+- The cross-validated RMSE of the chosen forest (`r f1(best$cv)`) is close to its test RMSE (`r f1(results["forest", "RMSE"])`). The OOB RMSE (`r f1(sqrt(forest$prediction.error))`) is not.
+
+RMSE is in the units of the outcome (rentals per hour) and punishes large errors; MAE is the typical error; $R^2$ is the share of the variance of the test hours that the model explains. Always give the baselines together with the model: a number such as $R^2$ = `r nz(results["forest", "R2"])` means little on its own.
+
+---
+
+## 7. Which predictors matter? Permutation importance
+
+### Two kinds of importance
+
+- **Impurity importance** (also called Gini importance, or for regression the total reduction in squared error): add up, over all trees, how much each predictor's splits reduced the error. It comes free with the fit (`importance = "impurity"`).
+- **Permutation importance**: take a data set that the model did not train on, **shuffle** one predictor, which breaks its link with the outcome, and see how much worse the predictions get:
+
+$$\text{VI}_j = \text{RMSE}\big(\text{data with } x_j \text{ shuffled}\big) - \text{RMSE}\big(\text{data}\big)$$
+
+A predictor the model relies on makes the error jump; one that it ignores leaves it where it was. It is easy to compute by hand on the test set, and we repeat the shuffle five times and take the mean:
+
+```{r permutation}
+set.seed(6)
+base_rmse <- rmse(te$rentals, predict(forest, te)$predictions)
+permutation <- sapply(predictors, function(v) {
+  mean(replicate(5, {
+    shuffled <- te
+    shuffled[[v]] <- sample(shuffled[[v]])
+    rmse(te$rentals, predict(forest, shuffled)$predictions)
+  })) - base_rmse
+})
+perm <- data.frame(predictor = names(permutation), increase = as.numeric(permutation))
+perm$predictor <- factor(perm$predictor, levels = perm$predictor[order(perm$increase)])
+
+ggplot(perm, aes(increase, predictor)) +
+  geom_col(fill = blue, width = 0.7) +
+  labs(title = "Permutation importance in the test set",
+       x = "increase in RMSE when the predictor is shuffled", y = NULL) +
+  theme_bw()
+top <- names(sort(permutation, decreasing = TRUE))
+```
+
+- **`hour`** dominates: shuffling it adds `r f0(permutation[["hour"]])` rentals to the RMSE, `r f1(permutation[["hour"]] / permutation[[top[2]]])` times more than the second predictor, `r top[2]` (`r f0(permutation[[top[2]]])`).
+- The next are `r top[3]` (`r f0(permutation[[top[3]]])`) and `r top[4]` (`r f0(permutation[[top[4]]])`): a rise from 2011 to 2012, and temperature.
+- `wind` and `holiday` do almost nothing (`r f1(permutation[["wind"]])` and `r f1(permutation[["holiday"]])`). The holiday is already in `workingday`.
+
+This ranks the predictors by **how much this model needs them for prediction**. It does not say how large the effect is, or whether it is a cause (see the end of this section).
+
+### Caveat 1: impurity importance favours continuous predictors
+
+Splits on a predictor with many distinct values have more possible cut-points to choose from, and so more chances to find a cut that reduces the error by luck. Impurity importance rewards this. To see it, we add a column of **pure noise**, `noise`, a random number between 0 and 1 for each hour, unrelated to the outcome, and refit:
+
+```{r noise_demo}
+set.seed(7)
+tr_noise <- cbind(tr, noise = runif(nrow(tr)))
+noisy <- ranger(reformulate(c(predictors, "noise"), "rentals"), data = tr_noise, num.trees = 500,
+                mtry = best$mtry, min.node.size = best$min.node.size,
+                importance = "impurity", seed = 7)
+noisy_perm <- ranger(reformulate(c(predictors, "noise"), "rentals"), data = tr_noise, num.trees = 500,
+                     mtry = best$mtry, min.node.size = best$min.node.size,
+                     importance = "permutation", seed = 7)
+both <- data.frame(predictor = rep(names(noisy$variable.importance), 2),
+                   share = c(noisy$variable.importance / sum(noisy$variable.importance),
+                             pmax(noisy_perm$variable.importance, 0) / sum(pmax(noisy_perm$variable.importance, 0))),
+                   kind = rep(c("Impurity", "Permutation (out-of-bag)"), each = length(noisy$variable.importance)))
+order_by <- both$predictor[both$kind == "Permutation (out-of-bag)"][order(both$share[both$kind == "Permutation (out-of-bag)"])]
+both$predictor <- factor(both$predictor, levels = order_by)
+noise_imp  <- both$share[both$predictor == "noise" & both$kind == "Impurity"]
+noise_perm <- both$share[both$predictor == "noise" & both$kind == "Permutation (out-of-bag)"]
+beaten <- as.character(both$predictor[both$kind == "Impurity" & both$share < noise_imp & both$predictor != "noise"])
+beaten_text <- paste0("`", beaten, "`", collapse = " and ")
+
+ggplot(both, aes(share, predictor, fill = kind)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  scale_fill_manual(values = c(blue, orange)) +
+  scale_x_continuous(labels = scales::percent) +
+  labs(title = "Impurity and permutation importance, with a noise predictor",
+       x = "share of the total importance", y = NULL, fill = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The noise predictor gets `r pct(noise_imp, 1)` of the impurity importance, more than the real predictors `r beaten_text`; its permutation importance is `r pct(noise_perm, 1)`. A predictor with no information should have none. The shares add up to 100%, so every predictor is shown against the others. For this reason, **prefer permutation importance**, ideally computed on data that the forest has not seen, as we did above.
+
+### Caveat 2: correlated predictors share their importance
+
+`temp` and `feels` have a correlation of `r nz(cor_temp, 3)`. If we shuffle `temp` alone, the forest can still use `feels`, which has nearly the same information, so the error barely rises, and neither predictor looks important on its own. Shuffling the pair **together** (the same permutation for both) shows what they are worth together:
+
+```{r correlated}
+set.seed(8)
+pair <- mean(replicate(5, {
+  idx <- sample(nrow(te)); shuffled <- te
+  shuffled$temp <- te$temp[idx]; shuffled$feels <- te$feels[idx]
+  rmse(te$rentals, predict(forest, shuffled)$predictions)
+})) - base_rmse
+```
+
+Shuffled alone, `temp` adds `r f1(permutation[["temp"]])` to the RMSE and `feels` `r f1(permutation[["feels"]])`. Shuffled together they add `r f1(pair)`: more than the two numbers added up (`r f1(permutation[["temp"]] + permutation[["feels"]])`). The temperature is more important than the table seems to say, and its importance is split between two columns. With a group of related predictors, shuffle the group, or keep one of them.
+
+### Caveat 3: importance is not causation
+
+Importance describes **the model**, not the world. `hour` is the most important predictor because the model needs it to predict; it does not mean that changing the hour changes the demand. A predictor can also be important only because it stands in for something that is not in the data (the year stands in for the growth of the company). And a causal effect can be hidden behind a correlated predictor, as above.
+
+---
+
+## 8. What does the forest learn? Partial dependence
+
+A forest has no coefficients. The **partial dependence** (Friedman, 2001) shows the average prediction as one predictor changes. For a predictor $x_j$ and a value $v$, set $x_j = v$ in **every** row of the data, predict, and average:
+
+$$\text{PD}_j(v) = \frac{1}{n} \sum_{i=1}^{n} \hat f\big(x_{ij} = v,\; \mathbf{x}_{i,-j}\big)$$
+
+Do this for a grid of values and plot. No package is needed:
+
+```{r pd_function}
+set.seed(9)
+sample_rows <- tr[sample(nrow(tr), 1000), ]   # 1,000 hours are enough, and fast
+
+# the average prediction for each value in `values`, with `change` building the changed data
+partial <- function(values, change, data = sample_rows) {
+  sapply(values, function(v) mean(predict(forest, change(data, v))$predictions))
+}
+```
+
+### The hour, for working days and for other days
+
+```{r pd_hour}
+hours <- 0:23
+pd_hour <- do.call(rbind, lapply(c(1, 0), function(w)
+  data.frame(hour = hours, day = ifelse(w == 1, "Working day", "Weekend or holiday"),
+             rentals = partial(hours, function(x, v) { x$hour <- v; x$workingday <- w; x }))))
+pd_hour$day <- factor(pd_hour$day, levels = c("Working day", "Weekend or holiday"))
+
+ggplot(pd_hour, aes(hour, rentals, colour = day)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c(blue, orange)) +
+  scale_x_continuous(breaks = seq(0, 23, 3)) +
+  labs(title = "Partial dependence on the hour", x = "hour", y = "predicted rentals per hour", colour = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+pk <- tapply(pd_hour$rentals, pd_hour$day, max)
+```
+
+The forest has found the interaction without being told: two commuter peaks on working days, up to `r f0(pk[["Working day"]])` rentals, and one afternoon hill at the weekend, up to `r f0(pk[["Weekend or holiday"]])`. This is the shape that the linear regression could not draw.
+
+### Temperature, humidity and wind
+
+For temperature there is a trap. If we set `temp` to 30 °C but leave `feels` as it was (say, 10 °C), the forest sees an hour that cannot occur. The two columns have to move together, so we also shift `feels` by the same amount:
+
+```{r pd_weather, fig.height = 4}
+temp_grid <- seq(0, 35, by = 1)
+hum_grid  <- seq(20, 100, by = 4)
+wind_grid <- seq(0, 40, by = 2)
+
+pd_weather <- rbind(
+  data.frame(variable = "Temperature (°C)", x = temp_grid, version = "Naive: temp only",
+             y = partial(temp_grid, function(x, v) { x$temp <- v; x })),
+  data.frame(variable = "Temperature (°C)", x = temp_grid, version = "temp and feels together",
+             y = partial(temp_grid, function(x, v) { x$feels <- x$feels + (v - x$temp); x$temp <- v; x })),
+  data.frame(variable = "Humidity (%)", x = hum_grid, version = "temp and feels together",
+             y = partial(hum_grid, function(x, v) { x$humidity <- v; x })),
+  data.frame(variable = "Wind speed", x = wind_grid, version = "temp and feels together",
+             y = partial(wind_grid, function(x, v) { x$wind <- v; x })))
+pd_weather$version <- factor(pd_weather$version, levels = c("temp and feels together", "Naive: temp only"))
+pd_weather$variable <- factor(pd_weather$variable, levels = c("Temperature (°C)", "Humidity (%)", "Wind speed"))
+
+ggplot(pd_weather, aes(x, y, colour = version)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ variable, scales = "free_x") +
+  scale_colour_manual(values = c(blue, orange)) +
+  labs(title = "Partial dependence on the weather", x = NULL, y = "predicted rentals per hour", colour = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+tt <- subset(pd_weather, variable == "Temperature (°C)" & version == "temp and feels together")
+tn <- subset(pd_weather, variable == "Temperature (°C)" & version == "Naive: temp only")
+hh <- subset(pd_weather, variable == "Humidity (%)")
+```
+
+- **Temperature** (blue line): predicted rentals rise from `r f0(tt$y[tt$x == 0])` at 0 °C to `r f0(max(tt$y))` at `r tt$x[which.max(tt$y)]` °C, and fall again at the hottest hours. The **naive** version (orange line) moves much less (`r f0(min(tn$y))` to `r f0(max(tn$y))`): `feels` still says "cold" when `temp` is changed, and the forest follows `feels`. This is the importance problem of section 7 again.
+- **Humidity**: rentals fall from `r f0(hh$y[1])` at 20% to `r f0(hh$y[nrow(hh)])` at 100%. Humid hours are rainy ones.
+- **Wind**: a weak effect, as the importance already said.
+
+Partial dependence averages over the other predictors, and so hides the differences between hours: the hour chart showed that the same predictor can work differently in two groups. It also assumes that the predictor can be changed independently of the others, which is false for correlated ones, as the temperature showed. Read it as a description of the model, not as the effect of a change in the world.
+
+---
+
+## 9. How sure is one prediction? Quantile regression forests
+
+The average of the trees is a single number. A **quantile regression forest** (Meinshausen, 2006) keeps more: for a new hour, it collects the **observed outcomes** of the training hours that share a leaf with it, in all the trees, and takes their quantiles. The 5% and 95% quantiles are a 90% prediction interval. In `ranger()` it is `quantreg = TRUE` when fitting (done above), and `type = "quantiles"` when predicting.
+
+```{r quantile}
+q <- predict(forest, te, type = "quantiles", quantiles = c(0.05, 0.5, 0.95))$predictions
+covered <- te$rentals >= q[, 1] & te$rentals <= q[, 3]
+width   <- median(q[, 3] - q[, 1])
+
+# two test days, one working and one not, in 2012 and with clear weather
+pick <- function(w) {
+  days <- aggregate(weather ~ date, te[te$workingday == w & te$year == "2012", ], max)
+  min(days$date[days$weather == 1])
+}
+show_days <- c(pick(1), pick(0))
+shown <- do.call(rbind, lapply(show_days, function(day) {
+  rows <- te$date == day
+  data.frame(day = format(as.Date(day), "%a %d %b %Y"), hour = te$hour[rows], observed = te$rentals[rows],
+             lower = q[rows, 1], middle = q[rows, 2], upper = q[rows, 3])
+}))
+shown$day <- factor(shown$day, levels = unique(shown$day))
+
+ggplot(shown, aes(hour)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper, fill = "90% interval"), alpha = 0.3) +
+  geom_line(aes(y = middle, colour = "Median prediction"), linewidth = 0.9) +
+  geom_point(aes(y = observed, colour = "Observed"), size = 1.8) +
+  facet_wrap(~ day) +
+  scale_fill_manual(values = blue) +
+  scale_colour_manual(values = c("Median prediction" = blue, "Observed" = orange)) +
+  scale_x_continuous(breaks = seq(0, 23, 6)) +
+  labs(title = "Prediction intervals for two test days", x = "hour", y = "rentals per hour", colour = NULL, fill = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The interval is wide when the model is unsure, at the commuter peaks, and narrow at night. Over the `r num(nrow(te))` test hours, `r pct(mean(covered), 1)` of the observed values fall inside their 90% interval: close to the 90% that it should be. The median interval is `r f0(width)` rentals wide. The coverage was checked on days that the forest had not seen, which is what makes it trustworthy: the same check on the training hours would flatter the model.
+
+---
+
+## 10. The limits: a forest cannot extrapolate
+
+Each tree predicts the **mean of the training hours in a leaf**. So the forest can only predict values that lie within what it has seen, and for a predictor value beyond the training range it carries on with the prediction of the nearest edge. A linear regression, in contrast, draws the line on.
+
+To see it, we fit a forest and a linear regression only on the **cooler hours of the training set**, up to 20 °C, and draw their partial dependence on temperature (section 8) over the whole range, with `feels` moved together with `temp`. The grey line is the forest fitted on all the training hours, which has seen the warm ones:
+
+```{r extrapolation}
+limit <- 20
+cool <- tr[tr$temp <= limit, ]
+set.seed(10)
+forest_cool <- ranger(formula_rf, cool, num.trees = 500, mtry = best$mtry, min.node.size = best$min.node.size, seed = 10)
+# no month in the linear model here: July and August are all warmer than 20 degrees, and would have no coefficient
+linear_cool <- lm(rentals ~ year + factor(hour) + factor(weekday) + holiday + workingday +
+                    factor(weather) + temp + humidity + wind, data = cool)
+
+grid_t <- seq(0, 36, by = 1)
+shift  <- function(x, v) { x$feels <- x$feels + (v - x$temp); x$temp <- v; x }
+pd_with <- function(predict_fun) sapply(grid_t, function(v) mean(predict_fun(shift(sample_rows, v))))
+extra <- data.frame(temp = rep(grid_t, 3),
+                    model = factor(rep(c("Forest, all hours", "Forest, cool hours only", "Linear regression, cool hours only"),
+                                       each = length(grid_t)),
+                                   levels = c("Forest, all hours", "Forest, cool hours only", "Linear regression, cool hours only")),
+                    rentals = c(pd_with(function(x) predict(forest, x)$predictions),
+                                pd_with(function(x) predict(forest_cool, x)$predictions),
+                                pd_with(function(x) predict(linear_cool, x))))
+
+ggplot(extra, aes(temp, rentals, colour = model)) +
+  geom_vline(xintercept = limit, linetype = "dashed", colour = "grey40") +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("Forest, all hours" = "grey60", "Forest, cool hours only" = blue,
+                                 "Linear regression, cool hours only" = orange)) +
+  annotate("text", x = limit - 0.5, y = max(extra$rentals), label = "training data end", hjust = 1, size = 3.2, colour = "grey30") +
+  labs(title = "Partial dependence on temperature, fitted on cool hours",
+       x = "temperature (°C)", y = "predicted rentals per hour", colour = NULL) +
+  theme_bw() + theme(legend.position = "bottom") + guides(colour = guide_legend(nrow = 2))
+at <- function(m, t) extra$rentals[extra$model == m & extra$temp == t]
+```
+
+The forest fitted on cool hours is **flat beyond `r limit` °C**: from `r f0(at("Forest, cool hours only", limit))` rentals at `r limit` °C to `r f0(at("Forest, cool hours only", 35))` at 35 °C. It carries on with the prediction of the warmest leaf it knows. The forest that saw the warm hours goes from `r f0(at("Forest, all hours", limit))` to `r f0(at("Forest, all hours", 35))`, so about `r f0(at("Forest, all hours", 35) - at("Forest, cool hours only", 35))` rentals are missing from the forest that could not extrapolate. The linear regression draws its line on, to `r f0(at("Linear regression, cool hours only", 35))` at 35 °C: it **can** go beyond the data, whether or not it is right (here the real curve levels off, so it is not). The difference is in kind: a line may be right beyond the data, and a forest cannot be. The same happens over time: a forest fitted on 2011 cannot predict the growth of 2012.
+
+Two practical rules follow. **Check that new data lie in the range of the training data** before trusting a forest, and **do not use it to forecast a trend**: model the trend first (for example with a linear term) and give the forest the residuals, or use a method that can extrapolate.
+
+---
+
+## 11. Reporting the results in APA style
+
+A report of a predictive model (APA 7th edition) needs the data and how they were split, the model and its settings, how they were chosen, the error on **held-out** data against baselines, and what the importance and the partial dependence show. The numbers come from the R objects:
+
+```{r apa_numbers}
+n_all   <- nrow(d)
+r2_f    <- results["forest", "R2"]
+```
+
+**Method** (data analysis):
+
+> We predicted the number of bicycle rentals per hour from the hour, day type, season, year and weather, using the `r num(n_all)` hourly records of the Capital Bikeshare system in Washington, DC, for 2011 and 2012 (Fanaee-T & Gama, 2014). Because the hours of a day are strongly dependent, `r length(test_days)` randomly chosen days (`r pct(length(test_days) / length(all_days))`; *n* = `r num(nrow(te))` hours) were held out as a test set, and all tuning used 5-fold cross-validation with whole days in the folds. We fitted a random forest (Breiman, 2001) of `r forest$num.trees` trees with the *ranger* package (Wright & Ziegler, 2017). The number of predictors tried at each split (`mtry` = `r best$mtry`) and the minimum node size (`r best$min.node.size`) were chosen from a grid by cross-validated root mean squared error (RMSE). The forest was compared on the test set with a linear regression and a single regression tree pruned by cross-validation (*rpart*; Therneau & Atkinson, 2023). Variable importance was the increase in test RMSE after permuting each predictor, and the relation to the main predictors was described with partial dependence. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> On the held-out days the random forest predicted hourly rentals with an RMSE of `r f1(results["forest", "RMSE"])` and a mean absolute error of `r f1(results["forest", "MAE"])`, *R*² = `r nz(r2_f)`. A linear regression with the same predictors was clearly less accurate (RMSE = `r f1(results["linear", "RMSE"])`, *R*² = `r nz(results["linear", "R2"])`), as was a single pruned tree (RMSE = `r f1(results["tree", "RMSE"])`, *R*² = `r nz(results["tree", "R2"])`; Table 1). The hour of the day was by far the most important predictor, followed by `r top[2]`, `r top[3]` and `r top[4]` (Table 2). Partial dependence showed separate peaks in the morning and the afternoon on working days, and a single afternoon peak at other days. The 90% quantile-forest prediction intervals contained `r pct(mean(covered))` of the observed test values.
+
+**Table 1**
+
+*Prediction Error in the Test Set (`r num(nrow(te))` Hours)*
+
+```{r apa_table1, echo=FALSE}
+table1 <- data.frame(Model = c("Linear regression", "Single tree", "Random forest"),
+                     RMSE = f1(results[, "RMSE"]), MAE = f1(results[, "MAE"]), `R²` = nz(results[, "R2"]),
+                     check.names = FALSE, row.names = NULL)
+knitr::kable(table1, align = "lrrr", format = "pipe")
+```
+
+*Note.* RMSE = root mean squared error; MAE = mean absolute error, both in rentals per hour.
+
+**Table 2**
+
+*Permutation Importance of the Predictors in the Test Set*
+
+```{r apa_table2, echo=FALSE}
+table2 <- data.frame(Predictor = names(sort(permutation, decreasing = TRUE)),
+                     `Increase in RMSE` = f1(sort(permutation, decreasing = TRUE)),
+                     check.names = FALSE, row.names = NULL)
+knitr::kable(table2, align = "lr", format = "pipe")
+```
+
+*Note.* Increase in test RMSE (rentals per hour) after shuffling the predictor, mean of five shuffles. Importance is shared by the correlated predictors `temp` and `feels`.
+
+**Points to remember:**
+
+- Report the error on data that were **not** used for fitting or tuning, with a baseline (a linear model, and the mean). Say how the data were split, and split by the unit that makes rows dependent (here the day).
+- Give the settings (`mtry`, minimum node size, number of trees), how you chose them, and the package and the seed.
+- Do not report the OOB error as a test error when the rows are not independent.
+- Describe importance as importance **for the prediction**, name the kind (permutation, impurity), and say what you did about correlated predictors.
+- Do not use causal wording for importance or partial dependence.
+- Cite R and the packages: `citation("ranger")` gives the reference.
+
+---
+
+## 12. Summary
+
+| | |
+|---|---|
+| **When** | A continuous outcome, with nonlinear effects and interactions that you do not want to specify in advance, and enough data (hundreds of rows or more) |
+| **How it works** | The average of many deep trees, each on a bootstrap sample, each split choosing among `mtry` random predictors |
+| **Why it works** | Averaging cuts the variance to $\rho\sigma^2 + (1-\rho)\sigma^2/B$; random predictor subsets lower $\rho$ |
+| **How (R)** | `ranger::ranger(y ~ ., data, num.trees = 500, mtry, min.node.size)`; `predict(fit, newdata)$predictions` |
+| **Tuning** | `mtry` first, minimum node size second, then enough trees (a few hundred); cross-validate by the unit that makes rows dependent |
+| **Out-of-bag error** | A free estimate of the test error, only for independent rows |
+| **Importance** | Prefer permutation importance on held-out data to impurity importance; shuffle correlated predictors together |
+| **Shape of effects** | Partial dependence, by hand in a few lines |
+| **Uncertainty** | `quantreg = TRUE` and `predict(..., type = "quantiles")` |
+| **Limits** | No extrapolation beyond the training range; importance is not causation; a black box with no coefficients |
+
+---
+
+## References
+
+Breiman, L. (1996). Bagging predictors. *Machine Learning*, *24*(2), 123–140. https://doi.org/10.1007/BF00058655
+
+Breiman, L. (2001). Random forests. *Machine Learning*, *45*(1), 5–32. https://doi.org/10.1023/A:1010933404324
+
+Fanaee-T, H., & Gama, J. (2014). Event labeling combining ensemble detectors and background knowledge. *Progress in Artificial Intelligence*, *2*(2–3), 113–127. https://doi.org/10.1007/s13748-013-0040-3
+
+Friedman, J. H. (2001). Greedy function approximation: A gradient boosting machine. *The Annals of Statistics*, *29*(5), 1189–1232. https://doi.org/10.1214/aos/1013203451
+
+Hastie, T., Tibshirani, R., & Friedman, J. (2009). *The elements of statistical learning: Data mining, inference, and prediction* (2nd ed.). Springer.
+
+Meinshausen, N. (2006). Quantile regression forests. *Journal of Machine Learning Research*, *7*, 983–999.
+
+Strobl, C., Boulesteix, A.-L., Zeileis, A., & Hothorn, T. (2007). Bias in random forest variable importance measures: Illustrations, sources and a solution. *BMC Bioinformatics*, *8*, Article 25. https://doi.org/10.1186/1471-2105-8-25
+
+Therneau, T., & Atkinson, B. (2023). *rpart: Recursive partitioning and regression trees* (R package version 4.1.23). https://CRAN.R-project.org/package=rpart
+
+Wright, M. N., & Ziegler, A. (2017). ranger: A fast implementation of random forests for high dimensional data in C++ and R. *Journal of Statistical Software*, *77*(1), 1–17. https://doi.org/10.18637/jss.v077.i01

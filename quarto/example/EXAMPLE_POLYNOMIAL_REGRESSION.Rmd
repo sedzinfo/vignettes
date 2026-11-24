@@ -1,0 +1,441 @@
+---
+title: "Polynomial Regression: Is the Rise of CO₂ Speeding Up?"
+description: "Polynomial regression in R with lm(), I() and poly(), on NOAA's monthly CO₂ record from Mauna Loa (1958–2026): straight line against quadratic and cubic trends, what the coefficients mean, centring and orthogonal polynomials, choosing the degree with F tests and forward validation, the seasonal cycle, autocorrelated residuals, the danger of extrapolation and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from NOAA each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a straight line or a curve?
+
+In March 1958 Charles David Keeling started measuring carbon dioxide (CO₂) in the air on Mauna Loa, a volcano in Hawaii, far from cities and forests. The record has run every month since. It is the longest direct record of CO₂ in the atmosphere.
+
+The amount of CO₂ has gone up every year. This page asks: **is it going up by about the same amount every year, or by more and more?** If the yearly rise is constant, the record is a straight line. If the rise itself grows, the record bends upwards: a curve.
+
+**Polynomial regression** fits curves with an ordinary regression, by adding powers of the predictor:
+
+| Degree | Model | Shape |
+|---|---|---|
+| 1 | $y = \beta_0 + \beta_1 x$ | a straight line |
+| 2 | $y = \beta_0 + \beta_1 x + \beta_2 x^2$ | a parabola: one bend, a steady acceleration |
+| 3 | $y = \beta_0 + \beta_1 x + \beta_2 x^2 + \beta_3 x^3$ | up to two bends: the acceleration itself can change |
+| $k$ | ... $+ \beta_k x^k$ | up to $k - 1$ bends |
+
+The model is a curve in $x$, but it is **linear in the coefficients** $\beta$: each power of $x$ is just another predictor. So `lm()` fits it, and everything known about linear regression (standard errors, *F* tests, $R^2$) still applies.
+
+```{r packages}
+library(ggplot2)
+library(nlme)   # gls(): regression with autocorrelated errors (comes with R)
+
+# one colour per degree of polynomial, the same in every chart
+degree_colours <- c("1" = "#2a78d6", "2" = "#eb6834", "3" = "#1baf7a", "5" = "#eda100")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+```
+
+---
+
+## 1. The data
+
+The NOAA Global Monitoring Laboratory publishes the monthly means as a small CSV file, free and with no login. The first 16 years come from the Scripps Institution of Oceanography, where Keeling worked.
+
+```{r download}
+raw <- read.csv("https://gml.noaa.gov/webdata/ccgg/trends/co2/co2_mm_mlo.csv",
+                comment.char = "#")   # the notes at the top start with #
+head(raw, 3)
+```
+
+`average` is the monthly mean in **parts per million** (ppm): molecules of CO₂ per million molecules of dry air. `decimal.date` is the middle of the month as a year with decimals (1958.2027 is mid-March 1958). We keep those two, plus the year and month:
+
+```{r tidy}
+co2 <- data.frame(date  = raw$decimal.date, year = raw$year, month = raw$month,
+                  ppm   = raw$average)
+co2$t <- co2$date - 2000    # years since the start of 2000: negative before, positive after
+nrow(co2)
+range(co2$ppm)
+```
+
+That is `r num(nrow(co2))` months, from `r month.name[co2$month[1]]` `r co2$year[1]` to `r month.name[co2$month[nrow(co2)]]` `r co2$year[nrow(co2)]`. NOAA filled the few missing months by interpolation. After the eruption of Mauna Loa in November 2022, the measurements came from Maunakea, 34 km to the north, until July 2023. Why we use years since 2000, `t`, rather than the year itself, is explained in section 4.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+linear <- lm(ppm ~ t, data = co2)
+
+ggplot(co2, aes(date, ppm)) +
+  geom_line(colour = "grey45", linewidth = 0.3) +
+  geom_line(aes(y = fitted(linear)), colour = degree_colours[["1"]], linewidth = 0.9) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10)) +
+  labs(title = "CO₂ at Mauna Loa, monthly means, with a straight line",
+       x = NULL, y = "CO₂ (ppm)") +
+  theme_bw()
+```
+
+Two things stand out. The record wiggles up and down every year: that is the **seasonal cycle**, which section 6 deals with. And the straight line does not follow the record: it is too low at both ends and too high in the middle. The **residuals** of the straight line, the measured values minus the line, make this plain:
+
+```{r look_residuals}
+ggplot(co2, aes(date, resid(linear))) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "grey35", linewidth = 0.3) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10)) +
+  labs(title = "What the straight line misses",
+       subtitle = "Residuals: measured CO₂ minus the straight line",
+       x = NULL, y = "residual (ppm)") +
+  theme_bw()
+```
+
+A **U shape in the residuals** is the classic sign that a straight line is not enough and a quadratic term is needed. The yearly rise tells the same story:
+
+```{r growth}
+# the mean of each complete year, and the rise from one year to the next
+complete <- as.integer(names(which(table(co2$year) == 12)))
+annual   <- aggregate(ppm ~ year, data = subset(co2, year %in% complete), FUN = mean)
+growth   <- data.frame(year = annual$year[-1], rise = diff(annual$ppm))
+head(growth, 3)
+tail(growth, 3)
+early  <- mean(growth$rise[growth$year <= 1969])
+recent <- mean(growth$rise[growth$year >= 2016])
+```
+
+In the 1960s CO₂ rose by `r f2(early)` ppm a year on average; in the last ten years, by `r f2(recent)` ppm a year. The rise is speeding up.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the quadratic model
+
+$$\text{ppm}_i = \beta_0 + \beta_1 t_i + \beta_2 t_i^2 + \varepsilon_i$$
+
+where $t_i$ is the time of month $i$ in years since the start of 2000. $t$ and $t^2$ are two predictors; least squares finds the $\beta$'s that make the sum of squared residuals, $\sum_i \varepsilon_i^2$, as small as possible, exactly as in any linear regression.
+
+### Step 2: what the coefficients mean
+
+The slope of a curve changes along it. The slope at time $t$ is the derivative:
+
+$$\frac{d\,\text{ppm}}{dt} = \beta_1 + 2\beta_2 t$$
+
+So, with $t$ measured from 2000:
+
+- $\beta_0$ is the level of CO₂ at the start of 2000;
+- $\beta_1$ is the **yearly rise at the start of 2000**;
+- $2\beta_2$ is the **acceleration**: how much the yearly rise grows every year. A positive $\beta_2$ means the rise speeds up.
+
+$\beta_2$ is not "the effect of $t^2$ holding $t$ constant": $t^2$ cannot change while $t$ stays the same. The terms of a polynomial are read **together**, through the slope or through the fitted curve.
+
+### Step 3: higher degrees
+
+A cubic adds $\beta_3 t^3$, and the slope becomes $\beta_1 + 2\beta_2 t + 3\beta_3 t^2$: now the acceleration itself can change over time. Each extra degree lets the curve bend once more. With $n$ points, a polynomial of degree $n - 1$ passes through every one of them, and predicts nothing.
+
+### Step 4: keep the lower terms
+
+A model with $t^2$ should also have $t$, and a model with $t^3$ should have $t$ and $t^2$. Without $t$, the model $\beta_0 + \beta_2 t^2$ forces the bottom of the parabola to sit exactly at $t = 0$, which here is the arbitrary start of 2000. A different choice of zero would give a different model.
+
+---
+
+## 4. Fitting the model
+
+```{r fit}
+quadratic <- lm(ppm ~ t + I(t^2), data = co2)
+summary(quadratic)
+```
+
+**`I(t^2)`, not `t^2`.** In an R formula `^` has its own meaning: `(a + b)^2` means "a, b and their interaction". `I()` tells R to compute the square as arithmetic. `poly(t, 2, raw = TRUE)` builds the same two columns.
+
+```{r fit_numbers}
+b   <- coef(quadratic)
+ci  <- confint(quadratic)
+rise_at <- function(year) b[["t"]] + 2 * b[["I(t^2)"]] * (year - 2000)   # the slope, step 2
+r2  <- c(linear = summary(linear)$r.squared, quadratic = summary(quadratic)$r.squared)
+r2
+```
+
+| Coefficient | Estimate | Meaning |
+|---|---|---|
+| `(Intercept)` | `r f2(b[[1]])` | CO₂ at the start of 2000, in ppm |
+| `t` | `r f2(b[["t"]])` | the yearly rise at the start of 2000, in ppm per year |
+| `I(t^2)` | `r formatC(b[["I(t^2)"]], format = "f", digits = 4)` | half the acceleration: the yearly rise grows by $2 \times$ `r formatC(b[["I(t^2)"]], format = "f", digits = 4)` = `r formatC(2 * b[["I(t^2)"]], format = "f", digits = 3)` ppm per year, every year |
+
+- By the quadratic, CO₂ rose by `r f2(rise_at(1960))` ppm a year in 1960 and by `r f2(rise_at(2025))` ppm a year in 2025.
+- The quadratic term is far from zero: *t* = `r f1(summary(quadratic)$coefficients["I(t^2)", "t value"])`, 95% CI [`r formatC(ci["I(t^2)", 1], format = "f", digits = 4)`, `r formatC(ci["I(t^2)", 2], format = "f", digits = 4)`]. Section 7 shows that this *t* is too big, though the conclusion stands.
+- $R^2$ rises from `r nz(r2[["linear"]], 3)` to `r nz(r2[["quadratic"]], 3)`, and the residual standard deviation falls from `r f2(sigma(linear))` to `r f2(sigma(quadratic))` ppm. $R^2$ is high even for the straight line, because CO₂ rises so steadily: with trends, compare the residuals rather than $R^2$.
+
+The yearly rise that each model implies, against the measured rise:
+
+```{r growth_chart}
+bc <- coef(lm(ppm ~ t + I(t^2) + I(t^3), data = co2))
+s  <- growth$year - 2000
+implied <- rbind(data.frame(year = growth$year, rise = rise_at(growth$year), model = "Quadratic"),
+                 data.frame(year = growth$year, rise = bc[2] + 2 * bc[3] * s + 3 * bc[4] * s^2,
+                            model = "Cubic"))
+implied$model <- factor(implied$model, levels = c("Quadratic", "Cubic"))
+
+ggplot(growth, aes(year, rise)) +
+  geom_point(colour = "grey45", size = 1.6) +
+  geom_line(data = implied, aes(colour = model), linewidth = 0.9) +
+  scale_colour_manual(values = c(Quadratic = degree_colours[["2"]], Cubic = degree_colours[["3"]])) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10)) +
+  labs(title = "How much CO₂ rises each year",
+       subtitle = "Points: the measured rise from one year's mean to the next. Lines: the slope of each model.",
+       x = NULL, y = "rise (ppm per year)", colour = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+The quadratic says that the yearly rise grows in a straight line; the cubic lets it bend. Both run through the middle of the measured rises. The points scatter around them because the rise varies from year to year: El Niño years, for example, have bigger rises.
+
+### Raw years, centred years and orthogonal polynomials
+
+Why years since 2000, and not the year itself? Fit the same quadratic three ways:
+
+```{r three_ways}
+raw_year   <- lm(ppm ~ date + I(date^2), data = co2)   # the year itself: 1958.2 ... 2026.8
+orthogonal <- lm(ppm ~ poly(date, 2), data = co2)      # orthogonal polynomials
+rbind(raw_year = coef(raw_year), centred = coef(quadratic), orthogonal = coef(orthogonal))
+
+# the three give the same fitted curve
+c(max(abs(fitted(raw_year) - fitted(quadratic))), max(abs(fitted(orthogonal) - fitted(quadratic))))
+
+# but their predictors are very different
+c(raw_year = cor(co2$date, co2$date^2), centred = cor(co2$t, co2$t^2))
+c(raw_year = kappa(model.matrix(raw_year)), centred = kappa(model.matrix(quadratic)),
+  orthogonal = kappa(model.matrix(orthogonal)))
+```
+
+- **The fitted curve is the same** in all three: they are the same model, written differently.
+- **With the year itself**, the coefficients are `r f2(coef(raw_year)[["date"]])` and `r f2(coef(raw_year)[[1]])`: the slope and level in the year 0, two thousand years before the data. The year and its square correlate at `r formatC(cor(co2$date, co2$date^2), format = "f", digits = 5)`, and the **condition number** of the predictors, a measure of how close they are to being redundant, is about `r formatC(kappa(model.matrix(raw_year)), format = "e", digits = 1)`. Numbers that large make computations unstable, and higher degrees soon fail.
+- **Centring**, here subtracting 2000, makes the coefficients mean something (the level and the rise in 2000) and brings the condition number down to `r num(round(kappa(model.matrix(quadratic))))`.
+- **`poly(date, 2)`** builds orthogonal polynomials: columns that are uncorrelated with each other. The computation is as stable as it gets (condition number `r f1(kappa(model.matrix(orthogonal)))`), and the test of the last column is the test of the highest degree, but the coefficients are not in ppm per year. Use `poly()` to choose the degree and centred raw powers to report what the curve means.
+
+---
+
+## 5. Choosing the degree
+
+### *F* tests and information criteria
+
+Fit degrees 1 to 6 and compare each with the one before:
+
+```{r degrees}
+# ppm ~ poly(t, 1, raw = TRUE), ppm ~ poly(t, 2, raw = TRUE), ...: raw powers of t
+formulas <- lapply(1:8, function(k) as.formula(paste0("ppm ~ poly(t, ", k, ", raw = TRUE)")))
+fits     <- lapply(formulas[1:6], lm, data = co2)
+f_tests  <- do.call(anova, fits)
+f_tests
+
+degrees <- data.frame(degree = 1:6,
+                      R2     = sapply(fits, function(f) summary(f)$r.squared),
+                      sd     = sapply(fits, sigma),
+                      AIC    = sapply(fits, AIC),
+                      BIC    = sapply(fits, BIC))
+degrees
+```
+
+Every extra degree is "significant" up to degree `r max(which(f_tests$"Pr(>F)" < .05))`, and AIC keeps falling. But look at the size of the gains: the residual standard deviation goes from `r f2(sigma(fits[[1]]))` ppm for the straight line to `r f2(sigma(fits[[2]]))` for the quadratic, and then only to `r f2(sigma(fits[[6]]))` at degree 6. With `r num(nrow(co2))` months even tiny improvements are significant, and section 7 shows that these *p* values are too small anyway. The extra degrees bend the curve around wiggles of the past, such as the slower rise of the early 1990s.
+
+### Forward validation: does the curve predict the future?
+
+A trend is useful if it predicts years it has not seen. Fit each degree to the record up to 2006, and predict 2007 to `r max(co2$year)`:
+
+```{r forward}
+past   <- subset(co2, date < 2007)
+future <- subset(co2, date >= 2007)
+forward_fits <- lapply(formulas, lm, data = past)
+forward_rmse <- sapply(forward_fits, function(f) sqrt(mean((future$ppm - predict(f, future))^2)))
+round(setNames(forward_rmse, paste("degree", 1:8)), 1)
+best <- which.min(forward_rmse)
+```
+
+```{r forward_chart}
+grid <- data.frame(date = seq(1958.2, 2030, by = 0.1))
+grid$t <- grid$date - 2000
+shown <- c(1, 2, 3, 5)
+paths <- do.call(rbind, lapply(shown, function(k)
+  data.frame(date = grid$date, ppm = predict(forward_fits[[k]], grid), degree = as.character(k))))
+paths$degree <- factor(paths$degree, levels = as.character(shown))
+
+ggplot(co2, aes(date, ppm)) +
+  geom_line(colour = "grey60", linewidth = 0.3) +
+  geom_vline(xintercept = 2007, linetype = "dashed", colour = "grey40") +
+  geom_line(data = paths, aes(colour = degree), linewidth = 0.8) +
+  annotate("text", x = 2006, y = 445, label = "fitted", hjust = 1, size = 3.3, colour = "grey30") +
+  annotate("text", x = 2008, y = 445, label = "predicted", hjust = 0, size = 3.3, colour = "grey30") +
+  scale_colour_manual(values = degree_colours) +
+  coord_cartesian(ylim = c(305, 450)) +
+  scale_x_continuous(breaks = seq(1960, 2030, 10)) +
+  labs(title = "Polynomials fitted to 1958–2006, continued to 2030",
+       subtitle = "Grey: the measured record. A line that leaves the chart has run off.",
+       x = NULL, y = "CO₂ (ppm)", colour = "degree") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+```
+
+The **quadratic** predicts the next `r round(max(future$date) - 2007)` years best, with a root mean squared error of `r f1(forward_rmse[2])` ppm. The straight line falls behind (`r f1(forward_rmse[1])` ppm), and the higher degrees, which fitted the past a little better, predict the future worse: `r f1(forward_rmse[3])` ppm for the cubic and `r f1(forward_rmse[5])` ppm for degree 5. Beyond the data, a polynomial follows its highest power, and nothing holds it back.
+
+The same problem, with the whole record: what each degree says about the year 2050.
+
+```{r year_2050}
+in_2050 <- sapply(fits, function(f) predict(f, data.frame(t = 50)))
+round(setNames(in_2050, paste("degree", 1:6)), 1)
+```
+
+Six curves that all fit `r min(co2$year)` to `r max(co2$year)` well disagree about 2050 by `r f1(diff(range(in_2050)))` ppm. A polynomial describes the record; it knows nothing about what drives it. What CO₂ will be in 2050 depends on emissions, not on the shape of a curve.
+
+---
+
+## 6. The seasonal cycle
+
+The residuals of the quadratic, month by month:
+
+```{r seasonal_chart}
+co2$trend_residual <- resid(quadratic)
+co2$month_name     <- factor(month.abb[co2$month], levels = month.abb)
+
+ggplot(co2, aes(month_name, trend_residual)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_boxplot(fill = "grey90", colour = "grey30", outlier.size = 0.8) +
+  labs(title = "The residuals of the quadratic trend, by month",
+       x = NULL, y = "residual (ppm)") +
+  theme_bw()
+cycle <- tapply(co2$trend_residual, co2$month, mean)   # the mean residual of each month, 1 to 12
+```
+
+CO₂ peaks in `r month.name[which.max(cycle)]` and is lowest in `r month.name[which.min(cycle)]`, `r f1(max(cycle) - min(cycle))` ppm apart on average. In the Northern Hemisphere, which holds most of the world's land and plants, plants take up CO₂ as they grow in spring and summer, and release it as leaves decay in autumn and winter.
+
+A wave can join the model as more predictors, a sine and a cosine with a period of one year (and two more with a period of six months, for the uneven shape). The model is still linear in its coefficients:
+
+```{r seasonal}
+seasonal <- lm(ppm ~ t + I(t^2) + sin(2 * pi * date) + cos(2 * pi * date) +
+                 sin(4 * pi * date) + cos(4 * pi * date), data = co2)
+c(quadratic = sigma(quadratic), with_seasons = sigma(seasonal))
+round(coef(seasonal)[1:3], 4)
+```
+
+The residual standard deviation falls from `r f2(sigma(quadratic))` to `r f2(sigma(seasonal))` ppm, and the trend coefficients hardly move: the seasonal wave was noise around the trend, not part of it.
+
+---
+
+## 7. Things to keep in mind
+
+### Neighbouring months are not independent
+
+Regression assumes that the residuals are independent. In a time series they rarely are: a month above the trend is usually followed by another month above the trend.
+
+```{r autocorrelation}
+lag1 <- acf(resid(seasonal), plot = FALSE)$acf[2]   # correlation of each residual with the next
+lag1
+```
+
+The correlation of each residual with the next month's is `r f2(lag1)`. Then `lm()` acts as if it had far more independent information than it has, and its standard errors are too small. **Generalized least squares** (`gls()` from the package `nlme`) can estimate the same model with **autoregressive** errors, where each residual depends on the one before:
+
+```{r gls}
+ar1 <- gls(formula(seasonal), data = co2, correlation = corAR1())
+se  <- c(ols = summary(seasonal)$coefficients["I(t^2)", "Std. Error"],
+         ar1 = summary(ar1)$tTable["I(t^2)", "Std.Error"])
+se
+
+# is the cubic term needed, once the errors are autocorrelated? (ML for a likelihood-ratio test)
+ar1_ml    <- update(ar1, method = "ML")
+ar1_cubic <- update(ar1_ml, . ~ . + I(t^3))
+cubic_test <- anova(ar1_ml, ar1_cubic)
+cubic_test
+```
+
+- The standard error of the quadratic term is `r f1(se[["ar1"]] / se[["ols"]])` times larger with autocorrelated errors. The acceleration is still clear, *t* = `r f1(summary(ar1)$tTable["I(t^2)", "t-value"])`, but every *p* value from `lm()` on this page is too small.
+- The cubic term is weaker than the *F* test of section 5 suggested: likelihood-ratio $\chi^2$(1) = `r f2(cubic_test$L.Ratio[2])`, *p* `r pval(cubic_test$"p-value"[2])`.
+- The estimates themselves hardly change: autocorrelation affects the uncertainty more than the curve.
+
+### Other ways to draw a curve
+
+- **Splines** join several low-degree polynomials at chosen points, so the curve can bend where the data bend without swinging wildly at the ends. They are usually the better choice when the aim is a flexible curve rather than a few interpretable coefficients (Harrell, 2015).
+- **A curve with a mechanism.** CO₂ was about 280 ppm before industry. A rise of the **excess above 280 ppm** by a constant percentage each year is an exponential curve, fitted with nonlinear least squares (`nls()`). Its parameters mean something physical; a polynomial's do not.
+- **A polynomial has no memory of its purpose.** It fits the range of the data, and only that range.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the variables and their units, how time was coded, how the degree was chosen, the coefficients with their uncertainty, and what was done about autocorrelation. The numbers come from the R objects:
+
+```{r apa_numbers}
+quad_vs_linear <- anova(linear, quadratic)
+delta_r2 <- r2[["quadratic"]] - r2[["linear"]]
+ci_ar1   <- intervals(ar1, which = "coef")$coef        # 95% CIs with AR(1) errors
+b_ar1    <- coef(ar1)
+
+degree_table <- data.frame(
+  Degree         = 1:6,
+  `R²`           = nz(degrees$R2, 4),
+  `Residual SD`  = f2(degrees$sd),
+  `F test p`     = c("—", sapply(f_tests$"Pr(>F)"[-1], function(p) sub("= ", "", pval(p)))),
+  AIC            = f1(degrees$AIC),
+  `Forecast RMSE` = f1(forward_rmse[1:6]),
+  check.names = FALSE)
+```
+
+**Method** (data analysis):
+
+> We analysed the monthly mean CO₂ concentrations measured at Mauna Loa Observatory from `r month.name[co2$month[1]]` `r co2$year[1]` to `r month.name[co2$month[nrow(co2)]]` `r co2$year[nrow(co2)]` (*N* = `r num(nrow(co2))` months; Lan & Keeling, `r max(co2$year)`) with polynomial regressions of concentration (ppm) on time, in years since 1 January 2000. Polynomials of degree 1 to 6 were compared with *F* tests and with forward validation: each was fitted to 1958–2006 and its predictions for 2007–`r max(co2$year)` were compared with the measurements. The final model added sine and cosine terms with periods of 12 and 6 months for the seasonal cycle, and was estimated by generalized least squares with first-order autoregressive errors (Pinheiro & Bates, 2000). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> A quadratic trend fitted the record better than a linear trend, Δ*R*² = `r nz(delta_r2, 3)`, *F*(`r quad_vs_linear$Df[2]`, `r quad_vs_linear$Res.Df[2]`) = `r f1(quad_vs_linear$F[2])`, *p* `r pval(quad_vs_linear$"Pr(>F)"[2])`, and predicted 2007–`r max(co2$year)` more accurately than polynomials of degree 1 and 3 to 6 (Table 1). In the final model, CO₂ was `r f2(b_ar1[[1]])` ppm at the start of 2000, 95% CI [`r f2(ci_ar1[1, 1])`, `r f2(ci_ar1[1, 3])`], and rose by `r f2(b_ar1[["t"]])` ppm per year at that point, 95% CI [`r f2(ci_ar1["t", 1])`, `r f2(ci_ar1["t", 3])`]. The yearly rise increased by `r formatC(2 * b_ar1[["I(t^2)"]], format = "f", digits = 3)` ppm per year each year, 95% CI [`r formatC(2 * ci_ar1["I(t^2)", 1], format = "f", digits = 3)`, `r formatC(2 * ci_ar1["I(t^2)", 3], format = "f", digits = 3)`], from about `r f1(rise_at(1960))` ppm per year in 1960 to `r f1(rise_at(2025))` ppm per year in 2025. With autocorrelated errors, adding a cubic term gave a smaller improvement than under independent errors, χ²(1) = `r f2(cubic_test$L.Ratio[2])`, *p* `r pval(cubic_test$"p-value"[2])`, and the cubic predicted 2007–`r max(co2$year)` less accurately than the quadratic (RMSE `r f1(forward_rmse[3])` against `r f1(forward_rmse[2])` ppm), so we kept the quadratic.
+
+**Table 1**
+
+*Polynomial Trends of Degree 1 to 6 Fitted to Monthly CO₂ at Mauna Loa*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(degree_table, align = "rrrrrr", format = "pipe")
+```
+
+*Note.* *N* = `r num(nrow(co2))` months. Residual SD in ppm. *F* test *p*: the test of each degree against the one before, assuming independent errors. Forecast RMSE: root mean squared error, in ppm, of the predictions for 2007–`r max(co2$year)` from the same polynomial fitted to 1958–2006.
+
+**Points to remember:**
+
+- Say how the predictor was coded (here, centred at 2000), because the lower coefficients depend on it.
+- Read the terms of a polynomial together: report the slope at chosen values (here, the yearly rise in 1960 and 2025), or show the curve.
+- Choose the degree by more than *p* values: by the size of the improvement, by validation on data the model has not seen, and by what makes sense.
+- Do not extrapolate a polynomial beyond the data.
+- With a time series, check the residuals for autocorrelation, and say how you handled it.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | The outcome follows a curve in a continuous predictor, with one or two bends |
+| **The model** | $y = \beta_0 + \beta_1 x + \beta_2 x^2 + \dots$: a curve in $x$, linear in the $\beta$'s |
+| **How (R)** | `lm(y ~ x + I(x^2))`, or `lm(y ~ poly(x, 2))` for orthogonal polynomials |
+| **Coding** | Centre $x$ (subtract a meaningful value) before taking powers |
+| **Reading it** | The slope at $x$ is $\beta_1 + 2\beta_2 x$; read the terms together, never $\beta_2$ alone |
+| **Choosing the degree** | Nested *F* tests, AIC or BIC, and above all validation on new data; usually 2 or 3 is enough |
+| **Dangers** | Wild behaviour at the ends and beyond the data; high degrees fit noise |
+| **Alternatives** | Splines and GAMs for flexible curves; nonlinear models when a mechanism is known |
+
+---
+
+## References
+
+Harrell, F. E., Jr. (2015). *Regression modeling strategies: With applications to linear models, logistic and ordinal regression, and survival analysis* (2nd ed.). Springer.
+
+James, G., Witten, D., Hastie, T., & Tibshirani, R. (2021). *An introduction to statistical learning: With applications in R* (2nd ed.). Springer.
+
+Keeling, C. D., Bacastow, R. B., Bainbridge, A. E., Ekdahl, C. A., Guenther, P. R., & Waterman, L. S. (1976). Atmospheric carbon dioxide variations at Mauna Loa Observatory, Hawaii. *Tellus*, *28*, 538–551.
+
+Lan, X., & Keeling, R. (2026). *Monthly mean CO₂ at Mauna Loa Observatory* [Data set]. NOAA Global Monitoring Laboratory and Scripps Institution of Oceanography. https://gml.noaa.gov/ccgg/trends/
+
+Pinheiro, J. C., & Bates, D. M. (2000). *Mixed-effects models in S and S-PLUS*. Springer.

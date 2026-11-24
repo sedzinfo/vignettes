@@ -7,7 +7,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Multiple linear: EXAMPLE_HIERARCHICAL_REGRESSION, EXAMPLE_GENERALIZED (Gaussian GLM)
 - [x] Hierarchical: EXAMPLE_HIERARCHICAL_REGRESSION
 - [ ] Stepwise
-- [ ] Polynomial
+- [x] Polynomial: EXAMPLE_POLYNOMIAL_REGRESSION
 - [ ] Weighted least squares
 - [ ] Generalized least squares
 - [ ] Robust
@@ -60,8 +60,8 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 
 ## Machine learning
 - [x] Regression trees: EXAMPLE_DECISION_TREE
-- [ ] Random forest
-- [ ] Gradient boosting
+- [x] Random forest: EXAMPLE_RANDOM_FOREST
+- [x] Gradient boosting: EXAMPLE_GRADIENT_BOOSTING
 - [ ] Support vector regression
 - [ ] k-nearest neighbours
 - [ ] Gaussian process
