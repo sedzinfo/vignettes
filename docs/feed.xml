@@ -7,7 +7,1109 @@
     <atom:link href="https://sedzinfo.github.io/vignettes/feed.xml" rel="self" type="application/rss+xml"/>
     <description>Tutorials in R with the code on every page: psychometrics, adaptive testing, scale validation, statistics, machine learning and data visualisation with real data.</description>
     <language>en</language>
-    <lastBuildDate>Mon, 23 Nov 2026 14:45:28 +0200</lastBuildDate>
+    <lastBuildDate>Tue, 24 Nov 2026 12:08:23 +0200</lastBuildDate>
+    <item>
+      <title>Multinomial Logistic Regression: How Did Federal Employees Leave in 2025?</title>
+      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html</link>
+      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html</guid>
+      <pubDate>Tue, 24 Nov 2026 12:08:23 +0200</pubDate>
+      <category>R</category>
+      <category>Worked Examples in R</category>
+      <description>Multinomial logistic regression in R with nnet::multinom(), on real OPM data: how about 330,000 US federal employees left their jobs in fiscal year 2025 (quit, retired, early retirement, deferred resignation, laid off, terminated), with relative risk ratios, predicted probabilities, the IIA assumption and APA reporting.</description>
+      <content:encoded><![CDATA[<p><em>Multinomial logistic regression in R with nnet::multinom(), on real OPM data: how about 330,000 US federal employees left their jobs in fiscal year 2025 (quit, retired, early retirement, deferred resignation, laid off, terminated), with relative risk ratios, predicted probabilities, the IIA assumption and APA reporting.</em></p>
+<section id="the-question-six-ways-to-leave" class="level2">
+<h2 class="anchored" data-anchor-id="the-question-six-ways-to-leave">The question: six ways to leave</h2>
+<p>In 2025 the US federal government lost staff in several ways at once. In January, most federal employees were offered a <strong>deferred resignation</strong>: stop working, stay on the payroll until 30 September 2025, then resign. Agencies offered <strong>early retirement</strong>, carried out <strong>reductions in force</strong> (layoffs) and <strong>dismissed</strong> staff. And people kept <strong>quitting</strong> and <strong>retiring</strong>, as they do every year.</p>
+<p>So everyone who left federal service in 2025 left in one of six ways. This page asks: <strong>among the people who left, what made one way of leaving more likely than another?</strong> Did the young quit and the old retire? Who took the deferred resignation? Who was laid off?</p>
+<p>The outcome is a <strong>category with six values and no natural order</strong>: quitting is not “more” or “less” than being laid off. The type of outcome decides the type of regression:</p>
+<table class="caption-top table">
+<thead>
+<tr class="header">
+<th>Outcome</th>
+<th>Regression</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Two categories</td>
+<td><a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_GENERALIZED.html">logistic</a></td>
+<td>hired or not</td>
+</tr>
+<tr class="even">
+<td>Ordered categories</td>
+<td>ordinal logistic</td>
+<td>a performance rating from 1 to 5</td>
+</tr>
+<tr class="odd">
+<td><strong>Unordered categories</strong></td>
+<td><strong>multinomial logistic</strong></td>
+<td><strong>how someone left: quit, retired, laid off…</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A multinomial logistic regression picks one category as the <strong>reference</strong> and fits a logistic regression of each of the other categories against it, all at the same time. The data are real: the US Office of Personnel Management (OPM) publishes a record for every federal employee who leaves.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(nnet)         # multinom(): multinomial logistic regression (comes with R)
+library(nanoparquet)  # read_parquet(): reads the Parquet files that OPM publishes
+library(ggplot2)
+# one colour per way of leaving, the same in every chart
+exits   &lt;- c("Quit", "Retired", "Early retirement", "Deferred resignation", "Laid off", "Terminated")
+colours &lt;- setNames(c("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"), exits)
+ink     &lt;- setNames(c("white", "white", "white", "#0b0b0b", "white", "white"), exits)  # labels on the bars
+# number formats for the text
+f2   &lt;- function(x) formatC(x, format = "f", digits = 2)
+nz   &lt;- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
+pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))
+pct  &lt;- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+num  &lt;- function(x) format(x, big.mark = ",")
+rr   &lt;- function(x) ifelse(x &gt;= 100, formatC(x, format = "f", digits = 0, big.mark = ","),
+                           formatC(x, format = "f", digits = 2))                   # relative risk ratios</code></pre></div></div>
+</details>
+</div>
+<hr>
+</section>
+<section id="the-data" class="level2">
+<h2 class="anchored" data-anchor-id="the-data">1. The data</h2>
+<p>OPM’s <a href="https://data.opm.gov/">Federal Workforce Data</a> has a file for every month with <strong>one row per separation</strong>: a civilian employee leaving federal service. Each row says how the person left, their age group, years of service, agency, occupation, type of appointment and more. The files are free, need no login, and come through an <a href="https://data.opm.gov/get-data/api-access">API</a> as Parquet files of one to four MB.</p>
+<p>A monthly file holds the separations <strong>processed</strong> in that month, and some of them took effect months earlier: separations of September 2025 were still arriving in 2026. So we download every file from October 2023 to the latest one, and sort the separations by the date they <strong>took effect</strong>.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">options(timeout = max(300, getOption("timeout")))   # allow slow downloads
+# the list of monthly files, with the current version of each
+files &lt;- jsonlite::fromJSON("https://data.opm.gov/api/v1/files/separations?current=true")
+files &lt;- files[as.integer(files$year) * 100 + as.integer(files$month) &gt;= 202310, ]
+latest &lt;- max(as.Date(paste(files$year, files$month, "01", sep = "-")))
+# the columns we need, out of the 69 in each file
+columns &lt;- c("personnel_action_effective_date_yyyymm", "separation_category", "drp_indicator",
+             "age_bracket", "length_of_service_years", "supervisory_status",
+             "appointment_type", "stem_occupation")
+# one month: download the file and read the columns; try again if OPM asks us to slow down
+read_month &lt;- function(year, month, version) {
+  url  &lt;- sprintf("https://data.opm.gov/api/v1/files/separations/%s/%s/%s/download", year, month, version)
+  path &lt;- tempfile(fileext = ".parquet")
+  for (attempt in 1:3) {
+    ok &lt;- tryCatch(download.file(url, path, mode = "wb", quiet = TRUE) == 0, error = function(e) FALSE)
+    if (ok) break
+    Sys.sleep(10 * attempt)
+  }
+  if (!ok) stop("Could not download ", url)
+  as.data.frame(read_parquet(path, col_select = columns))
+}
+raw &lt;- do.call(rbind, Map(read_month, files$year, files$month, files$version))
+nrow(raw)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 808769</code></pre>
+</div>
+</div>
+<p>That is 36 monthly files, up to September 2026. The US federal <strong>fiscal year</strong> runs from October to September: fiscal year 2025 (FY2025) is October 2024 to September 2025. We keep FY2024, a year before the changes, and FY2025:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">ym &lt;- as.integer(raw$personnel_action_effective_date_yyyymm)   # e.g. 202509 = September 2025
+raw$month       &lt;- as.Date(sprintf("%d-%02d-01", ym %/% 100, ym %% 100))
+raw$fiscal_year &lt;- ym %/% 100 + (ym %% 100 &gt;= 10)              # October 2024 to September 2025 = 2025
+d &lt;- subset(raw, fiscal_year %in% 2024:2025)
+table(d$separation_category, d$fiscal_year)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                                    
+                                       2024   2025
+  OTHER SEPARATION                    16296  17123
+  QUIT                                81772 159332
+  REDUCTION IN FORCE (RIF)               33  10417
+  RETIREMENT - EARLY OUT                206  20916
+  RETIREMENT - OTHER                   3644   5249
+  RETIREMENT - VOLUNTARY              55567 102490
+  TERMINATION (EXPIRED APPT/OTHER)    32141  37372
+  TRANSFER OUT - INDIVIDUAL TRANSFER  33003  16288
+  TRANSFER OUT - MASS TRANSFER          169     84</code></pre>
+</div>
+</div>
+<p>OPM records how each separation was processed. A separate column, <code>drp_indicator</code>, says whether it came under the deferred resignation programme (<code>Y</code>):</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">with(subset(d, fiscal_year == 2025), table(separation_category, drp_indicator))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                                    drp_indicator
+separation_category                      N     Y
+  OTHER SEPARATION                   17069    54
+  QUIT                               94970 64362
+  REDUCTION IN FORCE (RIF)           10416     1
+  RETIREMENT - EARLY OUT              8525 12391
+  RETIREMENT - OTHER                  5173    76
+  RETIREMENT - VOLUNTARY             69798 32692
+  TERMINATION (EXPIRED APPT/OTHER)   36907   465
+  TRANSFER OUT - INDIVIDUAL TRANSFER 16259    29
+  TRANSFER OUT - MASS TRANSFER          83     1</code></pre>
+</div>
+</div>
+<p>On paper, most people who took the deferred resignation <strong>quit or retired</strong>. But they took a different route from people who quit or retired in the ordinary way, so we give them a category of their own. The six ways of leaving:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Way of leaving</th>
+<th>OPM category</th>
+<th>What it means</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Quit</td>
+<td>QUIT</td>
+<td>Resigned</td>
+</tr>
+<tr class="even">
+<td>Retired</td>
+<td>RETIREMENT - VOLUNTARY, RETIREMENT - OTHER</td>
+<td>Retired on a pension</td>
+</tr>
+<tr class="odd">
+<td>Early retirement</td>
+<td>RETIREMENT - EARLY OUT</td>
+<td>Took the agency’s offer of an early pension: age 50 with 20 years of service, or any age with 25 years</td>
+</tr>
+<tr class="even">
+<td>Deferred resignation</td>
+<td>any of the above with <code>drp_indicator</code> = Y</td>
+<td>Accepted the 2025 offer; most left on 30 September 2025</td>
+</tr>
+<tr class="odd">
+<td>Laid off</td>
+<td>REDUCTION IN FORCE (RIF)</td>
+<td>The position was abolished</td>
+</tr>
+<tr class="even">
+<td>Terminated</td>
+<td>TERMINATION (EXPIRED APPT/OTHER)</td>
+<td>A temporary appointment ended, or the agency ended the employment, for example during the probationary period</td>
+</tr>
+</tbody>
+</table>
+<p>We leave out transfers to another agency (those people are still federal employees) and “other separation”, which includes deaths.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">exit &lt;- c("QUIT"                             = "Quit",
+          "RETIREMENT - VOLUNTARY"           = "Retired",
+          "RETIREMENT - OTHER"               = "Retired",
+          "RETIREMENT - EARLY OUT"           = "Early retirement",
+          "REDUCTION IN FORCE (RIF)"         = "Laid off",
+          "TERMINATION (EXPIRED APPT/OTHER)" = "Terminated")[d$separation_category]
+exit[!is.na(exit) &amp; d$drp_indicator %in% "Y"] &lt;- "Deferred resignation"
+d$exit &lt;- factor(exit, levels = exits)
+d &lt;- subset(d, !is.na(exit))     # drops the transfers and the other separations</code></pre></div></div>
+</details>
+</div>
+<p>The predictors are five characteristics of each person. Years of service are cut where the rules change: the first year is usually a probationary period, early retirement needs 20 or 25 years, and a full pension needs, for example, 30 years from age 55 to 57 or 20 years at age 60.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">age &lt;- ifelse(d$age_bracket %in% c("LESS THAN 20", "20-24"), "Under 25",
+       ifelse(d$age_bracket == "65 OR MORE", "65+", d$age_bracket))
+d$age &lt;- factor(age, levels = c("Under 25", "25-29", "30-34", "35-39", "40-44", "45-49",
+                                "50-54", "55-59", "60-64", "65+"))
+years &lt;- suppressWarnings(as.numeric(d$length_of_service_years))
+years[years &gt; 60] &lt;- NA          # a few impossible values (up to 1,800 years of service)
+d$service &lt;- cut(years, c(-Inf, 1, 5, 10, 20, 25, 30, Inf), right = FALSE,
+                 labels = c("Under 1", "1-4", "5-9", "10-19", "20-24", "25-29", "30+"))
+# supervisors and managers; team leaders count as non-supervisors
+supervisors  &lt;- c("SUPERVISOR OR MANAGER", "SUPERVISOR (CSRA)", "MANAGEMENT OFFICIAL (CSRA)")
+d$supervisor &lt;- factor(ifelse(d$supervisory_status == "INVALID", NA,
+                              ifelse(d$supervisory_status %in% supervisors, "Yes", "No")),
+                       levels = c("No", "Yes"))
+# a permanent or a temporary (nonpermanent) appointment
+d$permanent &lt;- factor(ifelse(d$appointment_type == "INVALID", NA,
+                             ifelse(grepl("NONPERMANENT", d$appointment_type), "No", "Yes")),
+                      levels = c("Yes", "No"))
+# STEM, health or other occupations; "UNSPECIFIED" becomes NA
+d$occupation &lt;- factor(c("ALL OTHER OCCUPATIONS" = "Other", "STEM OCCUPATIONS" = "STEM",
+                         "HEALTH OCCUPATIONS" = "Health")[d$stem_occupation],
+                       levels = c("Other", "STEM", "Health"))
+vars &lt;- c("exit", "age", "service", "supervisor", "permanent", "occupation")
+d    &lt;- d[complete.cases(d[vars]), ]
+fy25 &lt;- subset(d, fiscal_year == 2025)
+table(d$fiscal_year)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+  2024   2025 
+172225 329911 </code></pre>
+</div>
+</div>
+<p>Each row is a separation, not a person: someone who left two temporary jobs in a year is in the data twice. We still call them people, for short.</p>
+<hr>
+</section>
+<section id="look-at-the-data" class="level2">
+<h2 class="anchored" data-anchor-id="look-at-the-data">2. Look at the data</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">monthly &lt;- as.data.frame(table(month = d$month, exit = d$exit), responseName = "people")
+monthly$month &lt;- as.Date(as.character(monthly$month))
+ggplot(monthly, aes(month, people, fill = exit)) +
+  geom_col(width = 25) +
+  geom_vline(xintercept = as.Date("2024-09-16"), linetype = "dashed", colour = "grey40") +
+  facet_wrap(~ exit, ncol = 2, scales = "free_y") +
+  scale_fill_manual(values = colours, guide = "none") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_x_date(date_breaks = "6 months", date_labels = "%b %Y") +
+  labs(title = "Federal employees leaving each month, by how they left",
+       subtitle = "October 2023 to September 2025; each panel has its own scale.\nDashed line: the start of fiscal year 2025.",
+       x = NULL, y = "people") +
+  theme_bw()</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Monthly – 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC_files/figure-html/monthly-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">drp_september &lt;- sum(fy25$exit == "Deferred resignation" &amp; fy25$month == as.Date("2025-09-01"))
+# terminations of people with under five years of service, February to May
+new_terminated &lt;- with(subset(d, exit == "Terminated" &amp; service %in% c("Under 1", "1-4") &amp;
+                                 format(month, "%m") %in% c("02", "03", "04", "05")),
+                       table(fiscal_year))
+new_terminated</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>fiscal_year
+ 2024  2025 
+ 4541 10163 </code></pre>
+</div>
+</div>
+<p>In FY2024, left of the dashed line, people quit, retired or came to the end of a temporary job. Retirements peak every December, and terminations every autumn, when seasonal jobs end. FY2025 is different:</p>
+<ul>
+<li><strong>Deferred resignations</strong>: 106,795 took effect in September 2025 alone, when the paid leave ended.</li>
+<li><strong>Early retirements and layoffs</strong>, almost absent in FY2024, start in spring 2025.</li>
+<li><strong>Terminations</strong> of people with under five years of service rose from 4,541 in February to May 2024 to 10,163 in the same months of 2025, when agencies dismissed many employees who were still in their probationary period.</li>
+</ul>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">counts &lt;- table(d$exit, d$fiscal_year)
+data.frame(exit   = exits,
+           FY2024 = num(as.vector(counts[, "2024"])),
+           FY2025 = num(as.vector(counts[, "2025"])),
+           FY2025_share = pct(as.vector(prop.table(counts[, "2025"])), 1))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                  exit FY2024  FY2025 FY2025_share
+1                 Quit 81,304  93,341        28.3%
+2              Retired 58,643  70,988        21.5%
+3     Early retirement    206   8,523         2.6%
+4 Deferred resignation      0 109,938        33.3%
+5             Laid off     31  10,374         3.1%
+6           Terminated 32,041  36,747        11.1%</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">top_exit &lt;- names(which.max(counts[, "2025"]))</code></pre></div></div>
+</details>
+</div>
+<p>In FY2025, 329,911 people left in these six ways, 1.9 times as many as in FY2024, and the most common way to leave was the deferred resignation. From here on we use FY2025. Who left which way?</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r"># stacked bars of shares (each bar adds up to 100%), with the larger shares labelled
+stacked &lt;- function(m, y_label, x_label) {
+  ggplot(m, aes(share, group, fill = exit)) +
+    geom_col(width = 0.8, colour = "white", linewidth = 0.3, position = position_stack(reverse = TRUE)) +
+    geom_text(aes(label = ifelse(share &gt;= 0.07, pct(share), ""), colour = exit),
+              position = position_stack(vjust = 0.5, reverse = TRUE), size = 3, show.legend = FALSE) +
+    scale_fill_manual(values = colours) +
+    scale_colour_manual(values = ink, guide = "none") +
+    scale_x_continuous(labels = scales::percent, expand = c(0, 0)) +
+    scale_y_discrete(limits = rev) +
+    labs(x = x_label, y = y_label, fill = NULL) +
+    theme_bw() +
+    theme(legend.position = "bottom", plot.margin = margin(5.5, 18, 5.5, 5.5)) +  # room for "100%"
+    guides(fill = guide_legend(nrow = 2))
+}
+# how the people in each group left, in FY2025
+mix &lt;- function(group, label) {
+  m &lt;- as.data.frame(prop.table(table(group = fy25[[group]], exit = fy25$exit), 1), responseName = "share")
+  stacked(m, label, "share of the people in the group who left in FY2025")
+}
+mix("age", "age")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Mix – 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC_files/figure-html/mix-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">mix("service", "years of service")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Mix service – 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC_files/figure-html/mix_service-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">share      &lt;- function(group) prop.table(table(fy25[[group]], fy25$exit), 1)
+by_age     &lt;- share("age")
+by_service &lt;- share("service")
+by_job     &lt;- share("occupation")
+middle     &lt;- c("30-34", "35-39", "40-44", "45-49", "50-54", "55-59", "60-64")</code></pre></div></div>
+</details>
+</div>
+<ul>
+<li><strong>Quitting</strong> is the usual way out up to age 45; from 50 on, people <strong>retire</strong>.</li>
+<li><strong>Early retirement</strong> happens at 50 to 59 and with 20 to 29 years of service: the eligibility rules.</li>
+<li><strong>The deferred resignation</strong> is the odd one: between 32% and 38% of the people in every age group from 30 to 64 took it, and a similar share at every length of service from one year up. Ordinary quitting and retiring each belong to one end of a career; the deferred resignation drew from all of it.</li>
+<li><strong>Layoffs</strong> hit the middle of careers: 8.7% of the people aged 45 to 49 who left, 7.6% of those with 10 to 19 years of service.</li>
+<li><strong>Terminations</strong> belong to the young and the new: 36% of the people under 25 and 35% of those with less than a year of service.</li>
+<li><strong>Occupations</strong> differ too: only 4.5% of the people in health occupations took the deferred resignation, against 45% in STEM and 34% in other occupations. Agencies could exclude positions from the offer.</li>
+</ul>
+<p>Age and years of service go together, so these charts cannot tell whether age or service drives an exit. The model can: it estimates each effect holding the others constant.</p>
+<hr>
+</section>
+<section id="the-model-step-by-step-with-formulas" class="level2">
+<h2 class="anchored" data-anchor-id="the-model-step-by-step-with-formulas">3. The model step by step, with formulas</h2>
+<section id="step-1-a-reference-category" class="level3">
+<h3 class="anchored" data-anchor-id="step-1-a-reference-category">Step 1: a reference category</h3>
+<p>Choose one way of leaving as the yardstick. We use <strong>Quit</strong>, an ordinary resignation: every other way of leaving is compared with quitting. Any category could be the reference; the predicted probabilities are the same, only the comparisons in the output change. In R the reference is the first level of the factor (<code>levels(fy25$exit)[1]</code> is Quit), and <code>relevel()</code> changes it.</p>
+</section>
+<section id="step-2-one-equation-for-every-other-category" class="level3">
+<h3 class="anchored" data-anchor-id="step-2-one-equation-for-every-other-category">Step 2: one equation for every other category</h3>
+<p>For person <span class="math inline">\(i\)</span> and each way of leaving <span class="math inline">\(k\)</span> other than quitting:</p>
+<p><span class="math display">\[\eta_{ik} = \ln\frac{P(\text{exit}_i = k)}{P(\text{exit}_i = \text{Quit})} = \beta_{0k} + \beta_{1k}x_{1i} + \dots + \beta_{pk}x_{pi}\]</span></p>
+<p>That is five equations, each with its own intercept and its own slopes. The left side is the log of the <strong>relative risk</strong>: how much more likely leaving by <span class="math inline">\(k\)</span> is than quitting. Each equation looks like a <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC.html">logistic regression</a>; the difference is that the five are estimated together, so that every person’s six probabilities add up to 1.</p>
+</section>
+<section id="step-3-from-the-equations-to-probabilities" class="level3">
+<h3 class="anchored" data-anchor-id="step-3-from-the-equations-to-probabilities">Step 3: from the equations to probabilities</h3>
+<p><span class="math display">\[P(\text{exit}_i = \text{Quit}) = \frac{1}{1 + \sum_{j} e^{\eta_{ij}}} \qquad P(\text{exit}_i = k) = \frac{e^{\eta_{ik}}}{1 + \sum_{j} e^{\eta_{ij}}}\]</span></p>
+<p>The sums run over the five categories other than Quit. Each probability is between 0 and 1, and the six add up to 1. This is the <strong>softmax</strong> function, the same formula that neural networks use to classify.</p>
+</section>
+<section id="step-4-what-a-coefficient-means" class="level3">
+<h3 class="anchored" data-anchor-id="step-4-what-a-coefficient-means">Step 4: what a coefficient means</h3>
+<p><span class="math inline">\(e^{\beta}\)</span> is the <strong>relative risk ratio</strong> (RRR): the number by which the ratio <span class="math inline">\(P(k)/P(\text{Quit})\)</span> is multiplied when the predictor moves from its reference level to this level, with the other predictors held constant. An RRR of 2 means twice as likely to leave by <span class="math inline">\(k\)</span> <strong>rather than by quitting</strong>. Some books and programs call it an odds ratio; either way it compares two categories with each other, not one category with all the others.</p>
+</section>
+<section id="step-5-how-r-finds-the-βs" class="level3">
+<h3 class="anchored" data-anchor-id="step-5-how-r-finds-the-βs">Step 5: how R finds the β’s</h3>
+<p>By maximum likelihood: R looks for the <span class="math inline">\(\beta\)</span>’s that make the exits that people actually took as probable as possible,</p>
+<p><span class="math display">\[\ln L = \sum_i \ln P(\text{exit}_i = \text{the exit that person } i \text{ took})\]</span></p>
+<p><code>multinom()</code> maximises it. It fits the model as a neural network without a hidden layer, which is why it lives in the package <code>nnet</code>.</p>
+</section>
+<section id="step-6-count-the-parameters" class="level3">
+<h3 class="anchored" data-anchor-id="step-6-count-the-parameters">Step 6: count the parameters</h3>
+<p>A predictor with <span class="math inline">\(c\)</span> categories gets <span class="math inline">\(c - 1\)</span> coefficients: age has 10 groups (9 coefficients), service 7 (6), supervisor and appointment 2 each (1 each) and occupation 3 (2). That is 19 slopes plus an intercept, 20 per equation, and 5 equations make <strong>100 parameters</strong>. Multinomial models grow fast: every category needs enough people for a whole set of coefficients of its own.</p>
+<hr>
+</section>
+</section>
+<section id="fitting-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="fitting-the-model">4. Fitting the model</h2>
+<p>Every predictor is a category, so the 329,911 people fall into a limited number of combinations of age group, service, supervisor, appointment, occupation and exit. Fitting the model to the <strong>count</strong> of people in each combination gives the same estimates as fitting the people one by one: 300 people with the same values add the same term to the log-likelihood 300 times, which is what <code>weights = Freq</code> does. It takes a second instead of minutes.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">g &lt;- as.data.frame(table(fy25[vars]))   # one row per combination; Freq = the number of people
+g &lt;- subset(g, Freq &gt; 0)
+nrow(g)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 2416</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre><code class="language-r">fit &lt;- multinom(exit ~ age + service + supervisor + permanent + occupation,
+                data = g, weights = Freq, maxit = 1000, trace = FALSE, Hess = TRUE)
+summary(fit)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>Call:
+multinom(formula = exit ~ age + service + supervisor + permanent + 
+    occupation, data = g, weights = Freq, Hess = TRUE, maxit = 1000, 
+    trace = FALSE)
+Coefficients:
+                     (Intercept)   age25-29    age30-34   age35-39   age40-44   age45-49     age50-54   age55-59  age60-64    age65+ service1-4 service5-9 service10-19 service20-24 service25-29 service30+ supervisorYes permanentNo occupationSTEM occupationHealth
+Retired                -8.304799 -0.1027746  0.23467518  0.8311791  1.3946939  2.4604048  3.711774888 4.64736827 6.0358064 6.1661410  0.2071897  3.4198730    4.1953108    5.5445061     6.508084   6.721914   -0.09634591  -1.8336098      0.3123144       0.08735039
+Early retirement      -13.706923  2.1855712  0.47576987  0.1296681  4.4168506  6.3020617  7.808215425 8.11484607 6.2228897 6.0975426 -0.6808828  1.5564553    3.1478513    6.9335455     8.056644   7.206188   -0.31039566  -1.6907065      0.6848224       0.06575100
+Deferred resignation   -1.621271  0.3805304  0.34990055  0.3593320  0.3859383  0.4419419  0.613598223 0.98625328 1.7890346 1.6604305  1.1776627  1.1005969    1.4181172    2.6084620     3.524287   3.549384   -0.10425815  -1.1662624      0.6273989      -2.48004200
+Laid off               -5.282090  1.0278733  1.60216105  1.7804322  2.0091246  2.2410378  2.014764954 1.85762922 1.4970488 0.1868293  0.9189700  1.3823347    2.2484308    2.6218913     2.225188   1.995264    0.39639759  -0.4418581      0.3438229      -0.02269487
+Terminated             -2.422627  0.1068515 -0.05525335 -0.2252644 -0.2427164 -0.1635098 -0.004385491 0.07526328 0.4978969 0.8159176 -0.4534688 -0.5583806   -0.3357472    0.4053187     1.526026   1.817553   -0.58607489   3.1087643      0.1887964       0.13942081
+Std. Errors:
+                     (Intercept)   age25-29   age30-34   age35-39   age40-44   age45-49   age50-54   age55-59   age60-64     age65+ service1-4 service5-9 service10-19 service20-24 service25-29 service30+ supervisorYes permanentNo occupationSTEM occupationHealth
+Retired               0.69979434 0.75977125 0.71527974 0.70328064 0.70033292 0.69893215 0.69836454 0.69827579 0.69830559 0.69833417 0.11680622 0.09926105   0.09838890   0.10140853   0.10869687 0.10502679    0.02117836  0.03570033     0.01999054       0.02984312
+Early retirement      0.66359968 2.48161898 3.72629598 2.94217872 0.62148516 0.59595199 0.59441289 0.59441424 0.59662532 0.59760731 0.50374549 0.38445023   0.35624080   0.35128991   0.35338817 0.35281411    0.03218183  0.12672558     0.03423943       0.06404482
+Deferred resignation  0.02583035 0.02735390 0.02696340 0.02700036 0.02748048 0.02856579 0.02936056 0.03002148 0.03214428 0.03271557 0.01695677 0.01949683   0.02063181   0.03273187   0.05071885 0.04347240    0.01825170  0.01732437     0.01429446       0.03401009
+Laid off              0.12509128 0.13116361 0.12538262 0.12425902 0.12396922 0.12423758 0.12564620 0.12737444 0.13322128 0.15749176 0.04841514 0.05016911   0.04931115   0.06444020   0.09894673 0.10097382    0.02951446  0.03829589     0.03018232       0.03508501
+Terminated            0.02512630 0.02689991 0.02859778 0.03058868 0.03254564 0.03526170 0.03637498 0.03729732 0.03980910 0.03555180 0.01774537 0.02762041   0.03305969   0.05980097   0.07517707 0.05614673    0.03476091  0.01795522     0.02358010       0.02719333
+Residual Deviance: 638894.9 
+AIC: 639094.9 </code></pre>
+</div>
+</div>
+<p><code>maxit = 1000</code> lets the estimation run longer than the default 100 steps, <code>trace = FALSE</code> hides the log of the steps, and <code>Hess = TRUE</code> keeps what <code>summary()</code> needs for the standard errors.</p>
+<section id="how-to-read-the-output" class="level3">
+<h3 class="anchored" data-anchor-id="how-to-read-the-output">How to read the output</h3>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre><code class="language-r">s    &lt;- summary(fit)
+b    &lt;- coef(fit)                      # one row per way of leaving, one column per term
+se   &lt;- s$standard.errors
+z    &lt;- b / se
+p    &lt;- 2 * pnorm(-abs(z))             # summary() prints no p values: compute them
+rrr  &lt;- exp(b)                         # relative risk ratios
+low  &lt;- exp(b - qnorm(0.975) * se)     # their 95% confidence intervals
+high &lt;- exp(b + qnorm(0.975) * se)</code></pre></div></div>
+</details>
+</div>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Part</th>
+<th>Meaning</th>
+<th>Here</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Coefficients</code></td>
+<td>One row per way of leaving, compared with Quit; one column per predictor level. Each number is <span class="math inline">\(b\)</span>: the change in the log relative risk</td>
+<td>Row <code>Laid off</code>, column <code>supervisorYes</code>: <em>b</em> = 0.40</td>
+</tr>
+<tr class="even">
+<td><code>Std. Errors</code></td>
+<td>The standard error of each <span class="math inline">\(b\)</span>; smaller is more precise</td>
+<td>0.03</td>
+</tr>
+<tr class="odd">
+<td><code>Residual Deviance</code></td>
+<td><span class="math inline">\(-2 \ln L\)</span>: how badly the model fits; smaller is better. Used for the tests in section 6</td>
+<td>638,895</td>
+</tr>
+<tr class="even">
+<td><code>AIC</code></td>
+<td>The deviance plus 2 for every parameter, for comparing models fitted to the same data</td>
+<td>639,095</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>There are no <em>p</em> values.</strong> Compute them as above: <span class="math inline">\(z = b / SE\)</span>, and <span class="math inline">\(p\)</span> from the normal distribution. For <code>supervisorYes</code> in the row <code>Laid off</code>, <em>z</em> = 13.43, <em>p</em> &lt; .001.</li>
+<li><strong>The intercepts</strong> are the log relative risks of the reference person: under 25, less than a year of service, not a supervisor, on a permanent appointment, in an occupation that is neither STEM nor health.</li>
+<li><strong>Huge numbers</strong>, such as an RRR of 3,344 for early retirement at ages 55 to 59, mean that the reference group almost never leaves that way: nobody under 25 can retire early. They are common with categorical predictors and say little on their own; the predicted probabilities of section 5 are easier to read.</li>
+<li><strong>Every coefficient compares with Quit.</strong> <code>supervisorYes</code> in the row <code>Laid off</code> says nothing about being laid off rather than retiring. For that comparison, subtract the two rows, b(Laid off) − b(Retired), or change the reference with <code>relevel()</code> and fit again.</li>
+</ul>
+<p>The relative risk ratios of the three predictors that are not age or service:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre><code class="language-r">terms &lt;- c(supervisorYes = "Supervisor", permanentNo = "Temporary appointment",
+           occupationSTEM = "STEM occupation", occupationHealth = "Health occupation")
+cell  &lt;- function(k, t) paste0(f2(rrr[k, t]), " [", f2(low[k, t]), ", ", f2(high[k, t]), "]")
+rrr_table &lt;- data.frame(Predictor = terms,
+                        sapply(rownames(b), function(k) sapply(names(terms), function(t) cell(k, t))),
+                        check.names = FALSE, row.names = NULL)
+knitr::kable(rrr_table, align = "lrrrrr")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 17%">
+<col style="width: 15%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Predictor</th>
+<th style="text-align: right;">Retired</th>
+<th style="text-align: right;">Early retirement</th>
+<th style="text-align: right;">Deferred resignation</th>
+<th style="text-align: right;">Laid off</th>
+<th style="text-align: right;">Terminated</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Supervisor</td>
+<td style="text-align: right;">0.91 [0.87, 0.95]</td>
+<td style="text-align: right;">0.73 [0.69, 0.78]</td>
+<td style="text-align: right;">0.90 [0.87, 0.93]</td>
+<td style="text-align: right;">1.49 [1.40, 1.57]</td>
+<td style="text-align: right;">0.56 [0.52, 0.60]</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Temporary appointment</td>
+<td style="text-align: right;">0.16 [0.15, 0.17]</td>
+<td style="text-align: right;">0.18 [0.14, 0.24]</td>
+<td style="text-align: right;">0.31 [0.30, 0.32]</td>
+<td style="text-align: right;">0.64 [0.60, 0.69]</td>
+<td style="text-align: right;">22.39 [21.62, 23.20]</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">STEM occupation</td>
+<td style="text-align: right;">1.37 [1.31, 1.42]</td>
+<td style="text-align: right;">1.98 [1.85, 2.12]</td>
+<td style="text-align: right;">1.87 [1.82, 1.93]</td>
+<td style="text-align: right;">1.41 [1.33, 1.50]</td>
+<td style="text-align: right;">1.21 [1.15, 1.26]</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Health occupation</td>
+<td style="text-align: right;">1.09 [1.03, 1.16]</td>
+<td style="text-align: right;">1.07 [0.94, 1.21]</td>
+<td style="text-align: right;">0.08 [0.08, 0.09]</td>
+<td style="text-align: right;">0.98 [0.91, 1.05]</td>
+<td style="text-align: right;">1.15 [1.09, 1.21]</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>Each cell is the RRR with its 95% confidence interval, against quitting:</p>
+<ul>
+<li><strong>Supervisors</strong> were 1.49 times as likely as non-supervisors to be laid off rather than to quit, at the same age, service, appointment and occupation.</li>
+<li><strong>Temporary appointments</strong> were 22.39 times as likely to end in a termination rather than a resignation: a temporary job usually ends by itself.</li>
+<li><strong>Health occupations</strong> had a 92% lower relative risk of the deferred resignation rather than quitting (RRR = 0.08).</li>
+</ul>
+</section>
+<section id="the-same-numbers-by-hand" class="level3">
+<h3 class="anchored" data-anchor-id="the-same-numbers-by-hand">The same numbers by hand</h3>
+<p>Steps 2 and 3 for one person, aged 55 to 59 with 25 to 29 years of service, and the reference level of everything else:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre><code class="language-r">eta  &lt;- b[, "(Intercept)"] + b[, "age55-59"] + b[, "service25-29"]   # step 2: one eta per way of leaving
+prob &lt;- c(Quit = 1, exp(eta)) / (1 + sum(exp(eta)))                   # step 3
+round(prob, 3)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                Quit              Retired     Early retirement Deferred resignation             Laid off           Terminated 
+               0.021                0.355                0.241                0.369                0.006                0.009 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre><code class="language-r"># new people for predict(), with the factor levels of the model
+people &lt;- function(...) {
+  x &lt;- data.frame(...)
+  for (v in names(x)) x[[v]] &lt;- factor(x[[v]], levels = levels(g[[v]]))
+  x
+}
+someone &lt;- people(age = "55-59", service = "25-29", supervisor = "No", permanent = "Yes", occupation = "Other")
+round(predict(fit, newdata = someone, type = "probs"), 3)              # the same, from R</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                Quit              Retired     Early retirement Deferred resignation             Laid off           Terminated 
+               0.021                0.355                0.241                0.369                0.006                0.009 </code></pre>
+</div>
+</div>
+<p>For this person the two most likely ways of leaving were <strong>Deferred resignation</strong> (37%) and <strong>Retired</strong> (35%).</p>
+<hr>
+</section>
+</section>
+<section id="predicted-probabilities-the-easiest-way-to-read-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="predicted-probabilities-the-easiest-way-to-read-the-model">5. Predicted probabilities: the easiest way to read the model</h2>
+<p>A relative risk ratio compares two exits; a predicted probability says how likely each exit is for a given kind of person. Six typical people, along a career:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">career &lt;- people(age        = c("25-29", "25-29", "35-39", "45-49", "55-59", "60-64"),
+                 service    = c("1-4",   "1-4",   "10-19", "20-24", "25-29", "30+"),
+                 supervisor = "No",
+                 permanent  = c("Yes",   "No",    "Yes",   "Yes",   "Yes",   "Yes"),
+                 occupation = "Other")
+label &lt;- c("25-29, 1-4 years", "25-29, 1-4 years, temporary", "35-39, 10-19 years",
+           "45-49, 20-24 years", "55-59, 25-29 years", "60-64, 30+ years")
+probs &lt;- predict(fit, newdata = career, type = "probs")
+m &lt;- data.frame(group = factor(rep(label, ncol(probs)), levels = label),
+                exit  = factor(rep(colnames(probs), each = nrow(probs)), levels = exits),
+                share = as.vector(probs))
+stacked(m, "age, years of service", "predicted probability of each way of leaving, FY2025")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img alt="Profiles – 5. Predicted probabilities: the easiest way to read the model" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC_files/figure-html/profiles-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
+</figure>
+</div>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb31"><pre><code class="language-r">rownames(probs) &lt;- label</code></pre></div></div>
+</details>
+</div>
+<ul>
+<li><strong>Early in a career</strong> (25 to 29, one to four years) people quit or took the deferred resignation: 49% and 46%.</li>
+<li><strong>The same person on a temporary appointment</strong> was most likely terminated (52%): the appointment ran out.</li>
+<li><strong>In mid-career</strong> the risk of being laid off was at its highest: 11% at 35 to 39 with 10 to 19 years of service, 9% at 45 to 49 with 20 to 24 years.</li>
+<li><strong>With 25 to 29 years of service at 55 to 59</strong>, early retirement became a real option (24%), next to an ordinary retirement (35%) and the deferred resignation (37%).</li>
+<li><strong>At 60 to 64 with 30 years or more</strong>, people mostly retired (66%).</li>
+</ul>
+<p>These are probabilities <strong>for a person who left</strong>. They do not say how likely such a person was to leave at all: the data hold only the people who left.</p>
+<hr>
+</section>
+<section id="testing-the-predictors-and-the-model" class="level2">
+<h2 class="anchored" data-anchor-id="testing-the-predictors-and-the-model">6. Testing the predictors and the model</h2>
+<p>The <strong>likelihood-ratio test</strong> compares the deviances of two nested models. First the whole model against a model with no predictors, then each predictor: fit the model without it and see how much worse it gets.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre><code class="language-r">null &lt;- multinom(exit ~ 1, data = g, weights = Freq, trace = FALSE)
+model_test &lt;- anova(null, fit)
+model_test</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                                                Model Resid. df Resid. Dev   Test    Df LR stat. Pr(Chi)
+1                                                   1     12075   990841.8           NA       NA      NA
+2 age + service + supervisor + permanent + occupation     11980   638894.9 1 vs 2    95 351946.9       0</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre><code class="language-r">tests &lt;- do.call(rbind, lapply(c("age", "service", "supervisor", "permanent", "occupation"), function(v) {
+  a &lt;- anova(update(fit, as.formula(paste(". ~ . -", v))), fit)
+  data.frame(predictor = v, chi_square = round(a$"LR stat."[2], 1), df = a$"   Df"[2],
+             p = format.pval(a$"Pr(Chi)"[2], eps = 0.001))
+}))
+tests</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>   predictor chi_square df       p
+1        age    55481.1 45 &lt; 0.001
+2    service    55065.8 30 &lt; 0.001
+3 supervisor      664.2  5 &lt; 0.001
+4  permanent    68523.4  5 &lt; 0.001
+5 occupation    15478.5 10 &lt; 0.001</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre><code class="language-r">mcfadden &lt;- 1 - deviance(fit) / deviance(null)   # McFadden's pseudo-R squared
+mcfadden</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>[1] 0.3551999</code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre><code class="language-r">ranked &lt;- unname(c(age = "age", service = "years of service", supervisor = "supervisor status",
+                   permanent = "appointment type", occupation = "occupation")[tests$predictor[order(-tests$chi_square)]])</code></pre></div></div>
+</details>
+</div>
+<ul>
+<li><strong>Every predictor is significant</strong>: with 329,911 people even a tiny effect is. The <span class="math inline">\(\chi^2\)</span> values show which predictors matter most: appointment type, age and years of service; supervisor status matters least. The degrees of freedom are the coefficients a predictor adds to all five equations: 9 age groups × 5 = 45.</li>
+<li><strong>McFadden’s pseudo-<span class="math inline">\(R^2\)</span></strong> = 0.36: one minus the deviance of the model divided by the deviance of the model with no predictors. It is not a share of explained variance and it runs much lower than the <span class="math inline">\(R^2\)</span> of a linear regression; use it to compare models fitted to the same data.</li>
+</ul>
+<p>How often does the model name the right exit, if it picks the most likely one for each person?</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre><code class="language-r">predicted &lt;- factor(colnames(fitted(fit))[max.col(fitted(fit), ties.method = "first")], levels = exits)
+accuracy  &lt;- weighted.mean(predicted == g$exit, g$Freq)
+base_rate &lt;- max(prop.table(table(fy25$exit)))   # always guessing the most common exit
+c(model = accuracy, most_common_exit = base_rate)</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>           model most_common_exit 
+       0.5502969        0.3332353 </code></pre>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre><code class="language-r"># how each exit was classified: % of the row
+round(100 * prop.table(xtabs(Freq ~ exit + predicted, data = cbind(g, predicted)), 1))</code></pre></div></div>
+</details>
+<div class="cell-output cell-output-stdout">
+<pre><code>                      predicted
+exit                   Quit Retired Early retirement Deferred resignation Laid off Terminated
+  Quit                   57       1                0                   24        0         18
+  Retired                 1      79                0                   19        0          1
+  Early retirement        0      21                1                   77        0          1
+  Deferred resignation   29      28                0                   39        0          5
+  Laid off               35       4                0                   54        0          7
+  Terminated             14       1                0                    5        0         81</code></pre>
+</div>
+</div>
+<p>The model names the right exit for 55% of the people, against 33% for always guessing the most common one. But it almost never predicts an early retirement or a layoff, even though it knows who is most at risk of them: these exits are rare, so for almost nobody are they the <strong>most</strong> likely one. Accuracy is a poor guide when some categories are rare, as <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_IMBALANCED_LOGISTIC.html">Logistic Regression With a Rare Outcome</a> shows; the predicted probabilities carry the information.</p>
+<hr>
+</section>
+<section id="an-assumption-to-check-independence-of-irrelevant-alternatives" class="level2">
+<h2 class="anchored" data-anchor-id="an-assumption-to-check-independence-of-irrelevant-alternatives">7. An assumption to check: independence of irrelevant alternatives</h2>
+<p>The model assumes that the ratio of two probabilities, for example <span class="math inline">\(P(\text{Retired}) / P(\text{Quit})\)</span>, does not depend on what other ways of leaving there are: the <strong>independence of irrelevant alternatives</strong> (IIA). The textbook example: a city adds a blue bus identical to its red bus. IIA predicts that the blue bus takes passengers from cars and from the red bus in proportion; in reality it takes them almost only from the red bus.</p>
+<p>The deferred resignation was a new way of leaving in 2025. Under IIA it drew people from the other exits in proportion. A simple check: fit the model again <strong>without</strong> it, that is without the category and without the people who took it, and compare the coefficients that remain. If IIA holds, they hardly change.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre><code class="language-r">g2   &lt;- droplevels(subset(g, exit != "Deferred resignation"))
+fit2 &lt;- update(fit, data = g2)
+show &lt;- c("age55-59", "age60-64", "service25-29", "service30+", "supervisorYes", "permanentNo")
+iia  &lt;- expand.grid(term = show, exit = rownames(coef(fit2)), stringsAsFactors = FALSE)
+iia$all_six   &lt;- exp(coef(fit)[cbind(iia$exit, iia$term)])
+iia$without   &lt;- exp(coef(fit2)[cbind(iia$exit, iia$term)])
+knitr::kable(data.frame(exit = iia$exit, term = iia$term, rr(iia$all_six), rr(iia$without)),
+             col.names = c("Way of leaving (against Quit)", "Term", "RRR, six exits",
+                           "RRR without the deferred resignation"), align = "llrr")</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 31%">
+<col style="width: 14%">
+<col style="width: 15%">
+<col style="width: 38%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Way of leaving (against Quit)</th>
+<th style="text-align: left;">Term</th>
+<th style="text-align: right;">RRR, six exits</th>
+<th style="text-align: right;">RRR without the deferred resignation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">age55-59</td>
+<td style="text-align: right;">104</td>
+<td style="text-align: right;">46.59</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">age60-64</td>
+<td style="text-align: right;">418</td>
+<td style="text-align: right;">372</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">service25-29</td>
+<td style="text-align: right;">671</td>
+<td style="text-align: right;">1,980</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">service30+</td>
+<td style="text-align: right;">830</td>
+<td style="text-align: right;">1,632</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">supervisorYes</td>
+<td style="text-align: right;">0.91</td>
+<td style="text-align: right;">1.11</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Retired</td>
+<td style="text-align: left;">permanentNo</td>
+<td style="text-align: right;">0.16</td>
+<td style="text-align: right;">0.04</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">age55-59</td>
+<td style="text-align: right;">3,344</td>
+<td style="text-align: right;">17,447</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">age60-64</td>
+<td style="text-align: right;">504</td>
+<td style="text-align: right;">4,676</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">service25-29</td>
+<td style="text-align: right;">3,155</td>
+<td style="text-align: right;">4,549</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">service30+</td>
+<td style="text-align: right;">1,348</td>
+<td style="text-align: right;">1,071</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">supervisorYes</td>
+<td style="text-align: right;">0.73</td>
+<td style="text-align: right;">0.76</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Early retirement</td>
+<td style="text-align: left;">permanentNo</td>
+<td style="text-align: right;">0.18</td>
+<td style="text-align: right;">0.08</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">age55-59</td>
+<td style="text-align: right;">6.41</td>
+<td style="text-align: right;">7.17</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">age60-64</td>
+<td style="text-align: right;">4.47</td>
+<td style="text-align: right;">6.61</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">service25-29</td>
+<td style="text-align: right;">9.26</td>
+<td style="text-align: right;">8.21</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">service30+</td>
+<td style="text-align: right;">7.35</td>
+<td style="text-align: right;">6.03</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">supervisorYes</td>
+<td style="text-align: right;">1.49</td>
+<td style="text-align: right;">1.51</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Laid off</td>
+<td style="text-align: left;">permanentNo</td>
+<td style="text-align: right;">0.64</td>
+<td style="text-align: right;">0.64</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">age55-59</td>
+<td style="text-align: right;">1.08</td>
+<td style="text-align: right;">1.18</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">age60-64</td>
+<td style="text-align: right;">1.65</td>
+<td style="text-align: right;">1.47</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">service25-29</td>
+<td style="text-align: right;">4.60</td>
+<td style="text-align: right;">3.58</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">service30+</td>
+<td style="text-align: right;">6.16</td>
+<td style="text-align: right;">3.75</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">supervisorYes</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.54</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Terminated</td>
+<td style="text-align: left;">permanentNo</td>
+<td style="text-align: right;">22.39</td>
+<td style="text-align: right;">21.34</td>
+</tr>
+</tbody>
+</table>
+</div>
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb44"><pre><code class="language-r">moved &lt;- function(k) median(abs(log(iia$without / iia$all_six))[iia$exit == k])   # typical change, log scale</code></pre></div></div>
+</details>
+</div>
+<p>The coefficients of <strong>retirement</strong> and <strong>early retirement</strong> move a lot: for 25 to 29 years of service, the RRR of retiring rather than quitting goes from 671 to 1,980. Those of <strong>layoffs</strong> and <strong>terminations</strong> move much less (a typical change of 12% and 11%, against 110% for retirement). So IIA is doubtful for the exits that are close to the deferred resignation. Models that relax it, the nested logit (similar exits share a “nest”) and the mixed logit, are in the package <code>mlogit</code> (Croissant, 2020). The formal version of this check, the Hausman–McFadden test (<code>mlogit::hmftest()</code>), would flag even trivial differences with this many people; the size of the changes tells more.</p>
+<p>Three more things to keep in mind:</p>
+<ul>
+<li><strong>People in the same agency are not independent.</strong> Layoffs and early-retirement offers were decided agency by agency, so the standard errors above are too small. Agency as a predictor, or a <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html">multilevel</a> multinomial model, would take this into account.</li>
+<li><strong>Only people who left.</strong> The model compares ways of leaving among the people who left; it says nothing about the people who stayed. Whether supervisors were more likely to <strong>leave at all</strong> needs the employment files too, which OPM also publishes.</li>
+<li><strong>The data keep changing.</strong> OPM calls the newest data preliminary, and late reports keep arriving: run this page again in a few months and the counts will be a little higher.</li>
+</ul>
+<hr>
+</section>
+<section id="reporting-the-results-in-apa-style" class="level2">
+<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">8. Reporting the results in APA style</h2>
+<p>A report (APA 7th edition) needs the outcome and its reference category, the predictors, the model test and the relative risk ratios with their uncertainty. The numbers come from the R objects, so the text below always matches the results:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre><code class="language-r">n_model &lt;- sum(g$Freq)
+lr      &lt;- model_test$"LR stat."[2]
+lr_df   &lt;- model_test$"   Df"[2]
+lr_p    &lt;- model_test$"Pr(Chi)"[2]
+ci      &lt;- function(k, t) paste0("95% CI [", f2(low[k, t]), ", ", f2(high[k, t]), "]")
+# the cells of Table 1 whose p is .001 or more, for the note under it
+big_p   &lt;- which(p[, names(terms)] &gt;= .001, arr.ind = TRUE)
+p_note  &lt;- if (nrow(big_p) == 0) "All *p* &lt; .001." else
+  paste0("All *p* &lt; .001 except ", paste0(terms[colnames(p[, names(terms)])[big_p[, "col"]]], ", ",
+         tolower(rownames(p)[big_p[, "row"]]), ": *p* ", sapply(p[, names(terms)][big_p], pval),
+         collapse = "; "), ".")</code></pre></div></div>
+</details>
+</div>
+<p><strong>Method</strong> (data analysis):</p>
+<blockquote class="blockquote">
+<p>We analysed the 329,911 separations from the US federal civil service that took effect in fiscal year 2025 (October 2024 to September 2025), as recorded in the Federal Workforce Data of the U.S. Office of Personnel Management (2026), excluding transfers between agencies, other separations and records with missing predictors. The way of leaving (quit, retirement, early retirement, deferred resignation, reduction in force, termination) was analysed with a multinomial logistic regression, with quitting as the reference category and age group, years of service, supervisory status, appointment type (permanent or temporary) and occupation group (STEM, health, other) as predictors. Analyses were conducted in R (Version 4.6.2; R Core Team, 2026) with the <em>nnet</em> package (Venables &amp; Ripley, 2002).</p>
+</blockquote>
+<p><strong>Results:</strong></p>
+<blockquote class="blockquote">
+<p>The predictors improved the fit over an intercept-only model, χ²(95) = 351,947, <em>p</em> &lt; .001, McFadden’s <em>R</em>² = .36. Holding the other predictors constant, supervisors were more likely than non-supervisors to be laid off rather than to quit, <em>RRR</em> = 1.49, 95% CI [1.40, 1.57], employees on temporary appointments were more likely to be terminated rather than to quit, <em>RRR</em> = 22.39, 95% CI [21.62, 23.20], and employees in health occupations were less likely to take the deferred resignation rather than to quit, <em>RRR</em> = 0.08, 95% CI [0.08, 0.09] (Table 1). Compared with employees with less than a year of service, those with 25 to 29 years were more likely to take the deferred resignation rather than to quit, <em>RRR</em> = 33.93, 95% CI [30.72, 37.48].</p>
+</blockquote>
+<p><strong>Table 1</strong></p>
+<p><em>Relative Risk Ratios From a Multinomial Logistic Regression of the Way of Leaving Federal Service, FY2025</em></p>
+<div class="cell">
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 18%">
+<col style="width: 15%">
+<col style="width: 15%">
+<col style="width: 17%">
+<col style="width: 15%">
+<col style="width: 17%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;">Predictor</th>
+<th style="text-align: right;">Retired</th>
+<th style="text-align: right;">Early retirement</th>
+<th style="text-align: right;">Deferred resignation</th>
+<th style="text-align: right;">Laid off</th>
+<th style="text-align: right;">Terminated</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Supervisor</td>
+<td style="text-align: right;">0.91 [0.87, 0.95]</td>
+<td style="text-align: right;">0.73 [0.69, 0.78]</td>
+<td style="text-align: right;">0.90 [0.87, 0.93]</td>
+<td style="text-align: right;">1.49 [1.40, 1.57]</td>
+<td style="text-align: right;">0.56 [0.52, 0.60]</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Temporary appointment</td>
+<td style="text-align: right;">0.16 [0.15, 0.17]</td>
+<td style="text-align: right;">0.18 [0.14, 0.24]</td>
+<td style="text-align: right;">0.31 [0.30, 0.32]</td>
+<td style="text-align: right;">0.64 [0.60, 0.69]</td>
+<td style="text-align: right;">22.39 [21.62, 23.20]</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">STEM occupation</td>
+<td style="text-align: right;">1.37 [1.31, 1.42]</td>
+<td style="text-align: right;">1.98 [1.85, 2.12]</td>
+<td style="text-align: right;">1.87 [1.82, 1.93]</td>
+<td style="text-align: right;">1.41 [1.33, 1.50]</td>
+<td style="text-align: right;">1.21 [1.15, 1.26]</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Health occupation</td>
+<td style="text-align: right;">1.09 [1.03, 1.16]</td>
+<td style="text-align: right;">1.07 [0.94, 1.21]</td>
+<td style="text-align: right;">0.08 [0.08, 0.09]</td>
+<td style="text-align: right;">0.98 [0.91, 1.05]</td>
+<td style="text-align: right;">1.15 [1.09, 1.21]</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><em>Note.</em> <em>N</em> = 329,911. Reference category: quit. Each cell is the relative risk ratio [95% confidence interval] of leaving in the way named in the column rather than quitting. The model also includes age group and years of service. All <em>p</em> &lt; .001 except Health occupation, retired: <em>p</em> = .003; Health occupation, early retirement: <em>p</em> = .305; Health occupation, laid off: <em>p</em> = .518.</p>
+<p><strong>Points to remember:</strong></p>
+<ul>
+<li>Name the <strong>reference category</strong>: every coefficient compares with it.</li>
+<li>Report relative risk ratios with 95% confidence intervals, and say that they hold the other predictors constant.</li>
+<li>Give the model test (<span class="math inline">\(\chi^2\)</span> with its degrees of freedom) and a pseudo-<span class="math inline">\(R^2\)</span>, and say which one.</li>
+<li>With hundreds of thousands of people every <em>p</em> is tiny: report the size of the effects, and predicted probabilities where they help.</li>
+<li>Say which categories you merged or left out, and why.</li>
+<li>Cite R and the packages; <code>citation("nnet")</code> gives the reference.</li>
+</ul>
+<hr>
+</section>
+<section id="summary" class="level2">
+<h2 class="anchored" data-anchor-id="summary">9. Summary</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<tbody>
+<tr class="odd">
+<td><strong>When</strong></td>
+<td>The outcome is a category with three or more values and no order</td>
+</tr>
+<tr class="even">
+<td><strong>Why not separate logistic regressions</strong></td>
+<td>Their probabilities do not add up to 1, and there is no single test of a predictor</td>
+</tr>
+<tr class="odd">
+<td><strong>Why not ordinal logistic regression</strong></td>
+<td>The categories have no order</td>
+</tr>
+<tr class="even">
+<td><strong>How (R)</strong></td>
+<td><code>nnet::multinom(y ~ x, data)</code>; with counts per combination of values, <code>weights = n</code></td>
+</tr>
+<tr class="odd">
+<td><strong>Output</strong></td>
+<td>One equation per category against the reference; <code>exp()</code> of a coefficient is a relative risk ratio</td>
+</tr>
+<tr class="even">
+<td><strong>Easiest to read</strong></td>
+<td>Predicted probabilities: <code>predict(fit, newdata, type = "probs")</code></td>
+</tr>
+<tr class="odd">
+<td><strong>Tests</strong></td>
+<td>Likelihood-ratio tests with <code>anova()</code>; McFadden’s pseudo-<span class="math inline">\(R^2\)</span></td>
+</tr>
+<tr class="even">
+<td><strong>Assumptions</strong></td>
+<td>Independent observations; independence of irrelevant alternatives; enough people in every category for its own set of coefficients</td>
+</tr>
+<tr class="odd">
+<td><strong>If IIA fails</strong></td>
+<td>A nested or mixed logit, with <code>mlogit</code></td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="references" class="level2">
+<h2 class="anchored" data-anchor-id="references">References</h2>
+<p>Agresti, A. (2013). <em>Categorical data analysis</em> (3rd ed.). Wiley.</p>
+<p>Croissant, Y. (2020). Estimation of random utility models in R: The mlogit package. <em>Journal of Statistical Software</em>, <em>95</em>(11), 1–41. https://doi.org/10.18637/jss.v095.i11</p>
+<p>Csárdi, G., &amp; Mühleisen, H. (2026). <em>nanoparquet: Read and write ‘Parquet’ files</em> (R package version 0.5.2). https://github.com/r-lib/nanoparquet</p>
+<p>Hausman, J., &amp; McFadden, D. (1984). Specification tests for the multinomial logit model. <em>Econometrica</em>, <em>52</em>(5), 1219–1240.</p>
+<p>McFadden, D. (1974). Conditional logit analysis of qualitative choice behavior. In P. Zarembka (Ed.), <em>Frontiers in econometrics</em> (pp.&nbsp;105–142). Academic Press.</p>
+<p>U.S. Office of Personnel Management. (2026). <em>Federal Workforce Data: Separations</em> [Data set]. https://data.opm.gov/</p>
+<p>Venables, W. N., &amp; Ripley, B. D. (2002). <em>Modern applied statistics with S</em> (4th ed.). Springer.</p>
+<!-- -->
+</section>
+<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTINOMIAL_LOGISTIC.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
+    </item>
     <item>
       <title>Fired for AI, Hired Back: What Happens When Companies Replace Workers with AI</title>
       <link>https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_AI_LAYOFFS.html</link>
@@ -8057,1030 +9159,6 @@ pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))</c
 </section>
 <!-- /see-also -->
 <p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
-    </item>
-    <item>
-      <title>Hierarchical Regression: Does Beauty Predict Teaching Evaluations?</title>
-      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION.html</link>
-      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION.html</guid>
-      <pubDate>Sun, 22 Nov 2026 00:50:19 +0200</pubDate>
-      <category>R</category>
-      <category>Worked Examples in R</category>
-      <description>Hierarchical (blockwise) regression in R with real data: do better-looking instructors get better evaluations? R² change, F-change, order effects, APA reporting.</description>
-      <content:encoded><![CDATA[<p><em>Hierarchical (blockwise) regression in R with real data: do better-looking instructors get better evaluations? R² change, F-change, order effects, APA reporting.</em></p>
-<section id="the-question-does-beauty-matter-over-and-above-everything-else" class="level2">
-<h2 class="anchored" data-anchor-id="the-question-does-beauty-matter-over-and-above-everything-else">The question: does beauty matter over and above everything else?</h2>
-<p>At the end of every term, students at the University of Texas at Austin rated their courses from 1 (very unsatisfactory) to 5 (excellent). For 463 courses taught between 2000 and 2002, economists Daniel Hamermesh and Amy Parker also asked six students to rate the <strong>physical appearance</strong> of each instructor from their photograph. Their question: do better-looking instructors get better evaluations (Hamermesh &amp; Parker, 2005)?</p>
-<p>A simple correlation is not enough to answer it. Beauty might go together with other things that also affect evaluations: age, gender, the kind of course, the size of the class. The real question is one of <strong>incremental validity</strong>:</p>
-<blockquote class="blockquote">
-<p>Does beauty predict teaching evaluations <strong>over and above</strong> who the instructor is and what they teach?</p>
-</blockquote>
-<p><strong>Hierarchical regression</strong> answers exactly this kind of question. We enter the predictors in <strong>blocks</strong>, in an order decided in advance, and after each block we ask how much more of the variance of the outcome the model explains. That increase is the <strong>R² change</strong>, <span class="math inline">\(\Delta R^2\)</span>, and the <strong>F-change</strong> test tells us whether it is larger than chance.</p>
-<p>The predictor of interest goes in <strong>last</strong>, so it gets credit only for what the earlier blocks cannot explain. If beauty still adds something after everything else, that is strong evidence that it matters on its own.</p>
-<p><strong>A note on the name.</strong> “Hierarchical” here means the <strong>order in which blocks of predictors enter</strong> the model. It has nothing to do with <strong>hierarchical linear models</strong>, also called multilevel or mixed models, which are for data nested in groups (students in schools, courses in instructors). Those have their own tutorial: <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html">Multilevel Models</a>. We will meet the nesting issue in section 8, because these data have it too.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(AER)        # the data: TeachingRatings
-library(ggplot2)
-library(patchwork)  # put plots together
-library(car)        # vif(): checks multicollinearity
-library(sandwich)   # vcovCL(): cluster-robust standard errors (section 8)
-library(lmtest)     # coeftest() and waldtest() with those standard errors
-library(ggfortify)  # needed by rwf's report_regression() for its diagnostic plots (section 7)</code></pre></div></div>
-</details>
-</div>
-<hr>
-</section>
-<section id="the-data" class="level2">
-<h2 class="anchored" data-anchor-id="the-data">1. The data</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">data("TeachingRatings", package = "AER")
-tr &lt;- TeachingRatings
-c(courses = nrow(tr), instructors = length(unique(tr$prof)))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>    courses instructors 
-        463          94 </code></pre>
-</div>
-</div>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Variable</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><code>eval</code></td>
-<td>The course’s average evaluation, from 1 (very unsatisfactory) to 5 (excellent)</td>
-</tr>
-<tr class="even">
-<td><code>beauty</code></td>
-<td>The instructor’s appearance, rated by six students from a photograph and averaged, shifted to a mean of 0</td>
-</tr>
-<tr class="odd">
-<td><code>gender</code>, <code>minority</code>, <code>native</code>, <code>age</code></td>
-<td>The instructor: female or male, from a minority (non-Caucasian) or not, native English speaker or not, age in years</td>
-</tr>
-<tr class="even">
-<td><code>tenure</code></td>
-<td>Is the instructor on the tenure track?</td>
-</tr>
-<tr class="odd">
-<td><code>division</code></td>
-<td>An upper-division course, or a lower-division one (mainly large first- and second-year courses)</td>
-</tr>
-<tr class="even">
-<td><code>credits</code></td>
-<td>A single-credit elective (yoga, aerobics, dance) or a regular course</td>
-</tr>
-<tr class="odd">
-<td><code>allstudents</code></td>
-<td>The number of students enrolled</td>
-</tr>
-<tr class="even">
-<td><code>prof</code></td>
-<td>Which of the 94 instructors taught the course</td>
-</tr>
-</tbody>
-</table>
-<p>We code each yes/no variable as a <strong>0/1 dummy</strong> with a clear name, so that every coefficient says what it compares. Age goes in decades, so that its coefficient is not a tiny number per year. Class size is very skewed (8 to 581 students), so we use its base-2 logarithm: one unit more means <strong>twice as many students</strong>.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">d &lt;- data.frame(
-  eval           = tr$eval,
-  female         = as.integer(tr$gender == "female"),   # 1 = female instructor
-  minority       = as.integer(tr$minority == "yes"),    # 1 = minority (non-Caucasian)
-  non_native     = as.integer(tr$native == "no"),       # 1 = not a native English speaker
-  age            = tr$age / 10,                         # in decades: +1 = ten years older
-  tenure_track   = as.integer(tr$tenure == "yes"),      # 1 = on the tenure track
-  lower_division = as.integer(tr$division == "lower"),  # 1 = lower-division course
-  single_credit  = as.integer(tr$credits == "single"),  # 1 = single-credit elective
-  log2_size      = log2(tr$allstudents),                # +1 = class twice as large
-  beauty         = tr$beauty,
-  prof           = tr$prof)
-round(sapply(d[, 1:10], function(x) c(mean = mean(x), sd = sd(x), min = min(x), max = max(x))), 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>     eval female minority non_native  age tenure_track lower_division single_credit log2_size beauty
-mean 4.00   0.42     0.14       0.06 4.84         0.78           0.34          0.06      5.15   0.00
-sd   0.55   0.49     0.35       0.24 0.98         0.41           0.47          0.23      1.22   0.79
-min  2.10   0.00     0.00       0.00 2.90         0.00           0.00          0.00      3.00  -1.45
-max  5.00   1.00     1.00       1.00 7.30         1.00           1.00          1.00      9.18   1.97</code></pre>
-</div>
-</div>
-<p>For the dummies, the mean is the share of courses with a 1: for example, 42% of the courses were taught by women and 6% were single-credit electives. The average evaluation is 4.00 (<em>SD</em> = 0.55): students were generally satisfied.</p>
-<p>Hierarchical regression compares models fitted to <strong>the same people</strong>. If some variables had missing values, each model would drop different rows and the R² values would not be comparable. These data have none, but in your own data remove incomplete rows first, e.g.&nbsp;<code>d &lt;- na.omit(d[, variables_of_all_blocks])</code>.</p>
-<hr>
-</section>
-<section id="look-at-the-data" class="level2">
-<h2 class="anchored" data-anchor-id="look-at-the-data">2. Look at the data</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">r_beauty &lt;- cor(d$beauty, d$eval)
-p1 &lt;- ggplot(d, aes(beauty, eval)) +
-  geom_point(colour = "#0082c8", alpha = 0.5, size = 1.8) +
-  geom_smooth(method = "lm", formula = y ~ x, colour = "#E74C3C", fill = "#E74C3C", alpha = 0.15) +
-  labs(title = sprintf("Better-looking instructors get somewhat better evaluations (r = %.2f)", r_beauty),
-       x = "beauty rating (0 = average)", y = "course evaluation (1 to 5)")
-predictors &lt;- c("female", "minority", "non_native", "age", "tenure_track",
-                "lower_division", "single_credit", "log2_size", "beauty")
-cors &lt;- data.frame(predictor = factor(predictors, levels = rev(predictors)),
-                   with_eval = sapply(d[predictors], cor, y = d$eval))
-p2 &lt;- ggplot(cors, aes(with_eval, predictor, fill = with_eval &gt; 0)) +
-  geom_col() +
-  geom_vline(xintercept = 0) +
-  scale_fill_manual(values = c(`TRUE` = "#0082c8", `FALSE` = "#E74C3C"), guide = "none") +
-  labs(title = "Correlation of each predictor with the evaluation", x = "correlation", y = NULL)
-p1 / p2</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Plot: 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/look-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Beauty correlates 0.19 with the evaluations, so it explains <span class="math inline">\(r^2\)</span> = 3.6% of their variance on its own. Single-credit electives get the best evaluations; female, non-native and tenure-track instructors, and larger classes, get lower ones. Several of these predictors also correlate with beauty, which is why we need a model that holds them constant.</p>
-<hr>
-</section>
-<section id="the-plan-three-blocks-chosen-in-advance" class="level2">
-<h2 class="anchored" data-anchor-id="the-plan-three-blocks-chosen-in-advance">3. The plan: three blocks, chosen in advance</h2>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 25%">
-<col style="width: 25%">
-<col style="width: 25%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Step</th>
-<th>Block</th>
-<th>Predictors</th>
-<th>Why here</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>1</td>
-<td>Who the instructor is</td>
-<td><code>female</code>, <code>minority</code>, <code>non_native</code>, <code>age</code></td>
-<td>Fixed before any teaching starts, so nothing else can cause them</td>
-</tr>
-<tr class="even">
-<td>2</td>
-<td>The job and the course</td>
-<td><code>tenure_track</code>, <code>lower_division</code>, <code>single_credit</code>, <code>log2_size</code></td>
-<td>What and whom they teach, and on which contract</td>
-</tr>
-<tr class="odd">
-<td>3</td>
-<td>Appearance</td>
-<td><code>beauty</code></td>
-<td>The predictor of interest: entered last, so it must explain something the first two blocks cannot</td>
-</tr>
-</tbody>
-</table>
-<p>The order comes from <strong>theory and the research question</strong>, decided before looking at the results. Common rules: background variables and things that come first in time go first, control variables go before the predictors of interest, and the predictor whose added value you want to test goes last.</p>
-<p>This is the opposite of <strong>stepwise regression</strong>, where the computer adds or drops predictors according to their <em>p</em> values. Stepwise selection capitalises on chance, and its <em>p</em> values and R² are too optimistic. In hierarchical regression <strong>you</strong> decide the order, and the data only answer the question you asked.</p>
-<hr>
-</section>
-<section id="fit-the-three-models-and-test-each-step" class="level2">
-<h2 class="anchored" data-anchor-id="fit-the-three-models-and-test-each-step">4. Fit the three models and test each step</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r">m0 &lt;- lm(eval ~ 1, data = d)                                                        # no predictors: R² = 0
-m1 &lt;- lm(eval ~ female + minority + non_native + age, data = d)                     # step 1
-m2 &lt;- update(m1, . ~ . + tenure_track + lower_division + single_credit + log2_size) # step 2: + block 2
-m3 &lt;- update(m2, . ~ . + beauty)                                                    # step 3: + beauty</code></pre></div></div>
-</details>
-</div>
-<p><code>update(m1, . ~ . + ...)</code> means: the same model as <code>m1</code>, with these predictors added.</p>
-<section id="the-formulas" class="level3">
-<h3 class="anchored" data-anchor-id="the-formulas">The formulas</h3>
-<p>For a model with <span class="math inline">\(k\)</span> predictors fitted to <span class="math inline">\(n\)</span> cases:</p>
-<ul>
-<li><strong>R²</strong>, the share of the variance of the outcome the model explains: <span class="math inline">\(R^2 = 1 - \dfrac{RSS}{TSS}\)</span>, where <span class="math inline">\(RSS = \sum (y_i - \hat y_i)^2\)</span> is what the model leaves unexplained and <span class="math inline">\(TSS = \sum (y_i - \bar y)^2\)</span> is the total.</li>
-<li><strong>Adjusted R²</strong> corrects R² for the number of predictors, since adding any predictor, even pure noise, raises R² a little: <span class="math inline">\(R^2_{adj} = 1 - (1 - R^2)\dfrac{n - 1}{n - k - 1}\)</span></li>
-<li><strong>R² change</strong> from a smaller model (1) to a larger one (2): <span class="math inline">\(\Delta R^2 = R^2_2 - R^2_1\)</span></li>
-<li><strong>F-change</strong>, the test of <span class="math inline">\(\Delta R^2\)</span>, where <span class="math inline">\(\Delta k\)</span> is the number of predictors added and <span class="math inline">\(k_2\)</span> the number in the larger model:</li>
-</ul>
-<p><span class="math display">\[F = \frac{\Delta R^2 / \Delta k}{(1 - R^2_2) / (n - k_2 - 1)}, \qquad \text{with } \Delta k \text{ and } n - k_2 - 1 \text{ degrees of freedom}\]</span></p>
-<p>The top is the variance explained by the new block, per predictor added. The bottom is the variance still unexplained, per remaining degree of freedom. If the new block were useless, the two would be about equal and <span class="math inline">\(F\)</span> would be close to 1.</p>
-<ul>
-<li><strong>Effect size</strong> of the change, Cohen’s <span class="math inline">\(f^2 = \dfrac{\Delta R^2}{1 - R^2_2}\)</span>: about .02 is small, .15 medium and .35 large (Cohen, 1988).</li>
-</ul>
-</section>
-<section id="the-steps-by-hand" class="level3">
-<h3 class="anchored" data-anchor-id="the-steps-by-hand">The steps by hand</h3>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">n &lt;- nrow(d)
-models &lt;- list(m0, m1, m2, m3)
-k_of &lt;- function(m) length(coef(m)) - 1                     # number of predictors
-steps &lt;- do.call(rbind, lapply(2:4, function(i) {
-  small &lt;- models[[i - 1]]; big &lt;- models[[i]]
-  r2_small &lt;- summary(small)$r.squared
-  r2_big   &lt;- summary(big)$r.squared
-  delta    &lt;- r2_big - r2_small
-  dk       &lt;- k_of(big) - k_of(small)
-  df2      &lt;- n - k_of(big) - 1
-  F_change &lt;- (delta / dk) / ((1 - r2_big) / df2)
-  data.frame(step = i - 1, k = k_of(big), r2 = r2_big, adj_r2 = summary(big)$adj.r.squared,
-             delta_r2 = delta, F_change = F_change, df1 = dk, df2 = df2,
-             p = pf(F_change, dk, df2, lower.tail = FALSE), f2 = delta / (1 - r2_big))
-}))
-steps$block &lt;- c("1: who the instructor is", "2: + the job and the course", "3: + beauty")
-format(steps[, c("block", "k", "r2", "adj_r2", "delta_r2", "F_change", "df1", "df2", "p", "f2")], digits = 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                        block k     r2 adj_r2 delta_r2 F_change df1 df2        p     f2
-1    1: who the instructor is 4 0.0527 0.0444   0.0527     6.37   4 458 5.40e-05 0.0556
-2 2: + the job and the course 8 0.1268 0.1114   0.0741     9.63   4 454 1.76e-07 0.0848
-3                 3: + beauty 9 0.1726 0.1562   0.0458    25.10   1 453 7.81e-07 0.0554</code></pre>
-</div>
-</div>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">bars &lt;- data.frame(model = factor(rep(steps$block, 1:3), levels = steps$block),
-                   block = factor(c(steps$block[1], steps$block[1:2], steps$block[1:3]), levels = steps$block),
-                   value = c(steps$delta_r2[1], steps$delta_r2[1:2], steps$delta_r2[1:3]))
-ggplot(bars, aes(model, value, fill = block)) +
-  geom_col(width = 0.65, position = position_stack(reverse = TRUE)) +
-  geom_text(data = steps, aes(x = block, y = r2, label = sprintf("R² = %.3f\nΔR² = %.3f", r2, delta_r2)),
-            inherit.aes = FALSE, vjust = -0.3, size = 3.2, lineheight = 0.9) +
-  scale_fill_manual(values = c("#95A5A6", "#f39c12", "#E74C3C"), labels = c("block 1", "block 2", "beauty")) +
-  scale_y_continuous(limits = c(0, 0.22), labels = scales::percent) +
-  labs(title = "Variance of the evaluations explained, step by step", x = NULL, y = "R²", fill = NULL)</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="The steps by hand" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/steps_plot-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Step by step:</p>
-<ol type="1">
-<li><strong>Who the instructor is</strong> explains 5.3% of the variance of the evaluations, <em>F</em>(4, 458) = 6.37, <em>p</em> &lt; .001.</li>
-<li><strong>The job and the course</strong> add another 7.4%, <em>F</em>(4, 454) = 9.63, <em>p</em> &lt; .001.</li>
-<li><strong>Beauty</strong> adds 4.6% more, <em>F</em>(1, 453) = 25.1, <em>p</em> &lt; .001, <span class="math inline">\(f^2\)</span> = 0.055, a small effect by Cohen’s labels. Beauty predicts evaluations even after all eight other predictors have had their say.</li>
-</ol>
-<p>Altogether the model explains 17.3% (adjusted 15.6%). Most of what makes a course well rated is not in these data, which is normal for something as complex as teaching.</p>
-</section>
-<section id="the-same-tests-with-anova" class="level3">
-<h3 class="anchored" data-anchor-id="the-same-tests-with-anova">The same tests with <code>anova()</code></h3>
-<p>R compares nested models with <code>anova()</code>. Comparing <strong>each pair</strong> gives exactly the F-change of the table above, the value SPSS reports:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">anova(m0, m1)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Analysis of Variance Table
-Model 1: eval ~ 1
-Model 2: eval ~ female + minority + non_native + age
-  Res.Df    RSS Df Sum of Sq     F    Pr(&gt;F)    
-1    462 142.24                                 
-2    458 134.74  4     7.495 6.369 5.401e-05 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">anova(m1, m2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Analysis of Variance Table
-Model 1: eval ~ female + minority + non_native + age
-Model 2: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size
-  Res.Df    RSS Df Sum of Sq      F   Pr(&gt;F)    
-1    458 134.74                                 
-2    454 124.21  4    10.537 9.6287 1.76e-07 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">anova(m2, m3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Analysis of Variance Table
-Model 1: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size
-Model 2: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size + beauty
-  Res.Df    RSS Df Sum of Sq      F    Pr(&gt;F)    
-1    454 124.21                                  
-2    453 117.69  1     6.521 25.101 7.813e-07 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-</div>
-<p>How to read it: <code>Res.Df</code> and <code>RSS</code> are the residual degrees of freedom and the residual sum of squares of each model. <code>Df</code> is the number of predictors added, <code>Sum of Sq</code> how much the residual sum of squares went down, and <code>F</code> and <code>Pr(&gt;F)</code> are the F-change and its <em>p</em> value.</p>
-<p>You will often see all the models in one call:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">anova(m1, m2, m3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Analysis of Variance Table
-Model 1: eval ~ female + minority + non_native + age
-Model 2: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size
-Model 3: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size + beauty
-  Res.Df    RSS Df Sum of Sq      F    Pr(&gt;F)    
-1    458 134.74                                  
-2    454 124.21  4    10.537 10.140 7.201e-08 ***
-3    453 117.69  1     6.521 25.101 7.813e-07 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-</div>
-<p>The last line is the same, but the <em>F</em> for step 2 is now 10.14 instead of 9.63. With several models, <code>anova()</code> divides every comparison by the unexplained variance of the <strong>largest</strong> model (here <code>m3</code>), not of the model at that step. Both are valid tests. The pairwise version matches the F-change formula and SPSS; say which one you report.</p>
-</section>
-<section id="one-predictor-δr²-is-its-squared-semipartial-correlation" class="level3">
-<h3 class="anchored" data-anchor-id="one-predictor-δr²-is-its-squared-semipartial-correlation">One predictor: ΔR² is its squared semipartial correlation</h3>
-<p>When a step adds a <strong>single</strong> predictor, two shortcuts hold:</p>
-<ul>
-<li><span class="math inline">\(\Delta R^2\)</span> equals the <strong>squared semipartial correlation</strong> <span class="math inline">\(sr^2\)</span>: the squared correlation between the outcome and the part of beauty that the other eight predictors cannot predict.</li>
-<li>The F-change equals the square of beauty’s <em>t</em> value in the final model.</li>
-</ul>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">beauty_unique &lt;- resid(lm(beauty ~ female + minority + non_native + age + tenure_track +
-                            lower_division + single_credit + log2_size, data = d))   # beauty, minus what the others predict
-t_beauty &lt;- summary(m3)$coefficients["beauty", "t value"]
-c(delta_r2 = steps$delta_r2[3], semipartial_squared = cor(d$eval, beauty_unique)^2,
-  F_change = steps$F_change[3], t_squared = t_beauty^2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>           delta_r2 semipartial_squared            F_change           t_squared 
-         0.04584582          0.04584582         25.10107854         25.10107854 </code></pre>
-</div>
-</div>
-<p>So <span class="math inline">\(\Delta R^2\)</span> for a single predictor is the share of the variance of the evaluations that <strong>only</strong> beauty explains.</p>
-<hr>
-</section>
-</section>
-<section id="the-final-model-what-the-coefficients-say" class="level2">
-<h2 class="anchored" data-anchor-id="the-final-model-what-the-coefficients-say">5. The final model: what the coefficients say</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre><code class="language-r">summary(m3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>
-Call:
-lm(formula = eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size + beauty, data = d)
-Residuals:
-     Min       1Q   Median       3Q      Max 
--1.79974 -0.32825  0.06023  0.36077  1.00752 
-Coefficients:
-               Estimate Std. Error t value Pr(&gt;|t|)    
-(Intercept)     4.56028    0.19305  23.622  &lt; 2e-16 ***
-female         -0.19736    0.05125  -3.851 0.000135 ***
-minority       -0.18051    0.07674  -2.352 0.019088 *  
-non_native     -0.25068    0.10669  -2.350 0.019223 *  
-age            -0.03082    0.02690  -1.146 0.252578    
-tenure_track   -0.04029    0.06250  -0.645 0.519515    
-lower_division  0.03468    0.05536   0.626 0.531317    
-single_credit   0.55316    0.11686   4.734 2.95e-06 ***
-log2_size      -0.05876    0.02053  -2.862 0.004411 ** 
-beauty          0.15948    0.03183   5.010 7.81e-07 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-Residual standard error: 0.5097 on 453 degrees of freedom
-Multiple R-squared:  0.1726,    Adjusted R-squared:  0.1562 
-F-statistic:  10.5 on 9 and 453 DF,  p-value: 8.218e-15</code></pre>
-</div>
-</div>
-<section id="how-to-read-the-output" class="level3">
-<h3 class="anchored" data-anchor-id="how-to-read-the-output">How to read the output</h3>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Part</th>
-<th>Meaning</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td><code>Estimate</code></td>
-<td><span class="math inline">\(b\)</span>: the change in the evaluation for one unit more of the predictor, <strong>holding all the other predictors constant</strong>. For a 0/1 dummy, the difference between the two groups</td>
-</tr>
-<tr class="even">
-<td><code>Std. Error</code></td>
-<td>How uncertain the estimate is</td>
-</tr>
-<tr class="odd">
-<td><code>t value</code></td>
-<td><code>Estimate / Std. Error</code></td>
-</tr>
-<tr class="even">
-<td><code>Pr(&gt;|t|)</code></td>
-<td>The chance of a <em>t</em> this large if the true effect were 0</td>
-</tr>
-<tr class="odd">
-<td><code>Residual standard error</code></td>
-<td>The typical distance of an evaluation from the model’s prediction, in evaluation points</td>
-</tr>
-<tr class="even">
-<td><code>Multiple R-squared</code>, <code>Adjusted R-squared</code></td>
-<td>R² and adjusted R² of the final model, as in our table</td>
-</tr>
-<tr class="odd">
-<td><code>F-statistic</code></td>
-<td>Tests all nine predictors together against the model with none</td>
-</tr>
-</tbody>
-</table>
-<ul>
-<li><strong><code>(Intercept)</code></strong> is the predicted evaluation when every predictor is 0: a male, native, non-minority instructor aged 0, teaching one student. It is needed for the predictions but means nothing by itself.</li>
-<li><strong><code>beauty</code></strong>: 0.159 points per unit of beauty. One standard deviation of beauty (0.79) is worth 0.13 points, and the gap between the least and the best-looking instructor in the data is 0.55 points, about one standard deviation of the evaluations.</li>
-<li><strong><code>female</code></strong>: courses taught by women are rated 0.20 points lower than comparable courses taught by men.</li>
-<li><strong><code>single_credit</code></strong>: single-credit electives are rated 0.55 points higher.</li>
-<li><strong><code>log2_size</code></strong>: each doubling of the class costs 0.06 points.</li>
-<li><strong><code>non_native</code></strong> and <strong><code>minority</code></strong> instructors are rated 0.25 and 0.18 points lower; age, tenure track and division add nothing once the rest is held constant.</li>
-</ul>
-<p>These are associations in observational data. Better-looking people may also be more confident or more practised speakers, so the coefficient says that beauty <strong>predicts</strong> evaluations, not that it causes them.</p>
-</section>
-<section id="standardised-coefficients" class="level3">
-<h3 class="anchored" data-anchor-id="standardised-coefficients">Standardised coefficients</h3>
-<p>The <em>b</em>’s are in different units (decades, doublings of the class, rating points), so they cannot be compared with each other. A <strong>standardised coefficient</strong> <span class="math inline">\(\beta\)</span> puts every predictor in standard deviations: <span class="math inline">\(\beta = b \cdot \dfrac{SD_x}{SD_y}\)</span>, the change in the evaluation, in <em>SD</em>s, for one <em>SD</em> more of the predictor.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb23"><pre><code class="language-r">sd_ratio &lt;- sapply(d[predictors], sd) / sd(d$eval)
-ci &lt;- confint(m3)[predictors, ]
-betas &lt;- data.frame(predictor = factor(predictors, levels = rev(predictors)),
-                    b = coef(m3)[predictors], beta = coef(m3)[predictors] * sd_ratio,
-                    low = ci[, 1] * sd_ratio, high = ci[, 2] * sd_ratio)
-round(betas[, -1], 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                    b   beta    low   high
-female         -0.197 -0.176 -0.266 -0.086
-minority       -0.181 -0.112 -0.206 -0.018
-non_native     -0.251 -0.108 -0.198 -0.018
-age            -0.031 -0.054 -0.148  0.039
-tenure_track   -0.040 -0.030 -0.122  0.062
-lower_division  0.035  0.030 -0.063  0.123
-single_credit   0.553  0.234  0.137  0.331
-log2_size      -0.059 -0.129 -0.217 -0.040
-beauty          0.159  0.227  0.138  0.316</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb25"><pre><code class="language-r">ggplot(betas, aes(beta, predictor)) +
-  geom_vline(xintercept = 0, linetype = "dashed") +
-  geom_errorbar(aes(xmin = low, xmax = high), width = 0.25, colour = "grey40") +
-  geom_point(aes(colour = predictor == "beauty"), size = 3) +
-  scale_colour_manual(values = c(`TRUE` = "#E74C3C", `FALSE` = "#0082c8"), guide = "none") +
-  labs(title = "Standardised coefficients of the final model, with 95% CIs",
-       x = "β (SDs of evaluation per SD of the predictor)", y = NULL)</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Standardised coefficients" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/standardised-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Beauty (<span class="math inline">\(\beta\)</span> = 0.23) and single-credit electives (<span class="math inline">\(\beta\)</span> = 0.23) are the strongest predictors. For 0/1 dummies, a “one <em>SD</em> change” is an odd idea, so many authors report <span class="math inline">\(\beta\)</span> only for continuous predictors and <span class="math inline">\(b\)</span> for dummies.</p>
-<hr>
-</section>
-</section>
-<section id="the-order-matters" class="level2">
-<h2 class="anchored" data-anchor-id="the-order-matters">6. The order matters</h2>
-<p>What if we had entered beauty <strong>first</strong>? Its share would then be its squared correlation with the evaluations. Entered <strong>last</strong>, it is its squared semipartial correlation. Here is that comparison for every predictor:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre><code class="language-r">full_r2 &lt;- summary(m3)$r.squared
-order_tab &lt;- do.call(rbind, lapply(predictors, function(v) {
-  alone   &lt;- summary(lm(reformulate(v, "eval"), data = d))$r.squared            # entered first: r²
-  without &lt;- summary(update(m3, as.formula(paste(". ~ . -", v))))$r.squared
-  data.frame(predictor = v, entered_first = alone, entered_last = full_r2 - without)   # entered last: sr²
-}))
-format(order_tab, digits = 2)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>       predictor entered_first entered_last
-1         female        0.0224      0.02708
-2       minority        0.0059      0.01011
-3     non_native        0.0200      0.01008
-4            age        0.0027      0.00240
-5   tenure_track        0.0168      0.00076
-6 lower_division        0.0132      0.00072
-7  single_credit        0.0553      0.04093
-8      log2_size        0.0126      0.01496
-9         beauty        0.0357      0.04585</code></pre>
-</div>
-</div>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre><code class="language-r"># (a) the same total R², credited differently in two orders
-b1 &lt;- lm(eval ~ beauty, data = d)
-b2 &lt;- update(b1, . ~ . + female + minority + non_native + age)
-orders &lt;- data.frame(
-  order = factor(rep(c("planned order:\nbackground, course, beauty", "beauty first:\nbeauty, background, course"), each = 3),
-                 levels = c("planned order:\nbackground, course, beauty", "beauty first:\nbeauty, background, course")),
-  block = factor(rep(c("block 1: background", "block 2: course", "beauty"), 2),
-                 levels = c("block 1: background", "block 2: course", "beauty")),
-  value = c(steps$delta_r2,
-            summary(b2)$r.squared - summary(b1)$r.squared, full_r2 - summary(b2)$r.squared, summary(b1)$r.squared),
-  entry = c(1, 2, 3, 2, 3, 1))                     # the step at which each block enters: stacked in that order
-pa &lt;- ggplot(orders, aes(order, value, fill = block, group = entry)) +
-  geom_col(width = 0.6, position = position_stack(reverse = TRUE)) +
-  geom_text(aes(label = sprintf("%.3f", value)), position = position_stack(vjust = 0.5, reverse = TRUE), size = 3.2) +
-  scale_fill_manual(values = c("#95A5A6", "#f39c12", "#E74C3C")) +
-  scale_y_continuous(labels = scales::percent) +
-  coord_flip() +
-  labs(title = "(a) The same total R², credited differently", x = NULL, y = "R²", fill = NULL) +
-  theme(legend.position = "bottom")
-# (b) each predictor entered first (r²) and last (sr²)
-order_tab$predictor &lt;- factor(order_tab$predictor, levels = rev(predictors))
-pb &lt;- ggplot(order_tab, aes(y = predictor)) +
-  geom_segment(aes(x = entered_first, xend = entered_last, yend = predictor), colour = "grey60", linewidth = 1) +
-  geom_point(aes(x = entered_first, colour = "entered first (r²)"), size = 3) +
-  geom_point(aes(x = entered_last, colour = "entered last (sr²)"), size = 3) +
-  scale_colour_manual(values = c("entered first (r²)" = "#0082c8", "entered last (sr²)" = "#E74C3C")) +
-  scale_x_continuous(labels = scales::percent) +
-  labs(title = "(b) Variance each predictor explains, entered first or last",
-       x = "share of the variance of the evaluations", y = NULL, colour = NULL) +
-  theme(legend.position = "bottom")
-pa / pb</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="6. The order matters" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/order_plot-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Two things happen:</p>
-<ul>
-<li><strong>Shared variance shrinks a predictor’s share.</strong> Tenure track explains 1.7% of the variance alone, but only 0.1% when entered last. What it explains, the other predictors explain too: tenure-track instructors rarely teach the well-rated single-credit electives (<em>r</em> = -0.29) and teach larger classes (<em>r</em> = 0.16). In hierarchical regression <strong>shared variance goes to the block that enters first</strong>. Division shows the same, because the single-credit electives are lower-division courses (<em>r</em> = 0.33), and so does native language.</li>
-<li><strong>Suppression enlarges it.</strong> Beauty explains 3.6% alone, but 4.6% entered last. Better-looking instructors are more often women (<em>r</em> = 0.13), teach somewhat larger classes (<em>r</em> = 0.07) and fewer single-credit electives (<em>r</em> = -0.08): all of these go with <strong>lower</strong> evaluations, so they hide part of beauty’s effect in the simple correlation. Holding them constant uncovers it. Gender, minority and class size grow for similar reasons.</li>
-</ul>
-<p>That is why the order must be decided before the analysis and reported with the results: with correlated predictors, <strong>the credit each block gets depends on where it enters</strong>. The total R² does not change (panel a). Entering the predictor of interest last is the conservative choice: it gets credit only for what nothing else explains.</p>
-<hr>
-</section>
-<section id="checking-the-assumptions" class="level2">
-<h2 class="anchored" data-anchor-id="checking-the-assumptions">7. Checking the assumptions</h2>
-<p>The F-change tests and the standard errors assume that the residuals have constant variance, are roughly normal, contain no extreme cases with undue influence, and are <strong>independent</strong> of each other; that the relationships are linear; and that the predictors are not too strongly correlated. <code>report_regression()</code> of the rwf package collects the usual checks for an <code>lm</code> model: diagnostic plots, standardised coefficients, VIFs, an outlier test and more. It also prints a long text report, which we capture here, and keep only the parts we need:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre><code class="language-r">set.seed(1)    # its Durbin-Watson test uses random resampling
-invisible(capture.output(diag_m3 &lt;- report_regression(m3, plot_diagnostics = TRUE)))</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Diagnostics – 7. Checking the assumptions" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/diagnostics-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 33%">
-<col style="width: 33%">
-<col style="width: 33%">
-</colgroup>
-<thead>
-<tr class="header">
-<th>Panel</th>
-<th>What to look for</th>
-<th>Here</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td>Residuals vs Fitted</td>
-<td>No curve and no funnel shape</td>
-<td>Flat, but the residuals are cut off at the top: no course can be rated above 5</td>
-</tr>
-<tr class="even">
-<td>Normal Q-Q</td>
-<td>Points on the line</td>
-<td>A longer lower tail: a few courses were rated much lower than predicted</td>
-</tr>
-<tr class="odd">
-<td>Scale-Location</td>
-<td>A flat line: constant variance</td>
-<td>Roughly flat</td>
-</tr>
-<tr class="even">
-<td>Cook’s distance</td>
-<td>No case far above the others (values above 1 are a concern)</td>
-<td>The largest is 0.05</td>
-</tr>
-<tr class="odd">
-<td>Residuals vs Leverage, Cook’s dist vs Leverage</td>
-<td>No case with both high leverage and a large residual</td>
-<td>None</td>
-</tr>
-</tbody>
-</table>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">data.frame(predictor = predictors, vif = round(diag_m3$vif$vif, 2), tolerance = round(diag_m3$vif$tolerance, 2))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>       predictor  vif tolerance
-1         female 1.14      0.88
-2       minority 1.25      0.80
-3     non_native 1.15      0.87
-4            age 1.24      0.81
-5   tenure_track 1.20      0.84
-6 lower_division 1.22      0.82
-7  single_credit 1.34      0.75
-8      log2_size 1.11      0.90
-9         beauty 1.12      0.89</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre><code class="language-r">diag_m3$outlier_test   # the most extreme studentised residual, with a Bonferroni-corrected p value</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>    rstudent            p   bonf.p signif cutoff
-99 -3.591951 0.0003642181 0.168633  FALSE   0.05</code></pre>
-</div>
-</div>
-<ul>
-<li><strong>Multicollinearity</strong>: the <strong>VIF</strong> (variance inflation factor) says how much a coefficient’s variance grows because the predictor correlates with the others. All are below 1.4, far from the usual warning level of 5 to 10.</li>
-<li><strong>Outliers</strong>: the most extreme residual is not significant after the Bonferroni correction (<code>bonf.p</code> = 0.17).</li>
-<li><strong>Normality</strong>: the skew comes from the ceiling at 5. With 463 cases, the tests of the coefficients are robust to it.</li>
-</ul>
-<p>The assumption that these plots cannot check is <strong>independence</strong>, and these data break it.</p>
-<hr>
-</section>
-<section id="a-caveat-463-courses-but-only-94-instructors" class="level2">
-<h2 class="anchored" data-anchor-id="a-caveat-463-courses-but-only-94-instructors">8. A caveat: 463 courses, but only 94 instructors</h2>
-<p>Each instructor taught between 1 and 13 of the courses, and their beauty rating is the same in all of them. The plot shows every course as a point and joins the courses of the same instructor:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre><code class="language-r">ggplot(d, aes(beauty, eval, group = prof)) +
-  geom_line(colour = "grey70") +
-  geom_point(colour = "#0082c8", alpha = 0.6, size = 1.6) +
-  labs(title = "Each vertical strip is one instructor and their courses",
-       x = "beauty rating of the instructor", y = "course evaluation")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Clusters – 8. A caveat: 463 courses, but only 94 instructors" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION_files/figure-html/clusters-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Courses of the same instructor are rated alike. The share of the unexplained variance that lies <strong>between instructors</strong>, the intraclass correlation of the residuals, is:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb35"><pre><code class="language-r">d$residual &lt;- resid(m3)
-ri &lt;- nlme::lme(residual ~ 1, random = ~ 1 | prof, data = d)   # residuals: instructor part + course part
-vc &lt;- as.numeric(nlme::VarCorr(ri)[, "Variance"])
-icc &lt;- vc[1] / sum(vc)
-avg_courses &lt;- n / length(unique(d$prof))
-c(icc = icc, courses_per_instructor = avg_courses, design_effect = 1 + (avg_courses - 1) * icc)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                   icc courses_per_instructor          design_effect 
-             0.4029194              4.9255319              2.5816729 </code></pre>
-</div>
-</div>
-<p>About 40% of what the model cannot explain is about <strong>who</strong> teaches the course. For a predictor that is constant within each instructor, like beauty, the 463 courses then carry about as much information as <span class="math inline">\(463 / \text{design effect} \approx\)</span> 179 independent ones. Ordinary standard errors ignore this and are too small.</p>
-<p>A quick fix is <strong>cluster-robust standard errors</strong>, which allow the residuals of the same instructor to be correlated:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb37"><pre><code class="language-r">vc_cl &lt;- vcovCL(m3, cluster = ~ prof)       # courses clustered within instructors
-coeftest(m3, vcov = vc_cl)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>
-t test of coefficients:
-                Estimate Std. Error t value  Pr(&gt;|t|)    
-(Intercept)     4.560279   0.329307 13.8481 &lt; 2.2e-16 ***
-female         -0.197364   0.081033 -2.4356 0.0152523 *  
-minority       -0.180507   0.099964 -1.8057 0.0716264 .  
-non_native     -0.250676   0.138765 -1.8065 0.0715068 .  
-age            -0.030815   0.042703 -0.7216 0.4708948    
-tenure_track   -0.040289   0.099384 -0.4054 0.6853830    
-lower_division  0.034684   0.085926  0.4036 0.6866606    
-single_credit   0.553162   0.155306  3.5618 0.0004074 ***
-log2_size      -0.058757   0.035080 -1.6750 0.0946289 .  
-beauty          0.159481   0.048566  3.2838 0.0011036 ** 
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb39"><pre><code class="language-r">se_compare &lt;- data.frame(b = coef(m3), se_ordinary = sqrt(diag(vcov(m3))), se_cluster = sqrt(diag(vc_cl)),
-                         p_ordinary = summary(m3)$coefficients[, 4], p_cluster = coeftest(m3, vcov = vc_cl)[, 4])
-round(se_compare, 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                    b se_ordinary se_cluster p_ordinary p_cluster
-(Intercept)     4.560       0.193      0.329      0.000     0.000
-female         -0.197       0.051      0.081      0.000     0.015
-minority       -0.181       0.077      0.100      0.019     0.072
-non_native     -0.251       0.107      0.139      0.019     0.072
-age            -0.031       0.027      0.043      0.253     0.471
-tenure_track   -0.040       0.063      0.099      0.520     0.685
-lower_division  0.035       0.055      0.086      0.531     0.687
-single_credit   0.553       0.117      0.155      0.000     0.000
-log2_size      -0.059       0.021      0.035      0.004     0.095
-beauty          0.159       0.032      0.049      0.000     0.001</code></pre>
-</div>
-</div>
-<p>The coefficients stay the same; the standard errors grow, for beauty from 0.032 to 0.049, close to what the design effect predicted (<span class="math inline">\(\sqrt{2.58}\)</span> = 1.61 times larger). Beauty is still significant (<em>p</em> = 0.001), but minority (<em>p</em> = 0.072), non-native (<em>p</em> = 0.072) and class size (<em>p</em> = 0.095) are no longer significant at .05.</p>
-<p>The F-change tests can be redone the same way with a <strong>Wald test</strong>, using the cluster-robust variance of the larger model:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb41"><pre><code class="language-r">waldtest(m1, m2, vcov = vcovCL(m2, cluster = ~ prof))   # step 2</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Wald test
-Model 1: eval ~ female + minority + non_native + age
-Model 2: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size
-  Res.Df Df      F    Pr(&gt;F)    
-1    458                        
-2    454  4 6.3341 5.757e-05 ***
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb43"><pre><code class="language-r">waldtest(m2, m3, vcov = vc_cl)                          # step 3: beauty</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>Wald test
-Model 1: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size
-Model 2: eval ~ female + minority + non_native + age + tenure_track + 
-    lower_division + single_credit + log2_size + beauty
-  Res.Df Df      F   Pr(&gt;F)   
-1    454                      
-2    453  1 10.783 0.001104 **
----
-Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1</code></pre>
-</div>
-</div>
-<p>Beauty’s robust <em>F</em> = 10.78 is its robust <em>t</em> squared (3.28²), against 25.1 with ordinary standard errors. The R² changes stay as they were; only their tests change.</p>
-<p>Cluster-robust errors fix the standard errors, but they do not model the instructors. A <strong>multilevel model</strong> with a random intercept for each instructor does both, and also tells how much instructors differ: see the <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_MULTILEVEL.html">Multilevel Models</a> tutorial.</p>
-<hr>
-</section>
-<section id="reporting-the-results-in-apa-style" class="level2">
-<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">9. Reporting the results in APA style</h2>
-<p>A hierarchical regression report (APA 7th edition) gives the order of the blocks and why, R², <span class="math inline">\(\Delta R^2\)</span> and the F-change of every step, and the coefficients of the final model. We collect the numbers from the R objects:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb45"><pre><code class="language-r">f2d  &lt;- function(x) formatC(x, format = "f", digits = 2)
-nz   &lt;- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
-pval &lt;- function(p) if (p &lt; .001) "&lt; .001" else paste("=", nz(p, 3))
-s3   &lt;- summary(m3)$coefficients
-cl   &lt;- coeftest(m3, vcov = vc_cl)</code></pre></div></div>
-</details>
-</div>
-<p><strong>Method</strong> (data analysis):</p>
-<blockquote class="blockquote">
-<p>Course evaluations were analysed with a three-step hierarchical regression. Instructor characteristics (gender, minority status, native English, age) were entered in Step 1, job and course characteristics (tenure track, lower division, single-credit course, class size as the base-2 logarithm of enrolment) in Step 2, and the instructor’s beauty rating in Step 3, so that beauty was credited only with variance not explained by the other predictors. Because the 463 courses were taught by 94 instructors, we also report standard errors clustered by instructor. Analyses were conducted in R (Version 4.6.2; R Core Team, 2026) with the <em>sandwich</em> and <em>lmtest</em> packages.</p>
-</blockquote>
-<p><strong>Results:</strong></p>
-<blockquote class="blockquote">
-<p>Instructor characteristics explained 5.3% of the variance in evaluations, <em>R</em>² = .05, <em>F</em>(4, 458) = 6.37, <em>p</em> &lt; .001. Job and course characteristics explained an additional 7.4%, Δ<em>R</em>² = .07, <em>F</em>(4, 454) = 9.63, <em>p</em> &lt; .001. Adding beauty in Step 3 increased the explained variance by a further 4.6%, Δ<em>R</em>² = .05, <em>F</em>(1, 453) = 25.10, <em>p</em> &lt; .001, <em>f</em>² = .06. In the final model, <em>R</em>² = .17, adjusted <em>R</em>² = .16, more attractive instructors received higher evaluations, <em>b</em> = 0.16, <em>SE</em> = 0.03, β = .23, <em>p</em> &lt; .001: one standard deviation of beauty was associated with 0.13 points higher evaluations on the 5-point scale. The effect remained significant with standard errors clustered by instructor, <em>SE</em> = 0.05, <em>p</em> = .001.</p>
-</blockquote>
-<p><strong>Table 1</strong></p>
-<p><em>Hierarchical Regression Predicting Course Evaluations</em></p>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<colgroup>
-<col style="width: 25%">
-<col style="width: 21%">
-<col style="width: 21%">
-<col style="width: 21%">
-<col style="width: 10%">
-</colgroup>
-<thead>
-<tr class="header">
-<th style="text-align: left;">Predictor</th>
-<th style="text-align: right;">Step 1 <em>b</em> (<em>SE</em>)</th>
-<th style="text-align: right;">Step 2 <em>b</em> (<em>SE</em>)</th>
-<th style="text-align: right;">Step 3 <em>b</em> (<em>SE</em>)</th>
-<th style="text-align: right;">Step 3 β</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">Female</td>
-<td style="text-align: right;">-0.20 (0.05)***</td>
-<td style="text-align: right;">-0.19 (0.05)***</td>
-<td style="text-align: right;">-0.20 (0.05)***</td>
-<td style="text-align: right;">-.18</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Minority</td>
-<td style="text-align: right;">-0.05 (0.08)</td>
-<td style="text-align: right;">-0.17 (0.08)*</td>
-<td style="text-align: right;">-0.18 (0.08)*</td>
-<td style="text-align: right;">-.11</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Non-native English</td>
-<td style="text-align: right;">-0.31 (0.11)**</td>
-<td style="text-align: right;">-0.24 (0.11)*</td>
-<td style="text-align: right;">-0.25 (0.11)*</td>
-<td style="text-align: right;">-.11</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Age (decades)</td>
-<td style="text-align: right;">-0.06 (0.03)*</td>
-<td style="text-align: right;">-0.07 (0.03)*</td>
-<td style="text-align: right;">-0.03 (0.03)</td>
-<td style="text-align: right;">-.05</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Tenure track</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;">-0.07 (0.06)</td>
-<td style="text-align: right;">-0.04 (0.06)</td>
-<td style="text-align: right;">-.03</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Lower division</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;">0.04 (0.06)</td>
-<td style="text-align: right;">0.03 (0.06)</td>
-<td style="text-align: right;">.03</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Single-credit course</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;">0.48 (0.12)***</td>
-<td style="text-align: right;">0.55 (0.12)***</td>
-<td style="text-align: right;">.23</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Class size (log2)</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;">-0.06 (0.02)**</td>
-<td style="text-align: right;">-0.06 (0.02)**</td>
-<td style="text-align: right;">-.13</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Beauty</td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;"></td>
-<td style="text-align: right;">0.16 (0.03)***</td>
-<td style="text-align: right;">.23</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;"><em>R</em>²</td>
-<td style="text-align: right;">.05</td>
-<td style="text-align: right;">.13</td>
-<td style="text-align: right;">.17</td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Δ<em>R</em>²</td>
-<td style="text-align: right;">.05</td>
-<td style="text-align: right;">.07</td>
-<td style="text-align: right;">.05</td>
-<td style="text-align: right;"></td>
-</tr>
-<tr class="even">
-<td style="text-align: left;"><em>F</em> for Δ<em>R</em>²</td>
-<td style="text-align: right;">6.37***</td>
-<td style="text-align: right;">9.63***</td>
-<td style="text-align: right;">25.10***</td>
-<td style="text-align: right;"></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<p><em>Note.</em> <em>N</em> = 463 courses taught by 94 instructors. <em>F</em> for Δ<em>R</em>² has 4 and 458, 4 and 454, and 1 and 453 degrees of freedom in Steps 1 to 3. Ordinary standard errors; with standard errors clustered by instructor, beauty remains significant (<em>p</em> = .001), while minority, non-native English and class size do not (<em>p</em> = .072 or above). * <em>p</em> &lt; .05. ** <em>p</em> &lt; .01. *** <em>p</em> &lt; .001.</p>
-<p><strong>Points to remember:</strong></p>
-<ul>
-<li>Give the <strong>order of the blocks and the reason</strong> for it, decided before the analysis.</li>
-<li>Report R² for every step, and for every block <span class="math inline">\(\Delta R^2\)</span> with its F-change, degrees of freedom and <em>p</em>; an effect size such as <span class="math inline">\(f^2\)</span> for the step of interest helps.</li>
-<li>Say which <em>F</em> you report when you use <code>anova()</code> with more than two models (section 4).</li>
-<li>Report the coefficients of the final model (and, if useful, of every step, as in Table 1), with <em>b</em>, <em>SE</em> and, for continuous predictors, β.</li>
-<li>Say how you handled any dependence in the data, such as several observations per person or group.</li>
-<li>Cite R and the packages; <code>citation()</code> and <code>citation("sandwich")</code> in R give the exact references.</li>
-</ul>
-<hr>
-</section>
-<section id="summary" class="level2">
-<h2 class="anchored" data-anchor-id="summary">10. Summary</h2>
-<table class="caption-top table">
-<colgroup>
-<col style="width: 50%">
-<col style="width: 50%">
-</colgroup>
-<tbody>
-<tr class="odd">
-<td><strong>What it answers</strong></td>
-<td>Does a predictor (or block) explain variance <strong>over and above</strong> others: incremental validity</td>
-</tr>
-<tr class="even">
-<td><strong>How</strong></td>
-<td>Enter blocks in an order fixed in advance by theory; test each step with ΔR² and its F-change</td>
-</tr>
-<tr class="odd">
-<td><strong>ΔR²</strong></td>
-<td><span class="math inline">\(R^2_2 - R^2_1\)</span>; for a single predictor, its squared semipartial correlation</td>
-</tr>
-<tr class="even">
-<td><strong>F-change</strong></td>
-<td><span class="math inline">\(F = \dfrac{\Delta R^2 / \Delta k}{(1 - R^2_2) / (n - k_2 - 1)}\)</span>; in R, <code>anova(m1, m2)</code> for each pair</td>
-</tr>
-<tr class="odd">
-<td><strong>Effect size</strong></td>
-<td><span class="math inline">\(f^2 = \Delta R^2 / (1 - R^2_2)\)</span>: .02 small, .15 medium, .35 large</td>
-</tr>
-<tr class="even">
-<td><strong>The order matters</strong></td>
-<td>Shared variance goes to the block that enters first; suppression can make a later predictor explain more. Put the predictor of interest last</td>
-</tr>
-<tr class="odd">
-<td><strong>Not stepwise</strong></td>
-<td>You choose the order, not the <em>p</em> values</td>
-</tr>
-<tr class="even">
-<td><strong>Same cases</strong></td>
-<td>Every model must use the same rows: remove missing values first</td>
-</tr>
-<tr class="odd">
-<td><strong>Dependence</strong></td>
-<td>Several observations per person or group: cluster-robust SEs (<code>sandwich::vcovCL</code>) or a multilevel model</td>
-</tr>
-<tr class="even">
-<td><strong>Here</strong></td>
-<td>Beauty added 4.6% of explained variance after eight other predictors; one <em>SD</em> of beauty ≈ 0.13 evaluation points</td>
-</tr>
-</tbody>
-</table>
-<hr>
-</section>
-<section id="references" class="level2">
-<h2 class="anchored" data-anchor-id="references">References</h2>
-<p>Cohen, J. (1988). <em>Statistical power analysis for the behavioral sciences</em> (2nd ed.). Lawrence Erlbaum.</p>
-<p>Cohen, J., Cohen, P., West, S. G., &amp; Aiken, L. S. (2003). <em>Applied multiple regression/correlation analysis for the behavioral sciences</em> (3rd ed.). Lawrence Erlbaum.</p>
-<p>Fox, J., &amp; Weisberg, S. (2019). <em>An R companion to applied regression</em> (3rd ed.). Sage.</p>
-<p>Hamermesh, D. S., &amp; Parker, A. (2005). Beauty in the classroom: Instructors’ pulchritude and putative pedagogical productivity. <em>Economics of Education Review</em>, <em>24</em>(4), 369–376.</p>
-<p>Kleiber, C., &amp; Zeileis, A. (2008). <em>Applied econometrics with R</em>. Springer.</p>
-<p>Zeileis, A., Köll, S., &amp; Graham, N. (2020). Various versatile variances: An object-oriented implementation of clustered covariances in R. <em>Journal of Statistical Software</em>, <em>95</em>(1), 1–36.</p>
-<!-- -->
-</section>
-<!-- see-also: written by .github/scripts/add_see_also.py -->
-<section id="see-also" class="level2">
-<h2 class="anchored" data-anchor-id="see-also">See also</h2>
-<ul>
-<li><a href="https://sedzinfo.github.io/rwf/">rwf</a>: the R package behind <code>report_regression()</code> on this page</li>
-</ul>
-</section>
-<!-- /see-also -->
-<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_HIERARCHICAL_REGRESSION.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
     </item>
   </channel>
 </rss>
