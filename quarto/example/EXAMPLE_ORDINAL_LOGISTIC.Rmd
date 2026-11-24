@@ -14,7 +14,7 @@ knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
 
 ## The question: four answers in order
 
-Since 1972 the General Social Survey (GSS) has asked Americans with a job: *"On the whole, how satisfied are you with the work you do — would you say you are very satisfied, moderately satisfied, a little dissatisfied, or very dissatisfied?"* In 2022 it also asked them about the job itself: are they free to decide how to do their work, are they treated with respect, is the job secure, how often is it stressful, how often do they work from home?
+Since 1972 the General Social Survey (GSS) has asked Americans: *"On the whole, how satisfied are you with the work you do — would you say you are very satisfied, moderately satisfied, a little dissatisfied, or very dissatisfied?"* In 2022 it also asked them about the job itself: are they free to decide how to do their work, are they treated with respect, is the job secure, how often is it stressful, how often do they work from home?
 
 This page asks: **which of these go with being more satisfied with one's job?** Does working from home make people happier with their work, or is it something else?
 
@@ -50,7 +50,7 @@ f2   <- function(x) formatC(x, format = "f", digits = 2)
 nz   <- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
-num  <- function(x) format(x, big.mark = ",")
+num  <- function(x) trimws(format(x, big.mark = ","))
 ```
 
 ---
@@ -156,7 +156,7 @@ observed <- do.call(rbind, lapply(names(answers), function(v) {
   answer <- factor(answers[[v]][as.integer(d[[v]])], levels = answers[[v]])
   shares <- as.data.frame(prop.table(table(answer, satisfaction = d$satisfaction), 1), responseName = "share")
   size   <- table(answer)
-  # "Autonomy: Very true (1,084)"; the question keeps the labels of different panels apart
+  # "Autonomy: Very true (1,065)"; the question keeps the labels of different panels apart
   labels <- paste0(questions[[v]], ": ", names(size), " (", num(as.vector(size)), ")")
   shares$answer   <- factor(labels[as.integer(shares$answer)], levels = rev(labels))
   shares$question <- factor(questions[[v]], levels = questions)
@@ -354,7 +354,7 @@ person <- c("Disagrees that they are treated with respect", "Strongly agrees tha
 centre <- eta + b[["respect"]] * (c(2, 4) - 3)        # eta of each: the typical worker has respect = 3
 probs2 <- predict(fit, newdata = two, type = "probs")
 
-grid   <- seq(-1, 11, by = 0.01)
+grid   <- seq(-2.5, 11, by = 0.01)
 curves <- do.call(rbind, lapply(1:2, function(k)
   data.frame(person = person[k], y = grid, density = dlogis(grid, centre[k]),
              answer = cut(grid, c(-Inf, theta, Inf), labels = satisfaction))))
@@ -368,12 +368,15 @@ labels <- data.frame(person = factor(rep(person, each = 4), levels = person),
 ggplot(curves, aes(y, density)) +
   geom_area(aes(fill = answer, group = answer), position = "identity") +
   geom_line(linewidth = 0.4, colour = "grey20") +
-  geom_vline(xintercept = theta, linetype = "dashed", colour = "grey40") +
-  geom_vline(data = data.frame(person = factor(person, levels = person), centre = centre),
-             aes(xintercept = centre), colour = "grey20") +
+  # the thresholds stop below their names, the centre at the top of the curve
+  geom_segment(data = data.frame(x = theta), aes(x = x, xend = x, y = 0, yend = 0.31),
+               inherit.aes = FALSE, linetype = "dashed", colour = "grey40") +
+  geom_segment(data = data.frame(person = factor(person, levels = person), x = centre),
+               aes(x = x, xend = x, y = 0, yend = dlogis(0)), inherit.aes = FALSE, colour = "grey20") +
   geom_text(data = labels, aes(y, 0.29, label = pct(share)), size = 3.2, colour = "grey15") +
-  annotate("text", x = theta, y = 0.33, label = paste0("theta[", 1:3, "]"), parse = TRUE,
-           size = 3.4, colour = "grey30") +
+  geom_text(data = data.frame(person = factor(rep(person, each = 3), levels = person), y = rep(theta, 2),
+                              label = rep(paste0("theta[", 1:3, "]"), 2)),
+            aes(y, 0.33, label = label), parse = TRUE, size = 3.4, colour = "grey30") +
   facet_wrap(~ person, ncol = 1) +
   scale_fill_manual(values = colours) +
   scale_y_continuous(limits = c(0, 0.345), expand = c(0, 0)) +
@@ -467,27 +470,29 @@ c(model = accuracy, most_common_answer = base_rate)
 The model gives each predictor **one** slope for all three splits. Does it need three? A visual check first: fit a separate logistic regression at each split and compare the slopes.
 
 ```{r splits, fig.height = 5.5}
-split_name <- c("1: very dissatisfied | higher", "2: dissatisfied | satisfied", "3: very satisfied | lower")
 splits <- do.call(rbind, lapply(1:3, function(j) {
   dj <- transform(d, higher = as.integer(satisfaction) > j)   # TRUE above split j
   m  <- glm(update(formula(fit), higher ~ .), family = binomial, data = dj)
   data.frame(split = j, term = names(coef(m))[-1], b = coef(m)[-1], se = sqrt(diag(vcov(m)))[-1])
 }))
-splits$term   <- factor(terms[splits$term], levels = terms)
-common        <- data.frame(term = factor(terms, levels = terms), b = b[names(terms)])
+short <- c(autonomy = "Autonomy", respect = "Respect", security = "Job security", stress = "Stress",
+           "homeSome days" = "Home: some days", homeMainly = "Home: mainly",
+           self_employedYes = "Self-employed", age10 = "Age (10 years)")
+splits$term <- factor(short[splits$term], levels = short)
+common      <- data.frame(term = factor(short, levels = short), b = b[names(short)])
 
 ggplot(splits, aes(split, b)) +
   geom_hline(yintercept = 0, colour = "grey75") +
   geom_hline(data = common, aes(yintercept = b), colour = "#1c5cab", linetype = "dashed") +
   geom_errorbar(aes(ymin = b - 1.96 * se, ymax = b + 1.96 * se), width = 0.15, colour = "grey30") +
   geom_point(size = 2.2, colour = "grey15") +
-  facet_wrap(~ term, ncol = 4, scales = "free_y", labeller = label_wrap_gen(22)) +
+  facet_wrap(~ term, ncol = 4, scales = "free_y") +
   scale_x_continuous(breaks = 1:3, limits = c(0.6, 3.4)) +
-  labs(title = "The slope of each predictor at each split, from three separate logistic regressions",
-       subtitle = "Points: the slope with its 95% CI. Dashed line: the one slope of the ordinal model.\nSplits: 1 very dissatisfied | the rest, 2 dissatisfied | satisfied, 3 very satisfied | the rest",
+  labs(title = "The slope of each predictor at each split",
+       subtitle = "Points: the slope from a separate logistic regression, with its 95% CI.\nDashed line: the one slope of the ordinal model.\nSplits: 1 very dissatisfied | the rest, 2 dissatisfied | satisfied, 3 very satisfied | the rest",
        x = "split", y = "slope (log odds of a higher answer)") +
   theme_bw()
-security_splits <- splits$b[splits$term == terms[["security"]]]
+security_splits <- splits$b[splits$term == short[["security"]]]
 ```
 
 If the proportional odds assumption holds, the three points of each panel scatter around the dashed line, within their error bars. Most do. The clearest exception is **job security**: its slope grows from `r f2(security_splits[1])` at the first split to `r f2(security_splits[3])` at the third. Good job security seems to separate the very satisfied from the moderately satisfied more than it protects against being very dissatisfied. The confidence intervals are wide at the first split, though: only `r num(sum(d$satisfaction == "Very dissatisfied"))` people are very dissatisfied.
@@ -495,7 +500,8 @@ If the proportional odds assumption holds, the three points of each panel scatte
 The formal test: fit the same model with `clm()` from the package `ordinal`, which can relax the assumption one predictor at a time. `nominal_test()` does that for each predictor and compares the two models with a likelihood-ratio test:
 
 ```{r nominal_test}
-clm_fit <- clm(formula(fit), data = d)   # the same model as polr(): the same estimates
+# the same model as polr(), with the same estimates
+clm_fit <- clm(satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10, data = d)
 nominal <- nominal_test(clm_fit)
 nominal
 ```
@@ -555,7 +561,7 @@ ci_text <- function(t) paste0("95% CI [", f2(ci[t, 1]), ", ", f2(ci[t, 2]), "]")
 
 **Results:**
 
-> The predictors improved the fit over a thresholds-only model, χ²(`r lr_df`) = `r f2(lr)`, *p* `r pval(lr_p)`, McFadden's *R*² = `r nz(mcfadden)`, and no predictor departed from the proportional odds assumption (all *p* ≥ `r nz(min(nominal$"Pr(>Chi)", na.rm = TRUE))`). Holding the other predictors constant, respondents who felt more respected at work were more satisfied with their job, *OR* = `r f2(or[["respect"]])`, `r ci_text("respect")`, as were those with more autonomy, *OR* = `r f2(or[["autonomy"]])`, `r ci_text("autonomy")`, and better job security, *OR* = `r f2(or[["security"]])`, `r ci_text("security")`. More frequent stress went with lower satisfaction, *OR* = `r f2(or[["stress"]])`, `r ci_text("stress")`. Self-employed and older respondents were more satisfied (Table 1). How often respondents worked from home was not related to job satisfaction once the other predictors were held constant, χ²(`r tests["home", "Df"]`) = `r f2(tests["home", "LRT"])`, *p* `r pval(tests["home", "Pr(>Chi)"])`.
+> The predictors improved the fit over a thresholds-only model, χ²(`r lr_df`) = `r f2(lr)`, *p* `r pval(lr_p)`, McFadden's *R*² = `r nz(mcfadden)`, and no predictor departed from the proportional odds assumption (smallest *p* = `r nz(min(nominal$"Pr(>Chi)", na.rm = TRUE), 3)`). Holding the other predictors constant, respondents who felt more respected at work were more satisfied with their job, *OR* = `r f2(or[["respect"]])`, `r ci_text("respect")`, as were those with more autonomy, *OR* = `r f2(or[["autonomy"]])`, `r ci_text("autonomy")`, and better job security, *OR* = `r f2(or[["security"]])`, `r ci_text("security")`. More frequent stress went with lower satisfaction, *OR* = `r f2(or[["stress"]])`, `r ci_text("stress")`. Self-employed and older respondents were more satisfied (Table 1). How often respondents worked from home was not related to job satisfaction once the other predictors were held constant, χ²(`r tests["home", "Df"]`) = `r f2(tests["home", "LRT"])`, *p* `r pval(tests["home", "Pr(>Chi)"])`.
 
 **Table 1**
 
