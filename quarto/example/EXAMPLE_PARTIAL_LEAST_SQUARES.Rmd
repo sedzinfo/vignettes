@@ -1,0 +1,479 @@
+---
+title: "Partial Least Squares: How Fat Is This Meat?"
+description: "Partial least squares regression (PLS) in R, by hand and with pls::plsr(), on the Tecator data: predicting the fat content of meat from a near-infrared spectrum of 100 wavelengths. Why least squares overfits, weights, scores and loadings, PLS against principal components regression, grouped cross-validation when samples are measured twice, preprocessing of spectra, a test set, variable importance, several outcomes at once (PLS2), the failure of extrapolation, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: reading fat with light
+
+How much fat is in this minced meat? The chemical analysis takes hours and destroys the sample. Light takes seconds. Shine near-infrared light of 100 different wavelengths through the meat, and measure how much of each is absorbed. Water, fat and protein absorb different wavelengths, so the **spectrum** contains the answer. But not at any single wavelength: everything overlaps.
+
+So we need a regression of the fat content on 100 predictors, and it has every problem at once:
+
+- 100 predictors for 172 samples;
+- neighbouring wavelengths that correlate above .99;
+- what varies most in the spectra (how tightly the meat is packed, how it scatters the light) has little to do with fat.
+
+The last point is the one that hurts [principal components regression](EXAMPLE_PRINCIPAL_COMPONENTS_REGRESSION.Rmd), which picks its components by variance and does not look at the outcome. **Partial least squares** (PLS) looks at it. It builds components that vary **and** go with the outcome. It is the standard method of chemistry for this problem, and it is used wherever there are many correlated predictors.
+
+```{r packages}
+library(pls)        # plsr(), pcr()
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+rmse <- function(a, b) sqrt(mean((a - b)^2))
+```
+
+---
+
+## 1. The data
+
+The Tecator company recorded the spectra of 240 samples of finely chopped pure meat with its *Infratec Food and Feed Analyzer*, and released them (Borggaard & Thodberg, 1992). OpenML serves the file as CSV:
+
+```{r download}
+raw  <- read.csv("https://www.openml.org/data/get_csv/52617/tecator.arff")
+meat <- data.frame(water = raw$moisture, fat = raw$fat, protein = raw$protein)      # percent, by chemical analysis
+meat$nir <- as.matrix(raw[, 1:100])                                                 # absorbance at 100 wavelengths
+colnames(meat$nir) <- NULL
+wavelength <- seq(850, 1050, length.out = 100)                                      # nanometres
+meat$set <- rep(c("train", "test", "more fat", "more protein"), c(172, 43, 8, 17))  # the order of the file
+table(meat$set)
+round(sapply(split(meat$fat, meat$set), range), 1)
+```
+
+Absorbance is $-\log_{10}$ of the share of light that comes through. The file is in a fixed order: 172 samples for training, 43 for testing, and two small sets with **more** fat or protein than any training sample, to test what happens outside the range. `meat$nir` is a matrix stored as one column of the data frame, which the functions of `pls` like.
+
+### A trap in the data
+
+```{r twins}
+content <- paste(meat$water, meat$fat, meat$protein)
+train <- meat$set == "train"
+test  <- meat$set == "test"
+c(different_contents = length(unique(content)), samples = nrow(meat),
+  test_samples_with_a_twin_in_training = sum(content[test] %in% content[train]))
+```
+
+Only `r length(unique(content))` different combinations of water, fat and protein occur in `r nrow(meat)` samples. Two samples with the same three numbers to one decimal are almost certainly the **same meat, measured twice**. And `r sum(content[test] %in% content[train])` of the 43 test samples have such a twin in the training set. If we ignored it, the test would be too easy. So we do two things: in the cross-validation, twins always stay **together**, and the test error is reported also for the test samples **without** a twin.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+shown <- which(train)[order(meat$fat[train])][round(seq(1, sum(train), length.out = 60))]
+spectra <- data.frame(wavelength = rep(wavelength, each = length(shown)), absorbance = as.vector(meat$nir[shown, ]),
+                      sample = rep(shown, 100), fat = rep(meat$fat[shown], 100))
+ggplot(spectra, aes(wavelength, absorbance, group = sample, colour = fat)) +
+  geom_line(linewidth = 0.4) +
+  scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
+  labs(title = "Spectra of 60 training samples", x = "wavelength (nm)", y = "absorbance") +
+  theme_bw()
+
+r_each <- drop(cor(meat$nir[train, ], meat$fat[train]))
+R <- cor(meat$nir[train, ])
+c(lowest_correlation_between_wavelengths = min(R), best_single_correlation_with_fat = r_each[which.max(abs(r_each))])
+```
+
+The curves differ mostly in their **height**: some samples absorb more of everything. That is a physical effect of the sample, and it has little to do with the colour, the fat content. The **shape** changes with fat, especially around 930 nm, where fat has a bump. All the wavelengths correlate at more than `r f2(min(R))` with each other.
+
+Can we use all 100 in an ordinary regression?
+
+```{r ols}
+fit_ols <- lm(fat ~ nir, data = meat, subset = train)
+c(error_in_training = rmse(fitted(fit_ols), meat$fat[train]),
+  error_in_test     = rmse(predict(fit_ols, meat[test, ]), meat$fat[test]))
+```
+
+Least squares misses the training samples by `r f2(rmse(fitted(fit_ols), meat$fat[train]))` percentage points and the test samples by `r f2(rmse(predict(fit_ols, meat[test, ]), meat$fat[test]))`. It learned the noise.
+
+---
+
+## 3. The method step by step, with formulas
+
+### Step 1: one component
+
+We look for a weighted sum of the (centred) predictors, $t = Xw$, with weights of length 1. Principal components maximises the variance of $t$. PLS maximises its **covariance with the outcome**:
+
+$$w = \arg\max_{\lVert w \rVert = 1} \text{Cov}(Xw,\, y)^2 = \arg\max_{\lVert w \rVert = 1} \text{Var}(Xw)\,\text{Cor}(Xw, y)^2\;\text{Var}(y)$$
+
+The component must vary **and** correlate with $y$. The solution is simple: the weight of each wavelength is proportional to its covariance with $y$.
+
+$$w = \frac{X^\top y}{\lVert X^\top y \rVert}$$
+
+### Step 2: use it, and take it away
+
+Regress $y$ on the score $t$ (coefficient $q$), and every column of $X$ on the score $t$ (coefficients $p$, the **loadings**). Subtract what has been explained, from both:
+
+$$q = \frac{y^\top t}{t^\top t}, \quad p = \frac{X^\top t}{t^\top t}, \qquad X \leftarrow X - t\,p^\top, \quad y \leftarrow y - q\,t$$
+
+This is called **deflation**. What is left of $X$ is uncorrelated with $t$.
+
+### Step 3: repeat
+
+Find the next weights on what is left, and so on, $a$ times. At the end, collect the weights in $W$, the loadings in $P$ and the coefficients in $q$. The result is again a linear formula for the original predictors:
+
+$$\hat\beta_{PLS} = W\,(P^\top W)^{-1} q$$
+
+```{r by_hand}
+pls_by_hand <- function(X, y, a) {
+  E <- sweep(X, 2, colMeans(X)); f <- y - mean(y)
+  W <- P <- matrix(0, ncol(X), a); q <- numeric(a)
+  for (k in 1:a) {
+    w <- crossprod(E, f); w <- w / sqrt(sum(w^2))      # step 1: weights
+    t <- E %*% w                                       #         scores
+    q[k] <- sum(f * t) / sum(t^2)                      # step 2: regress y and X on the scores ...
+    p <- crossprod(E, t) / sum(t^2)
+    E <- E - t %*% t(p); f <- f - t * q[k]             #         ... and deflate
+    W[, k] <- w; P[, k] <- p
+  }
+  beta <- drop(W %*% solve(crossprod(P, W), q))        # step 3
+  list(beta = beta, intercept = mean(y) - sum(colMeans(X) * beta))
+}
+by_hand <- pls_by_hand(meat$nir[train, ], meat$fat[train], 5)
+package <- plsr(fat ~ nir, ncomp = 5, data = meat[train, ], method = "oscorespls")
+max(abs(by_hand$beta - drop(coef(package, ncomp = 5)))) / max(abs(by_hand$beta))
+```
+
+Our 15 lines give the coefficients of `plsr()`.
+
+### Step 4: how many components?
+
+With few components PLS is stiff; with as many as there are predictors it **is** least squares. The number is chosen by cross-validation.
+
+---
+
+## 4. Choosing the number of components
+
+The folds are made of **meats**, not of samples, so that twins are never on both sides. We repeat the random division 20 times and average:
+
+```{r grouped_cv}
+group <- match(content[train], unique(content[train]))            # one number for each different meat
+grouped_cv <- function(Z, y, ncomp, fitter = plsr, reps = 20) {
+  set.seed(31)
+  rowMeans(replicate(reps, {
+    fold <- sample(rep(1:10, length.out = max(group)))[group]
+    err  <- matrix(NA, length(y), ncomp)
+    for (k in 1:10) {
+      d <- data.frame(y = y[fold != k]); d$Z <- Z[fold != k, ]
+      m <- fitter(y ~ Z, ncomp = ncomp, data = d)
+      err[fold == k, ] <- drop(predict(m, newdata = list(Z = Z[fold == k, , drop = FALSE]))) - y[fold == k]
+    }
+    sqrt(colMeans(err^2))
+  }))
+}
+fat_train <- meat$fat[train]
+cv_pls <- grouped_cv(meat$nir[train, ], fat_train, 25, plsr)
+cv_pcr <- grouped_cv(meat$nir[train, ], fat_train, 25, pcr)
+c(mean_only = sd(fat_train), PLS_best = min(cv_pls), at = which.min(cv_pls), PCR_best = min(cv_pcr), at = which.min(cv_pcr))
+```
+
+```{r cv_chart}
+cv_data <- data.frame(a = rep(1:25, 2), rmse = c(cv_pls, cv_pcr), method = rep(c("PLS", "PCR"), each = 25))
+ggplot(cv_data, aes(a, rmse, colour = method)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 1.8) +
+  scale_colour_manual(values = c(PLS = "#2a78d6", PCR = "#eb6834"), name = NULL) +
+  coord_cartesian(ylim = c(0, 13)) +
+  labs(title = "Cross-validated error, with twins kept together",
+       x = "number of components", y = "root mean squared error (% fat)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+- The first components do almost nothing: the first direction of the spectra is their height, which is not about fat. PLS cannot avoid it either, because it has so much variance.
+- PLS gets there **faster**: with 3 components its error is `r f2(cv_pls[3])`, that of PCR `r f2(cv_pcr[3])`.
+- At their best, the two are close: `r f2(min(cv_pls))` with `r which.min(cv_pls)` components for PLS, `r f2(min(cv_pcr))` with `r which.min(cv_pcr)` for PCR. This is the usual result (Frank & Friedman, 1993): PLS needs fewer components, and predicts about equally well.
+
+### The number of components is not the number of parameters
+
+A PLS component was fitted to $y$ twice: once when its weights were chosen, and once in the regression. So PLS with `r which.min(cv_pls)` components is more flexible than a regression with `r which.min(cv_pls)` predictors. The curve above shows it: after its minimum, the error of PLS rises faster than that of PCR.
+
+---
+
+## 5. Preprocessing: remove what is not about fat
+
+The height of a spectrum is a nuisance that we understand: it comes from the path of the light, not from the chemistry. Chemists remove it before the regression. The **standard normal variate** transformation (SNV; Barnes et al., 1989) standardises each spectrum **by itself** (subtract its mean, divide by its standard deviation). Differences between neighbouring wavelengths (**derivatives**) remove slopes and bends of the background:
+
+$$x_{ij}^{SNV} = \frac{x_{ij} - \bar x_i}{s_i}$$
+
+```{r preprocessing}
+snv <- function(Z) t(scale(t(Z)))                                  # each row: mean 0, SD 1
+d2  <- function(Z) t(diff(t(Z), differences = 2))                  # second differences along the spectrum
+versions <- list(raw = meat$nir, SNV = snv(meat$nir), `SNV + 2nd derivative` = d2(snv(meat$nir)))
+cv_all <- sapply(versions, function(Z) grouped_cv(Z[train, ], fat_train, 16, plsr))
+round(t(cv_all[c(1:5, 8, 10, 12, 14, 16), ]), 2)
+best_a <- apply(cv_all, 2, which.min)
+rbind(components = best_a, error = apply(cv_all, 2, min))
+```
+
+```{r snv_chart}
+snv_long <- data.frame(wavelength = rep(wavelength, each = length(shown)), value = as.vector(versions$SNV[shown, ]),
+                       sample = rep(shown, 100), fat = rep(meat$fat[shown], 100))
+ggplot(snv_long, aes(wavelength, value, group = sample, colour = fat)) +
+  geom_line(linewidth = 0.4) +
+  scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
+  labs(title = "The same 60 spectra after SNV", x = "wavelength (nm)", y = "standardised absorbance") +
+  theme_bw()
+```
+
+Now the colours are sorted. After SNV the fat can almost be read with the naked eye around 930 nm. The errors follow:
+
+- With the raw spectra the best error is `r f2(min(cv_all[, "raw"]))`, with `r best_a[["raw"]]` components.
+- After SNV, `r f2(cv_all[3, "SNV"])` with **three** components.
+- After SNV and second differences, `r f2(cv_all[1, "SNV + 2nd derivative"])` with **one**.
+
+One idea from physics was worth more than ten components. The model with fewer components is also easier to explain and less likely to fail on new samples.
+
+---
+
+## 6. The test set
+
+We compare the candidates on the 43 test samples, and on those of them that have no twin in the training set. Nothing was chosen with these samples.
+
+```{r test_set}
+no_twin <- test & !(content %in% content[train])
+judge <- function(Z, a, fitter = plsr) {
+  d <- data.frame(y = fat_train); d$Z <- Z[train, ]
+  m <- fitter(y ~ Z, ncomp = a, data = d)
+  p <- drop(predict(m, newdata = list(Z = Z), ncomp = a))
+  c(components = a, cv = NA, test = rmse(p[test], meat$fat[test]), test_without_twins = rmse(p[no_twin], meat$fat[no_twin]))
+}
+results <- rbind(`PCR, raw`                  = judge(meat$nir, which.min(cv_pcr), pcr),
+                 `PLS, raw`                  = judge(meat$nir, best_a[["raw"]]),
+                 `PLS, SNV`                  = judge(versions$SNV, best_a[["SNV"]]),
+                 `PLS, SNV, 3 components`    = judge(versions$SNV, 3),
+                 `PLS, SNV + 2nd derivative` = judge(versions[[3]], best_a[[3]]),
+                 `PLS, SNV + 2nd derivative, 1 component` = judge(versions[[3]], 1))
+results[, "cv"] <- c(min(cv_pcr), min(cv_all[, "raw"]), min(cv_all[, "SNV"]), cv_all[3, "SNV"], min(cv_all[, 3]), cv_all[1, 3])
+results <- rbind(results, `Least squares, raw` = c(100, NA, rmse(predict(fit_ols, meat[test, ]), meat$fat[test]),
+                                                   rmse(predict(fit_ols, meat[no_twin, ]), meat$fat[no_twin])))
+round(results, 2)
+c(test_samples = sum(test), without_twins = sum(no_twin))
+```
+
+All the PLS models predict the fat content to within about 2 percentage points, where the fat content itself ranges from `r f1(min(meat$fat[test]))` to `r f1(max(meat$fat[test]))`%. The difference between the models is small next to the uncertainty of an error that is computed from `r sum(no_twin)` samples. For the rest of the page we take **SNV with 3 components**: nearly the best, and small.
+
+```{r test_chart, fig.height = 5.5}
+small   <- data.frame(y = fat_train); small$Z <- versions$SNV[train, ]
+model   <- plsr(y ~ Z, ncomp = 3, data = small)
+meat$predicted <- drop(predict(model, newdata = list(Z = versions$SNV), ncomp = 3))
+
+ggplot(subset(meat, set %in% c("train", "test")), aes(predicted, fat, colour = set)) +
+  geom_abline(colour = "grey60") +
+  geom_point(alpha = 0.7, size = 1.8) +
+  scale_colour_manual(values = c(train = "grey60", test = "#eb6834"), name = NULL) +
+  labs(title = "Measured against predicted fat: SNV, 3 components", x = "predicted (%)", y = "measured (%)") +
+  theme_bw() + theme(legend.position = "bottom")
+curvature <- summary(lm(fat - predicted ~ predicted + I(predicted^2), data = meat, subset = train))$coefficients[3, ]
+curvature
+```
+
+The points follow the line, with a slight **bend**: the model predicts too little in the middle and too much at the ends (the quadratic term of the residuals has *t* = `r f1(curvature[["t value"]])`). The relation between absorbance and concentration is not exactly linear, and a linear method can only approximate it. This is what nonlinear methods, such as neural networks, gain on these data (Borggaard & Thodberg, 1992).
+
+---
+
+## 7. Interpreting the model
+
+### Scores: a map of the samples
+
+```{r scores}
+scores_data <- data.frame(unclass(scores(model))[, 1:3], fat = fat_train)
+names(scores_data)[1:3] <- c("t1", "t2", "t3")
+ggplot(scores_data, aes(t1, t2, colour = fat)) +
+  geom_point(size = 2) +
+  scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
+  labs(title = "The training samples on the first two components", x = "component 1", y = "component 2") +
+  theme_bw()
+round(explvar(model), 1)             # % of the variance of the predictors, by component
+round(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val), 1)     # % of the variance of fat, cumulative
+```
+
+The first component has `r f1(explvar(model)[[1]])`% of the variance of the transformed spectra, and the three together explain `r f1(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val)[3])`% of the variance of fat.
+
+### Coefficients and importance: which wavelengths?
+
+The coefficients say how the prediction changes with each wavelength. Because the wavelengths are so strongly related, single coefficients mean little, but their **pattern** can be read. The **VIP** (variable importance in projection) summarises how much each wavelength contributes to the weights, counted by how much of $y$ each component explains. Its mean square is 1, so values above 1 are "above average":
+
+$$\text{VIP}_j = \sqrt{ m \sum_{k=1}^{a} \text{SS}_k\, w_{jk}^2 \Big/ \sum_{k=1}^{a} \text{SS}_k }, \qquad \text{SS}_k = q_k^2\, t_k^\top t_k$$
+
+```{r vip}
+vip <- function(m, a) {
+  w  <- apply(unclass(m$loading.weights)[, 1:a, drop = FALSE], 2, function(v) v / sqrt(sum(v^2)))
+  ss <- sapply(1:a, function(k) m$Yloadings[k]^2 * sum(m$scores[, k]^2))
+  sqrt(nrow(w) * drop(w^2 %*% ss) / sum(ss))
+}
+pattern <- data.frame(wavelength = rep(wavelength, 2),
+                      value = c(drop(coef(model, ncomp = 3)), vip(model, 3)),
+                      what = rep(c("coefficient", "VIP"), each = 100))
+ggplot(pattern, aes(wavelength, value)) +
+  geom_hline(data = data.frame(what = c("coefficient", "VIP"), y = c(0, 1)), aes(yintercept = y), colour = "grey60") +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  facet_wrap(~ what, ncol = 1, scales = "free_y") +
+  labs(title = "Coefficients and importance of the wavelengths", x = "wavelength (nm)", y = NULL) +
+  theme_bw()
+top <- wavelength[which.max(vip(model, 3))]
+top_coef <- wavelength[which.max(drop(coef(model, ncomp = 3)))]
+c(largest_VIP_at = top, largest_coefficient_at = top_coef)
+```
+
+The largest positive coefficients are around `r round(top_coef)` nm, in the region where fat absorbs. It is a good sign when a model that was never told any chemistry finds it.
+
+### How certain are the coefficients?
+
+There is no formula. A **jackknife** or a bootstrap gives standard errors. We resample the **meats**, not the samples, so the twins stay together:
+
+```{r bootstrap}
+set.seed(32)
+boot <- replicate(500, {
+  pick <- unlist(lapply(sample(max(group), replace = TRUE), function(g) which(group == g)))
+  d <- data.frame(y = fat_train[pick]); d$Z <- versions$SNV[train, ][pick, ]
+  drop(coef(plsr(y ~ Z, ncomp = 3, data = d), ncomp = 3))
+})
+band <- data.frame(wavelength, est = drop(coef(model, ncomp = 3)), low = apply(boot, 1, quantile, 0.025), high = apply(boot, 1, quantile, 0.975))
+ggplot(band, aes(wavelength, est)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_ribbon(aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.25) +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  labs(title = "Coefficients with 95% bootstrap intervals", x = "wavelength (nm)", y = "% fat per unit of standardised absorbance") +
+  theme_bw()
+```
+
+---
+
+## 8. Three outcomes at once: PLS2
+
+PLS can have several outcomes. The weights are then those that maximise the covariance with **all** of them together. Water, fat and protein are strongly related: whatever is not fat is mostly water.
+
+```{r pls2}
+contents <- as.matrix(meat[, c("water", "fat", "protein")])
+round(cor(contents[train, ]), 2)
+many <- data.frame(row.names = seq_len(sum(train))); many$Y <- contents[train, ]; many$Z <- versions$SNV[train, ]
+pls2 <- plsr(Y ~ Z, ncomp = 8, data = many)
+one_by_one <- sapply(1:3, function(j) { d <- data.frame(y = contents[train, j]); d$Z <- versions$SNV[train, ]
+  rmse(drop(predict(plsr(y ~ Z, ncomp = 8, data = d), newdata = list(Z = versions$SNV[no_twin, ]), ncomp = 8)), contents[no_twin, j]) })
+together <- predict(pls2, newdata = list(Z = versions$SNV[no_twin, ]), ncomp = 8)[, , 1]
+compare <- rbind(separate = one_by_one, together = sapply(1:3, function(j) rmse(together[, j], contents[no_twin, j])))
+colnames(compare) <- colnames(contents)
+round(compare, 2)
+```
+
+Together or separately makes little difference here. PLS2 is useful when the outcomes are noisy measurements of a few common things; when they are different things, separate models are better.
+
+---
+
+## 9. The limit: no prediction beyond the training range
+
+The last 25 samples have more fat (up to `r f1(max(meat$fat))`%) or more protein than any training sample:
+
+```{r extrapolation, fig.height = 5}
+outside <- subset(meat, set %in% c("more fat", "more protein"))
+ggplot(outside, aes(predicted, fat, colour = set)) +
+  geom_abline(colour = "grey60") +
+  geom_point(size = 2.4) +
+  geom_vline(xintercept = max(fat_train), linetype = "dashed", colour = "grey50") +
+  scale_colour_manual(values = c(`more fat` = "#eb6834", `more protein` = "#2a78d6"), name = NULL) +
+  labs(title = "Samples outside the range of the training set",
+       subtitle = "Dashed line: the largest fat content in the training set", x = "predicted fat (%)", y = "measured fat (%)") +
+  theme_bw() + theme(legend.position = "bottom")
+out_error <- tapply(seq_len(nrow(outside)), outside$set, function(i) c(rmse = rmse(outside$predicted[i], outside$fat[i]),
+                                                                        bias = mean(outside$predicted[i] - outside$fat[i])))
+do.call(rbind, out_error)
+```
+
+For the fat samples the error is `r f1(out_error[["more fat"]][["rmse"]])` points (bias `r f1(out_error[["more fat"]][["bias"]])`), against about 2 inside the range. The bend of section 6, harmless inside the range, grows outside it. For the samples with more protein the error is `r f1(out_error[["more protein"]][["rmse"]])` points, no more than inside: their **fat** content was in the range. But most of it is a bias of `r f1(out_error[["more protein"]][["bias"]])` points in one direction, because their spectra are not quite of the kind the model knows. A calibration is valid for the samples it was made from.
+
+---
+
+## 10. Things to keep in mind
+
+- **Think about the preprocessing first.** Removing known nuisances helped more than any choice of components. But decide on it with the training data only, inside the cross-validation, if it has settings to choose.
+- **Standardise the columns** when the predictors are in different units (`scale = TRUE`). For spectra, where all the columns are absorbances, it is usually not done: it would give the flat, noisy regions as much weight as the informative ones.
+- **Cross-validate by the unit that is independent**: meats, patients, days, not single measurements.
+- **Report the number of components, and why.** Taking the smallest model whose error is close to the minimum is wiser than taking the minimum.
+- **Do not read single coefficients**, and do not select wavelengths by them without validation.
+- **PLS is linear.** For bends, transform the predictors, add squares, or use a nonlinear method.
+- **Outcomes with two classes**: PLS on a 0/1 outcome (PLS-DA) always separates the classes in the training data when there are many predictors, even if they are random. The score plot of PLS-DA proves nothing without cross-validation.
+- **Not the same** as *PLS path modelling* (PLS-SEM), which estimates networks of composites and has its own rules.
+
+---
+
+## 11. Reporting the results in APA style
+
+A report (APA 7th edition) needs the predictors and their preprocessing, the scaling, the number of components and how it was chosen, the validation scheme, and the error in the units of the outcome. The numbers come from the R objects:
+
+```{r apa_numbers}
+apa_table <- data.frame(
+  Model = rownames(results),
+  a     = ifelse(rownames(results) == "Least squares, raw", "—", results[, "components"]),
+  cv    = ifelse(is.na(results[, "cv"]), "—", f2(results[, "cv"])),
+  test  = f2(results[, "test"]),
+  twin  = f2(results[, "test_without_twins"]))
+r2_test <- 1 - sum((meat$fat[no_twin] - meat$predicted[no_twin])^2) / sum((meat$fat[no_twin] - mean(fat_train))^2)
+```
+
+**Method** (data analysis):
+
+> We predicted the fat content (%) of meat samples from near-infrared absorbance at 100 wavelengths between 850 and 1050 nm (Tecator Infratec Food and Feed Analyzer; Borggaard & Thodberg, 1992) with partial least squares regression. The models were built on `r sum(train)` training samples. Spectra were used raw, after the standard normal variate transformation (SNV; Barnes et al., 1989), and after SNV and second differences; columns were centred and not scaled. Because some samples had identical chemical contents and were probably measured twice, cross-validation (10 folds, repeated 20 times) was done by meat, and the test error is reported also for the `r sum(no_twin)` of `r sum(test)` test samples without a counterpart in the training set. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package pls (Mevik & Wehrens, 2007).
+
+**Results:**
+
+> With raw spectra, the cross-validated error was lowest with `r best_a[["raw"]]` components (RMSE = `r f2(min(cv_all[, "raw"]))` percentage points; Table 1). After SNV, three components reached an RMSE of `r f2(cv_all[3, "SNV"])`. This model explained `r f1(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val)[3])`% of the variance of fat in the training set; in the test samples without a counterpart its RMSE was `r f2(results["PLS, SNV, 3 components", "test_without_twins"])` (*R*² = `r nz(r2_test)`). The largest coefficients were at wavelengths around `r round(top_coef)` nm. For samples with more fat than the training set, the RMSE was `r f1(out_error[["more fat"]][["rmse"]])`.
+
+**Table 1**
+
+*Prediction of the Fat Content of Meat From Near-Infrared Spectra*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Model", "Components", "Cross-validation", "Test set", "Test set without counterparts"),
+             align = "lrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Root mean squared errors in percentage points of fat. *N* = `r sum(train)` training and `r sum(test)` test samples, of which `r sum(no_twin)` without a counterpart.
+
+**Points to remember:**
+
+- Describe the preprocessing exactly, in its order.
+- Say what stayed together in the cross-validation.
+- Give the error in the units of the outcome, on data that chose nothing.
+- Say for which range of samples the model is valid.
+
+---
+
+## 12. Summary
+
+| | |
+|---|---|
+| **When** | Many correlated predictors, perhaps more than rows, and the aim is prediction |
+| **Component** | $t = Xw$ with maximal covariance with $y$; $w \propto X^\top y$ |
+| **Then** | Deflate $X$ and $y$, repeat; $\hat\beta = W(P^\top W)^{-1}q$ |
+| **How (R)** | `pls::plsr(y ~ X, ncomp = , data = , scale = , validation = )` |
+| **Choose** | The number of components, by cross-validation in independent units |
+| **Against PCR** | Fewer components, about the same error |
+| **Interpretation** | Scores (a map of the samples), patterns of coefficients, VIP |
+| **Several outcomes** | `plsr(cbind(y1, y2) ~ X)` (PLS2) |
+| **Limits** | Linear; no extrapolation; in-sample fit means nothing with many predictors |
+| **Related pages** | [Principal components regression](EXAMPLE_PRINCIPAL_COMPONENTS_REGRESSION.Rmd), [regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd), [multivariate regression](EXAMPLE_MULTIVARIATE_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Barnes, R. J., Dhanoa, M. S., & Lister, S. J. (1989). Standard normal variate transformation and de-trending of near-infrared diffuse reflectance spectra. *Applied Spectroscopy*, *43*(5), 772–777. https://doi.org/10.1366/0003702894202201
+
+Borggaard, C., & Thodberg, H. H. (1992). Optimal minimal neural interpretation of spectra. *Analytical Chemistry*, *64*(5), 545–551. https://doi.org/10.1021/ac00029a018
+
+Frank, I. E., & Friedman, J. H. (1993). A statistical view of some chemometrics regression tools. *Technometrics*, *35*(2), 109–135. https://doi.org/10.1080/00401706.1993.10485033
+
+Mevik, B.-H., & Wehrens, R. (2007). The pls package: Principal component and partial least squares regression in R. *Journal of Statistical Software*, *18*(2), 1–23. https://doi.org/10.18637/jss.v018.i02
+
+Wold, S., Sjöström, M., & Eriksson, L. (2001). PLS-regression: A basic tool of chemometrics. *Chemometrics and Intelligent Laboratory Systems*, *58*(2), 109–130. https://doi.org/10.1016/S0169-7439(01)00155-1

@@ -23,7 +23,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 ## Regularized
 - [x] Ridge, lasso, elastic net: EXAMPLE_REGULARIZED_REGRESSION
 - [x] Principal components regression: EXAMPLE_PRINCIPAL_COMPONENTS_REGRESSION
-- [ ] Partial least squares
+- [x] Partial least squares: EXAMPLE_PARTIAL_LEAST_SQUARES
 
 ## Limited outcomes
 - [x] Tobit: EXAMPLE_TOBIT
