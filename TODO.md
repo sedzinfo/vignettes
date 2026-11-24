@@ -35,7 +35,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 ## Generalized linear
 - [x] Logistic: EXAMPLE_GENERALIZED, EXAMPLE_IMBALANCED_LOGISTIC
 - [x] Probit: EXAMPLE_PROBIT
-- [ ] Complementary log-log
+- [x] Complementary log-log: EXAMPLE_COMPLEMENTARY_LOG_LOG
 - [x] Multinomial logistic: EXAMPLE_MULTINOMIAL_LOGISTIC
 - [x] Ordinal logistic: EXAMPLE_ORDINAL_LOGISTIC
 - [x] Poisson: EXAMPLE_GENERALIZED

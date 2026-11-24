@@ -1,0 +1,372 @@
+---
+title: "Complementary Log-Log Regression: At What Rate Do People Catch a Parasite?"
+description: "Complementary log-log regression in R with glm(), on antibodies against Toxoplasma in 12,000 Americans (NHANES 2011-2014): how a yes-or-no outcome hides a rate, the catalytic model with log(age) as an offset, hazard ratios against odds ratios, testing a constant force of infection, age or birth cohort, checking the link, the same link for survival in intervals next to a Cox model, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the CDC each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: a rate, seen through yes and no
+
+*Toxoplasma gondii* is a parasite of cats. People catch it from undercooked meat, unwashed vegetables or cat litter. Most never notice, but the body keeps antibodies **for life**. So a blood test says whether a person has **ever** been infected, not when.
+
+We want the **rate**: of 1,000 people who have not had it, how many catch it in a year? Epidemiologists call it the *force of infection*. Nobody followed these people for decades. All we have is one blood test for each, and their age. But that is enough. The older a person is, the longer the exposure, and the more likely a positive test. How steeply the share of positive tests rises with age tells the rate.
+
+The regression that does this is one with the **complementary log-log** link, the third of the three classic links for a yes-or-no outcome, after the logit and the [probit](EXAMPLE_PROBIT.Rmd). It is the right one when the "yes" means *it has happened at least once*.
+
+```{r packages}
+library(foreign)    # read.xport(): the SAS transport files of the CDC (comes with R)
+library(ggplot2)
+library(survival)   # the Cox model, for section 8 (comes with R)
+
+born_colours <- c(`born in the US` = "#2a78d6", `born elsewhere` = "#eb6834")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+NHANES tested the stored blood of its participants aged 6 and older in 2011–2012 and 2013–2014. The laboratory calls a sample positive from 33 international units per millilitre.
+
+```{r download}
+nhanes <- function(year, file) {
+  path <- tempfile(fileext = ".xpt")
+  download.file(paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/", year, "/DataFiles/", file, ".xpt"), path, mode = "wb", quiet = TRUE)
+  read.xport(path)
+}
+cycle <- function(year, letter) merge(nhanes(year, paste0("SSTOXO_", letter))[, c("SEQN", "SSTOXG")],
+                                      nhanes(year, paste0("DEMO_", letter))[, c("SEQN", "RIDAGEYR", "RIAGENDR", "DMDBORN4", "INDFMPIR")])
+raw <- rbind(cycle(2011, "G"), cycle(2013, "H"))
+tox <- subset(raw, !is.na(SSTOXG) & DMDBORN4 %in% 1:2 & RIDAGEYR < 80)      # 80 means "80 or older": age unknown
+tox <- with(tox, data.frame(positive = as.integer(SSTOXG >= 33), age = RIDAGEYR, male = as.integer(RIAGENDR == 1),
+                            elsewhere = as.integer(DMDBORN4 == 2), income = INDFMPIR))
+nrow(tox)
+c(positive = mean(tox$positive), born_in_US = mean(tox$positive[tox$elsewhere == 0]), born_elsewhere = mean(tox$positive[tox$elsewhere == 1]))
+```
+
+We keep `r num(nrow(tox))` people aged 6 to 79 whose country of birth is known. `r pct(mean(tox$positive))` have antibodies: `r pct(mean(tox$positive[tox$elsewhere == 0]))` of those born in the United States and `r pct(mean(tox$positive[tox$elsewhere == 1]))` of those born elsewhere. `income` is the family income divided by the poverty line. (NHANES is a complex sample with weights. We do not use them: we study the relations in the data, not the share in the US population.)
+
+---
+
+## 2. Look at the data
+
+```{r look}
+tox$band <- cut(tox$age, c(5, 11, 19, 29, 39, 49, 59, 69, 79))
+bands <- aggregate(cbind(positive, age) ~ band + elsewhere, data = tox, FUN = mean)
+bands$n    <- aggregate(positive ~ band + elsewhere, data = tox, FUN = length)$positive
+bands$born <- factor(ifelse(bands$elsewhere == 1, "born elsewhere", "born in the US"), levels = names(born_colours))
+bands$se   <- sqrt(bands$positive * (1 - bands$positive) / bands$n)
+
+ggplot(bands, aes(age, positive, colour = born)) +
+  geom_pointrange(aes(ymin = positive - 1.96 * se, ymax = positive + 1.96 * se)) +
+  geom_line(linewidth = 0.6, alpha = 0.6) +
+  scale_colour_manual(values = born_colours, name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
+  labs(title = "Share of people with antibodies, by age", x = "age (years)", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The share rises with age in both groups. Those born elsewhere are ahead already in childhood: `r pct(bands$positive[bands$elsewhere == 1][1])` at ages 6 to 11, against `r pct(bands$positive[bands$elsewhere == 0][1])`.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a constant rate
+
+Suppose that people catch the parasite at a constant rate $\lambda$ per year. The probability to **escape** for $a$ years is $e^{-\lambda a}$, as for any event that comes at a constant rate. So the probability of a positive test at age $a$ is
+
+$$P(a) = 1 - e^{-\lambda a}$$
+
+This is the **catalytic model** (Muench, 1959; Hens et al., 2010, tell its history). There is no logistic curve anywhere in it.
+
+### Step 2: make it linear
+
+Solve for the rate, and take logarithms:
+
+$$-\log(1 - P) = \lambda a \qquad\Rightarrow\qquad \log\big[-\log(1 - P)\big] = \log\lambda + \log a$$
+
+The left side is the **complementary log-log** function of $P$. The right side is a straight line in $\log a$ with a slope of **exactly 1**. A term with a known coefficient of 1 is called an **offset**.
+
+### Step 3: rates that differ between people
+
+Let the rate depend on predictors, as a product: $\lambda_i = \exp(\beta_0 + \beta_1 x_i)$. Then
+
+$$\text{cloglog}(P_i) = \log a_i + \beta_0 + \beta_1 x_i$$
+
+It is a generalized linear model, and
+
+- $e^{\beta_0}$ is the **rate** per year for $x = 0$;
+- $e^{\beta_1}$ is a **rate ratio** (hazard ratio): by how many times one unit of $x$ multiplies the rate.
+
+This is the great advantage over the logit, whose coefficients are odds ratios with no such meaning.
+
+### Step 4: the shape of the link
+
+The logit and the probit are symmetric: the curve goes to 1 as it leaves 0. The complementary log-log is not. It leaves 0 slowly and reaches 1 fast:
+
+```{r links_chart}
+eta <- seq(-4, 3, by = 0.02)
+shapes <- rbind(data.frame(eta, p = 1 - exp(-exp(eta)), link = "complementary log-log"),
+                data.frame(eta, p = plogis(eta), link = "logit"), data.frame(eta, p = pnorm(eta), link = "probit"))
+ggplot(shapes, aes(eta, p, colour = link)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c(`complementary log-log` = "#2a78d6", logit = "#eb6834", probit = "#1baf7a"), name = NULL) +
+  labs(title = "Three links", x = "linear predictor", y = "probability") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Because of the asymmetry it matters which answer is coded 1. Coding "no antibodies" as 1 would be another model (the log-log link).
+
+### Step 5: maximum likelihood, by hand
+
+```{r by_hand}
+minus_loglik <- function(b) {
+  p <- 1 - exp(-exp(log(tox$age) + b[1] + b[2] * tox$elsewhere))
+  -sum(ifelse(tox$positive == 1, log(p), log(1 - p)))
+}
+hand <- optim(c(-6, 0.5), minus_loglik, method = "BFGS", control = list(reltol = 1e-14))
+fit  <- glm(positive ~ offset(log(age)) + elsewhere, family = binomial("cloglog"), data = tox)
+rbind(by_hand = hand$par, glm = coef(fit))
+```
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+summary(fit)
+rate   <- exp(coef(fit)[["(Intercept)"]]); ratio <- exp(coef(fit)[["elsewhere"]])
+ci_fit <- exp(confint.default(fit))
+1000 * c(rate_US = rate, rate_elsewhere = rate * ratio)
+```
+
+- **`(Intercept)`**: $e^{`r f2(coef(fit)[[1]])`}$ = `r formatC(rate, format = "f", digits = 5)`: people born in the US catch the parasite at a rate of **`r f1(1000 * rate)` per 1,000 people per year**, 95% CI [`r f1(1000 * ci_fit[1, 1])`, `r f1(1000 * ci_fit[1, 2])`].
+- **`elsewhere`**: $e^{`r f2(coef(fit)[[2]])`}$ = `r f2(ratio)`: for those born elsewhere the rate is **`r f2(ratio)` times** as high, 95% CI [`r f2(ci_fit[2, 1])`, `r f2(ci_fit[2, 2])`], which is `r f1(1000 * rate * ratio)` per 1,000 per year.
+- **`offset(log(age))`** has no coefficient: it is fixed at 1.
+
+With more predictors, each $e^{\beta}$ is a rate ratio given the others:
+
+```{r more}
+fit_more <- glm(positive ~ offset(log(age)) + elsewhere + male + income, family = binomial("cloglog"), data = tox)
+tab <- cbind(exp(coef(fit_more)), exp(confint.default(fit_more)))
+colnames(tab) <- c("rate ratio", "low", "high")
+round(tab[-1, ], 2)
+```
+
+Men have a `r f2(tab["male", 1])` times higher rate than women, and each step of income (one poverty line more) multiplies it by `r f2(tab["income", 1])`. (`r num(sum(is.na(tox$income)))` people without an income are left out of this model.)
+
+---
+
+## 5. Is the rate constant? Test the offset
+
+The constant rate is an assumption. Let the coefficient of $\log(\text{age})$ be free instead of 1. If the cumulative rate grows like $a^k$, the rate at age $a$ is proportional to $a^{k-1}$: rising with age if $k > 1$, falling if $k < 1$. And let it differ between the groups:
+
+```{r free_slope}
+fit_slope  <- glm(positive ~ log(age) + elsewhere, family = binomial("cloglog"), data = tox)
+fit_groups <- glm(positive ~ log(age) * elsewhere, family = binomial("cloglog"), data = tox)
+tests <- anova(fit, fit_slope, fit_groups, test = "Chisq")
+tests
+k_us   <- coef(fit_groups)[["log(age)"]]
+k_else <- k_us + coef(fit_groups)[["log(age):elsewhere"]]
+se_us   <- sqrt(vcov(fit_groups)[2, 2])
+se_else <- sqrt(sum(vcov(fit_groups)[c(2, 4), c(2, 4)]))
+rbind(born_in_US = c(k = k_us, low = k_us - 1.96 * se_us, high = k_us + 1.96 * se_us),
+      born_elsewhere = c(k_else, k_else - 1.96 * se_else, k_else + 1.96 * se_else))
+```
+
+For those born in the US, the exponent is `r f2(k_us)`, clearly above 1: the share rises **more steeply** with age than a constant rate allows. For those born elsewhere it is `r f2(k_else)`, below 1: they catch it early.
+
+```{r fitted_chart}
+grid <- expand.grid(age = 6:79, elsewhere = 0:1)
+grid$born <- factor(ifelse(grid$elsewhere == 1, "born elsewhere", "born in the US"), levels = names(born_colours))
+grid$constant <- predict(fit, grid, type = "response")
+grid$free     <- predict(fit_groups, grid, type = "response")
+long <- rbind(data.frame(grid[, 1:3], p = grid$constant, model = "constant rate"), data.frame(grid[, 1:3], p = grid$free, model = "rate changes with age"))
+
+ggplot(long, aes(age, p, colour = born)) +
+  geom_pointrange(data = bands, aes(age, positive, ymin = positive - 1.96 * se, ymax = positive + 1.96 * se), alpha = 0.6, size = 0.3) +
+  geom_line(aes(linetype = model), linewidth = 0.9) +
+  scale_colour_manual(values = born_colours, name = NULL) +
+  scale_linetype_manual(values = c("dashed", "solid"), name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
+  labs(title = "Constant and changing rates", x = "age (years)", y = "share with antibodies") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+### Age or birth cohort?
+
+Does the rate really rise with age in the US? Not necessarily. People of 70 in this survey were children in the 1940s and 1950s, when meat was less safe and the infection more common. People of 20 grew up in the 1990s. A survey at **one moment** cannot tell "older people catch it faster" from "everybody caught it faster in the past". Earlier rounds of NHANES showed that the infection became rarer over time (Jones et al., 2014), so the second explanation is at least part of the story. For those born elsewhere there is a third reading: the rate belongs to the **country of childhood**, and it fell when they moved.
+
+This is a limit of the data and not of the link. All models for "has it ever happened?" share it.
+
+---
+
+## 6. Against the logit
+
+```{r logit}
+logit <- glm(positive ~ log(age) * elsewhere, family = binomial("logit"), data = tox)
+probit <- glm(positive ~ log(age) * elsewhere, family = binomial("probit"), data = tox)
+AIC(fit_groups, logit, probit)
+
+# the same comparison, three ways of saying it: born elsewhere against born in the US
+simple_c <- glm(positive ~ offset(log(age)) + elsewhere, family = binomial("cloglog"), data = tox)
+simple_l <- glm(positive ~ log(age) + elsewhere, family = binomial("logit"), data = tox)
+p40 <- predict(simple_c, data.frame(age = 40, elsewhere = 0:1), type = "response")
+c(rate_ratio = exp(coef(simple_c)[["elsewhere"]]), odds_ratio = exp(coef(simple_l)[["elsewhere"]]), risk_ratio_at_40 = p40[[2]] / p40[[1]])
+
+# and how the risk ratio changes with the age, when the rate ratio does not
+ages <- c(10, 20, 40, 60, 79)
+pc <- sapply(0:1, function(e) predict(simple_c, data.frame(age = ages, elsewhere = e), type = "response"))
+round(data.frame(age = ages, US = pc[, 1], elsewhere = pc[, 2], risk_ratio = pc[, 2] / pc[, 1], odds_ratio = (pc[, 2] / (1 - pc[, 2])) / (pc[, 1] / (1 - pc[, 1]))), 3)
+```
+
+- The **fit** hardly decides. The complementary log-log and the logit are within `r f1(abs(AIC(fit_groups) - AIC(logit)))` AIC points of each other, and the probit `r f1(AIC(probit) - AIC(fit_groups))` points behind: with probabilities below 40% the curves are nearly the same.
+- The **meaning** decides. If people differ by one constant rate ratio, then the risk ratio **shrinks** with age and the odds ratio **grows**, as the table shows. Only the rate ratio stays the same. A study of 20-year-olds and one of 60-year-olds would report different odds ratios for the same difference in rates.
+
+---
+
+## 7. Checking the model
+
+**The link test.** Add the square of the linear predictor. If the link is right, it adds nothing:
+
+```{r link_test}
+eta_hat <- predict(fit_groups, type = "link")
+lt <- glm(positive ~ eta_hat + I(eta_hat^2), family = binomial("cloglog"), data = tox)
+round(coef(summary(lt)), 3)
+p_link <- coef(summary(lt))[3, 4]
+```
+
+**Calibration.** Compare the predicted with the observed share in tenths of the prediction:
+
+```{r calibration}
+p_hat <- fitted(fit_groups)
+tenth <- cut(p_hat, unique(quantile(p_hat, 0:10 / 10)), include.lowest = TRUE)
+cal   <- data.frame(predicted = tapply(p_hat, tenth, mean), observed = tapply(tox$positive, tenth, mean), n = as.vector(table(tenth)))
+cal$z <- (cal$observed - cal$predicted) / sqrt(cal$predicted * (1 - cal$predicted) / cal$n)
+round(cal, 3)
+```
+
+The quadratic term of the link test has *p* `r pval(p_link)`, and the largest difference between predicted and observed shares is `r f1(max(abs(cal$z)))` standard errors. `r if (max(abs(cal$z)) < 3) "The model describes the data well." else "There is some misfit left, in the groups with the largest z."`
+
+---
+
+## 8. The same link for survival in intervals
+
+The other great use of the link is **time to an event**, when time is recorded in intervals: years of school until dropping out, months until a job is found. Make one row for each person **and interval** at risk, with a 1 in the interval where the event happens. A regression of this 0/1 with the cloglog link gives **the same coefficients as a Cox model** for the underlying continuous time (Prentice & Gloeckler, 1978). We check it with the lung-cancer data that come with R, cut into intervals of 90 days:
+
+```{r discrete_time}
+lung2 <- na.omit(lung[, c("time", "status", "sex", "age")])
+lung2$event <- as.integer(lung2$status == 2)
+lung2$interval <- pmin(ceiling(lung2$time / 90), 10)
+rows <- lung2[rep(seq_len(nrow(lung2)), lung2$interval), ]                # one row per person and interval
+rows$t <- sequence(lung2$interval)
+rows$y <- as.integer(rows$t == rows$interval & rows$event == 1)
+discrete <- glm(y ~ factor(t) + sex + age, family = binomial("cloglog"), data = rows)
+cox      <- coxph(Surv(time, event) ~ sex + age, data = lung2)
+logit_d  <- glm(y ~ factor(t) + sex + age, family = binomial("logit"), data = rows)
+round(cbind(cloglog = exp(coef(discrete)[c("sex", "age")]), Cox = exp(coef(cox)), logit = exp(coef(logit_d)[c("sex", "age")])), 3)
+```
+
+The hazard ratios of the discrete model (`r f2(exp(coef(discrete)[["sex"]]))` for sex) and of the Cox model (`r f2(exp(coef(cox)[["sex"]]))`) are close, and would be closer with shorter intervals. The logit gives odds ratios (`r f2(exp(coef(logit_d)[["sex"]]))`), further from 1.
+
+---
+
+## 9. Things to keep in mind
+
+- **Use it when "yes" means "at least once".** Presence of a species in a plot (offset: log of the area), a positive sample in a test of pooled blood (offset: log of the number pooled), infection by a given age.
+- **Other shapes of the rate.** Polynomials in age and other forms are possible, as long as the rate stays positive (Farrington, 1990).
+- **Independence of the events.** The formula $1 - e^{-\lambda a}$ needs events that come independently at a rate. Immunity that is lost, or antibodies that fade, break it.
+- **The offset is a statement.** Test it, as in section 5, by freeing the coefficient.
+- **Code the event as 1.** The link is not symmetric.
+- **Rare outcomes**: all the links agree, and rate ratio, odds ratio and risk ratio are the same number.
+- **Predictors that were the same during the whole exposure.** Sex and country of birth were. Income was measured at the survey, and it was probably different during the years in which people caught the infection.
+- **The sample.** The CDC selected people with unequal probabilities and in clusters. For the US population, use `survey::svyglm()` with the weights; for our standard errors, treat them as approximate.
+
+---
+
+## 10. Reporting the results in APA style
+
+A report (APA 7th edition) needs the link and why, the offset, the rates and rate ratios with intervals, and the check of the constant rate. The numbers come from the R objects:
+
+```{r apa_numbers}
+s_more <- coef(summary(fit_more))
+apa_table <- data.frame(
+  Predictor = c("Born outside the US", "Male", "Income (per poverty line)"),
+  b  = f2(s_more[-1, 1]), SE = f2(s_more[-1, 2]), z = f2(s_more[-1, 3]),
+  p  = sapply(s_more[-1, 4], function(p) sub("^= ", "", pval(p))),
+  RR = paste0(f2(tab[-1, 1]), " [", f2(tab[-1, 2]), ", ", f2(tab[-1, 3]), "]"))
+```
+
+**Method** (data analysis):
+
+> Antibodies against *Toxoplasma gondii* (IgG of at least 33 IU/ml) were measured in `r num(nrow(tox))` participants of NHANES 2011–2014 aged 6 to 79. Because antibodies last for life, the presence of antibodies at age *a* reflects the rate of infection over *a* years. We used binomial regression with the complementary log-log link and the logarithm of age as an offset, so that exponentiated coefficients are ratios of infection rates (catalytic model with a constant rate). The constant rate was tested by freeing the coefficient of log(age), overall and by place of birth. Sampling weights were not used. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> Antibodies were found in `r pct(mean(tox$positive))` of the participants. With a constant rate, people born in the United States were infected at a rate of `r f1(1000 * rate)` per 1,000 per year, 95% CI [`r f1(1000 * ci_fit[1, 1])`, `r f1(1000 * ci_fit[1, 2])`], and people born elsewhere at `r f2(ratio)` times this rate, 95% CI [`r f2(ci_fit[2, 1])`, `r f2(ci_fit[2, 2])`]. Rates were higher for men and lower with a higher income (Table 1). The rate was not constant over age, and differed in shape between the groups, χ²(2) = `r f1(sum(tests$Deviance[2:3]))`, *p* `r pval(pchisq(sum(tests$Deviance[2:3]), 2, lower.tail = FALSE))`: the exponent of age was `r f2(k_us)`, 95% CI [`r f2(k_us - 1.96 * se_us)`, `r f2(k_us + 1.96 * se_us)`], for those born in the United States and `r f2(k_else)`, 95% CI [`r f2(k_else - 1.96 * se_else)`, `r f2(k_else + 1.96 * se_else)`], for the others. Differences between birth cohorts cannot be separated from age in these data.
+
+**Table 1**
+
+*Rate Ratios of Toxoplasma Infection*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "*z*", "*p*", "Rate ratio [95% CI]"),
+             align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r num(nobs(fit_more))`. Complementary log-log regression with log(age) as an offset. Income is the ratio of the family income to the poverty threshold.
+
+**Points to remember:**
+
+- Say what the offset is, and that its coefficient was fixed at 1.
+- Call the exponentiated coefficients rate (hazard) ratios.
+- Report the rate itself, in understandable units.
+- Say that age and cohort cannot be separated in a single survey.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | A yes-or-no outcome that means "at least one event", with known exposure |
+| **The model** | $\log[-\log(1 - P)] = \log(\text{exposure}) + x^\top\beta$ |
+| **How (R)** | `glm(y ~ offset(log(exposure)) + x, family = binomial("cloglog"))` |
+| **Reading it** | $e^{\beta_0}$: rate; $e^{\beta_j}$: rate ratio (hazard ratio) |
+| **The link** | Asymmetric: code the event as 1 |
+| **Against the logit** | Similar fit, different meaning; rate ratios do not change with exposure, odds ratios do |
+| **Other use** | Time to an event in intervals: the same coefficients as the Cox model |
+| **Checks** | Free the offset, link test, calibration |
+| **Related pages** | [Probit](EXAMPLE_PROBIT.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd) |
+
+---
+
+## References
+
+Farrington, C. P. (1990). Modelling forces of infection for measles, mumps and rubella. *Statistics in Medicine*, *9*(8), 953–967. https://doi.org/10.1002/sim.4780090811
+
+Hens, N., Aerts, M., Faes, C., Shkedy, Z., Lejeune, O., Van Damme, P., & Beutels, P. (2010). Seventy-five years of estimating the force of infection from current status data. *Epidemiology and Infection*, *138*(6), 802–812. https://doi.org/10.1017/S0950268809990781
+
+Jones, J. L., Kruszon-Moran, D., Rivera, H. N., Price, C., & Wilkins, P. P. (2014). *Toxoplasma gondii* seroprevalence in the United States 2009–2010 and comparison with the past two decades. *The American Journal of Tropical Medicine and Hygiene*, *90*(6), 1135–1139. https://doi.org/10.4269/ajtmh.14-0013
+
+Muench, H. (1959). *Catalytic models in epidemiology*. Harvard University Press. https://doi.org/10.4159/harvard.9780674428928
+
+National Center for Health Statistics. (2016). *National Health and Nutrition Examination Survey 2013–2014: Toxoplasma gondii antibody (SSTOXO_H)* [Data set]. https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2013/DataFiles/SSTOXO_H.htm
+
+Prentice, R. L., & Gloeckler, L. A. (1978). Regression analysis of grouped survival data with application to breast cancer data. *Biometrics*, *34*(1), 57–67. https://doi.org/10.2307/2529588
