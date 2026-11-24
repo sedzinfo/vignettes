@@ -1,0 +1,343 @@
+---
+title: "Generalized Estimating Equations (GEE): Which Pill Clears Up the Toenail?"
+description: "Generalized estimating equations in R, by hand and with geepack, on a randomised trial of two treatments with 294 patients seen up to seven times: correlated yes-or-no outcomes, the working correlation and the sandwich, population-averaged effects, independence, exchangeable and AR(1) structures with the QIC, GEE against a mixed model and why their coefficients differ, missing visits and inverse probability weights, what happens with few clusters, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the same people, again and again
+
+Fungus under a toenail is hard to get rid of. In a randomised trial, 294 patients took one of two drugs, terbinafine or itraconazole, for three months, and were seen up to seven times in about a year (De Backer et al., 1998). At each visit the doctor noted whether the nail was badly affected or not. Which drug works better?
+
+The outcome is yes or no, so we think of logistic regression. But there are about six observations of **each patient**, and they are far from independent: a bad nail is usually still bad at the next visit. Logistic regression would count 1,908 observations as 1,908 patients, and its standard errors would be wrong.
+
+There are two families of solutions. **Mixed models** give each patient a random effect (see [multilevel models](EXAMPLE_MULTILEVEL.Rmd)). **Generalized estimating equations** (GEE; Liang & Zeger, 1986) do not model the patients at all. They model the **average** of the population at each time, and repair the standard errors afterwards. For yes-or-no outcomes the two give **different coefficients**, which answer different questions. This page explains which is which.
+
+```{r packages}
+library(geepack)    # geeglm()
+library(lme4)       # glmer(): the mixed model, for comparison
+library(ggplot2)
+
+arm_colours <- c(itraconazole = "#eb6834", terbinafine = "#2a78d6")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data are in the R package `HSAUR2`. We read them from its copy on GitHub:
+
+```{r download}
+path <- tempfile(fileext = ".rda")
+download.file("https://raw.githubusercontent.com/cran/HSAUR2/master/data/toenail.rda", path, mode = "wb", quiet = TRUE)
+load(path)
+nail <- with(toenail, data.frame(id = as.integer(patientID), bad = as.integer(outcome == "moderate or severe"),
+                                 terb = as.integer(treatment == "terbinafine"), month = time, visit = visit))
+nail <- nail[order(nail$id, nail$visit), ]                           # geeglm() needs the rows of a cluster together
+c(observations = nrow(nail), patients = length(unique(nail$id)))
+table(visits_per_patient = table(nail$id))
+```
+
+`bad` is 1 if the nail was moderately or severely affected, `terb` is 1 for terbinafine, `month` the time since the start of the treatment. `r sum(table(nail$id) == 7)` of the `r length(unique(nail$id))` patients came to all seven visits.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+prop <- aggregate(cbind(bad, month) ~ visit + terb, data = nail, FUN = mean)
+prop$n <- aggregate(bad ~ visit + terb, data = nail, FUN = length)$bad
+prop$drug <- ifelse(prop$terb == 1, "terbinafine", "itraconazole"); prop$se <- sqrt(prop$bad * (1 - prop$bad) / prop$n)
+ggplot(prop, aes(month, bad, colour = drug)) + geom_line(linewidth = 0.9) +
+  geom_pointrange(aes(ymin = pmax(bad - 1.96 * se, 0), ymax = bad + 1.96 * se)) +
+  scale_colour_manual(values = arm_colours, name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
+  labs(title = "Share of patients with a badly affected nail", x = "months since the start", y = NULL) + theme_bw() + theme(legend.position = "bottom")
+
+wide <- reshape(nail[, c("id", "visit", "bad")], idvar = "id", timevar = "visit", direction = "wide")
+R_obs <- cor(wide[, -1], use = "pairwise.complete.obs"); dimnames(R_obs) <- list(1:7, 1:7)
+round(R_obs, 2)
+same <- mean(nail$bad[-1][diff(nail$id) == 0] == nail$bad[-nrow(nail)][diff(nail$id) == 0])
+same
+```
+
+Both drugs work: the share of bad nails falls from 37% to 5–10%. Terbinafine seems a little faster after the first months. The correlations between the visits of the same patients are high for neighbouring visits (up to `r f2(max(R_obs[lower.tri(R_obs)]))`) and lower for distant ones. In `r pct(same)` of the cases the status is the same as at the visit before.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a model for the mean, and nothing more
+
+For patient $i$ at visit $j$:
+
+$$\log\frac{\mu_{ij}}{1 - \mu_{ij}} = \beta_0 + \beta_1\,\text{terb}_i + \beta_2\,\text{month}_{ij} + \beta_3\,\text{terb}_i \times \text{month}_{ij}, \qquad \mu_{ij} = P(\text{bad}_{ij} = 1)$$
+
+This is the **marginal** mean: the share of bad nails among all patients with these values. We say nothing about single patients.
+
+### Step 2: the estimating equations
+
+Logistic regression solves $\sum_{ij} x_{ij}(y_{ij} - \mu_{ij}) = 0$. GEE generalises it. Let $V_i$ be a guess of the covariance matrix of the observations of patient $i$, and $D_i$ the derivatives of the means:
+
+$$\sum_i D_i^\top V_i^{-1} (y_i - \mu_i) = 0, \qquad V_i = \phi\, A_i^{1/2} R(\alpha) A_i^{1/2}$$
+
+$A_i$ has the binomial variances $\mu(1-\mu)$ on the diagonal. $R(\alpha)$ is the **working correlation**, a simple pattern that is chosen by the analyst.
+
+| Working correlation | Assumes |
+|---|---|
+| independence | no correlation: the equations of logistic regression |
+| exchangeable | the same correlation $\alpha$ for every pair of visits |
+| AR(1) | $\alpha$ for neighbours, $\alpha^2$ two visits apart, and so on |
+| unstructured | a free correlation for every pair |
+
+### Step 3: the great advantage
+
+The estimate $\hat\beta$ is **consistent even if the working correlation is wrong**, as long as the model for the mean is right. A better guess makes it more precise, that is all. (If there are missing visits, there is a condition. See section 6.)
+
+### Step 4: the sandwich
+
+The variance is not taken from the working correlation, which may be wrong, but from how much the patients really differ from the model:
+
+$$\widehat{\text{Var}}(\hat\beta) = B^{-1} M B^{-1}, \qquad B = \sum_i D_i^\top V_i^{-1} D_i, \qquad M = \sum_i D_i^\top V_i^{-1} e_i e_i^\top V_i^{-1} D_i$$
+
+The meat $M$ contains the products of the residuals of the **same** patient, $e_i e_i^\top$, so any correlation is in it. By hand, with independence:
+
+```{r by_hand}
+glm_fit <- glm(bad ~ terb * month, family = binomial, data = nail)           # independence: ordinary logistic regression
+X <- model.matrix(glm_fit); mu <- fitted(glm_fit); e <- nail$bad - mu
+B <- crossprod(X, X * mu * (1 - mu))
+scores <- rowsum(X * e, nail$id)                                             # one row per patient: the sum over the visits
+V_hand <- solve(B) %*% crossprod(scores) %*% solve(B)
+gee_ind <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "independence")
+rbind(by_hand = sqrt(diag(V_hand)), geeglm = sqrt(diag(vcov(gee_ind))), naive_glm = sqrt(diag(vcov(glm_fit))))
+```
+
+The estimates of GEE with independence **are** those of logistic regression. The standard errors are not: that of the intercept is `r f1(sqrt(V_hand[1, 1]) / sqrt(vcov(glm_fit)[1, 1]))` times larger.
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+gee_ex <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "exchangeable")
+gee_ar <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "ar1")
+summary(gee_ex)
+s <- as.matrix(coef(summary(gee_ex))); or <- exp(s[, 1]); low <- exp(s[, 1] - 1.96 * s[, 2]); high <- exp(s[, 1] + 1.96 * s[, 2])
+```
+
+- **`month`**: odds ratio $e^{`r f3(s["month", 1])`}$ = `r f2(or[["month"]])` per month, 95% CI [`r f2(low[["month"]])`, `r f2(high[["month"]])`]: with itraconazole the odds of a bad nail, **in the population**, fall by `r pct(1 - or[["month"]])` per month.
+- **`terb`**: at month 0 the groups are alike (`r f2(or[["terb"]])`), as they should be after randomisation.
+- **`terb:month`**: `r f2(or[["terb:month"]])`, [`r f2(low[["terb:month"]])`, `r f2(high[["terb:month"]])`], *p* `r pval(s["terb:month", 4])`: with terbinafine the odds fall `r pct(1 - or[["terb:month"]])` more per month. The direction favours terbinafine, and the interval contains 1.
+- **`Wald`** and `Pr(>|W|)`: the squared *z* tests, with the robust standard errors.
+- **`alpha`** = `r f2(gee_ex$geese$alpha)`: the estimated working correlation between two visits of a patient. It is not a result, just a tool.
+
+### Which working correlation?
+
+```{r structures}
+fits <- list(independence = gee_ind, exchangeable = gee_ex, AR1 = gee_ar)
+tab <- t(sapply(fits, function(m) { cs <- coef(summary(m)); c(b = cs["terb:month", 1], SE_robust = cs["terb:month", 2], p = cs["terb:month", 4], QIC = QIC(m)[[1]]) }))
+round(rbind(tab, `naive logistic` = c(coef(summary(glm_fit))["terb:month", c(1, 2, 4)], NA)), 4)
+```
+
+The estimates differ a little, the robust standard errors less. The **QIC** is the AIC of GEE: it compares models for the mean, and also working correlations (smaller is better). It is not a strong guide. The natural choice for visits in time is AR(1) or exchangeable; the important thing is to **choose beforehand**, not by the *p* value. (The naive logistic regression would have given *p* `r pval(coef(summary(glm_fit))["terb:month", 4])`.)
+
+---
+
+## 5. GEE or mixed model? Two different questions
+
+A logistic **mixed model** gives each patient a random intercept:
+
+```{r mixed}
+mixed <- glmer(bad ~ terb * month + (1 | id), data = nail, family = binomial, nAGQ = 20)
+sm <- coef(summary(mixed)); sd_u <- attr(VarCorr(mixed)$id, "stddev")
+round(cbind(GEE = s[, 1], mixed = sm[, 1], ratio = sm[, 1] / s[, 1]), 3)
+sd_u
+c(p_GEE = s["terb:month", 4], p_mixed = sm["terb:month", 4])
+```
+
+The coefficients of the mixed model are **`r f1(sm["month", 1] / s["month", 1])` times as large**. It is no error in either.
+
+- The **mixed model** coefficient is **subject-specific**: it compares a patient with **the same patient** (or with another who has the same random effect) one month later. $e^{`r f2(sm["month", 1])`}$ = `r f2(exp(sm["month", 1]))` per month.
+- The **GEE** coefficient is **population-averaged**: it compares the share of bad nails among all patients with that share one month later. `r f2(or[["month"]])` per month.
+
+The random intercepts have an SD of `r f1(sd_u)` on the logit scale, which is enormous: some patients are almost surely bad, others almost surely fine. Average many steep S-curves that start at different places, and the average is a **flat** S-curve:
+
+```{r curves_chart}
+m_grid <- seq(0, 14, by = 0.1); set.seed(121); u <- rnorm(40, 0, sd_u)
+single <- do.call(rbind, lapply(seq_along(u), function(k) data.frame(month = m_grid, p = plogis(sm[1, 1] + sm[3, 1] * m_grid + u[k]), patient = k)))
+many <- rnorm(20000, 0, sd_u)
+average <- data.frame(month = m_grid, p = sapply(m_grid, function(m) mean(plogis(sm[1, 1] + sm[3, 1] * m + many))), what = "average of the patients (mixed model)")
+gee_line <- data.frame(month = m_grid, p = plogis(s[1, 1] + s[3, 1] * m_grid), what = "GEE")
+ggplot(single, aes(month, p)) + geom_line(aes(group = patient), colour = "grey75", linewidth = 0.3) +
+  geom_line(data = rbind(average, gee_line), aes(colour = what, linetype = what), linewidth = 1.1) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834"), name = NULL) + scale_linetype_manual(values = c("solid", "dashed"), name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  labs(title = "Forty patients of the mixed model (grey), and the population (itraconazole)", x = "months", y = "probability of a bad nail") + theme_bw() + theme(legend.position = "bottom")
+shrink <- sqrt(1 + 0.346 * sd_u^2)
+c(approximate_factor = shrink, observed_factor = sm["month", 1] / s["month", 1])
+```
+
+There is an approximate rule for the factor between the two, $\sqrt{1 + 0.346\,\sigma_u^2}$ (Zeger et al., 1988): here `r f1(shrink)`. With a normal outcome and an identity link the two coefficients are the same, and the question does not arise.
+
+| | GEE | Mixed model |
+|---|---|---|
+| Question | How does the **population** change? (public health, policy, trials) | How does a **patient** change? (treatment of one person) |
+| Assumes about patients | nothing | a distribution of random effects |
+| Wrong correlation | estimates still right | estimates may be wrong |
+| Missing visits | must not depend on the outcome (MCAR) | may depend on the **observed** past (MAR) |
+| Single patients | no predictions | predictions of the random effects |
+| Few clusters | standard errors too small | better |
+
+---
+
+## 6. Missing visits
+
+Not all patients came to all visits. GEE needs the missing ones to be **missing completely at random**. Otherwise the patients who remain are a special group, and the average is an average of them. Do patients with a bad nail miss the next visit more often?
+
+```{r dropout}
+panel <- merge(expand.grid(visit = 1:7, id = unique(nail$id)), nail, all.x = TRUE)     # one row for every planned visit
+panel <- panel[order(panel$id, panel$visit), ]
+panel$seen <- as.integer(!is.na(panel$bad))
+panel$terb <- ave(panel$terb, panel$id, FUN = function(v) v[!is.na(v)][1])
+last_seen  <- function(v) { out <- rep(NA, length(v)); for (k in seq_along(v)[-1]) { past <- v[1:(k - 1)]; past <- past[!is.na(past)]; out[k] <- if (length(past)) tail(past, 1) else NA }; out }
+panel$bad_before <- ave(panel$bad, panel$id, FUN = last_seen)                            # the status when the patient was last seen
+later <- subset(panel, visit > 1 & !is.na(bad_before))
+stay  <- glm(seen ~ factor(visit) + terb + bad_before, family = binomial, data = later)
+c(planned = nrow(panel), missing = sum(panel$seen == 0))
+round(coef(summary(stay))[c("terb", "bad_before"), ], 3)
+```
+
+`r sum(panel$seen == 0)` of the `r num(nrow(panel))` planned visits are missing. Patients whose nail was bad when they were last seen have `r f2(exp(coef(stay)[["bad_before"]]))` times the odds of being seen at a visit (*p* `r pval(coef(summary(stay))["bad_before", 4])`). `r if (coef(summary(stay))["bad_before", 4] < .05) "So the missing visits are related to the outcome, and plain GEE is in doubt." else "There is no clear sign that the missing visits depend on the outcome, although a test with this few missing visits proves little."`
+
+The repair for GEE is **inverse probability weighting** (Robins et al., 1995): each observation is weighted by one over the probability that it was made, given the past. Those who are seen although patients like them are often missing count more.
+
+```{r ipw}
+later$w <- 1 / predict(stay, type = "response")
+weighted <- merge(subset(panel, seen == 1), later[, c("id", "visit", "w")], all.x = TRUE)
+weighted$w[is.na(weighted$w)] <- 1                                                       # the first visits
+weighted <- weighted[order(weighted$id, weighted$visit), ]
+gee_w <- geeglm(bad ~ terb * month, id = id, data = weighted, weights = w, family = binomial, corstr = "independence")
+round(rbind(unweighted = coef(summary(gee_ind))["terb:month", ], weighted = coef(summary(gee_w))["terb:month", ]), 4)
+range(weighted$w)
+```
+
+The weights are between `r f2(min(weighted$w))` and `r f2(max(weighted$w))`, and the estimate hardly moves: `r f3(coef(gee_w)[["terb:month"]])` instead of `r f3(coef(gee_ind)[["terb:month"]])`. (The weights are used with independence, for which the theory is clean. They assume that whether a patient is seen depends only on the drug, the visit and the last status.)
+
+---
+
+## 7. Few clusters
+
+The sandwich is a large-sample method, and the sample size is the number of **clusters**. With few, the robust standard errors are too small. An experiment: no effect of treatment at all, clusters of 6 observations with a strong correlation, and the test at 5%.
+
+```{r few_clusters}
+set.seed(122)
+false_positive <- function(n_clusters, reps = 400) {
+  mean(replicate(reps, {
+    d <- data.frame(id = rep(seq_len(n_clusters), each = 6), trt = rep(rep(0:1, length.out = n_clusters), each = 6))
+    d$y <- rbinom(nrow(d), 1, plogis(-0.3 + rep(rnorm(n_clusters, 0, 1.5), each = 6)))
+    m <- try(geeglm(y ~ trt, id = id, data = d, family = binomial, corstr = "exchangeable"), silent = TRUE)
+    if (inherits(m, "try-error")) NA else coef(summary(m))["trt", 4] < .05
+  }), na.rm = TRUE)
+}
+sizes <- c(10, 20, 40, 100)
+type1 <- sapply(sizes, false_positive)
+setNames(round(type1, 3), paste(sizes, "clusters"))
+```
+
+With 10 clusters the test rejects a true null hypothesis in `r pct(type1[1])` of the studies, with 100 in `r pct(type1[4])`. Below about 40 or 50 clusters use a small-sample correction (Mancl & DeRouen, 2001; the package `clubSandwich`) or a mixed model.
+
+---
+
+## 8. Things to keep in mind
+
+- **Say whose effect it is**: population-averaged. Do not write "a patient's odds".
+- **Sort the data by cluster**, and give the visit number in `waves` if some are missing, or AR(1) will take the wrong neighbours.
+- **The working correlation is a tool**, not a finding. If the correlations are what you study, use another model.
+- **No likelihood**: no AIC, no likelihood-ratio test. Use Wald tests and the QIC.
+- **Predictors that vary within a cluster** can make the estimate depend on the working correlation, if the past of a predictor matters for the future of the outcome. Independence is the safe choice then.
+- **Randomised at baseline.** The groups are the same at month 0 by design, so one can leave out the main effect of `terb` and gain precision.
+- **Straight lines on the logit scale** may not be right for a year. Check the shape with the visits as a factor.
+- **Counts, gamma and other outcomes** work in the same way, with another family.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the marginal model and link, the working correlation and why, robust standard errors, the number of clusters and of observations, and what was assumed about missing data. The numbers come from the R objects:
+
+```{r apa_numbers}
+lab <- c("Intercept", "Terbinafine", "Month", "Terbinafine × month")
+apa_table <- data.frame(Term = lab, OR = paste0(f2(or), " [", f2(low), ", ", f2(high), "]"), p = sapply(s[, 4], function(p) sub("^= ", "", pval(p))),
+                        mix = paste0(f2(exp(sm[, 1])), " [", f2(exp(sm[, 1] - 1.96 * sm[, 2])), ", ", f2(exp(sm[, 1] + 1.96 * sm[, 2])), "]"), pm = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))))
+```
+
+**Method** (data analysis):
+
+> The presence of a moderate or severe infection at up to seven visits of `r length(unique(nail$id))` patients (`r num(nrow(nail))` observations; De Backer et al., 1998) was analysed with generalized estimating equations with a logit link and an exchangeable working correlation (Liang & Zeger, 1986). The model contained treatment, time in months and their interaction; standard errors are robust. Odds ratios are population-averaged. Independence and AR(1) working correlations, inverse probability weights for missing visits, and a logistic mixed model with random intercepts, whose odds ratios are patient-specific, served as sensitivity analyses. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages geepack (Halekoh et al., 2006) and lme4.
+
+**Results:**
+
+> The odds of a moderate or severe infection fell by `r pct(1 - or[["month"]])` per month with itraconazole, *OR* = `r f2(or[["month"]])`, 95% CI [`r f2(low[["month"]])`, `r f2(high[["month"]])`], *p* `r pval(s["month", 4])`. The decrease was somewhat faster with terbinafine, *OR* = `r f2(or[["terb:month"]])` per month, 95% CI [`r f2(low[["terb:month"]])`, `r f2(high[["terb:month"]])`], *p* `r pval(s["terb:month", 4])`, but the difference was not significant (Table 1). In the mixed model, the patient-specific odds ratio of the interaction was `r f2(exp(sm["terb:month", 1]))`, *p* `r pval(sm["terb:month", 4])`. The estimate of the interaction was between `r f3(min(tab[, "b"]))` and `r f3(max(tab[, "b"]))` with the three working correlations (*p* between `r nz(min(tab[, "p"]), 3)` and `r nz(max(tab[, "p"]), 3)`), and `r f3(coef(gee_w)[["terb:month"]])` with weights for missing visits.
+
+**Table 1**
+
+*Toenail Infection: Population-Averaged and Patient-Specific Odds Ratios*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Term", "GEE: *OR* [95% CI]", "*p*", "Mixed model: *OR* [95% CI]", "*p*"), align = "lrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* `r num(nrow(nail))` observations of `r length(unique(nail$id))` patients. GEE: exchangeable working correlation (α = `r f2(gee_ex$geese$alpha)`), robust standard errors. Mixed model: random intercepts, *SD* = `r f2(sd_u)`.
+
+**Points to remember:**
+
+- State the working correlation, and that the standard errors are robust.
+- Give the number of clusters.
+- Say "population-averaged", and do not compare the size with mixed models.
+- Say what the missing data are assumed to be.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Repeated or clustered outcomes of any type, and the interest is in the average of the population |
+| **The model** | A GLM for the marginal mean, a working correlation within clusters |
+| **How (R)** | `geepack::geeglm(y ~ x, id = id, waves = visit, data, family, corstr = "exchangeable")` |
+| **Standard errors** | Robust (sandwich): valid whatever the correlation is, with enough clusters |
+| **Choosing the correlation** | Beforehand; the QIC as a guide |
+| **Against mixed models** | Population-averaged against subject-specific; smaller coefficients for logits |
+| **Needs** | Missing completely at random (or weights), 40 or more clusters |
+| **Related pages** | [Multilevel models](EXAMPLE_MULTILEVEL.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd), [missing data](EXAMPLE_MISSING_DATA.Rmd) |
+
+---
+
+## References
+
+De Backer, M., De Vroey, C., Lesaffre, E., Scheys, I., & De Keyser, P. (1998). Twelve weeks of continuous oral therapy for toenail onychomycosis caused by dermatophytes: A double-blind comparative trial of terbinafine 250 mg/day versus itraconazole 200 mg/day. *Journal of the American Academy of Dermatology*, *38*(5), S57–S63. https://doi.org/10.1016/S0190-9622(98)70486-4
+
+Halekoh, U., Højsgaard, S., & Yan, J. (2006). The R package geepack for generalized estimating equations. *Journal of Statistical Software*, *15*(2), 1–11. https://doi.org/10.18637/jss.v015.i02
+
+Liang, K.-Y., & Zeger, S. L. (1986). Longitudinal data analysis using generalized linear models. *Biometrika*, *73*(1), 13–22. https://doi.org/10.1093/biomet/73.1.13
+
+Mancl, L. A., & DeRouen, T. A. (2001). A covariance estimator for GEE with improved small-sample properties. *Biometrics*, *57*(1), 126–134. https://doi.org/10.1111/j.0006-341X.2001.00126.x
+
+Robins, J. M., Rotnitzky, A., & Zhao, L. P. (1995). Analysis of semiparametric regression models for repeated outcomes in the presence of missing data. *Journal of the American Statistical Association*, *90*(429), 106–121. https://doi.org/10.1080/01621459.1995.10476493
+
+Zeger, S. L., Liang, K.-Y., & Albert, P. S. (1988). Models for longitudinal data: A generalized estimating equation approach. *Biometrics*, *44*(4), 1049–1060. https://doi.org/10.2307/2531734
