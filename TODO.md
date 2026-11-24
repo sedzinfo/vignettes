@@ -40,7 +40,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Ordinal logistic: EXAMPLE_ORDINAL_LOGISTIC
 - [x] Poisson: EXAMPLE_GENERALIZED
 - [x] Negative binomial: EXAMPLE_GENERALIZED
-- [ ] Zero-inflated Poisson / negative binomial
+- [x] Zero-inflated Poisson / negative binomial: EXAMPLE_ZERO_INFLATED
 - [ ] Gamma
 - [ ] Beta
 - [ ] Inverse Gaussian

@@ -1,0 +1,364 @@
+---
+title: "Zero-Inflated Poisson and Negative Binomial: Why Do Some PhD Students Publish Nothing?"
+description: "Zero-inflated Poisson and negative binomial regression in R, by hand and with pscl::zeroinfl(), on the articles of 915 PhD students in biochemistry: two kinds of zeros, how to read the two parts, expected counts and the probability of a structural zero, rootograms, comparison with Poisson, negative binomial and hurdle models by AIC, BIC, Vuong's test and a parametric bootstrap, why many zeros do not mean zero inflation, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: two kinds of nothing
+
+Of 915 PhD students in biochemistry, 275 published **no article** in the last three years of their studies. Why not?
+
+There may be two kinds of them. Some were never going to publish: they planned a career outside research, or their laboratory does not publish with students. For them the number is zero by nature. Others could have published, and worked on it, but it happened that nothing appeared in those three years. The data show the same 0 for both.
+
+**Zero-inflated** models (Lambert, 1992) say exactly this: the zeros come from two sources. One part of the model says who is in the group of *certain* zeros. The other is an ordinary count model (Poisson or negative binomial) for everybody else, which produces zeros too. They are popular, easy to fit, and easy to over-interpret. **Many zeros do not prove that there are two kinds of them.** This page fits the models and then asks whether they are needed.
+
+```{r packages}
+library(pscl)       # zeroinfl(), hurdle(), vuong(); the data are also in this package
+library(MASS)       # glm.nb(): negative binomial regression (comes with R)
+library(ggplot2)
+
+model_colours <- c(Poisson = "#eb6834", ZIP = "#eda100", NB = "#2a78d6", ZINB = "#1baf7a")
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data were collected by J. Scott Long (1990) for a study of sex differences in science:
+
+```{r download}
+phd <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/pscl/bioChemists.csv")
+phd <- with(phd, data.frame(articles = art, female = as.integer(fem == "Women"), married = as.integer(mar == "Married"),
+                            kids = kid5, prestige = phd, mentor = ment))
+str(phd)
+c(students = nrow(phd), mean = mean(phd$articles), variance = var(phd$articles), zeros = sum(phd$articles == 0))
+```
+
+`articles` is the number of articles in the last three years of the PhD, `kids` the number of children under 6, `prestige` the prestige of the department (1 to 5) and `mentor` the number of articles of the student's mentor in the same time.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ggplot(phd, aes(articles)) +
+  geom_bar(fill = "#2a78d6") +
+  scale_x_continuous(breaks = 0:19) +
+  labs(title = "Articles of 915 PhD students", x = "articles in three years", y = "students") +
+  theme_bw()
+expected_zero <- dpois(0, mean(phd$articles)) * nrow(phd)
+expected_zero
+```
+
+The mean is `r f2(mean(phd$articles))`. A Poisson distribution with this mean would have `r f0(expected_zero)` zeros; there are `r sum(phd$articles == 0)`. But it would also have a variance of `r f2(mean(phd$articles))`, and the variance is `r f2(var(phd$articles))`, **overdispersed**. Too many zeros are one sign of overdispersion, and a long tail to the right is another. Both can come from the same cause: students differ in more ways than we have measured.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: the count part
+
+For the students who can publish, a count distribution with mean $\mu_i = \exp(x_i^\top\beta)$. Either Poisson, or negative binomial with variance $\mu + \mu^2/\theta$.
+
+### Step 2: the zero part
+
+With probability $\pi_i$ a student belongs to the group that never publishes (a **structural** zero):
+
+$$\log\frac{\pi_i}{1 - \pi_i} = z_i^\top\gamma$$
+
+### Step 3: put together
+
+$$P(y_i = 0) = \pi_i + (1 - \pi_i)\, f(0 \mid \mu_i), \qquad P(y_i = k) = (1 - \pi_i)\, f(k \mid \mu_i) \;\text{ for } k \ge 1$$
+
+A zero can come from either source. Anything else can only come from the count part. The mean is $E(y_i) = (1 - \pi_i)\,\mu_i$.
+
+### Step 4: the difference from a hurdle model
+
+A [hurdle model](EXAMPLE_HURDLE_TWO_PART.Rmd) has **one** kind of zero, and its count part cannot produce zeros. So its zero part says "any article or none", and the zero part of a zero-inflated model says "in the group that never publishes". **The signs are opposite, and the meanings differ.** This is the most common mistake in reading the output.
+
+### Step 5: maximum likelihood, by hand
+
+```{r by_hand}
+X <- model.matrix(~ female + married + kids + prestige + mentor, data = phd); y <- phd$articles; k <- ncol(X)
+minus_loglik <- function(par) {                              # zero-inflated Poisson
+  mu <- exp(drop(X %*% par[1:k])); p <- plogis(drop(X %*% par[k + 1:k]))
+  -sum(log(ifelse(y == 0, p + (1 - p) * dpois(0, mu), (1 - p) * dpois(y, mu))))
+}
+pois  <- glm(articles ~ female + married + kids + prestige + mentor, family = poisson, data = phd)
+start <- c(coef(pois), -1, rep(0, k - 1))
+hand  <- optim(start, minus_loglik, method = "BFGS", control = list(maxit = 1000, reltol = 1e-12))
+zip   <- zeroinfl(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "poisson")
+c(by_hand = -hand$value, zeroinfl = as.numeric(logLik(zip)))
+round(rbind(by_hand = hand$par[c(1:2, k + 6)], zeroinfl = unname(coef(zip))[c(1:2, k + 6)]), 3)
+```
+
+---
+
+## 4. Fitting the models and reading the output
+
+Four models: Poisson, negative binomial, and their zero-inflated versions.
+
+```{r fit}
+nb   <- glm.nb(articles ~ female + married + kids + prestige + mentor, data = phd)
+zinb <- zeroinfl(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "negbin")
+summary(zinb)
+```
+
+```{r read}
+cnt <- summary(zinb)$coefficients$count; zer <- summary(zinb)$coefficients$zero
+irr <- exp(cnt[, 1]); orz <- exp(zer[, 1])
+```
+
+The output has two tables.
+
+- **Count model**: the students who can publish. $e^\beta$ is a ratio of expected counts. Women: `r f2(irr[["female"]])` times as many articles as men (*p* `r pval(cnt["female", 4])`). Each child under 6: `r f2(irr[["kids"]])` times. Each article of the mentor: `r f3(irr[["mentor"]])` times.
+- **Zero-inflation model**: who is in the group that **never** publishes. A positive coefficient means **more** likely to be a certain zero. The only clear one is the mentor: each of the mentor's articles multiplies the odds of being a certain zero by `r f2(orz[["mentor"]])` (*p* `r pval(zer["mentor", 4])`). A student with an active mentor is hardly ever in that group.
+- **`Log(theta)`**: $\theta$ = `r f2(zinb$theta)`. The smaller, the more the students still differ.
+
+By the rest of the table we cannot say much about who the certain zeros are: the standard errors of the zero part are large. A student whose mentor published nothing and one whose mentor published ten articles:
+
+```{r example_students}
+two <- data.frame(female = 0, married = 1, kids = 0, prestige = 3, mentor = c(0, 10))
+pr  <- data.frame(mentor = two$mentor, certain_zero = predict(zinb, two, type = "zero"), mean_if_not = predict(zinb, two, type = "count"),
+                  overall_mean = predict(zinb, two, type = "response"), chance_of_0 = predict(zinb, two, type = "prob")[, 1])
+round(pr, 3)
+```
+
+---
+
+## 5. Do we need it? Four ways to ask
+
+### The zeros, and everything else
+
+```{r zeros}
+hurdle_nb <- hurdle(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "negbin")
+zeros <- c(observed = sum(y == 0), Poisson = sum(dpois(0, fitted(pois))), ZIP = sum(predict(zip, type = "prob")[, 1]),
+           NB = sum(dnbinom(0, mu = fitted(nb), size = nb$theta)), ZINB = sum(predict(zinb, type = "prob")[, 1]))
+round(zeros, 1)
+```
+
+Poisson expects `r f0(zeros[["Poisson"]])` zeros instead of `r f0(zeros[["observed"]])`. But the **plain negative binomial expects `r f0(zeros[["NB"]])`**, without any zero inflation. It has one parameter more than Poisson, and it repairs the zeros and the tail at the same time. ZIP expects `r f0(zeros[["ZIP"]])`.
+
+A **rootogram** compares all the counts (Kleiber & Zeileis, 2016). The bars are the observed frequencies, hanging from the expected ones, on a square-root scale. A bar that ends above the zero line means too few observed, one that goes below it too many.
+
+```{r rootograms, fig.height = 6}
+kmax <- 10
+expected <- list(
+  Poisson = sapply(0:kmax, function(j) sum(dpois(j, fitted(pois)))),
+  ZIP     = colSums(predict(zip, type = "prob"))[1:(kmax + 1)],
+  NB      = sapply(0:kmax, function(j) sum(dnbinom(j, mu = fitted(nb), size = nb$theta))),
+  ZINB    = colSums(predict(zinb, type = "prob"))[1:(kmax + 1)])
+observed <- sapply(0:kmax, function(j) sum(y == j))
+roots <- do.call(rbind, lapply(names(expected), function(m)
+  data.frame(model = m, count = 0:kmax, top = sqrt(expected[[m]]), bottom = sqrt(expected[[m]]) - sqrt(observed))))
+roots$model <- factor(roots$model, levels = names(model_colours))
+
+ggplot(roots, aes(count)) +
+  geom_rect(aes(xmin = count - 0.4, xmax = count + 0.4, ymin = bottom, ymax = top), fill = "grey75") +
+  geom_hline(yintercept = 0) +
+  geom_line(aes(y = top, colour = model), linewidth = 0.9) + geom_point(aes(y = top, colour = model), size = 1.8) +
+  facet_wrap(~ model) +
+  scale_colour_manual(values = model_colours, guide = "none") +
+  scale_x_continuous(breaks = 0:kmax) +
+  labs(title = "Rootograms: observed bars hanging from the expected curve", x = "articles", y = "square root of the frequency") +
+  theme_bw()
+```
+
+The Poisson model fails everywhere. ZIP repairs the zero and misses the rest: it expects too few students with one article (the bar goes below the line), too many with three, and too few with six or seven. The NB and the ZINB both fit.
+
+### Information criteria
+
+```{r criteria}
+models <- list(Poisson = pois, ZIP = zip, NB = nb, ZINB = zinb, `hurdle NB` = hurdle_nb)
+crit <- data.frame(model = names(models), parameters = sapply(models, function(m) attr(logLik(m), "df")),
+                   logLik = sapply(models, function(m) as.numeric(logLik(m))), AIC = sapply(models, AIC), BIC = sapply(models, BIC), row.names = NULL)
+print(transform(crit, logLik = round(logLik, 1), AIC = round(AIC, 1), BIC = round(BIC, 1)), row.names = FALSE)
+get <- function(m, col) crit[crit$model == m, col]
+```
+
+From Poisson to ZIP the AIC falls by `r f0(get("Poisson", "AIC") - get("ZIP", "AIC"))`. From Poisson to **NB** it falls by `r f0(get("Poisson", "AIC") - get("NB", "AIC"))`, with one parameter instead of six. The ZINB is `r f1(get("NB", "AIC") - get("ZINB", "AIC"))` points better than the NB by AIC, and `r f1(get("ZINB", "BIC") - get("NB", "BIC"))` points **worse** by BIC, which charges more for its six extra parameters. The two criteria disagree, and the evidence for a second kind of zero is weak.
+
+### Vuong's test, and why not to use it here
+
+```{r vuong}
+vt <- capture.output(vuong(nb, zinb))
+cat(vt, sep = "\n")
+```
+
+Vuong's test compares two models that are not nested. It is printed in many papers as a "test of zero inflation". But the NB **is** a special case of the ZINB (with $\pi = 0$, which is at the edge of the possible values), so the conditions of the test do not hold, and its *p* value means little (Wilson, 2015). And the raw, AIC-corrected and BIC-corrected versions give three different answers.
+
+### A parametric bootstrap
+
+The honest test simulates. Take the fitted NB (no inflation), generate new data from it, fit both models, and see how often the gain in likelihood is as large as ours by chance alone:
+
+```{r bootstrap}
+gain <- 2 * (as.numeric(logLik(zinb)) - as.numeric(logLik(nb)))
+set.seed(81)
+gains <- replicate(200, {
+  d <- phd; d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
+  a <- try(suppressWarnings(glm.nb(formula(nb), data = d)), silent = TRUE)
+  z <- try(suppressWarnings(zeroinfl(formula(zinb), data = d, dist = "negbin")), silent = TRUE)
+  if (inherits(a, "try-error") || inherits(z, "try-error")) NA else 2 * (as.numeric(logLik(z)) - as.numeric(logLik(a)))
+})
+p_boot <- (1 + sum(gains >= gain, na.rm = TRUE)) / (1 + sum(!is.na(gains)))
+c(our_gain = gain, mean_gain_without_inflation = mean(gains, na.rm = TRUE), p = p_boot, failed = sum(is.na(gains)))
+```
+
+Our gain is `r f1(gain)`. Without any inflation the gain is `r f1(mean(gains, na.rm = TRUE))` on average, and a gain as large as ours has the probability *p* `r pval(p_boot)`. So the ZINB describes something that the NB does not. The next section asks what.
+
+---
+
+## 6. What does the zero part really say?
+
+The zero part depends almost entirely on the mentor. Students whose mentors published nothing are the "certain zeros":
+
+```{r mentor_chart}
+grid <- data.frame(female = 0, married = 1, kids = 0, prestige = 3, mentor = 0:30)
+grid$zero  <- predict(zinb, grid, type = "zero")
+grid$ZINB  <- predict(zinb, grid, type = "response")
+grid$NB    <- predict(nb, grid, type = "response")
+long <- rbind(data.frame(mentor = grid$mentor, articles = grid$ZINB, model = "ZINB"), data.frame(mentor = grid$mentor, articles = grid$NB, model = "NB"))
+by_m <- aggregate(articles ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE), data = phd, FUN = mean)
+by_m$mentor <- aggregate(mentor ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE), data = phd, FUN = mean)$mentor
+ggplot(long, aes(mentor, articles, colour = model)) +
+  geom_point(data = by_m, aes(mentor, articles), inherit.aes = FALSE, size = 2.4, colour = "grey30") +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = model_colours, name = NULL) +
+  coord_cartesian(xlim = c(0, 30)) +
+  labs(title = "Expected articles and the mentor's articles",
+       subtitle = "Points: mean of all students in groups of mentors. Lines: a married man without children",
+       x = "articles of the mentor", y = "articles of the student") +
+  theme_bw() + theme(legend.position = "bottom")
+certain   <- sum(predict(zinb, type = "zero"))                                           # expected number of certain zeros
+posterior <- predict(zinb, type = "zero") / predict(zinb, type = "prob")[, 1]            # P(certain zero | 0 articles)
+c(certain_zeros = certain, share_among_those_with_0 = mean(posterior[y == 0]))
+```
+
+By the ZINB, about `r f0(certain)` of the 915 students are certain zeros, which is `r pct(mean(posterior[y == 0]))` of those with no article. What the zero part has found may simply be a **bend**. The log of the expected count is not a straight line in the mentor's articles: it rises quickly at first and then slowly. The NB has to use one slope for all, and the zero part offers a way to bend the curve near zero. Give the NB a bend of its own, and compare again:
+
+```{r bend}
+nb_bend <- glm.nb(articles ~ female + married + kids + prestige + log1p(mentor), data = phd)
+zinb_bend <- zeroinfl(articles ~ female + married + kids + prestige + log1p(mentor), data = phd, dist = "negbin")
+bend <- data.frame(model = c("NB, mentor", "ZINB, mentor", "NB, log(1 + mentor)", "ZINB, log(1 + mentor)"),
+                   parameters = c(7, 13, 7, 13), AIC = c(AIC(nb), AIC(zinb), AIC(nb_bend), AIC(zinb_bend)), BIC = c(BIC(nb), BIC(zinb), BIC(nb_bend), BIC(zinb_bend)))
+print(transform(bend, AIC = round(AIC, 1), BIC = round(BIC, 1)), row.names = FALSE)
+```
+
+With the logarithm of the mentor's articles, the **plain NB has an AIC of `r f1(AIC(nb_bend))`**, `r if (AIC(nb_bend) < AIC(zinb)) "better" else "worse"` than the ZINB with the straight line (`r f1(AIC(zinb))`), with six parameters fewer. Adding zero inflation to it changes the AIC by `r f1(AIC(zinb_bend) - AIC(nb_bend))`. The "two kinds of zeros" `r if (AIC(zinb_bend) - AIC(nb_bend) > -2) "have disappeared. They were a wrong curve." else "are still preferred, but by less."`
+
+### A warning from simulation
+
+What does one conclude who compares only Poisson with ZIP, when the truth is a negative binomial without any certain zeros?
+
+```{r false_inflation}
+set.seed(82)
+false_zip <- replicate(200, {
+  d <- phd; d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
+  p0 <- glm(formula(pois), family = poisson, data = d); z0 <- suppressWarnings(zeroinfl(formula(zip), data = d))
+  c(zip_wins = AIC(z0) < AIC(p0), certain_zeros = mean(predict(z0, type = "zero")))
+})
+rowMeans(false_zip)
+```
+
+ZIP beats Poisson in `r pct(mean(false_zip["zip_wins", ]))` of the data sets, and it declares `r pct(mean(false_zip["certain_zeros", ]))` of the students to be certain zeros on average. There were **none**. Beating Poisson proves overdispersion, not two kinds of zeros.
+
+---
+
+## 7. Things to keep in mind
+
+- **First the negative binomial.** Many zeros do not mean zero inflation (Warton, 2005). Use a zero-inflated model when theory says that there are certain zeros (people who do not own a car and car accidents, men and pregnancies), not because the bar at zero is high.
+- **Check the curve** of the predictors before you explain zeros.
+- **Zero inflation or hurdle?** If nobody can tell the two kinds of zeros apart in principle, the hurdle model is easier to explain. The fits are often the same.
+- **Read the zero part with care.** In `zeroinfl()` it models the probability of a certain **zero**; in `hurdle()` the probability of a **positive** count.
+- **Say what you report.** The coefficients of the count part are for those who can publish. The effect on the mean of everybody is another number: $E(y) = (1 - \pi)\mu$.
+- **Large standard errors in the zero part** are the rule. With few zeros, or a large $\mu$, the zero part is hardly identified.
+- **Different predictors** in the two parts are allowed: `zeroinfl(y ~ x | z)`. With `| 1` there is one constant probability.
+- **Exposure**: an `offset(log(time))` goes into the count part.
+- **Clustered data**: `glmmTMB` fits zero-inflated models with random effects.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the distribution of the counts, the models that were compared and how, both parts of the chosen model, and the effects on the mean. The numbers come from the R objects:
+
+```{r apa_numbers}
+s_nb <- coef(summary(nb_bend)); ci_nb <- suppressMessages(confint(nb_bend))
+apa_table <- data.frame(
+  Predictor = c("Intercept", "Female", "Married", "Children under 6", "Prestige of the department", "log(1 + mentor's articles)"),
+  b  = f2(s_nb[, 1]), SE = f2(s_nb[, 2]), z = f2(s_nb[, 3]), p = sapply(s_nb[, 4], function(p) sub("^= ", "", pval(p))),
+  IRR = paste0(f2(exp(s_nb[, 1])), " [", f2(exp(ci_nb[, 1])), ", ", f2(exp(ci_nb[, 2])), "]"))
+```
+
+**Method** (data analysis):
+
+> The number of articles of `r nrow(phd)` PhD students (Long, 1990) had a mean of `r f2(mean(y))` and a variance of `r f2(var(y))`, and `r sum(y == 0)` students (`r pct(mean(y == 0))`) had none. We compared Poisson, negative binomial, zero-inflated Poisson and zero-inflated negative binomial regressions (Zeileis et al., 2008) with the AIC, the BIC, the expected number of zeros and rootograms, and tested zero inflation with a parametric bootstrap of the likelihood ratio (200 samples). The mentor's articles entered linearly or as log(1 + *x*). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the packages pscl and MASS.
+
+**Results:**
+
+> The Poisson model expected `r f0(zeros[["Poisson"]])` students without an article and the negative binomial model `r f0(zeros[["NB"]])`, against `r f0(zeros[["observed"]])` observed. With the mentor's articles entered linearly, the zero-inflated negative binomial model fitted better than the negative binomial (bootstrap *p* `r pval(p_boot)`; AIC = `r f1(AIC(zinb))` against `r f1(AIC(nb))`), and the probability of a certain zero depended on the mentor's articles. With log(1 + mentor's articles) the negative binomial model without zero inflation had an AIC of `r f1(AIC(nb_bend))`, and zero inflation did not improve it (AIC = `r f1(AIC(zinb_bend))`), so we report this model (Table 1). Women published fewer articles than men, *IRR* = `r f2(exp(s_nb["female", 1]))`, 95% CI [`r f2(exp(ci_nb["female", 1]))`, `r f2(exp(ci_nb["female", 2]))`], as did students with young children, *IRR* = `r f2(exp(s_nb["kids", 1]))` per child, 95% CI [`r f2(exp(ci_nb["kids", 1]))`, `r f2(exp(ci_nb["kids", 2]))`].
+
+**Table 1**
+
+*Negative Binomial Regression of the Number of Articles*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "*z*", "*p*", "IRR [95% CI]"), align = "lrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(phd)`. IRR = incidence rate ratio. θ = `r f2(nb_bend$theta)`.
+
+**Points to remember:**
+
+- Report the mean, the variance and the share of zeros.
+- Compare with the negative binomial, not only with Poisson.
+- If you keep a zero-inflated model, report both parts and the effect on the overall mean.
+- Do not present Vuong's test as a test of zero inflation.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | Counts with zeros from two sources: some units can never have a positive count |
+| **The model** | $P(0) = \pi + (1 - \pi) f(0)$, $P(k) = (1 - \pi) f(k)$; $E(y) = (1 - \pi)\mu$ |
+| **How (R)** | `pscl::zeroinfl(y ~ x | z, data, dist = "poisson")` or `"negbin"` |
+| **Count part** | $e^\beta$: ratio of expected counts, for those who can |
+| **Zero part** | Positive coefficient: more likely a **certain zero** |
+| **Compare with** | The negative binomial: AIC, BIC, rootograms, parametric bootstrap |
+| **Warning** | Overdispersion or a wrong curve can look like zero inflation |
+| **Related pages** | [Hurdle models](EXAMPLE_HURDLE_TWO_PART.Rmd), [generalized linear models](EXAMPLE_GENERALIZED.rmd) (Poisson, negative binomial) |
+
+---
+
+## References
+
+Kleiber, C., & Zeileis, A. (2016). Visualizing count data regressions using rootograms. *The American Statistician*, *70*(3), 296–303. https://doi.org/10.1080/00031305.2016.1173590
+
+Lambert, D. (1992). Zero-inflated Poisson regression, with an application to defects in manufacturing. *Technometrics*, *34*(1), 1–14. https://doi.org/10.2307/1269547
+
+Long, J. S. (1990). The origins of sex differences in science. *Social Forces*, *68*(4), 1297–1316. https://doi.org/10.2307/2579146
+
+Warton, D. I. (2005). Many zeros does not mean zero inflation: Comparing the goodness-of-fit of parametric models to multivariate abundance data. *Environmetrics*, *16*(3), 275–289. https://doi.org/10.1002/env.702
+
+Wilson, P. (2015). The misuse of the Vuong test for non-nested models to test for zero-inflation. *Economics Letters*, *127*, 51–53. https://doi.org/10.1016/j.econlet.2014.12.029
+
+Zeileis, A., Kleiber, C., & Jackman, S. (2008). Regression models for count data in R. *Journal of Statistical Software*, *27*(8), 1–25. https://doi.org/10.18637/jss.v027.i08
