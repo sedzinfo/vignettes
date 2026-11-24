@@ -1,0 +1,405 @@
+---
+title: "Instrumental Variables: What Is a Year of School Worth?"
+description: "Instrumental variables and two-stage least squares in R with ivreg, on Card's 3,010 young men and the college near home: why least squares is wrong when something unseen matters, the conditions for an instrument, the Wald estimator and two-stage least squares by hand, why the second stage gives wrong standard errors, the first-stage F, Wu-Hausman and Sargan tests by hand, weak instruments in a simulation and the Anderson-Rubin interval, whose effect it is, how small a violation would change the answer, a control that is not innocent, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: school, or what comes with it?
+
+People with more schooling earn more. Is it the **school** that makes the difference? Or would the same persons have earned more anyway, because they are able, hard-working, or from families that help? Nobody can measure all of that. So adding control variables, the remedy of ordinary regression, does not finish the job.
+
+An **instrumental variable** (an *instrument*) takes another way. Find something that
+
+- pushes people towards more schooling,
+- has nothing to do with their ability or family,
+- and touches their wages in **no other way** than through schooling.
+
+Then compare the wages of those who were pushed and those who were not. Whatever difference there is, must have come through schooling.
+
+David Card (1993) proposed the **distance to a college**. A boy who grew up in a county with a four-year college could live at home while studying. For some boys that decided the matter. This page repeats his analysis, with every step by hand, and then asks how far one can trust it. The second part is the more important one: the conditions above cannot be proved from the data.
+
+```{r packages}
+library(ggplot2)
+library(ivreg)       # ivreg(): two-stage least squares with diagnostics
+# also used, with package::function: sandwich (robust standard errors)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0\\.", "\\1.", formatC(x, format = "f", digits = d))          # APA: no leading zero
+pval <- function(p) ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+num  <- function(x) trimws(format(x, big.mark = ","))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+```{r download}
+card <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/wooldridge/card.csv")
+dim(card)
+head(card[, c("lwage", "wage", "educ", "age", "exper", "black", "south", "smsa", "smsa66", "nearc4", "nearc2")], 4)
+controls <- "exper + expersq + black + south + smsa + smsa66 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668 + reg669"
+```
+
+`r num(nrow(card))` men of the US National Longitudinal Survey of Young Men, `r min(card$age)` to `r max(card$age)` years old when their wages were asked in 1976. The file comes from the R package *wooldridge*. The variables:
+
+- `lwage`: the logarithm of the hourly **wage** (in cents). A coefficient of 0.10 means about 10% more.
+- `educ`: years of **schooling**.
+- `nearc4`: 1 if there was a **four-year college** in the county where he lived in 1966 (as a boy or very young man), otherwise 0. `nearc2` is the same for two-year colleges.
+- The controls of Card: years of potential work experience (`exper`, which is age − schooling − 6, and its square), `black`, living in the `south`, living in a metropolitan area in 1976 (`smsa`) and in 1966 (`smsa66`), and the region in 1966 (eight indicator variables, `reg662` to `reg669`).
+
+---
+
+## 2. Look at the data
+
+```{r wage_chart, fig.height = 4.5}
+m_ed <- aggregate(lwage ~ educ, card, function(v) c(mean(v), length(v))); m_ed <- data.frame(educ = m_ed$educ, lwage = m_ed$lwage[, 1], n = m_ed$lwage[, 2])
+ggplot(subset(m_ed, n >= 10), aes(educ, lwage)) + geom_point(aes(size = n), colour = "#2a78d6") + geom_smooth(data = card, aes(educ, lwage), method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") + scale_size_area(max_size = 8) +
+  labs(title = "Mean log wage by years of schooling", subtitle = "Size of the points: number of men", x = "years of schooling", y = "mean log wage") + theme_bw()
+by_near <- aggregate(cbind(educ, lwage, black, south, smsa66) ~ nearc4, card, mean); by_near$n <- as.numeric(table(card$nearc4)); print(round(by_near, 3), row.names = FALSE)
+```
+
+The men who grew up near a college (`r num(by_near$n[2])` of them) have `r f2(diff(by_near$educ))` years more schooling and wages that are `r f3(diff(by_near$lwage))` higher in logs. But they are also different in other ways: fewer are black, fewer live in the south, and most come from cities. A college does not stand just anywhere. So the instrument is at best clean **after controlling** for region and city.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: why least squares is wrong
+
+The true equation has a variable $u$ that we cannot see, which is also related to schooling $s$:
+
+$$\log w = \beta\, s + u, \qquad \text{Cov}(s, u) \ne 0$$
+
+Least squares attributes to $s$ everything that comes along with it, $\hat\beta_{OLS} \to \beta + \text{Cov}(s, u)/\text{Var}(s)$. The sample size does not help.
+
+```{r dag, fig.height = 3.4}
+nodes <- data.frame(x = c(0, 2, 4, 3), y = c(0, 0, 0, 1.3), label = c("college nearby\n(instrument)", "schooling", "wage", "ability, family, ...\n(not observed)"))
+arrows <- data.frame(x = c(0.5, 2.4, 2.8, 3.2), y = c(0, 0, 1.05, 1.05), xend = c(1.55, 3.65, 2.15, 3.85), yend = c(0, 0, 0.15, 0.15))
+never  <- data.frame(x = c(0.3, 0.1), y = c(-0.15, 0.2), xend = c(3.8, 2.3), yend = c(-0.15, 1.2), curv = 1)
+ggplot() + geom_segment(data = arrows, aes(x, y, xend = xend, yend = yend), arrow = arrow(length = unit(0.25, "cm")), linewidth = 0.8, colour = "#2a78d6") +
+  geom_curve(data = never[1, ], aes(x, y, xend = xend, yend = yend), curvature = 0.25, arrow = arrow(length = unit(0.25, "cm")), linetype = "dashed", colour = "#eb6834") +
+  geom_segment(data = never[2, ], aes(x, y, xend = xend, yend = yend), linetype = "dashed", colour = "#eb6834") +
+  geom_text(data = nodes, aes(x, y, label = label), size = 4.2, lineheight = 0.9) + annotate("text", x = 2, y = -0.78, label = "no direct way (exclusion)", colour = "#eb6834", size = 3.6) + annotate("text", x = 0.75, y = 0.95, label = "no connection\n(independence)", colour = "#eb6834", size = 3.6) +
+  xlim(-0.6, 4.6) + ylim(-0.95, 1.6) + labs(title = "What an instrument needs: the blue arrows, and not the dashed lines") + theme_void()
+```
+
+### Step 2: the conditions
+
+1. **Relevance**: the instrument changes schooling. This can be checked.
+2. **Independence**: the instrument has nothing to do with $u$ (after the controls).
+3. **Exclusion**: the instrument changes wages **only** through schooling.
+4. **Monotonicity** (for the interpretation, section 6): the instrument pushes nobody in the opposite direction.
+
+### Step 3: the Wald estimator
+
+With one instrument that is 0 or 1 and no controls, the estimator is the ratio of two differences:
+
+$$\hat\beta_{IV} = \frac{\bar y_{\text{near}} - \bar y_{\text{far}}}{\bar s_{\text{near}} - \bar s_{\text{far}}}$$
+
+The numerator is the effect of the instrument on the outcome (the **reduced form**), the denominator its effect on schooling (the **first stage**).
+
+```{r wald}
+c(reduced_form = diff(by_near$lwage), first_stage = diff(by_near$educ), Wald = diff(by_near$lwage) / diff(by_near$educ))
+```
+
+Without controls we know that condition 2 fails, so `r f3(diff(by_near$lwage) / diff(by_near$educ))` is not our answer.
+
+### Step 4: two-stage least squares
+
+With controls $X$ (and perhaps several instruments $Z$) the same idea is done with two regressions, **two-stage least squares** (2SLS):
+
+1. First stage: regress schooling on the instrument and the controls, and keep the fitted values $\hat s$. They contain only the part of schooling that the instrument and the controls can explain.
+2. Second stage: regress the log wage on $\hat s$ and the controls.
+
+$$\hat\beta = (W^\top P_Z W)^{-1} W^\top P_Z\, y, \qquad P_Z = Z(Z^\top Z)^{-1}Z^\top$$
+
+($W$: schooling and the controls; $Z$: instrument and controls.)
+
+```{r two_stages}
+fml <- function(lhs, rhs) as.formula(paste(lhs, "~", rhs))
+ols          <- lm(fml("lwage", paste("educ +", controls)), card)
+first_stage  <- lm(fml("educ", paste("nearc4 +", controls)), card)
+reduced_form <- lm(fml("lwage", paste("nearc4 +", controls)), card)
+card$educ_hat <- fitted(first_stage)
+second_stage <- lm(fml("lwage", paste("educ_hat +", controls)), card)
+
+W <- model.matrix(ols); Z <- model.matrix(first_stage); y <- card$lwage
+PW   <- Z %*% solve(crossprod(Z), crossprod(Z, W))                        # P_Z W
+beta <- drop(solve(crossprod(PW, W), crossprod(PW, y)))
+c(OLS = coef(ols)[["educ"]], reduced_form_over_first_stage = coef(reduced_form)[["nearc4"]] / coef(first_stage)[["nearc4"]], second_stage = coef(second_stage)[["educ_hat"]], matrix_formula = beta[["educ"]])
+```
+
+The three ways give the same `r f3(beta[["educ"]])`. Least squares gave `r f3(coef(ols)[["educ"]])`.
+
+### Step 5: the standard error
+
+The second regression gives the right coefficient and a **wrong standard error**: its residuals are measured from $\hat s$ instead of $s$. The right ones use the real schooling:
+
+$$e = y - W\hat\beta, \qquad \text{Var}(\hat\beta) = \frac{e^\top e}{n - p}\,(W^\top P_Z W)^{-1}$$
+
+```{r standard_error}
+e  <- drop(y - W %*% beta); s2 <- sum(e^2) / (nrow(W) - ncol(W))
+se <- sqrt(diag(s2 * solve(crossprod(PW))))
+iv <- ivreg(fml("lwage", paste("educ +", controls, "| nearc4 +", controls)), data = card)
+rbind(by_hand = c(estimate = beta[["educ"]], SE = se[["educ"]]), ivreg = coef(summary(iv))["educ", 1:2], second_stage_lm = coef(summary(second_stage))["educ_hat", 1:2])
+robust_se <- sqrt(sandwich::vcovHC(iv, type = "HC1")["educ", "educ"]); c(robust_SE = robust_se)
+```
+
+Here the wrong standard error happens to be close to the right one. It can be far off, in both directions. In `ivreg()`, the part after `|` lists the instruments **and** all controls again.
+
+---
+
+## 4. Reading the output
+
+```{r output}
+ci_iv <- confint(iv)["educ", ]; s_iv <- summary(iv)
+round(rbind(OLS = c(coef(summary(ols))["educ", ], confint(ols)["educ", ]), IV = c(coef(s_iv)["educ", ], ci_iv)), 4)
+s_iv$diagnostics
+```
+
+- The **IV estimate** says that a year of schooling raises the wage by `r f3(beta[["educ"]])` (about `r pct(exp(beta[["educ"]]) - 1)`), 95% CI [`r f3(ci_iv[1])`, `r f3(ci_iv[2])`]. Least squares says `r f3(coef(ols)[["educ"]])` (`r pct(exp(coef(ols)[["educ"]]) - 1, 1)`).
+- The interval of IV is `r f1(diff(ci_iv) / diff(confint(ols)["educ", ]))` times as wide. That is the price. IV uses only the little variation of schooling that comes from the instrument. With the partial correlation $r$ between instrument and schooling, the SE grows by about $1/|r|$; here $r$ = `r f3(sqrt(s_iv$diagnostics[1, "statistic"] / (s_iv$diagnostics[1, "statistic"] + s_iv$diagnostics[1, "df2"])))`.
+- The IV estimate is **higher** than that of least squares. If able men stay longer in school, we expected the opposite. Section 6 comes back to this.
+
+The three tests of the output, by hand:
+
+```{r diagnostics_by_hand}
+fs_without <- update(first_stage, . ~ . - nearc4)
+F_first    <- anova(fs_without, first_stage)[2, "F"]                                  # weak instruments: the F of the instrument in the first stage
+card$v_hat <- residuals(first_stage)
+wu <- coef(summary(update(ols, . ~ . + v_hat)))["v_hat", ]                            # Wu-Hausman: the first-stage residual as an extra predictor
+iv2 <- ivreg(fml("lwage", paste("educ +", controls, "| nearc2 + nearc4 +", controls)), data = card)     # two instruments
+aux <- lm(fml("residuals(iv2)", paste("nearc2 + nearc4 +", controls)), card)          # Sargan: n R^2 of the IV residuals on all instruments
+c(F_first_stage = F_first, F_Wu_Hausman = wu[["t value"]]^2, Sargan_two_instruments = nrow(card) * summary(aux)$r.squared)
+summary(iv2)$diagnostics; coef(summary(iv2))["educ", 1:2]
+sargan <- summary(iv2)$diagnostics["Sargan", ]; weak2 <- summary(iv2)$diagnostics["Weak instruments", ]
+```
+
+- **Weak instruments**: the *F* of the instrument in the first stage, here `r f1(F_first)`. More about it in section 5.
+- **Wu–Hausman**: is the IV estimate different from least squares? Put the first-stage residual into the wage equation; if it matters, schooling is *endogenous*. Here *F* = `r f2(wu[["t value"]]^2)`, *p* `r pval(wu[["Pr(>|t|)"]])`: the data cannot tell the two apart. That does not prove that least squares is right; the IV estimate is just imprecise.
+- **Sargan**: with **more** instruments than needed one can check whether they tell the same story. With the two-year college as second instrument the estimate is `r f3(coef(iv2)[["educ"]])` and the test has *p* `r pval(sargan[["p-value"]])`: no contradiction. But two instruments of the same kind can be wrong in the same way, and then the test does not notice. (The *F* for both together is `r f1(weak2[["statistic"]])`: the second one adds almost nothing.)
+
+---
+
+## 5. Weak instruments
+
+If the instrument hardly moves schooling, the estimator divides by a number near zero. The estimates jump around, and the usual interval (estimate ± 1.96 *SE*) can be wrong. A simulation where we know the truth (β = 0.08). `pi` is the effect of the instrument on schooling, `rho` the endogeneity: the correlation between what we do not see in schooling and what we do not see in wages.
+
+```{r weak_simulation}
+set.seed(211)
+one <- function(pi, rho, n = 1000) {
+  z <- rep(0:1, length.out = n); u <- rnorm(n); s <- 12 + pi * z + 2 * (rho * u + sqrt(1 - rho^2) * rnorm(n)); y <- 0.08 * s + 0.4 * u
+  zc <- z - mean(z); fs <- sum(zc * s) / sum(zc^2); rf <- sum(zc * y) / sum(zc^2); b <- rf / fs
+  e <- (y - mean(y)) - b * (s - mean(s)); se <- sqrt(sum(e^2) / (n - 2) / sum(zc^2)) / abs(fs)
+  F <- fs^2 * sum(zc^2) / (sum(((s - mean(s)) - fs * zc)^2) / (n - 2))
+  d <- (y - mean(y)) - 0.08 * (s - mean(s)); g <- sum(zc * d) / sum(zc^2); ar <- g / sqrt(sum((d - g * zc)^2) / (n - 2) / sum(zc^2))     # Anderson-Rubin at the truth
+  c(iv = b, ols = cov(s, y) / var(s), F = F, covered = abs(b - 0.08) < 1.96 * se, ar_covered = abs(ar) < 1.96)
+}
+settings <- expand.grid(pi = c(0.1, 0.25, 0.5, 1), rho = c(0.6, 0.95))
+sim <- do.call(rbind, lapply(seq_len(nrow(settings)), function(i) { r <- t(replicate(2000, one(settings$pi[i], settings$rho[i])))
+  data.frame(settings[i, ], mean_F = mean(r[, "F"]), OLS = mean(r[, "ols"]), IV_median = median(r[, "iv"]), IV_low = quantile(r[, "iv"], 0.05), IV_high = quantile(r[, "iv"], 0.95), coverage = mean(r[, "covered"]), coverage_AR = mean(r[, "ar_covered"])) }))
+print(round(sim, 3), row.names = FALSE)
+si <- function(p, r) sim[sim$pi == p & sim$rho == r, ]
+c(endogeneity_in_the_data_of_Card = cor(residuals(iv), residuals(first_stage)))
+```
+
+- **Least squares** gives about `r f2(si(0.1, 0.6)$OLS)` with an endogeneity of 0.6 and `r f2(si(0.1, 0.95)$OLS)` with 0.95, instead of 0.08, whatever the instrument.
+- With a **strong** instrument (mean *F* = `r f1(si(1, 0.6)$mean_F)`) the IV estimates lie around 0.08.
+- With the **weakest** one (mean *F* = `r f1(si(0.1, 0.6)$mean_F)`) the median of the IV estimates is `r f2(si(0.1, 0.6)$IV_median)` or `r f2(si(0.1, 0.95)$IV_median)`: it has moved towards least squares. And 90% of the estimates lie between `r f2(si(0.1, 0.6)$IV_low)` and `r f2(si(0.1, 0.6)$IV_high)` (endogeneity 0.6).
+- The **usual interval** contains the truth in `r pct(min(sim$coverage[sim$rho == 0.6]))` to `r pct(max(sim$coverage[sim$rho == 0.6]))` of the samples with an endogeneity of 0.6, even with weak instruments. It is right there, and very wide. With 0.95 its coverage falls to `r pct(si(0.1, 0.95)$coverage)` for the weakest instrument.
+
+This is why the advice in the literature looks contradictory. An old rule asks for *F* > 10 (Staiger & Stock, 1997). Lee et al. (2022) show that a *t* test with the usual 1.96 needs an *F* above 104.7 to have an error of at most 5% in the **worst case**. Angrist and Kolesár (2024) show that with **one** instrument the usual interval is nearly right unless the endogeneity is extreme. Card's instrument has an *F* of `r f1(F_first)`, and the estimated endogeneity is `r f2(cor(residuals(iv), residuals(first_stage)))`. It is best to use an interval that does not depend on all this:
+
+### The Anderson–Rubin interval
+
+A test that works with **any** strength (Anderson & Rubin, 1949): if the true effect were $\beta_0$, then $y - \beta_0 s$ would contain nothing of schooling, and the instrument should not predict it. Test that for many $\beta_0$ and keep those that are not rejected. In the simulation it has the right coverage in all settings (from `r pct(min(sim$coverage_AR), 1)` to `r pct(max(sim$coverage_AR), 1)`).
+
+```{r anderson_rubin}
+ar_p  <- function(b0) { r <- lm(fml(paste0("I(lwage - ", b0, " * educ)"), paste("nearc4 +", controls)), card); coef(summary(r))["nearc4", 4] }
+grid  <- seq(-0.05, 0.4, by = 0.005); p_grid <- sapply(grid, ar_p)
+edge  <- function(a, b) uniroot(function(v) ar_p(v) - 0.05, c(a, b))$root
+ci_ar <- c(edge(-0.05, beta[["educ"]]), edge(beta[["educ"]], 0.5))
+rbind(Wald = ci_iv, Anderson_Rubin = ci_ar)
+ggplot(data.frame(grid, p_grid), aes(grid, p_grid)) + geom_line(colour = "#2a78d6", linewidth = 0.9) + geom_hline(yintercept = 0.05, linetype = "dashed") + geom_vline(xintercept = coef(ols)[["educ"]], colour = "#eb6834") +
+  annotate("text", x = coef(ols)[["educ"]] - 0.005, y = 0.95, label = "least squares", hjust = 1, colour = "#eb6834", size = 3.6) +
+  labs(title = "Anderson-Rubin: p-value of every possible effect", subtitle = "Values above the dashed line (.05) form the 95% interval", x = "effect of a year of schooling on the log wage", y = "p") + theme_bw()
+```
+
+The interval goes from `r f3(ci_ar[1])` to `r f3(ci_ar[2])`. It is longer than the usual one on the upper side, and it contains the result of least squares.
+
+---
+
+## 6. Whose effect is it?
+
+Card's result (IV higher than OLS) is typical for this literature. One explanation is that the effect is not the same for everybody. Boys who would go to college anyway, and boys who would never go, are not moved by the instrument. IV is about the others, the **compliers**. Imbens and Angrist (1994) called it the *local average treatment effect* (LATE). If those who are held back by cost gain more from school than the average, the IV estimate is higher, and it is right, **for them**.
+
+Where on the ladder did the instrument push? Schooling is the sum of steps, $s = \sum_k I(s \ge k)$, so the first stage can be split into steps:
+
+```{r steps_chart, fig.height = 4.5}
+steps <- data.frame(k = 8:18); steps$effect <- steps$se <- NA
+for (i in seq_along(steps$k)) { co <- coef(summary(lm(fml(paste0("I(educ >= ", steps$k[i], ")"), paste("nearc4 +", controls)), card)))["nearc4", ]; steps$effect[i] <- co[1]; steps$se[i] <- co[2] }
+ggplot(steps, aes(k, effect)) + geom_hline(yintercept = 0, linetype = "dashed") + geom_linerange(aes(ymin = effect - 1.96 * se, ymax = effect + 1.96 * se), colour = "#2a78d6") + geom_point(colour = "#2a78d6", size = 2.4) + scale_x_continuous(breaks = 8:18) +
+  labs(title = "Effect of a college nearby on reaching at least k years", x = "years of schooling, k", y = "change in the share of men") + theme_bw()
+all_steps <- sum(sapply((min(card$educ) + 1):max(card$educ), function(k) coef(lm(fml(paste0("I(educ >= ", k, ")"), paste("nearc4 +", controls)), card))[["nearc4"]]))
+c(sum_over_all_steps = all_steps, first_stage = coef(first_stage)[["nearc4"]])
+top <- steps[which.max(steps$effect), ]
+```
+
+The sum of the steps is the first stage, `r f2(coef(first_stage)[["nearc4"]])` years. The largest step is at `r top$k` years (`r f1(100 * top$effect)` percentage points more men reach it). So the estimate is about boys who were near the decision for or against some college, and not about the value of the tenth year of school.
+
+Other explanations are less flattering: measurement error in schooling pulls least squares down, the instrument may be invalid, and studies with a "significant" IV result are more easily published.
+
+---
+
+## 7. Can we believe the conditions?
+
+### Does the instrument predict what it should not?
+
+Independence cannot be tested, since $u$ is not observed. But we can check some things that the instrument should not be related to, after the controls (with age instead of experience, because experience contains schooling):
+
+```{r balance}
+controls_age <- sub("exper + expersq", "age + I(age^2)", controls, fixed = TRUE)
+check_vars <- c(fatheduc = "father's schooling", motheduc = "mother's schooling", momdad14 = "lived with both parents at 14", libcrd14 = "library card at home at 14", IQ = "IQ (from school records)", KWW = "knowledge of the world of work")
+balance <- do.call(rbind, lapply(names(check_vars), function(v) { m <- lm(fml(v, paste("nearc4 +", controls_age)), card); co <- coef(summary(m))["nearc4", ]
+  data.frame(variable = check_vars[[v]], raw_difference = mean(card[[v]][card$nearc4 == 1], na.rm = TRUE) - mean(card[[v]][card$nearc4 == 0], na.rm = TRUE), with_controls = co[1], SE = co[2], p = co[4], n = nobs(m)) }))
+print(data.frame(balance[1], round(balance[2:5], 3), n = balance$n), row.names = FALSE)
+```
+
+The controls remove most of the raw differences. What is left is small, but not nothing: `r sum(balance$p < .05)` of the `r nrow(balance)` have *p* < .05 (`r paste(balance$variable[balance$p < .05], collapse = " and ")`). (The last one was measured when many had finished school, so it may be an effect of schooling.) Boys near a college seem to come from homes with a little more books.
+
+### How large a violation would change the answer?
+
+Suppose that growing up near a college raises wages **directly** by $\gamma$ (better labour market, better schools). Then the right estimate would be
+
+$$\hat\beta(\gamma) = \frac{\text{reduced form} - \gamma}{\text{first stage}}$$
+
+(Conley et al., 2012, develop this idea.)
+
+```{r sensitivity_chart}
+rf <- coef(reduced_form)[["nearc4"]]; fs <- coef(first_stage)[["nearc4"]]
+gamma <- seq(0, 0.06, length.out = 100)
+g_ols <- rf - coef(ols)[["educ"]] * fs
+ggplot(data.frame(gamma, b = (rf - gamma) / fs), aes(gamma, b)) + geom_line(colour = "#2a78d6", linewidth = 1) + geom_hline(yintercept = coef(ols)[["educ"]], colour = "#eb6834") + geom_hline(yintercept = 0, linetype = "dashed") +
+  annotate("text", x = 0.058, y = coef(ols)[["educ"]] + 0.008, label = "least squares", hjust = 1, colour = "#eb6834", size = 3.6) +
+  labs(title = "IV estimate, if the instrument also had a direct effect on wages", x = "direct effect of a college nearby on the log wage", y = "effect of a year of schooling") + theme_bw()
+c(reduced_form = rf, first_stage = fs, gamma_for_the_OLS_result = g_ols, gamma_for_zero = rf)
+```
+
+A direct effect of only `r pct(g_ols, 1)` on wages would bring the estimate down to the one of least squares, and one of `r pct(rf, 1)` to zero. Because IV **divides** by a small first stage, small violations become large errors. And nobody can rule out a direct effect of 2%.
+
+### A control that is not innocent
+
+`exper` is age − schooling − 6. It contains schooling, the very variable that we consider endogenous. Two remedies: use age instead of experience, or treat experience as endogenous too and use age as its instrument:
+
+```{r experience}
+iv_age   <- ivreg(fml("lwage", paste("educ +", controls_age, "| nearc4 +", controls_age)), data = card)
+iv_exper <- ivreg(fml("lwage", paste("educ +", controls, "| nearc4 +", controls_age)), data = card)
+ols_age  <- lm(fml("lwage", paste("educ +", controls_age)), card)
+alt <- rbind(`OLS, experience` = coef(summary(ols))["educ", 1:2], `IV, experience as in Card` = coef(summary(iv))["educ", 1:2], `OLS, age` = coef(summary(ols_age))["educ", 1:2],
+             `IV, age` = coef(summary(iv_age))["educ", 1:2], `IV, experience instrumented by age` = coef(summary(iv_exper))["educ", 1:2])
+F_age <- summary(iv_age)$diagnostics["Weak instruments", "statistic"]
+round(alt, 3); c(first_stage_F_with_age = F_age)
+```
+
+With age, the first stage is `r if (F_age < F_first) "weaker" else "stronger"` (*F* = `r f1(F_age)`), and the IV estimate is `r f3(alt["IV, age", 1])` (*SE* = `r f3(alt["IV, age", 2])`). At a given age, a man with one more year of school has one year **less** experience, so the two versions do not measure the same thing: with experience held constant the coefficient is larger by the value of that year of work. The choice must be made by the question, and reported.
+
+---
+
+## 8. Things to keep in mind
+
+- **The instrument is an argument, not a statistic.** Write down why it should be independent, and why there is no other way to the outcome.
+- **Always show** the first stage, the reduced form and the OLS result next to the IV result. The reduced form is an ordinary regression: if you cannot see the effect there, it is probably not there (Angrist & Krueger, 2001).
+- **Weak instruments**: report the (robust) first-stage *F* and an Anderson–Rubin interval. Many weak instruments are worse than one good one: 2SLS then moves towards OLS. (LIML is better.)
+- **Do not put fitted values from a logistic first stage into a second regression.** 2SLS wants linear first stages, also for a 0/1 treatment.
+- **All controls belong in both stages.**
+- **Standard errors**: use `ivreg()`, not the second `lm()`; robust or clustered by the unit to which the instrument belongs (here the county, which is not in the file).
+- **LATE**: the estimate is for those whom the instrument moved.
+- **Measurement error** in the predictor is another reason to use IV: a second, independent measurement is an instrument for the first. (With known error variances, see [Deming regression](EXAMPLE_DEMING_REGRESSION.Rmd).)
+- **Relatives**: [regression with selection](EXAMPLE_HECKMAN_SELECTION.Rmd) uses the same kind of exclusion; [panel data](EXAMPLE_PANEL_DATA.Rmd) removes what is constant over time without any instrument.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the instrument and the argument for it, the controls, the first stage with its *F*, the reduced form, OLS and IV with standard errors, a weak-instrument-robust interval, and the group to which the estimate refers. The numbers come from the R objects:
+
+```{r apa_numbers}
+row <- function(m, term) { co <- coef(summary(m))[term, ]; c(f3(co[1]), f3(co[2])) }
+apa_table <- data.frame(Regression = c("First stage (years of schooling on college nearby)", "Reduced form (log wage on college nearby)", "Log wage on schooling, OLS", "Log wage on schooling, 2SLS", "Log wage on schooling, 2SLS, two instruments"),
+  rbind(row(first_stage, "nearc4"), row(reduced_form, "nearc4"), row(ols, "educ"), row(iv, "educ"), row(iv2, "educ")))
+names(apa_table) <- c("Regression", "b", "SE")
+apa_table$CI <- c(apply(rbind(confint(first_stage)["nearc4", ], confint(reduced_form)["nearc4", ], confint(ols)["educ", ], ci_iv, confint(iv2)["educ", ]), 1, function(v) paste0("[", f3(v[1]), ", ", f3(v[2]), "]")))
+```
+
+**Method** (data analysis):
+
+> The return to schooling was estimated for `r num(nrow(card))` men of the National Longitudinal Survey of Young Men (log hourly wage in 1976; Card, 1993). Because unobserved ability and family background may influence both schooling and wages, schooling was instrumented with the presence of a four-year college in the county of residence in 1966, which lowered the cost of college for boys who could live at home. All models contained experience, experience squared, and indicators for black, residence in the south, metropolitan residence in 1966 and 1976, and region in 1966. Two-stage least squares was used (R package ivreg); the strength of the instrument was judged with the first-stage *F*, and a 95% Anderson–Rubin interval (Anderson & Rubin, 1949) was computed because it is valid with weak instruments. Endogeneity was tested with the Wu–Hausman test, and the robustness of the result to a direct effect of the instrument was examined (Conley et al., 2012). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> After adjustment for the controls, men who grew up near a college had `r f2(fs)` more years of schooling (*SE* = `r f2(coef(summary(first_stage))["nearc4", 2])`, *F*(1, `r num(df.residual(first_stage))`) = `r f1(F_first)`, *p* `r pval(anova(fs_without, first_stage)[2, "Pr(>F)"])`) and `r pct(exp(rf) - 1, 1)` higher wages (log wage: *b* = `r f3(rf)`, *SE* = `r f3(coef(summary(reduced_form))["nearc4", 2])`, *p* `r pval(coef(summary(reduced_form))["nearc4", 4])`; Table 1). The two-stage least squares estimate of the effect of one year of schooling on the log wage was *b* = `r f3(beta[["educ"]])` (*SE* = `r f3(se[["educ"]])`, *p* `r pval(coef(s_iv)["educ", 4])`), 95% Anderson–Rubin CI [`r f3(ci_ar[1])`, `r f3(ci_ar[2])`], compared with `r f3(coef(ols)[["educ"]])` (*SE* = `r f3(coef(summary(ols))["educ", 2])`) with ordinary least squares. The Wu–Hausman test did not distinguish the two, *F*(1, `r num(s_iv$diagnostics["Wu-Hausman", "df2"])`) = `r f2(s_iv$diagnostics["Wu-Hausman", "statistic"])`, *p* `r pval(s_iv$diagnostics["Wu-Hausman", "p-value"])`. A direct effect of the instrument of `r pct(g_ols, 1)` on wages would suffice to reduce the estimate to that of least squares.
+
+**Table 1**
+
+*Schooling and Log Wages of `r num(nrow(card))` Young Men, With a College Nearby as Instrument*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Regression", "*b*", "*SE*", "95% CI"), align = "lrrl", format = "pipe", row.names = FALSE)
+```
+
+*Note.* All models contain the controls named in the text. The confidence intervals are the usual ones; the Anderson–Rubin interval for the fourth row is [`r f3(ci_ar[1])`, `r f3(ci_ar[2])`]. Two instruments: four-year and two-year college nearby (Sargan test *p* `r pval(sargan[["p-value"]])`).
+
+**Points to remember:**
+
+- Argue for the instrument before showing numbers.
+- Report the first stage, the reduced form, OLS and IV together.
+- Give the first-stage *F* and an interval that is valid for weak instruments.
+- Say for whom the estimate holds, and how large a violation would change it.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | A predictor is related to something unseen that also affects the outcome, and there is a source of variation that is not |
+| **Conditions** | Relevance (testable), independence, exclusion (not testable), monotonicity |
+| **One 0/1 instrument** | Difference in the outcome, divided by the difference in the predictor |
+| **In general** | Two-stage least squares, $\hat\beta = (W^\top P_Z W)^{-1}W^\top P_Z y$ |
+| **How (R)** | `ivreg(y ~ x + controls \| z + controls)`; also `fixest::feols()` |
+| **Check** | First-stage *F*, Wu–Hausman, Sargan (with extra instruments), balance, sensitivity |
+| **Interval** | Anderson–Rubin when the instrument is not very strong |
+| **Meaning** | The effect for those whom the instrument moved (LATE) |
+| **Related pages** | [Simple regression](EXAMPLE_SIMPLE_LINEAR_REGRESSION.Rmd), [selection models](EXAMPLE_HECKMAN_SELECTION.Rmd), [panel data](EXAMPLE_PANEL_DATA.Rmd) |
+
+---
+
+## References
+
+Anderson, T. W., & Rubin, H. (1949). Estimation of the parameters of a single equation in a complete system of stochastic equations. *The Annals of Mathematical Statistics*, *20*(1), 46–63. https://doi.org/10.1214/aoms/1177730090
+
+Angrist, J., & Kolesár, M. (2024). One instrument to rule them all: The bias and coverage of just-ID IV. *Journal of Econometrics*, *240*(2), Article 105398. https://doi.org/10.1016/j.jeconom.2022.12.012
+
+Angrist, J. D., & Krueger, A. B. (2001). Instrumental variables and the search for identification: From supply and demand to natural experiments. *Journal of Economic Perspectives*, *15*(4), 69–85. https://doi.org/10.1257/jep.15.4.69
+
+Card, D. (1993). *Using geographic variation in college proximity to estimate the return to schooling* (NBER Working Paper No. 4483). National Bureau of Economic Research. https://doi.org/10.3386/w4483
+
+Conley, T. G., Hansen, C. B., & Rossi, P. E. (2012). Plausibly exogenous. *Review of Economics and Statistics*, *94*(1), 260–272. https://doi.org/10.1162/REST_a_00139
+
+Imbens, G. W., & Angrist, J. D. (1994). Identification and estimation of local average treatment effects. *Econometrica*, *62*(2), 467–475. https://doi.org/10.2307/2951620
+
+Lee, D. S., McCrary, J., Moreira, M. J., & Porter, J. (2022). Valid *t*-ratio inference for IV. *American Economic Review*, *112*(10), 3260–3290. https://doi.org/10.1257/aer.20211063
+
+Staiger, D., & Stock, J. H. (1997). Instrumental variables regression with weak instruments. *Econometrica*, *65*(3), 557–586. https://doi.org/10.2307/2171753

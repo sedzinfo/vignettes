@@ -68,7 +68,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Neural network (EXAMPLE_MNIST covers classification only): EXAMPLE_NEURAL_NETWORK
 
 ## Causal and other
-- [ ] Instrumental variables (2SLS)
+- [x] Instrumental variables (2SLS): EXAMPLE_INSTRUMENTAL_VARIABLES
 - [ ] Regression discontinuity
 - [ ] Difference-in-differences
 - [ ] Bayesian regression
