@@ -1,0 +1,615 @@
+---
+title: "Ordinal Logistic Regression: What Makes People Satisfied With Their Job?"
+description: "Ordinal logistic regression (the proportional odds model) in R with MASS::polr(), on the 2022 General Social Survey: how autonomy, respect, job security, stress and working from home go with the job satisfaction of about 2,200 US workers, with odds ratios, thresholds, predicted probabilities, the proportional odds assumption and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from the GSS each time it runs (in a few seconds),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: four answers in order
+
+Since 1972 the General Social Survey (GSS) has asked Americans with a job: *"On the whole, how satisfied are you with the work you do — would you say you are very satisfied, moderately satisfied, a little dissatisfied, or very dissatisfied?"* In 2022 it also asked them about the job itself: are they free to decide how to do their work, are they treated with respect, is the job secure, how often is it stressful, how often do they work from home?
+
+This page asks: **which of these go with being more satisfied with one's job?** Does working from home make people happier with their work, or is it something else?
+
+The answer has four values **in order**: very dissatisfied, a little dissatisfied, moderately satisfied, very satisfied. But nobody knows how far apart they are: the step from "a little dissatisfied" to "moderately satisfied" may be bigger than the step from "moderately" to "very". The type of outcome decides the type of regression:
+
+| Outcome | Regression | Example |
+|---|---|---|
+| Two categories | [logistic](EXAMPLE_GENERALIZED.rmd) | hired or not |
+| **Ordered categories** | **ordinal logistic** | **job satisfaction: very dissatisfied ... very satisfied** |
+| Unordered categories | [multinomial logistic](EXAMPLE_MULTINOMIAL_LOGISTIC.Rmd) | how someone left a job: quit, retired, laid off... |
+
+Three other ways to analyse the answers, and what each gets wrong:
+
+- **A linear regression on the scores 1 to 4** assumes the four answers are equally far apart, and predicts answers such as 3.4 that nobody can give.
+- **A logistic regression of satisfied against dissatisfied** throws away the difference between "moderately" and "very" satisfied, where most people are.
+- **A multinomial logistic regression** ignores the order, and needs a whole set of coefficients for every answer: 27 parameters here instead of 11.
+
+The ordinal logistic regression uses the order and needs **one coefficient per predictor**.
+
+```{r packages}
+library(MASS)      # polr(): ordinal logistic regression (comes with R)
+library(ordinal)   # clm(), nominal_test(): checks the proportional odds assumption
+library(haven)     # read_dta(): reads the Stata files of the GSS
+library(ggplot2)
+
+# one colour per answer, from red (dissatisfied) to blue (satisfied), the same in every chart
+satisfaction <- c("Very dissatisfied", "A little dissatisfied", "Moderately satisfied", "Very satisfied")
+colours <- setNames(c("#c23b3a", "#ec8a85", "#6da7ec", "#1c5cab"), satisfaction)
+ink     <- setNames(c("white", "#0b0b0b", "#0b0b0b", "white"), satisfaction)  # labels on the bars
+
+# number formats for the text
+f2   <- function(x) formatC(x, format = "f", digits = 2)
+nz   <- function(x, d = 2) sub("^0", "", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+num  <- function(x) format(x, big.mark = ",")
+```
+
+---
+
+## 1. The data
+
+The [GSS](https://gss.norc.org/) is run by NORC at the University of Chicago. Its data are free and need no login: one file per survey year. 2022 is the latest year with the **Quality of Working Life** module, a set of questions about work designed by the National Institute for Occupational Safety and Health (NIOSH) and asked of everyone who had a job. The Stata file comes in a zip of 6 MB.
+
+```{r download}
+options(timeout = max(300, getOption("timeout")))   # allow slow downloads
+zip <- tempfile(fileext = ".zip")
+download.file("https://gss.norc.org/content/dam/gss/get-the-data/documents/stata/2022_stata.zip",
+              zip, mode = "wb", quiet = TRUE)
+dta <- unzip(zip, files = "2022/GSS2022.dta", exdir = tempdir())
+
+# the questions we need, out of the 1,297 columns in the file
+columns <- c("satjob", "wkfreedm", "respect", "jobsecok", "stress", "wrkhome", "wrkslf", "age", "mode")
+raw <- read_dta(dta, col_select = tidyselect::all_of(columns))
+nrow(raw)
+```
+
+Each answer is stored as a number with a label. "Don't know", "no answer", "skipped on the web" and "not asked" (people without a job are not asked about their job) are special missing codes, which `read_dta()` turns into `NA`:
+
+```{r codes}
+attr(raw$satjob, "labels")[1:4]       # the four answers and their codes
+table(raw$satjob, useNA = "ifany")    # NA: not asked or not answered
+```
+
+The codes run from very satisfied (1) to very dissatisfied (4). We turn them round, so that a higher number always means **more** of something: more satisfied, more freedom, more often stressed. The predictors:
+
+| Predictor | Question | Answers, coded |
+|---|---|---|
+| `autonomy` | I am given a lot of freedom to decide how to do my own work | 1 not at all true, 2 not too true, 3 somewhat true, 4 very true |
+| `respect` | At the place where I work, I am treated with respect | 1 strongly disagree, 2 disagree, 3 agree, 4 strongly agree |
+| `security` | The job security is good | 1 not at all true ... 4 very true |
+| `stress` | How often do you find your work stressful? | 1 never, 2 hardly ever, 3 sometimes, 4 often, 5 always |
+| `home` | How often do you work at home as part of your job? | never; some days (from a few times a year to more than once a week); mainly at home |
+| `self_employed` | Are you self-employed or do you work for someone else? | no, yes |
+| `age10` | Age | in decades: 4.1 = 41 years |
+
+```{r recode}
+n <- function(x) as.numeric(x)   # drops the labels, keeps the NAs
+d <- data.frame(
+  satisfaction  = factor(5 - n(raw$satjob), levels = 1:4, labels = satisfaction, ordered = TRUE),
+  autonomy      = 5 - n(raw$wkfreedm),
+  respect       = 5 - n(raw$respect),
+  security      = 5 - n(raw$jobsecok),
+  stress        = 6 - n(raw$stress),
+  home          = cut(n(raw$wrkhome), c(0, 1, 5, 6), labels = c("Never", "Some days", "Mainly")),
+  self_employed = factor(ifelse(n(raw$wrkslf) == 1, "Yes", "No"), levels = c("No", "Yes")),
+  age10         = n(raw$age) / 10,
+  web           = factor(ifelse(n(raw$mode) == 4, "Yes", "No"), levels = c("No", "Yes")))  # answered on the web
+
+vars <- c("satisfaction", "autonomy", "respect", "security", "stress", "home", "self_employed", "age10")
+d <- d[complete.cases(d[vars]), ]
+nrow(d)
+```
+
+`factor(..., ordered = TRUE)` makes an **ordered factor**: R now knows that "very satisfied" is above "moderately satisfied". `polr()` needs it. That leaves `r num(nrow(d))` people who answered all the questions.
+
+The four questions with agree or true answers are treated as **numbers**: one coefficient for each step up the scale. This assumes every step has the same effect; section 7 checks it.
+
+---
+
+## 2. Look at the data
+
+```{r overall}
+overall <- prop.table(table(d$satisfaction))
+round(100 * overall, 1)
+```
+
+Most people are satisfied with their work: `r pct(overall[["Very satisfied"]])` very and `r pct(overall[["Moderately satisfied"]])` moderately. Only `r pct(overall[["Very dissatisfied"]], 1)` are very dissatisfied, a typical skew for job satisfaction. How does satisfaction change with each predictor?
+
+```{r look, fig.height = 7.5}
+# the answers to each question, in words
+answers <- list(autonomy = c("Not at all true", "Not too true", "Somewhat true", "Very true"),
+                respect  = c("Strongly disagree", "Disagree", "Agree", "Strongly agree"),
+                security = c("Not at all true", "Not too true", "Somewhat true", "Very true"),
+                stress   = c("Never", "Hardly ever", "Sometimes", "Often", "Always"),
+                home     = c("Never", "Some days", "Mainly"))
+questions <- c(autonomy = "Autonomy", respect = "Respect", security = "Security",
+               stress = "Stress", home = "From home")
+
+# stacked bars of shares (each bar adds up to 100%), one panel per question, larger shares labelled
+stacked <- function(m, x_label) {
+  ggplot(m, aes(share, answer, fill = satisfaction)) +
+    geom_col(width = 0.8, colour = "white", linewidth = 0.3, position = position_stack(reverse = TRUE)) +
+    geom_text(aes(label = ifelse(share >= 0.07, pct(share), ""), colour = satisfaction),
+              position = position_stack(vjust = 0.5, reverse = TRUE), size = 3, show.legend = FALSE) +
+    facet_grid(question ~ ., scales = "free_y", space = "free_y") +
+    scale_fill_manual(values = colours) +
+    scale_colour_manual(values = ink, guide = "none") +
+    scale_x_continuous(labels = scales::percent, expand = c(0, 0)) +
+    scale_y_discrete(labels = function(x) sub("^[^:]*: ", "", x)) +   # drop the question from the label
+    labs(x = x_label, y = NULL, fill = NULL) +
+    theme_bw() +
+    theme(legend.position = "bottom", plot.margin = margin(5.5, 18, 5.5, 5.5)) +  # room for "100%"
+    guides(fill = guide_legend(nrow = 2))
+}
+
+# how satisfied the people who gave each answer are, with the number of people
+observed <- do.call(rbind, lapply(names(answers), function(v) {
+  answer <- factor(answers[[v]][as.integer(d[[v]])], levels = answers[[v]])
+  shares <- as.data.frame(prop.table(table(answer, satisfaction = d$satisfaction), 1), responseName = "share")
+  size   <- table(answer)
+  # "Autonomy: Very true (1,084)"; the question keeps the labels of different panels apart
+  labels <- paste0(questions[[v]], ": ", names(size), " (", num(as.vector(size)), ")")
+  shares$answer   <- factor(labels[as.integer(shares$answer)], levels = rev(labels))
+  shares$question <- factor(questions[[v]], levels = questions)
+  shares
+}))
+stacked(observed, "share of the people who gave this answer (number of people)")
+
+share <- function(v) prop.table(table(d[[v]], d$satisfaction), 1)
+by_respect  <- share("respect")
+by_autonomy <- share("autonomy")
+by_stress   <- share("stress")
+by_home     <- share("home")
+dissatisfied <- c("Very dissatisfied", "A little dissatisfied")
+```
+
+- **Respect**: `r pct(by_respect["4", "Very satisfied"])` of the people who strongly agree that they are treated with respect are very satisfied, against `r pct(by_respect["2", "Very satisfied"])` of those who disagree. `r pct(sum(by_respect["2", dissatisfied]))` of those who disagree are dissatisfied. The `r num(sum(d$respect == 1))` people who strongly disagree do not follow the pattern; the group is small, and its shares are uncertain.
+- **Autonomy** and **job security** go the same way: the more of them, the more people are very satisfied.
+- **Stress**: `r pct(by_stress["1", "Very satisfied"])` of the people whose work is never stressful are very satisfied, and `r pct(by_stress["5", "Very satisfied"])` of those whose work is always stressful.
+- **Working from home**: `r pct(by_home["Some days", "Very satisfied"])` of the people who work from home on some days are very satisfied, against `r pct(by_home["Never", "Very satisfied"])` of those who never do. A small difference, in favour of working from home.
+
+But the predictors go together. People who can work from home also tend to be freer to decide how to do their work:
+
+```{r together}
+round(100 * prop.table(table(home = d$home, autonomy = d$autonomy), 1))   # % of each row
+free <- prop.table(table(d$home, d$autonomy), 1)[, "4"]
+```
+
+`r pct(free[["Some days"]])` of the people who work from home on some days say "very true" to the freedom question, against `r pct(free[["Never"]])` of those who never do. So is it working from home that goes with satisfaction, or the freedom? The model can tell: it estimates the effect of each predictor holding the others constant.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: cut the scale in three places
+
+Four ordered answers can be split into "this answer or lower" against "higher" in three places:
+
+| Split $j$ | Lower: $Y \le j$ | Higher: $Y > j$ |
+|---|---|---|
+| 1 | very dissatisfied | a little dissatisfied or more |
+| 2 | dissatisfied (very or a little) | satisfied (moderately or very) |
+| 3 | moderately satisfied or less | very satisfied |
+
+$P(Y_i \le j)$ is a **cumulative probability**: the probability that person $i$ gives answer $j$ or a lower one.
+
+### Step 2: one logistic regression per split, with the same slopes
+
+$$\text{logit}\,P(Y_i \le j) = \ln\frac{P(Y_i \le j)}{P(Y_i > j)} = \theta_j - (\beta_1 x_{1i} + \dots + \beta_p x_{pi}), \qquad j = 1, 2, 3$$
+
+Each split has its own intercept, $\theta_j$, called a **threshold** or **cut-point**. The slopes $\beta$ are **the same at all three splits**: a predictor changes the odds of a higher answer by the same factor wherever the scale is cut. This is the **proportional odds** assumption, and the model is also called the proportional odds model.
+
+The thresholds increase, $\theta_1 < \theta_2 < \theta_3$, because $P(Y \le j)$ can only grow with $j$. The minus sign makes a positive $\beta$ mean **higher** answers: here, more satisfied. R's `polr()` and `clm()` and SPSS's PLUM write the model this way; some programs, for example SAS, write it with a plus sign, and their coefficients have the opposite sign.
+
+### Step 3: from the splits to the four answers
+
+Write $\eta_i = \beta_1 x_{1i} + \dots + \beta_p x_{pi}$. Then
+
+$$P(Y_i \le j) = \frac{1}{1 + e^{-(\theta_j - \eta_i)}}$$
+
+and the probability of each answer is the difference between two cumulative probabilities:
+
+$$P(Y_i = 1) = P(Y_i \le 1) \qquad P(Y_i = j) = P(Y_i \le j) - P(Y_i \le j - 1) \qquad P(Y_i = 4) = 1 - P(Y_i \le 3)$$
+
+The four probabilities are between 0 and 1 and add up to 1.
+
+### Step 4: what a coefficient means
+
+$e^{\beta}$ is a **cumulative odds ratio**: the number by which the odds of a higher answer rather than a lower one are multiplied for each step up the predictor, with the other predictors held constant. With proportional odds the same number holds at every split. An odds ratio of 2 for respect means that one step up the respect scale doubles the odds of being very satisfied rather than less satisfied, **and** doubles the odds of being satisfied rather than dissatisfied, **and** doubles the odds of being anything but very dissatisfied.
+
+### Step 5: the picture behind the model, a hidden satisfaction scale
+
+Imagine that each person has a hidden, continuous satisfaction, $Y^*$, which depends on the predictors plus a random part:
+
+$$Y^*_i = \eta_i + \varepsilon_i, \qquad \varepsilon_i \sim \text{logistic}(0, 1)$$
+
+The person answers by where $Y^*$ falls among the thresholds: "very dissatisfied" below $\theta_1$, "a little dissatisfied" between $\theta_1$ and $\theta_2$, "moderately satisfied" between $\theta_2$ and $\theta_3$, "very satisfied" above $\theta_3$. The predictors move the whole distribution of $Y^*$ to the right or to the left; the thresholds stay where they are. This gives exactly the formulas of steps 2 and 3. With a normal $\varepsilon$ instead of a logistic one, it is the **ordinal probit** model (`polr(..., method = "probit")`). Section 5 draws the picture with the fitted numbers.
+
+### Step 6: how R finds the numbers
+
+By maximum likelihood: R looks for the thresholds and the $\beta$'s that make the answers people actually gave as probable as possible,
+
+$$\ln L = \sum_i \ln P(Y_i = \text{the answer that person } i \text{ gave})$$
+
+### Step 7: count the parameters
+
+Three thresholds, plus one slope for each of autonomy, respect, security, stress, self-employment and age, plus two for working from home (three groups): **11 parameters**. A multinomial model with the same predictors needs 9 coefficients for each of the three answers other than the reference: 27.
+
+---
+
+## 4. Fitting the model
+
+```{r fit}
+fit <- polr(satisfaction ~ autonomy + respect + security + stress + home + self_employed + age10,
+            data = d, Hess = TRUE)
+summary(fit)
+```
+
+`Hess = TRUE` keeps the matrix that `summary()` needs for the standard errors; without it, `summary()` fits the model again.
+
+### How to read the output
+
+```{r output_parts}
+b     <- coef(fit)                          # the slopes
+theta <- fit$zeta                           # the thresholds
+se    <- sqrt(diag(vcov(fit)))[names(b)]
+z     <- b / se
+p     <- 2 * pnorm(-abs(z))                 # summary() prints no p values: compute them
+or    <- exp(b)                             # odds ratios
+ci    <- exp(confint(fit))                  # their 95% confidence intervals (profile likelihood)
+```
+
+| Part | Meaning | Here |
+|---|---|---|
+| `Coefficients` | One slope $\beta$ per predictor term, with its standard error and $t = \beta / SE$. Positive: more satisfied | `respect`: $\beta$ = `r f2(b[["respect"]])`, *SE* = `r f2(se[["respect"]])` |
+| `Intercepts` | The thresholds $\theta_j$, named after the two answers they separate | `Moderately satisfied|Very satisfied`: `r f2(theta[[3]])` |
+| `Residual Deviance` | $-2 \ln L$: how badly the model fits; smaller is better. Used for the tests in section 6 | `r num(round(deviance(fit)))` |
+| `AIC` | The deviance plus 2 for every parameter, for comparing models fitted to the same data | `r num(round(AIC(fit)))` |
+
+- **There are no *p* values.** The `t value` is really a $z$: compare it with the normal distribution. For `respect`, *z* = `r f2(z[["respect"]])`, *p* `r pval(p[["respect"]])`.
+- **The thresholds** are the cut-points on the hidden scale for someone with every predictor at 0. Here that person does not exist (autonomy and respect start at 1, age at 18), so the thresholds mean little on their own; they are needed for the predicted probabilities.
+- **One coefficient per predictor**, not one per answer: that is the gain over the multinomial model.
+
+The odds ratios:
+
+```{r or_table}
+terms <- c(autonomy = "Autonomy (per step)", respect = "Respect (per step)",
+           security = "Job security (per step)", stress = "Stress (per step)",
+           "homeSome days" = "Works from home some days (vs never)",
+           homeMainly = "Works mainly from home (vs never)",
+           self_employedYes = "Self-employed (vs employee)", age10 = "Age (per 10 years)")
+or_table <- data.frame(Predictor    = terms,
+                       `Odds ratio` = f2(or[names(terms)]),
+                       `95% CI`     = paste0("[", f2(ci[names(terms), 1]), ", ", f2(ci[names(terms), 2]), "]"),
+                       p            = sapply(p[names(terms)], function(x) sub("= ", "", pval(x))),
+                       check.names = FALSE, row.names = NULL)
+knitr::kable(or_table, align = "lrrr")
+```
+
+All at the same values of the other predictors:
+
+- **Respect** matters most: each step up the scale, for example from "agree" to "strongly agree", multiplies the odds of a higher satisfaction answer by `r f2(or[["respect"]])`.
+- **Autonomy** (`r f2(or[["autonomy"]])` per step) and **job security** (`r f2(or[["security"]])`) also go with more satisfaction.
+- **Stress** goes the other way: each step more often stressful cuts the odds of a higher answer by `r pct(1 - or[["stress"]])` (odds ratio `r f2(or[["stress"]])`).
+- **The self-employed** have `r f2(or[["self_employedYes"]])` times the odds of employees of a higher answer, and the odds rise by `r pct(or[["age10"]] - 1)` with every 10 years of age.
+- **Working from home**: the confidence intervals include 1. Once autonomy, respect, security and stress are held constant, there is no clear difference between those who work from home and those who never do.
+
+Working from home **alone** does go with more satisfaction, as section 2 showed:
+
+```{r home_alone}
+home_alone <- polr(satisfaction ~ home, data = d)
+round(exp(coef(home_alone)), 2)
+```
+
+On its own, working from home some days has an odds ratio of `r f2(exp(coef(home_alone))[["homeSome days"]])`; with the other predictors, `r f2(or[["homeSome days"]])`. The jobs that can be done from home also give more freedom and security, and these, not the place of work, carry the difference.
+
+### The same numbers by hand
+
+Steps 2 and 3 for a typical worker: the median answer to each question, the median age, never works from home, an employee.
+
+```{r by_hand}
+sapply(d[c("autonomy", "respect", "security", "stress", "age10")], median)   # the medians
+
+x    <- c(autonomy = 3, respect = 3, security = 4, stress = 3,
+          "homeSome days" = 0, homeMainly = 0, self_employedYes = 0, age10 = 4.1)
+eta  <- sum(b * x[names(b)])                      # the place on the hidden scale
+cum  <- plogis(theta - eta)                       # step 3: P(Y <= j), j = 1, 2, 3
+prob <- setNames(diff(c(0, cum, 1)), satisfaction)  # P(Y = j)
+round(prob, 3)
+
+# new people for predict(), with the factor levels of the model
+people <- function(...) {
+  x <- data.frame(...)
+  for (v in intersect(names(x), c("home", "self_employed"))) x[[v]] <- factor(x[[v]], levels = levels(d[[v]]))
+  x
+}
+typical <- people(autonomy = 3, respect = 3, security = 4, stress = 3, home = "Never",
+                  self_employed = "No", age10 = 4.1)
+round(predict(fit, newdata = typical, type = "probs"), 3)   # the same, from R
+```
+
+The typical worker is moderately satisfied with probability `r pct(prob[["Moderately satisfied"]])` and very satisfied with probability `r pct(prob[["Very satisfied"]])`.
+
+---
+
+## 5. Predicted probabilities: the easiest way to read the model
+
+### The hidden scale
+
+Step 5 of section 3, with the fitted numbers: the hidden satisfaction of the typical worker if they disagree, and if they strongly agree, that they are treated with respect. Everything else stays the same.
+
+```{r latent, fig.height = 5}
+two <- people(autonomy = 3, respect = c(2, 4), security = 4, stress = 3, home = "Never",
+              self_employed = "No", age10 = 4.1)
+person <- c("Disagrees that they are treated with respect", "Strongly agrees that they are treated with respect")
+centre <- eta + b[["respect"]] * (c(2, 4) - 3)        # eta of each: the typical worker has respect = 3
+probs2 <- predict(fit, newdata = two, type = "probs")
+
+grid   <- seq(-1, 11, by = 0.01)
+curves <- do.call(rbind, lapply(1:2, function(k)
+  data.frame(person = person[k], y = grid, density = dlogis(grid, centre[k]),
+             answer = cut(grid, c(-Inf, theta, Inf), labels = satisfaction))))
+curves$person <- factor(curves$person, levels = person)
+
+# the probability of each answer, printed above its part of the scale
+middle <- c(theta[1] - 0.9, (theta[1] + theta[2]) / 2, (theta[2] + theta[3]) / 2, theta[3] + 1.6)
+labels <- data.frame(person = factor(rep(person, each = 4), levels = person),
+                     y = rep(middle, 2), share = as.vector(t(probs2)))
+
+ggplot(curves, aes(y, density)) +
+  geom_area(aes(fill = answer, group = answer), position = "identity") +
+  geom_line(linewidth = 0.4, colour = "grey20") +
+  geom_vline(xintercept = theta, linetype = "dashed", colour = "grey40") +
+  geom_vline(data = data.frame(person = factor(person, levels = person), centre = centre),
+             aes(xintercept = centre), colour = "grey20") +
+  geom_text(data = labels, aes(y, 0.29, label = pct(share)), size = 3.2, colour = "grey15") +
+  annotate("text", x = theta, y = 0.33, label = paste0("theta[", 1:3, "]"), parse = TRUE,
+           size = 3.4, colour = "grey30") +
+  facet_wrap(~ person, ncol = 1) +
+  scale_fill_manual(values = colours) +
+  scale_y_continuous(limits = c(0, 0.345), expand = c(0, 0)) +
+  labs(title = "Where the hidden satisfaction of the typical worker falls",
+       subtitle = "Dashed lines: the thresholds. Solid line: the centre of the distribution, eta.\nThe percentages are the areas: the probability of each answer.",
+       x = "hidden satisfaction (Y*)", y = "density", fill = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  guides(fill = guide_legend(nrow = 2))
+```
+
+Strongly agreeing instead of disagreeing moves the centre of the distribution by $2\beta$ = `r f2(2 * b[["respect"]])` to the right. The thresholds stay where they are, so more of the area falls above $\theta_3$: the probability of "very satisfied" goes from `r pct(probs2[1, "Very satisfied"])` to `r pct(probs2[2, "Very satisfied"])`.
+
+### Predicted probabilities, one predictor at a time
+
+The typical worker again, changing one predictor at a time:
+
+```{r profiles, fig.height = 5.5}
+vary <- function(v, values) {
+  x <- typical[rep(1, length(values)), ]
+  x[[v]] <- values
+  pr <- predict(fit, newdata = x, type = "probs")
+  labels <- paste0(questions[[v]], ": ", answers[[v]][values])
+  data.frame(question = factor(questions[[v]], levels = questions),
+             answer = factor(rep(labels, 4), levels = rev(labels)),
+             satisfaction = factor(rep(satisfaction, each = length(values)), levels = satisfaction),
+             share = as.vector(pr))
+}
+predicted <- rbind(vary("respect", 1:4), vary("autonomy", 1:4), vary("stress", 1:5))
+predicted$question <- droplevels(predicted$question)
+stacked(predicted, "predicted probability of each answer, for the typical worker")
+
+p_resp   <- predict(fit, newdata = transform(typical[rep(1, 4), ], respect = 1:4), type = "probs")
+p_stress <- predict(fit, newdata = transform(typical[rep(1, 5), ], stress = 1:5), type = "probs")
+```
+
+- **From "strongly disagree" to "strongly agree"** that they are treated with respect, the probability that the typical worker is very satisfied rises from `r pct(p_resp[1, "Very satisfied"])` to `r pct(p_resp[4, "Very satisfied"])`, and the probability of being dissatisfied (very or a little) falls from `r pct(sum(p_resp[1, dissatisfied]))` to `r pct(sum(p_resp[4, dissatisfied]))`.
+- **From work that is never stressful to work that is always stressful**, "very satisfied" falls from `r pct(p_stress[1, "Very satisfied"])` to `r pct(p_stress[5, "Very satisfied"])`.
+- **The odds ratio is the same at every step, the change in probability is not.** Each step up the respect scale multiplies the odds by `r f2(or[["respect"]])`, but moves the probability of "very satisfied" by `r paste(round(100 * diff(p_resp[, "Very satisfied"])), collapse = ", ")` percentage points: the effect on a probability depends on where a person starts.
+
+Unlike the observed shares of section 2, these predictions follow the pattern of the model: every step up the respect scale helps, including the step from "strongly disagree" to "disagree", which the few people who strongly disagree did not show.
+
+---
+
+## 6. Testing the predictors and the model
+
+The **likelihood-ratio test** compares the deviances of two nested models. First the whole model against a model with thresholds only, then each predictor: drop it and see how much worse the model gets.
+
+```{r tests}
+null <- polr(satisfaction ~ 1, data = d)
+model_test <- anova(null, fit)
+model_test
+
+tests <- drop1(fit, test = "Chisq")
+tests
+
+mcfadden <- 1 - deviance(fit) / deviance(null)   # McFadden's pseudo-R squared
+mcfadden
+```
+
+- **Every predictor except working from home is significant.** The $\chi^2$ values rank them: respect (`r f2(tests["respect", "LRT"])`), stress (`r f2(tests["stress", "LRT"])`), autonomy (`r f2(tests["autonomy", "LRT"])`) and job security (`r f2(tests["security", "LRT"])`), then age and self-employment. Working from home: $\chi^2$(2) = `r f2(tests["home", "LRT"])`, *p* `r pval(tests["home", "Pr(>Chi)"])`.
+- **McFadden's pseudo-$R^2$** = `r f2(mcfadden)`: one minus the deviance of the model divided by the deviance of the model with thresholds only. It runs much lower than the $R^2$ of a linear regression; use it to compare models fitted to the same data.
+
+Is the order worth using? The same predictors in a multinomial model, which ignores the order:
+
+```{r versus_multinomial}
+multi <- nnet::multinom(formula(fit), data = d, trace = FALSE)
+data.frame(model      = c("ordinal (polr)", "multinomial (multinom)"),
+           parameters = c(length(b) + length(theta), length(coef(multi))),
+           AIC        = round(c(AIC(fit), AIC(multi)), 1))
+```
+
+The ordinal model fits better by AIC, with `r length(b) + length(theta)` parameters instead of `r length(coef(multi))`: the multinomial model spends `r length(coef(multi)) - length(b) - length(theta)` more parameters and gains less than they cost.
+
+How often does the model pick the right answer, if it picks the most likely one for each person?
+
+```{r classification}
+guess <- predict(fit, type = "class")
+table(observed = d$satisfaction, predicted = guess)
+accuracy  <- mean(as.character(guess) == as.character(d$satisfaction))
+base_rate <- max(overall)   # always guessing the most common answer
+c(model = accuracy, most_common_answer = base_rate)
+```
+
+`r pct(accuracy)` right, against `r pct(base_rate)` for always guessing the most common answer. The model almost never predicts the two dissatisfied answers: they are rare, so for almost nobody are they the **most** likely answer. As in the [multinomial example](EXAMPLE_MULTINOMIAL_LOGISTIC.Rmd), the predicted probabilities carry the information, not the single best guess.
+
+---
+
+## 7. The proportional odds assumption
+
+The model gives each predictor **one** slope for all three splits. Does it need three? A visual check first: fit a separate logistic regression at each split and compare the slopes.
+
+```{r splits, fig.height = 5.5}
+split_name <- c("1: very dissatisfied | higher", "2: dissatisfied | satisfied", "3: very satisfied | lower")
+splits <- do.call(rbind, lapply(1:3, function(j) {
+  dj <- transform(d, higher = as.integer(satisfaction) > j)   # TRUE above split j
+  m  <- glm(update(formula(fit), higher ~ .), family = binomial, data = dj)
+  data.frame(split = j, term = names(coef(m))[-1], b = coef(m)[-1], se = sqrt(diag(vcov(m)))[-1])
+}))
+splits$term   <- factor(terms[splits$term], levels = terms)
+common        <- data.frame(term = factor(terms, levels = terms), b = b[names(terms)])
+
+ggplot(splits, aes(split, b)) +
+  geom_hline(yintercept = 0, colour = "grey75") +
+  geom_hline(data = common, aes(yintercept = b), colour = "#1c5cab", linetype = "dashed") +
+  geom_errorbar(aes(ymin = b - 1.96 * se, ymax = b + 1.96 * se), width = 0.15, colour = "grey30") +
+  geom_point(size = 2.2, colour = "grey15") +
+  facet_wrap(~ term, ncol = 4, scales = "free_y", labeller = label_wrap_gen(22)) +
+  scale_x_continuous(breaks = 1:3, limits = c(0.6, 3.4)) +
+  labs(title = "The slope of each predictor at each split, from three separate logistic regressions",
+       subtitle = "Points: the slope with its 95% CI. Dashed line: the one slope of the ordinal model.\nSplits: 1 very dissatisfied | the rest, 2 dissatisfied | satisfied, 3 very satisfied | the rest",
+       x = "split", y = "slope (log odds of a higher answer)") +
+  theme_bw()
+security_splits <- splits$b[splits$term == terms[["security"]]]
+```
+
+If the proportional odds assumption holds, the three points of each panel scatter around the dashed line, within their error bars. Most do. The clearest exception is **job security**: its slope grows from `r f2(security_splits[1])` at the first split to `r f2(security_splits[3])` at the third. Good job security seems to separate the very satisfied from the moderately satisfied more than it protects against being very dissatisfied. The confidence intervals are wide at the first split, though: only `r num(sum(d$satisfaction == "Very dissatisfied"))` people are very dissatisfied.
+
+The formal test: fit the same model with `clm()` from the package `ordinal`, which can relax the assumption one predictor at a time. `nominal_test()` does that for each predictor and compares the two models with a likelihood-ratio test:
+
+```{r nominal_test}
+clm_fit <- clm(formula(fit), data = d)   # the same model as polr(): the same estimates
+nominal <- nominal_test(clm_fit)
+nominal
+```
+
+No predictor needs its own slopes: the smallest *p* is `r nz(min(nominal$"Pr(>Chi)", na.rm = TRUE), 3)`, for job security. The differences that the chart shows could be chance. The **Brant test** (Brant, 1990), in the package `brant`, is a common alternative that answers the same question.
+
+### If the assumption fails: a partial proportional odds model
+
+If a predictor did fail the test, it could get one slope per split while the others keep one slope: a **partial proportional odds** model (Peterson & Harrell, 1990). In `clm()`, the predictors in `nominal` get their own slopes:
+
+```{r partial}
+partial <- clm(satisfaction ~ autonomy + respect + stress + home + self_employed + age10,
+               nominal = ~ security, data = d)
+coef(partial)[grep("security", names(coef(partial)))]
+anova(clm_fit, partial)
+```
+
+`clm()` writes these slopes as shifts of the thresholds, so the effect of security on a **higher** answer is the number shown with its sign changed: `r paste(f2(-coef(partial)[grep("security", names(coef(partial)))]), collapse = ", ")` at the three splits. The likelihood-ratio test is the same as the `security` row of `nominal_test()`, and the AIC is a little worse: two more parameters that do not pay for themselves. We keep the simple model. If several predictors failed, the alternatives are a model with every slope free (`nominal = ~ .`, the generalized ordered logit) or the [multinomial model](EXAMPLE_MULTINOMIAL_LOGISTIC.Rmd).
+
+### Four more things to keep in mind
+
+```{r robustness}
+# answers given as categories instead of numbers: one coefficient per answer
+fit_steps <- update(fit, . ~ . - autonomy - respect - security - stress +
+                      factor(autonomy) + factor(respect) + factor(security) + factor(stress))
+steps_test <- anova(fit, fit_steps)
+stress_steps <- coef(fit_steps)[paste0("factor(stress)", 2:5)]   # hardly ever ... always, against never
+
+# the people who answered on the web against those interviewed in person or by phone
+very_by_mode <- prop.table(table(d$web, d$satisfaction), 1)[, "Very satisfied"]
+fit_mode <- update(fit, . ~ . + web)
+round(cbind(without_mode = coef(fit), with_mode = coef(fit_mode)[names(coef(fit))]), 2)
+```
+
+- **Equal steps.** The four scored questions count each step up the scale the same. Treating the answers as categories instead, with a coefficient for each answer, fits somewhat better, $\chi^2$(`r steps_test$"   Df"[2]`) = `r f2(steps_test$"LR stat."[2])`, *p* `r pval(steps_test$"Pr(Chi)"[2])`: the steps are not all equal. For stress, for example, the coefficients of "hardly ever", "sometimes", "often" and "always" against "never" are `r paste(f2(stress_steps), collapse = ", ")`, not evenly spaced. The scored model is easier to read and tells the same story.
+- **Web or interview.** In 2022 most people answered the GSS on the web. `r pct(very_by_mode[["Yes"]])` of them said "very satisfied", against `r pct(very_by_mode[["No"]])` of those interviewed in person or by phone, as people often give more positive answers when an interviewer is listening. Adding the mode to the model leaves the other coefficients almost unchanged (above).
+- **The sample, not the population.** These are unweighted estimates for the people in the survey. To describe all US workers, use the GSS weights (`wtssps`) and the design of the survey, for example with `svyolr()` in the package `survey` (Lumley, 2010).
+- **Association, not cause.** People who like their work may also see their workplace in a better light, and judge it more respectful and more secure. One survey at one point in time cannot tell which comes first.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the outcome and its order, the predictors and how they were scored, the model test, the check of the proportional odds assumption and the odds ratios with their uncertainty. The numbers come from the R objects, so the text below always matches the results:
+
+```{r apa_numbers}
+n_model <- nrow(d)
+lr      <- model_test$"LR stat."[2]
+lr_df   <- model_test$"   Df"[2]
+lr_p    <- model_test$"Pr(Chi)"[2]
+ci_text <- function(t) paste0("95% CI [", f2(ci[t, 1]), ", ", f2(ci[t, 2]), "]")
+```
+
+**Method** (data analysis):
+
+> We analysed the `r num(n_model)` employed respondents to the 2022 General Social Survey (Davern et al., 2024) who answered the job satisfaction question and the Quality of Working Life questions used here. Job satisfaction (very dissatisfied, a little dissatisfied, moderately satisfied, very satisfied) was analysed with an ordinal logistic regression (proportional odds model). The predictors were autonomy, respect at work and job security (each scored 1–4) and work stress (scored 1–5), with higher scores meaning more; how often the respondent worked from home (never, some days, mainly); self-employment; and age. The proportional odds assumption was checked with likelihood-ratio tests of nominal effects. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the *MASS* (Venables & Ripley, 2002) and *ordinal* (Christensen, 2026) packages.
+
+**Results:**
+
+> The predictors improved the fit over a thresholds-only model, χ²(`r lr_df`) = `r f2(lr)`, *p* `r pval(lr_p)`, McFadden's *R*² = `r nz(mcfadden)`, and no predictor departed from the proportional odds assumption (all *p* ≥ `r nz(min(nominal$"Pr(>Chi)", na.rm = TRUE))`). Holding the other predictors constant, respondents who felt more respected at work were more satisfied with their job, *OR* = `r f2(or[["respect"]])`, `r ci_text("respect")`, as were those with more autonomy, *OR* = `r f2(or[["autonomy"]])`, `r ci_text("autonomy")`, and better job security, *OR* = `r f2(or[["security"]])`, `r ci_text("security")`. More frequent stress went with lower satisfaction, *OR* = `r f2(or[["stress"]])`, `r ci_text("stress")`. Self-employed and older respondents were more satisfied (Table 1). How often respondents worked from home was not related to job satisfaction once the other predictors were held constant, χ²(`r tests["home", "Df"]`) = `r f2(tests["home", "LRT"])`, *p* `r pval(tests["home", "Pr(>Chi)"])`.
+
+**Table 1**
+
+*Odds Ratios From an Ordinal Logistic Regression of Job Satisfaction, General Social Survey 2022*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(or_table, align = "lrrr", format = "pipe")
+```
+
+*Note.* *N* = `r num(n_model)`. Odds ratios above 1 mean higher job satisfaction. Autonomy, respect and job security were scored 1–4 and stress 1–5, higher scores meaning more; age is in decades. Confidence intervals are profile-likelihood intervals.
+
+**Points to remember:**
+
+- Say which way the outcome runs, and whether an odds ratio above 1 means a higher or a lower answer: programs differ.
+- Report odds ratios with 95% confidence intervals, and say that they hold the other predictors constant.
+- Give the model test ($\chi^2$ with its degrees of freedom) and a pseudo-$R^2$, and say which one.
+- Report the check of the proportional odds assumption, and what you did if it failed.
+- Predicted probabilities for typical people are easier to understand than odds ratios; show them where they help.
+- Cite R and the packages; `citation("MASS")` and `citation("ordinal")` give the references.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | The outcome is a category with three or more values in a natural order |
+| **Why not linear regression** | It assumes equal steps between the answers and predicts values nobody can give |
+| **Why not multinomial logistic regression** | It ignores the order and needs a set of coefficients for every answer |
+| **How (R)** | `MASS::polr(y ~ x, data, Hess = TRUE)`, with `y` an ordered factor; or `ordinal::clm()` |
+| **Output** | Thresholds (one per split) and one slope per predictor; `exp()` of a slope is a cumulative odds ratio |
+| **Easiest to read** | Predicted probabilities: `predict(fit, newdata, type = "probs")` |
+| **Tests** | Likelihood-ratio tests with `anova()` and `drop1()`; McFadden's pseudo-$R^2$ |
+| **Assumptions** | Independent observations; proportional odds (the same slopes at every split) |
+| **If proportional odds fails** | A partial proportional odds model, `clm(..., nominal = ~ x)`; or a multinomial model |
+
+---
+
+## References
+
+Agresti, A. (2010). *Analysis of ordinal categorical data* (2nd ed.). Wiley.
+
+Brant, R. (1990). Assessing proportionality in the proportional odds model for ordinal logistic regression. *Biometrics*, *46*(4), 1171–1178. https://doi.org/10.2307/2532457
+
+Christensen, R. H. B. (2026). *ordinal: Regression models for ordinal data* (R package version 2026.7-26). https://CRAN.R-project.org/package=ordinal
+
+Davern, M., Bautista, R., Freese, J., Herd, P., & Morgan, S. L. (2024). *General Social Survey 1972–2022* (Release 4) [Data set]. NORC at the University of Chicago. https://gss.norc.org/
+
+Lumley, T. (2010). *Complex surveys: A guide to analysis using R*. Wiley.
+
+McCullagh, P. (1980). Regression models for ordinal data. *Journal of the Royal Statistical Society: Series B (Methodological)*, *42*(2), 109–142.
+
+Peterson, B., & Harrell, F. E., Jr. (1990). Partial proportional odds models for ordinal response variables. *Journal of the Royal Statistical Society: Series C (Applied Statistics)*, *39*(2), 205–217.
+
+Venables, W. N., & Ripley, B. D. (2002). *Modern applied statistics with S* (4th ed.). Springer.
+
+Wickham, H., Miller, E., & Smith, D. (2025). *haven: Import and export 'SPSS', 'Stata' and 'SAS' files* (R package version 2.5.5). https://doi.org/10.32614/CRAN.package.haven
