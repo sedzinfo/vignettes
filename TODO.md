@@ -15,7 +15,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Deming (errors-in-variables): EXAMPLE_DEMING_REGRESSION
 - [x] Nonlinear least squares: EXAMPLE_NONLINEAR_LEAST_SQUARES
 - [x] Isotonic: EXAMPLE_ISOTONIC_REGRESSION
-- [ ] LOESS
+- [x] LOESS: EXAMPLE_LOESS
 - [ ] Splines / GAM
 - [ ] Multivariate (several outcomes)
 - [ ] Seemingly unrelated regression (SUR)

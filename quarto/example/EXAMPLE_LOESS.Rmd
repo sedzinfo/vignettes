@@ -1,0 +1,498 @@
+---
+title: "LOESS: The Smooth Line in NASA's Temperature Chart"
+description: "Local regression (LOESS and LOWESS) in R with lowess() and loess(), on NASA's global temperature record since 1880: tricube weights and local lines by hand, robustness iterations, reproducing NASA's published smooth line to the second decimal, the span and the degree, AICc, GCV and cross-validation, equivalent number of parameters, confidence bands, how fast the planet is warming (the local slope), why the end of the line keeps changing, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data from NASA each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: how is that line made?
+
+One of the best-known charts in the world shows the temperature of the planet, year by year, as grey points, and a smooth line through them. NASA's version of the chart says in its legend: *Lowess smoothing*. The line has no formula. Nobody claims that the temperature follows a parabola or an exponential. The line simply goes where the points go, without their jumps from year to year.
+
+This page explains how the line is made, makes it, and then checks it against the numbers that NASA publishes. The method is called **LOESS** (or LOWESS: *locally weighted scatterplot smoothing*; Cleveland, 1979). It is the default of `geom_smooth()` in `ggplot2`, so many people use it every day without knowing what it does.
+
+The idea fits in one sentence: **to find the height of the curve at a year, fit a straight line to the years around it, giving the nearer years more weight, and read its value there. Then do the same for every other year.**
+
+```{r packages}
+library(ggplot2)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+f4   <- function(x) formatC(x, format = "f", digits = 4, big.mark = ",")
+```
+
+---
+
+## 1. The data
+
+NASA's Goddard Institute for Space Studies publishes the chart and the numbers behind it. The file has three columns: the year, the temperature, and NASA's own smooth line.
+
+```{r download}
+address <- paste0("https://data.giss.nasa.gov/gistemp/graphs_v4/graph_data/",
+                  "Global_Mean_Estimates_based_on_Land_and_Ocean_Data/graph.csv")
+lines <- readLines(address)
+start <- grep("^Year", lines)                        # the lines above the header are a title
+earth <- read.csv(text = lines[start:length(lines)])
+names(earth) <- c("year", "temp", "nasa")
+earth <- earth[complete.cases(earth), ]
+n <- nrow(earth)
+n
+tail(earth, 3)
+```
+
+There are `r n` years, `r min(earth$year)` to `r max(earth$year)`. `temp` is an **anomaly**: the difference, in °C, from the average of 1951–1980. An anomaly of `r f2(tail(earth$temp, 1))` means `r f2(tail(earth$temp, 1))` °C warmer than that average. `nasa` is the published line, rounded to two decimals. We shall try to reproduce it.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+ggplot(earth, aes(year, temp)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "grey80", linewidth = 0.4) +
+  geom_point(size = 1.5, colour = "grey45") +
+  geom_line(aes(y = nasa), colour = "#eb6834", linewidth = 1) +
+  scale_x_continuous(breaks = seq(1880, 2020, 20)) +
+  labs(title = "Global temperature, and NASA's smooth line",
+       subtitle = "Difference from the average of 1951–1980", x = NULL, y = "°C") +
+  theme_bw()
+```
+
+No simple formula fits this. The record is flat or falling until about 1910, rises to the 1940s, pauses for three decades, and then rises steeply. A straight line would be wrong everywhere, and a polynomial of a high degree would swing at the ends (see [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd)).
+
+---
+
+## 3. The method step by step, with formulas
+
+We find the height of the curve at **one** year, $x_0 = 1945$.
+
+### Step 1: choose the neighbours
+
+Take the $q$ nearest years. The fraction $f = q/n$ is the **span**. We use $q = 10$, so $f$ = 10/`r n`.
+
+```{r neighbours}
+q  <- 10
+x0 <- 1945
+distance <- abs(earth$year - x0)
+h  <- sort(distance)[q]               # the distance of the 10th nearest year
+h
+```
+
+### Step 2: weight them by distance
+
+The nearest years count most, and the weight falls smoothly to zero at the distance $h$ of the $q$-th neighbour. The **tricube** function does this:
+
+$$w(x) = \left(1 - \left|\frac{x - x_0}{h}\right|^3\right)^3 \quad\text{for } |x - x_0| < h, \qquad 0 \text{ otherwise}$$
+
+```{r tricube}
+tricube <- function(u) ifelse(abs(u) < 1, (1 - abs(u)^3)^3, 0)
+earth$w <- tricube(distance / h)
+subset(earth, w > 0, select = c(year, temp, w))
+```
+
+The year 1945 has weight 1, its neighbours less, and the years at distance `r h` or more have weight 0.
+
+### Step 3: fit a straight line with these weights
+
+This is an ordinary [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd) line, in the neighbourhood only:
+
+$$\min_{a, b}\; \sum_i w_i \,\big[y_i - a - b\,(x_i - x_0)\big]^2$$
+
+Because $x$ is centred at $x_0$, the intercept $a$ **is** the height of the curve at $x_0$. The slope $b$ is the local slope: how fast the temperature was changing. Keep only $a$, and throw the line away.
+
+```{r local_line}
+local <- lm(temp ~ I(year - x0), data = earth, weights = w)
+coef(local)
+```
+
+```{r local_chart}
+near <- subset(earth, abs(year - x0) <= 15)
+near$line <- coef(local)[[1]] + coef(local)[[2]] * (near$year - x0)
+
+ggplot(near, aes(year, temp)) +
+  geom_point(aes(size = w, colour = w > 0)) +
+  geom_line(data = subset(near, abs(year - x0) < h), aes(y = line), colour = "#2a78d6", linewidth = 1) +
+  annotate("point", x = x0, y = coef(local)[[1]], size = 4, shape = 21, fill = "#eb6834") +
+  scale_colour_manual(values = c(`TRUE` = "grey25", `FALSE` = "grey80"), guide = "none") +
+  scale_size(range = c(1.5, 6), name = "weight") +
+  labs(title = "One local line, for 1945",
+       subtitle = "The size of a point is its weight. The orange point is the height of the curve in 1945",
+       x = NULL, y = "°C") +
+  theme_bw()
+```
+
+### Step 4: repeat for every year, and join the points
+
+```{r by_hand}
+smooth_by_hand <- function(x, y, q, robust = rep(1, length(y))) {
+  sapply(x, function(x0) {
+    d <- abs(x - x0)
+    w <- tricube(d / sort(d)[q]) * robust
+    sum(w * y) / sum(w) -> centre                     # fallback, if all the weight is on one point
+    fit <- lm.wfit(cbind(1, x - x0), y, w)
+    if (is.na(fit$coefficients[2])) centre else fit$coefficients[[1]]
+  })
+}
+pass0 <- smooth_by_hand(earth$year, earth$temp, q)
+check <- lowess(earth$year, earth$temp, f = q / n, iter = 0)$y    # the function that comes with R
+max(abs(pass0 - check))
+```
+
+Our own function agrees with R's `lowess()`, to the last digit.
+
+### Step 5: make it robust
+
+A single strange year can pull the local lines. So LOWESS looks at the residuals $e_i$ of the first pass, and gives a **robustness weight** to each point: close to 1 if its residual is ordinary, 0 if it is more than six times the median absolute residual $s$.
+
+$$r_i = \left(1 - \left(\frac{e_i}{6 s}\right)^2\right)^2 \quad\text{if } |e_i| < 6s, \qquad 0 \text{ otherwise}$$
+
+Then it repeats step 4 with the weights $w_i \cdot r_i$. This is the **bisquare** function of [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd). Three rounds are the default of `lowess()`.
+
+```{r robust_passes}
+fitted <- pass0
+for (round in 1:3) {
+  e <- earth$temp - fitted
+  s <- median(abs(e))
+  r <- ifelse(abs(e) < 6 * s, (1 - (e / (6 * s))^2)^2, 0)
+  fitted <- smooth_by_hand(earth$year, earth$temp, q, robust = r)
+}
+check3 <- lowess(earth$year, earth$temp, f = q / n, iter = 3)$y
+max(abs(fitted - check3))
+round(range(r), 2)          # the smallest and the largest robustness weight
+```
+
+---
+
+## 4. Reproducing NASA's line
+
+NASA calls the column `Lowess(5)`. If the 5 means five years on each side, the neighbourhood is 10 years. With the three robustness rounds of the default:
+
+```{r reproduce}
+ours <- lowess(earth$year, earth$temp, f = 10 / n, iter = 3)$y
+difference <- ours - earth$nasa
+c(largest_difference = max(abs(difference)), same_at_two_decimals = mean(round(ours, 2) == earth$nasa))
+```
+
+The largest difference in `r n` years is `r formatC(max(abs(difference)), format = "f", digits = 5)` °C, smaller than the rounding of the published numbers (0.005). **We have made NASA's line.** Other settings do not:
+
+```{r settings}
+settings <- expand.grid(q = c(6, 8, 9, 10, 11, 12, 15), iter = c(0, 3))
+settings$largest_difference <- mapply(function(q, iter)
+  max(abs(lowess(earth$year, earth$temp, f = q / n, iter = iter)$y - earth$nasa)), settings$q, settings$iter)
+reshape(settings, idvar = "q", timevar = "iter", direction = "wide")
+```
+
+Only $q = 10$ with the robustness rounds is inside the rounding error. The line is completely determined by two choices: how many neighbours, and how many rounds.
+
+---
+
+## 5. The span: how smooth should it be?
+
+The span is the one choice that matters. Small: the line follows every jump (low bias, high variance). Large: it irons out real changes (low variance, high bias). R has two functions with different defaults, which is a common source of confusion:
+
+| | `lowess()` | `loess()` |
+|---|---|---|
+| Interface | `lowess(x, y, f, iter)` | formula: `loess(y ~ x, data, span, degree, family)` |
+| Local model | straight line | parabola by default (`degree = 2`) |
+| Default span | 2/3 | 0.75 |
+| Robust | yes, 3 rounds by default | only with `family = "symmetric"` |
+| Predictions, standard errors | no | yes, `predict(fit, newdata, se = TRUE)` |
+| `geom_smooth(method = "loess")` | | this one, with its defaults |
+
+```{r spans}
+spans <- c(`0.07 (10 years)` = 10 / n, `0.21 (30 years)` = 30 / n, `0.41 (60 years)` = 60 / n, `0.75 (default)` = 0.75)
+span_lines <- do.call(rbind, lapply(names(spans), function(s)
+  data.frame(year = earth$year, temp = predict(loess(temp ~ year, data = earth, span = spans[[s]], degree = 1)), span = s)))
+span_lines$span <- factor(span_lines$span, levels = names(spans))
+
+ggplot(earth, aes(year, temp)) +
+  geom_point(size = 1, colour = "grey60") +
+  geom_line(data = span_lines, colour = "#2a78d6", linewidth = 0.9) +
+  facet_wrap(~ span) +
+  scale_x_continuous(breaks = seq(1900, 2000, 50)) +
+  labs(title = "The same data, four spans (local straight lines)", x = NULL, y = "°C") +
+  theme_bw()
+```
+
+### How many parameters does a curve without parameters have?
+
+Each fitted value is a weighted sum of the observations, $\hat y = L y$, with a matrix $L$ that depends on the years and the span, not on the temperatures. In linear regression the trace of such a matrix is the number of coefficients. So the trace of $L$ is the **equivalent number of parameters**:
+
+```{r equivalent_parameters}
+hat_matrix <- function(x, q, degree = 1) {
+  t(sapply(x, function(x0) {
+    d <- abs(x - x0); w <- tricube(d / (sort(d)[min(q, length(x))]))
+    X <- outer(x - x0, 0:degree, "^")
+    solve(crossprod(X, w * X), t(w * X))[1, ]          # the row that gives the fitted value at x0
+  }))
+}
+L <- hat_matrix(earth$year, 30)
+c(trace = sum(diag(L)), largest_difference_from_loess =
+    max(abs(L %*% earth$temp - predict(loess(temp ~ year, earth, span = 30 / n, degree = 1,
+                                             control = loess.control(surface = "direct"))))))
+```
+
+A span of 30 years is worth about `r f1(sum(diag(L)))` parameters. (We asked `loess()` to compute every value directly. By default it computes some and interpolates between them, which is faster and almost the same.)
+
+### Choosing the span by numbers
+
+With $\text{tr}(L)$ we can write the criteria that compare fit and complexity: **GCV** (generalised cross-validation) and **AICc** (Hurvich et al., 1998). **Leave-one-out** cross-validation needs no refitting: the error of predicting year $i$ without year $i$ is $e_i / (1 - L_{ii})$.
+
+$$\text{GCV} = \frac{n \sum e_i^2}{(n - \text{tr} L)^2}, \qquad \text{AICc} = \log\frac{\sum e_i^2}{n} + 1 + \frac{2(\text{tr} L + 1)}{n - \text{tr} L - 2}$$
+
+Both assume that the years are independent. They are not: warm years come in runs, for example because of El Niño. To a criterion that expects independence, a run of warm years looks like a piece of the curve. So we also try a cross-validation that leaves out **blocks of 11 years** and predicts only the middle year of the block:
+
+```{r criteria}
+block_error <- function(q, half) {
+  mean(sapply(seq_len(n), function(i) {
+    keep <- abs(earth$year - earth$year[i]) > half
+    d <- abs(earth$year[keep] - earth$year[i]); w <- tricube(d / sort(d)[q])
+    fit <- lm.wfit(cbind(1, earth$year[keep] - earth$year[i]), earth$temp[keep], w)
+    (earth$temp[i] - fit$coefficients[[1]])^2
+  }))
+}
+qs <- c(6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 50, 60, 80, 100)
+criteria <- do.call(rbind, lapply(qs, function(q) {
+  L <- hat_matrix(earth$year, q); e <- earth$temp - L %*% earth$temp; tr <- sum(diag(L)); rss <- sum(e^2)
+  data.frame(q, parameters = tr, GCV = n * rss / (n - tr)^2,
+             AICc = log(rss / n) + 1 + 2 * (tr + 1) / (n - tr - 2),
+             LOO = sqrt(mean((e / (1 - diag(L)))^2)), block = sqrt(block_error(q, 5)))
+}))
+round(criteria, 4)
+best_q <- sapply(criteria[c("GCV", "AICc", "LOO", "block")], function(v) criteria$q[which.min(v)])
+best_q
+```
+
+```{r criteria_chart}
+long <- rbind(data.frame(q = criteria$q, rmse = criteria$LOO,   kind = "leave one year out"),
+              data.frame(q = criteria$q, rmse = criteria$block, kind = "leave out 11 years, predict the middle"))
+
+ggplot(long, aes(q, rmse, colour = kind)) +
+  geom_line(linewidth = 0.8) + geom_point(size = 2) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834"), name = NULL) +
+  scale_x_log10(breaks = c(6, 10, 15, 20, 30, 40, 60, 100)) +
+  labs(title = "Prediction error against the width of the neighbourhood",
+       x = "number of neighbours, q (log scale)", y = "error (°C)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+GCV and leave-one-out choose `r best_q[["GCV"]]` neighbours, the fewest that we tried, and AICc `r best_q[["AICc"]]`. The block criterion, which cannot use the neighbouring year to guess a warm spell, chooses `r best_q[["block"]]`, and is nearly flat between 15 and 50. There is no single right answer, because there is no single question. NASA's 10 years show the variation from decade to decade. Thirty years are the usual definition of *climate*, and show the long-term change. Say which one you want, and why.
+
+---
+
+## 6. What the line cannot tell by itself: uncertainty
+
+`loess()` gives standard errors, as in a regression with $\text{tr}(L)$ parameters:
+
+```{r band}
+fit30  <- loess(temp ~ year, data = earth, span = 30 / n, degree = 1)
+pred   <- predict(fit30, se = TRUE)
+band   <- data.frame(year = earth$year, fit = pred$fit,
+                     low  = pred$fit - qt(0.975, pred$df) * pred$se.fit,
+                     high = pred$fit + qt(0.975, pred$df) * pred$se.fit)
+fit30
+c(trace_of_L = sum(diag(L)), trace_of_LLt = sum(L^2))
+lag1 <- acf(resid(fit30), plot = FALSE)$acf[2]
+lag1
+```
+
+(The `Equivalent Number of Parameters` that `loess` prints, `r f1(fit30$enp)`, is a relative of ours: the trace of $LL^\top$ instead of the trace of $L$.)
+
+```{r band_chart}
+ggplot(earth, aes(year, temp)) +
+  geom_ribbon(data = band, aes(x = year, ymin = low, ymax = high), inherit.aes = FALSE, fill = "#2a78d6", alpha = 0.25) +
+  geom_point(size = 1.2, colour = "grey45") +
+  geom_line(data = band, aes(y = fit), colour = "#2a78d6", linewidth = 1) +
+  scale_x_continuous(breaks = seq(1880, 2020, 20)) +
+  labs(title = "Local lines over 30 years, with a 95% band for the curve", x = NULL, y = "°C") +
+  theme_bw()
+```
+
+Read the band with two warnings.
+
+- **It is a band for the smoothed curve, not for the truth.** Where the true curve bends, the local line cuts the corner, and the band does not contain this bias.
+- **It assumes independent years.** The residuals correlate with the next year's at `r f2(lag1)`, so the true band is wider, by about $\sqrt{(1 + r)/(1 - r)}$ = `r f2(sqrt((1 + lag1) / (1 - lag1)))` times if the correlation fades year by year (see [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd)).
+
+### The slope: how fast is it warming?
+
+Each local line has a slope, which we threw away. It is the answer to a good question:
+
+```{r slopes}
+local_slope <- function(x0, q) {
+  d   <- abs(earth$year - x0)
+  fit <- lm.wfit(cbind(1, earth$year - x0), earth$temp, tricube(d / sort(d)[q]))
+  10 * fit$coefficients[[2]]                                # °C per decade
+}
+warming <- data.frame(year = earth$year, rate = sapply(earth$year, local_slope, q = 30))
+rate_of <- function(y) warming$rate[warming$year == y]
+warming[warming$year %in% c(1900, 1930, 1960, 1990, 2010, max(earth$year)), ]
+```
+
+```{r slopes_chart}
+ggplot(warming, aes(year, rate)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "#eb6834", linewidth = 1) +
+  scale_x_continuous(breaks = seq(1880, 2020, 20)) +
+  labs(title = "The local slope: warming per decade", subtitle = "Local lines over 30 years",
+       x = NULL, y = "°C per decade") +
+  theme_bw()
+```
+
+Around 1960 the temperature was hardly changing (`r f2(rate_of(1960))` °C per decade). Around 1990 it rose by `r f2(rate_of(1990))`, around 2010 by `r f2(rate_of(2010))` °C per decade. The value for `r max(earth$year)`, `r f2(rate_of(max(earth$year)))`, uses only years on one side, and the next section shows why it deserves little trust.
+
+---
+
+## 7. Why the end of the line keeps changing
+
+In the middle, a local line rests on years on both sides. At the last year there is only the past, so one or two warm years pull the end up. When the next years arrive, the end is recomputed. To see how much, we pretend to live in an earlier year, smooth the data known then, and compare the last value with what the line says about the same year today:
+
+```{r revisions}
+today <- ours                                        # NASA's recipe, all years
+last_years <- 2000:(max(earth$year) - 5)             # 5 later years are enough for the final value
+revision <- t(sapply(last_years, function(end) {
+  known <- subset(earth, year <= end)
+  then  <- tail(lowess(known$year, known$temp, f = 10 / nrow(known), iter = 3)$y, 1)
+  c(end = end, then = then, today = today[earth$year == end])
+}))
+revision <- as.data.frame(revision)
+revision$change <- revision$today - revision$then
+middle_change <- mean(abs(revision$change))
+c(mean_absolute_revision = middle_change, largest = max(abs(revision$change)))
+revision[which.max(abs(revision$change)), ]
+```
+
+```{r revisions_chart}
+ggplot(revision, aes(end)) +
+  geom_segment(aes(xend = end, y = then, yend = today), colour = "grey60") +
+  geom_point(aes(y = then, colour = "as the last value, at the time"), size = 2.2) +
+  geom_point(aes(y = today, colour = "today, with the years after it"), size = 2.2) +
+  scale_colour_manual(values = c("#eb6834", "#2a78d6"), name = NULL) +
+  labs(title = "The smooth value of a year: when it was the last, and today", x = NULL, y = "°C") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The last value was revised by `r f2(middle_change)` °C on average, and by up to `r f2(max(abs(revision$change)))` °C (for `r revision$end[which.max(abs(revision$change))]`). At the recent rate, that is up to `r f1(max(abs(revision$change)) / (rate_of(2010) / 10))` years of warming. The end of any smooth line is provisional. News about the "latest trend" is usually news about the least certain point of the curve.
+
+---
+
+## 8. What robustness is for
+
+The robustness rounds protect the line from single bad values. We put a typing error into the data, 1950 with a value of 2 °C, and smooth with and without the rounds:
+
+```{r outlier}
+bad <- earth
+bad$temp[bad$year == 1950] <- 2
+shown <- data.frame(year  = rep(earth$year, 3),
+                    value = c(lowess(earth$year, earth$temp, f = 10 / n, iter = 3)$y,
+                              lowess(bad$year, bad$temp, f = 10 / n, iter = 0)$y,
+                              lowess(bad$year, bad$temp, f = 10 / n, iter = 3)$y),
+                    line  = rep(c("correct data", "with the error, not robust", "with the error, robust"), each = n))
+at_1950 <- tapply(shown$value[shown$year == 1950], shown$line[shown$year == 1950], mean)
+round(at_1950, 3)
+```
+
+```{r outlier_chart}
+ggplot(subset(shown, year >= 1930 & year <= 1970), aes(year, value, colour = line, linetype = line)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("grey50", "#eb6834", "#2a78d6"), name = NULL) +
+  scale_linetype_manual(values = c("solid", "solid", "dashed"), name = NULL) +
+  labs(title = "One wrong value (2 °C in 1950), with and without robustness rounds", x = NULL, y = "°C") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Without the rounds the curve has a bump of `r f2(at_1950[["with the error, not robust"]] - at_1950[["correct data"]])` °C. With them, it differs by `r f2(abs(at_1950[["with the error, robust"]] - at_1950[["correct data"]]))` °C. But robustness is not always what you want: if the strange value is **real**, such as the year of a volcanic eruption, the robust line hides it.
+
+---
+
+## 9. Things to keep in mind
+
+- **It is a picture, not a model.** There are no coefficients to report and no formula to hand on. To predict, you need the data.
+- **No extrapolation.** `predict()` of a `loess` fit returns `NA` outside the data, and it is right to do so.
+- **Degree 1 or 2?** Local lines are safer at the ends. Local parabolas follow peaks and valleys better, and need a larger span for the same smoothness.
+- **The default span of 0.75 is not a recommendation.** With `geom_smooth()` you may be looking at a curve that is far too smooth, or too rough. Change `span` and look again.
+- **Large data.** `loess()` gets slow beyond a few thousand rows; `geom_smooth()` switches to a GAM at 1,000.
+- **Several predictors.** `loess()` takes up to four (Cleveland & Devlin, 1988), and the neighbourhoods become empty quickly. Splines and GAMs, which add one smooth curve per predictor, are the usual next step.
+- **The peak of a smooth curve is lower than the true peak**, and its valleys are shallower. Do not read extreme values off it.
+- **Smoothing before an analysis** creates correlated points. Never regress on smoothed values, and never compute correlations between two smoothed series.
+
+---
+
+## 10. Reporting the results in APA style
+
+The report (APA 7th edition) must contain everything that is needed to make the same line: the function, the span, the degree and the robustness rounds, and how the span was chosen. The numbers come from the R objects:
+
+```{r apa_numbers}
+show_years <- c(1900, 1920, 1940, 1960, 1980, 2000, max(earth$year))
+apa_table <- data.frame(
+  Year    = show_years,
+  Anomaly = f2(earth$temp[match(show_years, earth$year)]),
+  L10     = f2(ours[match(show_years, earth$year)]),
+  L30     = f2(pred$fit[match(show_years, earth$year)]),
+  CI      = paste0("[", f2(band$low[match(show_years, earth$year)]), ", ", f2(band$high[match(show_years, earth$year)]), "]"),
+  rate    = f2(warming$rate[match(show_years, earth$year)]))
+```
+
+**Method** (data analysis):
+
+> We smoothed the annual global mean temperature anomalies of GISTEMP v4 (`r min(earth$year)`–`r max(earth$year)`, *N* = `r n` years; GISTEMP Team, 2026; Lenssen et al., 2019) with local linear regression and tricube weights (Cleveland, 1979). Two neighbourhoods were used: 10 years with three robustness iterations, which reproduces the line published by NASA, and 30 years without robustness iterations (equivalent number of parameters = `r f1(sum(diag(L)))`), for the long-term change. The slope of the local line is reported as the rate of warming. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> With a neighbourhood of 10 years, our line differed from the published one by less than 0.005 °C in every year, which is the rounding of the published values. With a neighbourhood of 30 years, the smoothed anomaly was `r f2(pred$fit[earth$year == 1960])` °C in 1960 and `r f2(pred$fit[earth$year == 2010])` °C in 2010 (Table 1). The rate of warming was `r f2(rate_of(1960))` °C per decade around 1960, `r f2(rate_of(1990))` around 1990 and `r f2(rate_of(2010))` around 2010. Values at the end of the record are provisional: since 2000, the last value of the 10-year line was later revised by `r f2(middle_change)` °C on average.
+
+**Table 1**
+
+*Global Temperature Anomaly: Observed and Smoothed With Local Linear Regression*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Year", "Anomaly (°C)", "10 years, robust", "30 years", "95% CI (30 years)", "Slope (°C/decade)"),
+             align = "rrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* Anomalies relative to 1951–1980. The confidence intervals assume independent residuals; the lag-1 autocorrelation of the residuals was `r f2(lag1)`, so they are too narrow.
+
+**Points to remember:**
+
+- Give the span **in units of $x$** (10 years), not only as a fraction, and the number of robustness rounds.
+- Say how the span was chosen. If you tried several, show several.
+- Show the data together with the curve.
+- Mark the ends as provisional.
+
+---
+
+## 11. Summary
+
+| | |
+|---|---|
+| **When** | You want to see the shape of a relation without assuming a formula |
+| **The idea** | At each point, a weighted straight line (or parabola) through the nearest neighbours |
+| **Weights** | Tricube in the distance; bisquare in the residuals for robustness |
+| **How (R)** | `lowess(x, y, f, iter)`; `loess(y ~ x, span, degree, family)` with standard errors |
+| **The choice** | The span: small follows the data, large smooths them |
+| **Complexity** | The trace of the matrix $L$ in $\hat y = L y$: the equivalent number of parameters |
+| **Choosing the span** | The question first; AICc, GCV or cross-validation in blocks if neighbours are correlated |
+| **Weak points** | The ends, correlated errors, extrapolation, many predictors |
+| **Related pages** | [Polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd), [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd), [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd), [isotonic regression](EXAMPLE_ISOTONIC_REGRESSION.Rmd) |
+
+---
+
+## References
+
+Cleveland, W. S. (1979). Robust locally weighted regression and smoothing scatterplots. *Journal of the American Statistical Association*, *74*(368), 829–836. https://doi.org/10.1080/01621459.1979.10481038
+
+Cleveland, W. S., & Devlin, S. J. (1988). Locally weighted regression: An approach to regression analysis by local fitting. *Journal of the American Statistical Association*, *83*(403), 596–610. https://doi.org/10.1080/01621459.1988.10478639
+
+GISTEMP Team. (2026). *GISS Surface Temperature Analysis (GISTEMP), version 4* [Data set]. NASA Goddard Institute for Space Studies. https://data.giss.nasa.gov/gistemp/
+
+Hurvich, C. M., Simonoff, J. S., & Tsai, C.-L. (1998). Smoothing parameter selection in nonparametric regression using an improved Akaike information criterion. *Journal of the Royal Statistical Society: Series B*, *60*(2), 271–293. https://doi.org/10.1111/1467-9868.00125
+
+Lenssen, N. J. L., Schmidt, G. A., Hansen, J. E., Menne, M. J., Persin, A., & Ruedy, R. (2019). Improvements in the GISTEMP uncertainty model. *Journal of Geophysical Research: Atmospheres*, *124*(12), 6307–6326. https://doi.org/10.1029/2018JD029522
