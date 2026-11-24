@@ -3,7 +3,7 @@
 One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticked: already covered, by the page named.
 
 ## Linear
-- [ ] Simple linear
+- [x] Simple linear: EXAMPLE_SIMPLE_LINEAR_REGRESSION
 - [x] Multiple linear: EXAMPLE_HIERARCHICAL_REGRESSION, EXAMPLE_GENERALIZED (Gaussian GLM)
 - [x] Hierarchical: EXAMPLE_HIERARCHICAL_REGRESSION
 - [ ] Stepwise

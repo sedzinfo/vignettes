@@ -1,0 +1,422 @@
+---
+title: "Simple Linear Regression: Do Tall Fathers Have Tall Sons?"
+description: "Simple linear regression in R with lm(), on the family heights that Francis Galton collected in the 1880s: the least-squares line by hand, slope and correlation, regression to the mean, standard errors, t and F tests, confidence against prediction intervals, checking the assumptions, sons who share a father (cluster-robust standard errors) and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the data that gave regression its name
+
+In the 1880s Francis Galton offered prizes to families who would send him their measurements. He wanted to know how height passes from parents to children. One result puzzled him: very tall parents had tall children, but **not as tall as themselves**; very short parents had short children, but not as short. Children "regressed" towards the average. He called it *regression towards mediocrity* (Galton, 1886), and the name stuck to the method.
+
+This page asks his question with his data: **how much of a father's extra height does his son get?**
+
+**Simple linear regression** answers with a straight line: one outcome $y$ (the son's height), one predictor $x$ (the father's height), and a line that goes through the cloud of points as closely as possible. All the other regressions on this site are extensions of it, so this page goes slowly through every number that R prints.
+
+```{r packages}
+library(ggplot2)
+library(sandwich)   # vcovCL(): standard errors for sons who share a father
+library(lmtest)     # coeftest(), coefci(): tests and intervals with those standard errors
+
+line_colours <- c("regression line" = "#2a78d6", "son = father" = "#eb6834")
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+```
+
+---
+
+## 1. The data
+
+Galton's notebooks were transcribed by James Hanley (2004). The table is in the R package `HistData`, and as a CSV file in the *Rdatasets* collection: one row per grown-up child.
+
+```{r download}
+url <- "https://vincentarelbundock.github.io/Rdatasets/csv/HistData/GaltonFamilies.csv"
+galton <- read.csv(url)
+head(galton[, c("family", "father", "mother", "gender", "childHeight")], 4)
+```
+
+Heights are in **inches** (1 inch = 2.54 cm), most of them rounded to the nearest half inch or inch. We keep the sons, one row each:
+
+```{r tidy}
+sons <- subset(galton, gender == "male", select = c(family, father, childHeight))
+names(sons)[3] <- "son"
+parents <- unique(subset(galton, gender == "male", select = c(family, father, mother)))   # one row per couple
+nrow(sons)
+length(unique(sons$family))   # how many fathers
+summary(sons[, c("father", "son")])
+```
+
+There are `r nrow(sons)` sons of `r length(unique(sons$family))` fathers. Fathers average `r f1(mean(sons$father))` inches (`r f1(2.54 * mean(sons$father))` cm) and sons `r f1(mean(sons$son))` (`r f1(2.54 * mean(sons$son))` cm): the two generations are equally tall. A father with several sons appears several times, a point to which section 6 returns.
+
+---
+
+## 2. Look at the data
+
+```{r look, fig.height = 6.5}
+ggplot(sons, aes(father, son)) +
+  geom_abline(aes(intercept = 0, slope = 1, colour = "son = father"), linewidth = 0.8, linetype = "dashed") +
+  geom_jitter(width = 0.1, height = 0.1, alpha = 0.4, colour = "grey30", size = 1.5) +
+  geom_smooth(aes(colour = "regression line"), method = "lm", se = FALSE, linewidth = 1) +
+  scale_colour_manual(values = line_colours, name = NULL) +
+  coord_fixed(xlim = c(61, 79), ylim = c(59, 80)) +
+  labs(title = "Sons against fathers", x = "father's height (inches)", y = "son's height (inches)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+The cloud rises: taller fathers have taller sons. (The points are nudged a little, because the rounding puts many of them on the same spot.) If every son were as tall as his father, the points would lie along the dashed line. They do not. The regression line is **flatter**: on the right it lies below the dashed line, on the left above it. That is what Galton saw:
+
+```{r tails}
+tallest  <- sons$father >= 73
+shortest <- sons$father <= 66
+tails <- data.frame(group       = c("fathers of 73 inches or more", "fathers of 66 inches or less"),
+                    n           = c(sum(tallest), sum(shortest)),
+                    mean_father = c(mean(sons$father[tallest]), mean(sons$father[shortest])),
+                    mean_son    = c(mean(sons$son[tallest]),    mean(sons$son[shortest])))
+tails
+```
+
+The tallest fathers are on average `r f1(tails$mean_father[1] - mean(sons$father))` inches above the average father, but their sons are only `r f1(tails$mean_son[1] - mean(sons$son))` inches above the average son. The shortest fathers are `r f1(mean(sons$father) - tails$mean_father[2])` inches below; their sons, `r f1(mean(sons$son) - tails$mean_son[2])`.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a line plus scatter
+
+$$y_i = \beta_0 + \beta_1 x_i + \varepsilon_i$$
+
+- $\beta_1$, the **slope**: how many inches taller, on average, are the sons of fathers who are one inch taller.
+- $\beta_0$, the **intercept**: the average son of a father of height 0. Nobody has that height, so here it only fixes how high the line sits.
+- $\varepsilon_i$, the **error**: how far son $i$ is from the line. The mother, the food, the illnesses of childhood and luck are all in there.
+
+### Step 2: the least-squares line
+
+Any line leaves **residuals**, $e_i = y_i - (b_0 + b_1 x_i)$, the vertical distances from the points to the line. The least-squares line makes $\sum_i e_i^2$ as small as possible. Setting the two derivatives of this sum to zero gives
+
+$$b_1 = \frac{\sum_i (x_i - \bar x)(y_i - \bar y)}{\sum_i (x_i - \bar x)^2} = \frac{\text{cov}(x, y)}{\text{var}(x)}, \qquad b_0 = \bar y - b_1 \bar x$$
+
+The second formula says that the line goes through the point of the two means, $(\bar x, \bar y)$.
+
+```{r by_hand}
+x <- sons$father
+y <- sons$son
+n <- length(y)
+
+b1 <- sum((x - mean(x)) * (y - mean(y))) / sum((x - mean(x))^2)
+b0 <- mean(y) - b1 * mean(x)
+c(b0 = b0, b1 = b1)
+```
+
+### Step 3: the slope is a correlation in disguise
+
+The correlation is the covariance divided by **both** standard deviations, and the slope divides by the variance of $x$ only. So
+
+$$b_1 = r \,\frac{s_y}{s_x}$$
+
+In standard deviations, the rule is even shorter: a father who is 1 SD above the mean has sons who are, on average, $r$ SDs above theirs.
+
+```{r slope_correlation}
+r <- cor(x, y)
+c(r = r, s_x = sd(x), s_y = sd(y), slope = r * sd(y) / sd(x))
+```
+
+### Step 4: why there is always regression to the mean
+
+A correlation is never larger than 1, and in real data it is smaller. So a father 2 SDs above the mean has sons about $2r$ = `r f2(2 * r)` SDs above it, **closer to the mean**. No force pulls the sons back. A very tall father is usually tall for two reasons, the genes he passes on and other causes that he does not (good food, luck, an error in the measurement). His sons inherit the first part and get their own share of the second, which is average on average.
+
+The same holds in the other direction: very tall **sons** have fathers who are less tall than they are. Heights do not shrink to the mean from generation to generation; the spread of the sons ($s$ = `r f2(sd(y))`) is not smaller than that of the fathers ($s$ = `r f2(sd(x))`).
+
+### Step 5: how sure are we? The standard error of the slope
+
+A different sample of families would give a different slope. If the errors are independent and have the same variance $\sigma^2$, the spread of the slope from sample to sample is
+
+$$SE(b_1) = \frac{s}{\sqrt{\sum_i (x_i - \bar x)^2}}, \qquad s = \sqrt{\frac{\sum_i e_i^2}{n - 2}}$$
+
+$s$ is the **residual standard error**, the typical distance of a son from the line; $n - 2$ because two numbers, $b_0$ and $b_1$, were estimated. The slope is more precise when the points lie close to the line, when there are many of them, and when the fathers differ a lot in height. Then
+
+$$t = \frac{b_1}{SE(b_1)} \quad\text{with } n - 2 \text{ degrees of freedom}, \qquad 95\%\ \text{CI} = b_1 \pm t_{0.975}\, SE(b_1)$$
+
+```{r se_by_hand}
+e     <- y - (b0 + b1 * x)                         # residuals
+s     <- sqrt(sum(e^2) / (n - 2))                  # residual standard error
+se_b1 <- s / sqrt(sum((x - mean(x))^2))
+t_b1  <- b1 / se_b1
+p_b1  <- 2 * pt(abs(t_b1), df = n - 2, lower.tail = FALSE)
+ci_b1 <- b1 + c(-1, 1) * qt(0.975, n - 2) * se_b1
+c(s = s, SE = se_b1, t = t_b1, p = p_b1, lower = ci_b1[1], upper = ci_b1[2])
+```
+
+### Step 6: how much is explained? R²
+
+The total variation of the sons splits in two, the part that the line follows and the part left around it:
+
+$$\underbrace{\sum_i (y_i - \bar y)^2}_{\text{total}} = \underbrace{\sum_i (\hat y_i - \bar y)^2}_{\text{explained}} + \underbrace{\sum_i e_i^2}_{\text{left over}}, \qquad R^2 = \frac{\text{explained}}{\text{total}}$$
+
+With one predictor, $R^2 = r^2$: here $`r f3(r)`^2$ = `r f3(r^2)`.
+
+---
+
+## 4. Fitting the model and reading the output
+
+```{r fit}
+fit <- lm(son ~ father, data = sons)
+summary(fit)
+```
+
+Every number of section 3 is there. Part by part:
+
+| In the output | Meaning | Here |
+|---|---|---|
+| `Residuals` | Five numbers of the $e_i$; they should be roughly symmetric around 0 | half of the sons are between `r f1(quantile(resid(fit), .25))` and +`r f1(quantile(resid(fit), .75))` inches from the line |
+| `Estimate`, `father` | The slope $b_1$ | `r f3(b1)` inches of son for one inch of father |
+| `Estimate`, `(Intercept)` | $b_0$, the line at $x = 0$ | `r f1(b0)` inches: no meaning by itself |
+| `Std. Error` | How uncertain the estimate is | `r f3(se_b1)` for the slope |
+| `t value` | `Estimate / Std. Error` | `r f2(t_b1)` |
+| `Pr(>|t|)` | The chance of a $t$ this far from 0 if the true slope were 0 | far below .001 |
+| `Residual standard error` | $s$, the typical distance from the line | `r f2(s)` inches |
+| `Multiple R-squared` | $R^2 = r^2$ | `r f3(summary(fit)$r.squared)` |
+| `F-statistic` | The test of the whole model. With one predictor, $F = t^2$ | $`r f2(t_b1)`^2$ = `r f1(t_b1^2)` |
+
+```{r centred}
+# the intercept becomes useful if we centre the father's height
+centred <- lm(son ~ I(father - mean(father)), data = sons)
+round(coef(summary(centred)), 3)
+```
+
+The model with the **centred** predictor is the same line with the same slope. Its intercept, `r f2(coef(centred)[[1]])`, is now the average height of the sons of an average father.
+
+### What the slope says about Galton's question
+
+A father who is one inch taller than another has sons who are `r f2(b1)` inches taller on average, 95% CI [`r f2(ci_b1[1])`, `r f2(ci_b1[2])`]. So a son gets somewhat **less than half** of his father's extra height. Two hypotheses are tested by this one interval:
+
+- **No link** ($\beta_1 = 0$), the test that R prints: rejected, the interval is far from 0.
+- **Sons equal to their fathers on average, whatever the father's height** ($\beta_1 = 1$): also rejected, the interval is far from 1. R does not print this test, but the *t* is easy: $(b_1 - 1)/SE = `r f1((b1 - 1) / se_b1)`$.
+
+Always ask which value of the slope is the interesting one. It is not always zero.
+
+### Two regressions, not one
+
+Predicting fathers from sons is a different regression, and not the first line turned around:
+
+```{r two_lines}
+reverse <- lm(father ~ son, data = sons)
+c(son_on_father = b1, father_on_son = coef(reverse)[["son"]], turned_around = 1 / coef(reverse)[["son"]])
+c(product_of_slopes = b1 * coef(reverse)[["son"]], r_squared = r^2)
+```
+
+```{r two_lines_chart, fig.height = 6.5}
+two <- rbind(
+  data.frame(line = "son predicted from father", intercept = b0, slope = b1),
+  data.frame(line = "father predicted from son", intercept = -coef(reverse)[[1]] / coef(reverse)[[2]],
+             slope = 1 / coef(reverse)[[2]]))
+
+ggplot(sons, aes(father, son)) +
+  geom_jitter(width = 0.1, height = 0.1, alpha = 0.25, colour = "grey40", size = 1.2) +
+  geom_abline(data = two, aes(intercept = intercept, slope = slope, colour = line), linewidth = 1) +
+  annotate("point", x = mean(x), y = mean(y), size = 3) +
+  scale_colour_manual(values = c("son predicted from father" = "#2a78d6", "father predicted from son" = "#1baf7a"),
+                      name = NULL) +
+  coord_fixed(xlim = c(61, 79), ylim = c(59, 80)) +
+  labs(title = "Two regression lines through the same cloud",
+       subtitle = "They cross at the two means (black point)",
+       x = "father's height (inches)", y = "son's height (inches)") +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+Least squares measures **vertical** distances, the errors in what we predict. Swap the roles and the errors to make small are the horizontal ones, so the line changes. The product of the two slopes is $r^2$, and the lines coincide only when $r = \pm 1$. The choice of $y$ is the choice of what to predict. When neither variable is the outcome, because both measure the same thing with error, use [Deming regression](EXAMPLE_DEMING_REGRESSION.Rmd).
+
+---
+
+## 5. Predictions: for the average son, or for one son?
+
+How tall will the sons of a father of 74 inches (`r f1(2.54 * 74)` cm) be? There are two questions in this one:
+
+1. How tall are such sons **on average**? Only the line is uncertain: a **confidence interval**.
+2. How tall will **one** such son be? The line is uncertain, and the son scatters around it: a **prediction interval**.
+
+$$SE_{\text{mean}} = s\sqrt{\frac{1}{n} + \frac{(x_0 - \bar x)^2}{\sum (x_i - \bar x)^2}}, \qquad SE_{\text{one}} = s\sqrt{1 + \frac{1}{n} + \frac{(x_0 - \bar x)^2}{\sum (x_i - \bar x)^2}}$$
+
+```{r predict}
+new <- data.frame(father = 74)
+conf <- predict(fit, new, interval = "confidence")
+pred <- predict(fit, new, interval = "prediction")
+rbind(average_son = conf, one_son = pred)
+
+# the same by hand, for the standard errors
+h0 <- 1 / n + (74 - mean(x))^2 / sum((x - mean(x))^2)
+c(se_mean = s * sqrt(h0), se_one = s * sqrt(1 + h0))
+```
+
+The average of such sons is `r f1(conf[1])` inches, 95% CI [`r f1(conf[2])`, `r f1(conf[3])`]. One such son will be between `r f1(pred[2])` and `r f1(pred[3])` inches with 95% probability: a range of `r f1(2.54 * (pred[3] - pred[2]))` cm. More families would shrink the first interval towards nothing. They would not shrink the second below about $\pm 2s$.
+
+```{r bands}
+grid  <- data.frame(father = seq(62, 78.5, by = 0.25))
+bands <- rbind(cbind(grid, predict(fit, grid, interval = "prediction"), band = "95% prediction interval: one son"),
+               cbind(grid, predict(fit, grid, interval = "confidence"), band = "95% confidence interval: the average son"))
+bands$band <- factor(bands$band, levels = unique(bands$band))
+
+ggplot(sons, aes(father, son)) +
+  geom_ribbon(data = bands, aes(y = fit, ymin = lwr, ymax = upr, fill = band), alpha = 0.45) +
+  geom_jitter(width = 0.1, height = 0.1, alpha = 0.35, colour = "grey30", size = 1.2) +
+  geom_line(data = cbind(grid, son = predict(fit, grid)), colour = "#2a78d6", linewidth = 1) +
+  scale_fill_manual(values = c("#f3d19c", "#2a78d6"), name = NULL) +
+  labs(title = "The line is known well; one son is not",
+       x = "father's height (inches)", y = "son's height (inches)") +
+  theme_bw() + theme(legend.position = "bottom")
+
+inside <- predict(fit, interval = "prediction")
+share_inside <- mean(sons$son >= inside[, "lwr"] & sons$son <= inside[, "upr"])
+```
+
+Of the sons in the data, `r f1(100 * share_inside)`% lie inside the prediction band, close to the 95% it promises. The line is only for fathers between `r min(x)` and `r max(x)` inches: the data say nothing beyond that.
+
+---
+
+## 6. Checking the assumptions
+
+The estimates need the line to be the right shape. The standard errors, *t* tests and intervals also need errors that are independent and equally spread. The prediction interval needs them to be roughly normal too. In order of importance:
+
+```{r diagnostics, fig.height = 7}
+check <- data.frame(fitted = fitted(fit), resid = resid(fit), std = rstandard(fit))
+check$q <- qqnorm(check$std, plot.it = FALSE)$x
+
+pa <- ggplot(check, aes(fitted, resid)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_jitter(width = 0.05, height = 0.05, alpha = 0.4, colour = "grey30") +
+  geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834", linewidth = 0.9) +
+  labs(title = "Residuals against fitted values", x = "fitted height (inches)", y = "residual (inches)") +
+  theme_bw()
+pb <- ggplot(check, aes(q, std)) +
+  geom_abline(colour = "grey60") +
+  geom_point(alpha = 0.5, colour = "#2a78d6") +
+  labs(title = "Normal Q-Q plot", x = "normal quantile", y = "standardised residual") +
+  theme_bw()
+patchwork::wrap_plots(pa, pb, ncol = 1)
+```
+
+- **Linearity.** The orange curve stays near 0, with no U and no wave. The RESET test adds powers of the fitted values to the model and asks whether they help; they do not, *p* `r pval(resettest(fit)$p.value)`. If there were a bend, see [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd).
+- **Equal spread.** The band is equally wide from left to right. The Breusch–Pagan test finds nothing, *p* `r pval(bptest(fit)$p.value)`. If the spread changed, see [weighted least squares](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd).
+- **Normal errors.** The points follow the line in the Q-Q plot, with a few sons further out than a normal distribution would put them. With `r n` rows this matters little for the slope, but the prediction interval depends on it.
+- **Influence.** The largest Cook's distance is `r f3(max(cooks.distance(fit)))`, far below 1: no son moves the line by himself. If some did, see [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd).
+- **Independence.** This one **fails**, and no plot above shows it.
+
+### Brothers are not independent
+
+The `r n` sons have only `r length(unique(sons$family))` fathers. Brothers share a mother, a kitchen and a childhood, so if one is taller than the line says, his brother probably is too:
+
+```{r brothers}
+sons$resid <- resid(fit)
+families   <- split(sons$resid, sons$family)
+pairs      <- do.call(rbind, lapply(families[lengths(families) > 1], function(v) t(combn(v, 2))))
+both_ways  <- rbind(pairs, pairs[, 2:1])              # each pair counted in both orders
+brother_r  <- cor(both_ways)[1, 2]
+c(pairs_of_brothers = nrow(pairs), correlation = brother_r)
+```
+
+The residuals of two brothers correlate at `r f2(brother_r)`. So `r n` sons carry less information than `r n` unrelated men, and the usual standard error is too small. **Cluster-robust** standard errors keep the line and allow any correlation within a family:
+
+```{r cluster}
+v_cl    <- vcovCL(fit, cluster = ~ family)
+robust  <- coeftest(fit, vcov = v_cl)
+ci_cl   <- coefci(fit, vcov. = v_cl)
+rbind(usual          = coef(summary(fit))["father", ],
+      cluster_robust = robust["father", ])
+```
+
+The standard error of the slope goes from `r f3(se_b1)` to `r f3(robust["father", 2])`, `r f2(robust["father", 2] / se_b1)` times as large, and the 95% CI from [`r f2(ci_b1[1])`, `r f2(ci_b1[2])`] to [`r f2(ci_cl["father", 1])`, `r f2(ci_cl["father", 2])`]. The conclusions do not change here, but the honest interval is the wider one. A model with a random intercept for each family is the other way (see [multilevel models](EXAMPLE_MULTILEVEL.Rmd)).
+
+---
+
+## 7. Things to keep in mind
+
+- **A slope is a difference between people, not an effect.** Taller fathers differ from shorter ones in other ways too: their wives are a little taller, for example (the heights of the parents correlate at `r f2(cor(parents$father, parents$mother))`), and their families may have been better fed. The slope is what we should expect **of a son** when we know his father's height, not what would happen if a father grew.
+- **One parent is half of the story.** Adding the mother's height is a job for multiple regression (see [hierarchical regression](EXAMPLE_HIERARCHICAL_REGRESSION.Rmd)).
+- **A measurement error in $x$ flattens the slope.** Families reported their own measurements, and most are rounded. Noise in $x$ biases the slope towards 0 (attenuation), so part of the gap between `r f2(b1)` and 1 may be error; noise in $y$ only widens the scatter.
+- **Regression to the mean explains many "effects".** Choose the worst schools, the sickest patients or the best athletes of one year, and the next year they will be closer to average, whatever was done to them in between (Barnett et al., 2005). Compare with a control group chosen in the same way.
+- **$R^2$ is not the quality of the model.** It is low here (`r f2(r^2)`) because much besides the father decides a son's height, and the line is nevertheless right. A high $R^2$ can come with a wrong model, as with the CO₂ record in [polynomial regression](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd).
+- **The sample is not the population.** Galton's families answered an advertisement with prizes, in England in the 1880s.
+
+---
+
+## 8. Reporting the results in APA style
+
+A report (APA 7th edition) needs the variables and their units, the slope with its uncertainty, the test, and $R^2$. The numbers come from the R objects:
+
+```{r apa_numbers}
+fs <- summary(fit)$fstatistic
+apa_table <- data.frame(
+  Predictor = c("Intercept", "Father's height (inches)"),
+  b   = f2(coef(fit)),
+  SE  = f3(robust[, 2]),
+  CI  = paste0("[", f2(ci_cl[, 1]), ", ", f2(ci_cl[, 2]), "]"),
+  t   = f2(robust[, 3]),
+  p   = sapply(robust[, 4], function(p) sub("^= ", "", pval(p))),
+  beta = c("—", nz(r, 2)))
+```
+
+**Method** (data analysis):
+
+> We analysed the heights of `r n` adult sons of `r length(unique(sons$family))` fathers collected by Galton (1886) and transcribed by Hanley (2004). We regressed the son's height on the father's height, both in inches, by ordinary least squares. Because `r sum(duplicated(sons$family))` of the sons had a brother earlier in the file, we report cluster-robust standard errors with families as clusters (Zeileis et al., 2020). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> Sons (*M* = `r f2(mean(y))`, *SD* = `r f2(sd(y))`) were as tall on average as their fathers (*M* = `r f2(mean(x))`, *SD* = `r f2(sd(x))`). Father's height predicted son's height, *b* = `r f2(b1)`, 95% CI [`r f2(ci_cl["father", 1])`, `r f2(ci_cl["father", 2])`], *t*(`r n - 2`) = `r f2(robust["father", 3])`, *p* `r pval(robust["father", 4])`, *R*² = `r nz(r^2, 2)` (Table 1). For each additional inch of the father, sons were `r f2(b1)` inches taller on average. The slope was also below 1, showing regression to the mean: the sons of fathers 2 *SD* above the mean were expected to be `r f2(2 * r)` *SD* above it.
+
+**Table 1**
+
+*Regression of Son's Height on Father's Height*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "*b*", "*SE*", "95% CI", "*t*", "*p*", "β"),
+             align = "lrrrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r n` sons of `r length(unique(sons$family))` fathers. Standard errors, confidence intervals and tests are cluster-robust (by family). *R*² = `r nz(r^2, 2)`, residual *SD* = `r f2(s)` inches.
+
+**Points to remember:**
+
+- Give *b* with its units, its confidence interval, the test with its degrees of freedom, and *R*².
+- Say which value the slope was tested against, if it was not zero.
+- The standardised slope β is the correlation when there is one predictor. Report it as well if readers will compare studies.
+- Say what one row is, and whether rows belong together.
+- Do not write "effect" or "leads to" for a difference between people who were not assigned to anything.
+
+---
+
+## 9. Summary
+
+| | |
+|---|---|
+| **When** | A continuous outcome and one predictor, related by a straight line |
+| **The model** | $y = \beta_0 + \beta_1 x + \varepsilon$ |
+| **The estimates** | $b_1 = \text{cov}(x, y)/\text{var}(x) = r\, s_y / s_x$; the line goes through $(\bar x, \bar y)$ |
+| **How (R)** | `fit <- lm(y ~ x, data = d)`, then `summary()`, `confint()`, `predict()` |
+| **Reading it** | The slope is the average difference in $y$ between units that differ by 1 in $x$ |
+| **Regression to the mean** | Extreme $x$ go with less extreme $y$ whenever $|r| < 1$ |
+| **Prediction** | `interval = "confidence"` for the average, `interval = "prediction"` for one case |
+| **Checks** | Residuals against fitted values, Q-Q plot, Cook's distance, and how the rows were collected |
+| **If it fails** | Bend: [polynomial](EXAMPLE_POLYNOMIAL_REGRESSION.Rmd). Unequal spread: [WLS](EXAMPLE_WEIGHTED_LEAST_SQUARES.Rmd). Outliers: [robust](EXAMPLE_ROBUST_REGRESSION.Rmd). Dependence: cluster-robust errors or [multilevel models](EXAMPLE_MULTILEVEL.Rmd) |
+
+---
+
+## References
+
+Barnett, A. G., van der Pols, J. C., & Dobson, A. J. (2005). Regression to the mean: What it is and how to deal with it. *International Journal of Epidemiology*, *34*(1), 215–220. https://doi.org/10.1093/ije/dyh299
+
+Galton, F. (1886). Regression towards mediocrity in hereditary stature. *The Journal of the Anthropological Institute of Great Britain and Ireland*, *15*, 246–263. https://doi.org/10.2307/2841583
+
+Hanley, J. A. (2004). "Transmuting" women into men: Galton's family data on human stature. *The American Statistician*, *58*(3), 237–243. https://doi.org/10.1198/000313004X1558
+
+Zeileis, A., Köll, S., & Graham, N. (2020). Various versatile variances: An object-oriented implementation of clustered covariances in R. *Journal of Statistical Software*, *95*(1), 1–36. https://doi.org/10.18637/jss.v095.i01
