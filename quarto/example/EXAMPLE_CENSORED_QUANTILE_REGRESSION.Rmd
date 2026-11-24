@@ -1,0 +1,369 @@
+---
+title: "Censored Quantile Regression: How Long Do People Stay Off Drugs?"
+description: "Censored quantile regression in R with quantreg::crq(), on a randomised trial of two drug treatment programmes (575 patients, time to the return to drug use): quantiles of a time that is not fully observed, why ignoring or dropping the censored cases is wrong, Portnoy's and Peng and Huang's estimators, the link to Kaplan-Meier, inverse probability of censoring weights by hand, effects that change across the quantiles against one number from Weibull and Cox models, which quantiles can be estimated, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: the typical time, when some times are unknown
+
+Two residential programmes treat people who are addicted to drugs. One is short, the other is longer. Patients were assigned to them **at random**. The outcome is the number of days until a patient **returns to drugs**. Does the longer programme keep people off drugs for longer?
+
+For about one patient in five the time is not known. They had not returned to drugs when the study lost sight of them, so we know only that their time is **longer** than some value. Such times are **censored**.
+
+The usual answer is a survival model, such as the Cox model, which gives one number, a hazard ratio, for the whole time. But a programme may do nothing for the patients who relapse in the first weeks, and a lot for those who hold out. One number hides that. And "the hazard is 22% lower" is hard to explain to a patient. **Quantile regression** answers in days: by how much does the longer programme move the **median** time? The time by which a quarter of the patients have relapsed? Or three quarters?
+
+[Quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd) needs complete data. **Censored quantile regression** is the version for times that are only partly known.
+
+```{r packages}
+library(quantreg)   # crq(): censored quantile regression; the data are also in this package
+library(survival)   # Kaplan-Meier, Weibull and Cox models (comes with R)
+library(ggplot2)
+
+# number formats for the text
+f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+```
+
+---
+
+## 1. The data
+
+The data are those of the UMARU IMPACT study, two randomised trials of residential treatment, which Hosmer and Lemeshow made well known in their textbook. They are in the package `quantreg`, and as a CSV file in the *Rdatasets* collection:
+
+```{r download}
+uis <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/quantreg/uis.csv")
+uis <- with(uis, data.frame(time = TIME, relapse = CENSOR, long = TREAT, age = (AGE - 32) / 10,
+                            recent_iv = IV3, prior = NDT, site = SITE))
+str(uis)
+c(patients = nrow(uis), relapsed = sum(uis$relapse), censored = sum(uis$relapse == 0))
+table(uis$long)
+```
+
+`time` is the number of days from admission to the return to drugs, or to the end of observation. `relapse` is 1 if the return was observed and 0 if the time is censored (the file calls it `CENSOR`, with 1 for "not censored", which is easy to misread). `long` is 1 for the longer programme, `age` is in decades from 32, `recent_iv` is 1 for recent use of injected drugs, `prior` is the number of earlier treatments and `site` distinguishes the two places. `r pct(mean(uis$relapse == 0))` of the times are censored.
+
+---
+
+## 2. Look at the data
+
+```{r look}
+km <- survfit(Surv(time, relapse) ~ long, data = uis)
+km_data <- data.frame(time = km$time, surv = km$surv, programme = rep(c("short", "long"), km$strata))
+km_data <- rbind(data.frame(time = 0, surv = 1, programme = c("short", "long")), km_data)
+
+ggplot(km_data, aes(time, surv, colour = programme)) +
+  geom_step(linewidth = 0.9) +
+  geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = "dotted", colour = "grey50") +
+  scale_colour_manual(values = c(short = "#eb6834", long = "#2a78d6"), name = "programme") +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, 1)) +
+  labs(title = "Share of patients who have not returned to drugs (Kaplan–Meier)",
+       subtitle = "On a horizontal line, the gap between the curves is the difference of a quantile",
+       x = "days since admission", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+
+km_q <- quantile(km, c(0.1, 0.25, 0.5, 0.75))$quantile
+rownames(km_q) <- c("short", "long")
+km_q
+```
+
+A **quantile** of the time is read **horizontally** off such a curve. The 25% quantile is the day by which a quarter of the patients have relapsed. Until then the two curves run together: `r f0(km_q["short", "25"])` days in the short programme, `r f0(km_q["long", "25"])` in the long one. At the median the gap is `r f0(km_q["long", "50"] - km_q["short", "50"])` days, and at the 75% quantile `r f0(km_q["long", "75"] - km_q["short", "75"])`.
+
+### Why not just compute the quantiles?
+
+```{r naive}
+km_all <- quantile(survfit(Surv(time, relapse) ~ 1, data = uis), c(0.25, 0.5, 0.75, 0.82))$quantile
+rbind(`Kaplan-Meier (right)`        = km_all,
+      `as if all were relapses`     = quantile(uis$time, c(0.25, 0.5, 0.75, 0.82)),
+      `without the censored cases`  = quantile(uis$time[uis$relapse == 1], c(0.25, 0.5, 0.75, 0.82)))
+```
+
+Dropping the censored cases is the worst: the patients who stayed off drugs **longest** are thrown away, and the median falls from `r f0(km_all[["50"]])` to `r f0(median(uis$time[uis$relapse == 1]))` days. Taking the censored times as relapse times does little harm up to the 75% quantile here, because most of the censoring comes late in this study (half of the censored times are longer than `r f0(median(uis$time[uis$relapse == 0]))` days). Above that it fails: `r f0(quantile(uis$time, 0.82))` days for the 82% quantile instead of `r f0(km_all[["82"]])`. In a study with earlier censoring the error would begin lower.
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: a line for each quantile
+
+$$Q_{\log T}(\tau \mid x) = x^\top \beta(\tau)$$
+
+$Q(\tau \mid x)$ is the $\tau$-quantile of the log time of people with predictors $x$. There is one vector $\beta(\tau)$ for every $\tau$ between 0 and 1. We use the logarithm because effects on times are naturally ratios. Quantiles allow that without any correction: the quantile of $\log T$ is the log of the quantile of $T$ (this does not hold for means). So $e^{\beta(\tau)}$ says how many **times** longer the $\tau$-quantile is.
+
+If all the $\beta_j(\tau)$ are flat in $\tau$, the predictor stretches the whole distribution by one factor, which is the *accelerated failure time* model. Censored quantile regression does not assume it.
+
+### Step 2: complete data, the check function
+
+Without censoring, $\hat\beta(\tau)$ minimises $\sum_i \rho_\tau(\log t_i - x_i^\top\beta)$, with the tilted absolute value $\rho_\tau(u) = u\,(\tau - 1[u < 0])$ (see the [page on quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd)). All that matters for a case is whether it lies **above or below** the line.
+
+### Step 3: what a censored case tells
+
+For a case censored at $c$ we know that $T > c$.
+
+- If the line for $\tau$ passes **below** $c$, the case is certainly above it. No problem.
+- If the line passes **above** $c$, the case may be above or below. We do not know.
+
+### Step 4: Portnoy's idea, split the case in two
+
+Suppose that the case was crossed by the line at $\tau_0$, that is, $c$ is the $\tau_0$-quantile for such a person. Given that it is beyond $c$, its probability of being below the $\tau$-quantile is
+
+$$\frac{\tau - \tau_0}{1 - \tau_0}$$
+
+So give the case two weights that add to 1. The weight $\frac{\tau - \tau_0}{1 - \tau_0}$ stays at $c$, and the rest goes to $+\infty$, where it is certainly above the line. Work upwards, from small $\tau$ to large, and update the weights as more censored cases are crossed (Portnoy, 2003). For one group without predictors this is the *redistribution to the right*, and the result is the **Kaplan–Meier** estimate. Peng and Huang (2008) use another route, through counting processes, which generalises the Nelson–Aalen estimate. Both are in `crq()`.
+
+### Step 5: how high can we go?
+
+Beyond the last observed relapses there is no information. The Kaplan–Meier curve of these data stops at `r pct(min(survfit(Surv(time, relapse) ~ 1, data = uis)$surv))`, so quantiles above about 80% cannot be estimated.
+
+### Step 6: assumptions
+
+The line must hold **for all the quantiles up to** $\tau$, because the method works its way up from the bottom. And the censoring must be independent of the time, given the predictors. Patients who left the study because they had relapsed would break it.
+
+---
+
+## 4. Fitting the model and reading the output
+
+### The check: without predictors it is Kaplan–Meier
+
+```{r check_km}
+only_programme <- crq(Surv(log(time), relapse) ~ long, data = uis, method = "Portnoy")
+b0 <- coef(only_programme, taus = c(0.25, 0.5, 0.75))
+rbind(crq_short = exp(b0[1, ]), km_short = km_q["short", c("25", "50", "75")],
+      crq_long  = exp(b0[1, ] + b0[2, ]), km_long = km_q["long", c("25", "50", "75")])
+```
+
+With the programme as the only predictor, the fitted quantiles are the Kaplan–Meier quantiles of the two groups, up to the steps of the curves.
+
+### The full model
+
+```{r fit}
+model <- Surv(log(time), relapse) ~ long + age + recent_iv + prior + site
+fit   <- crq(model, data = uis, method = "Portnoy")
+taus  <- c(0.1, 0.25, 0.5, 0.75)
+set.seed(61)
+s <- summary(fit, taus = taus, R = 500)                    # bootstrap standard errors
+s[[3]]$coefficients                                        # the median
+row_of <- function(term, col) sapply(s, function(q) q$coefficients[term, col])
+eff <- data.frame(tau = taus, b = row_of("long", 1), SE = row_of("long", 4), low = row_of("long", 2), high = row_of("long", 3))
+eff$ratio <- exp(eff$b)
+round(eff, 3)
+```
+
+The output for one quantile looks like that of an ordinary regression. The standard errors and the limits come from a bootstrap of the patients. Read the row of `long`:
+
+- **At the median**, *b* = `r f2(eff$b[3])`: the median time of the long programme is $e^{`r f2(eff$b[3])`}$ = **`r f2(eff$ratio[3])` times** that of the short one, 95% CI [`r f2(exp(eff$low[3]))`, `r f2(exp(eff$high[3]))`].
+- **At the 10% quantile**, `r f2(eff$ratio[1])` times, [`r f2(exp(eff$low[1]))`, `r f2(exp(eff$high[1]))`]. The patients who relapse first do so at about the same time in both programmes.
+- **At the 75% quantile**, `r f2(eff$ratio[4])` times, [`r f2(exp(eff$low[4]))`, `r f2(exp(eff$high[4]))`]. The estimate is uncertain, because much of the information there is censored.
+
+### All the quantiles
+
+```{r path}
+grid <- seq(0.05, 0.80, by = 0.025)
+set.seed(62)
+sg <- summary(fit, taus = grid, R = 300)
+path <- do.call(rbind, lapply(c("long", "age", "recent_iv", "prior"), function(v)
+  data.frame(term = v, tau = grid, b = sapply(sg, function(q) q$coefficients[v, 1]),
+             low = sapply(sg, function(q) q$coefficients[v, 2]), high = sapply(sg, function(q) q$coefficients[v, 3]))))
+labels <- c(long = "longer programme", age = "ten years older", recent_iv = "recent injected drugs", prior = "one more prior treatment")
+path$label <- factor(labels[path$term], levels = labels)
+
+weibull <- survreg(Surv(time, relapse) ~ long + age + recent_iv + prior + site, data = uis, dist = "weibull")
+lognorm <- survreg(Surv(time, relapse) ~ long + age + recent_iv + prior + site, data = uis, dist = "lognormal")
+flat <- data.frame(label = factor(labels, levels = labels), b = coef(lognorm)[names(labels)])
+
+ggplot(path, aes(tau, b)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_ribbon(aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.2) +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  geom_hline(data = flat, aes(yintercept = b), colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~ label, scales = "free_y") +
+  labs(title = "Effects on the log time, across the quantiles",
+       subtitle = "Blue: censored quantile regression, 95% bootstrap band.\nOrange: log-normal model, one number",
+       x = "quantile τ (left: the patients who relapse early)", y = "coefficient") +
+  theme_bw()
+```
+
+The effect of the **longer programme** starts near zero, rises to about the middle and stays there. The effect of **recent injected drugs** is negative and has a hump: it is most harmful at both ends, and weak around the middle. The dashed lines are what a parametric model with one number per predictor says about the same data.
+
+---
+
+## 5. One number or many? Other models for the same data
+
+```{r others}
+cox <- coxph(Surv(time, relapse) ~ long + age + recent_iv + prior + site, data = uis)
+hr  <- exp(coef(cox)[["long"]]); hr_ci <- exp(confint(cox)["long", ])
+zph <- cox.zph(cox)
+wb  <- exp(coef(weibull)[["long"]]); ln <- exp(coef(lognorm)[["long"]])
+ln_ci <- exp(confint(lognorm)["long", ])
+c(hazard_ratio = hr, low = hr_ci[[1]], high = hr_ci[[2]], test_of_proportional_hazards = zph$table["long", "p"])
+c(weibull_time_ratio = wb, lognormal_time_ratio = ln)
+AIC(weibull, lognorm)
+```
+
+| Model | What it says about the longer programme |
+|---|---|
+| Cox | hazard ratio `r f2(hr)`, 95% CI [`r f2(hr_ci[[1]])`, `r f2(hr_ci[[2]])`]: at any time, the rate of relapse is `r pct(1 - hr)` lower |
+| Weibull, log-normal | the whole distribution is stretched by `r f2(wb)` or `r f2(ln)` times |
+| Censored quantile regression | `r f2(eff$ratio[1])` times at the 10% quantile, `r f2(eff$ratio[3])` times at the median, `r f2(eff$ratio[4])` times at the 75% quantile |
+
+The Cox model assumes that the **ratio** of the hazards is the same all the time. The test of this assumption has *p* `r pval(zph$table["long", "p"])` for the programme: a hint that it does not hold, in the same direction as the quantile picture (no difference at first, a difference later).
+
+### Is the change across quantiles real?
+
+The bands are wide. A direct test: bootstrap the **difference** between the coefficients at the median and at the 10% quantile.
+
+```{r difference_test}
+set.seed(63)
+boot_diff <- replicate(400, {
+  m <- try(crq(model, data = uis[sample(nrow(uis), replace = TRUE), ], method = "Portnoy"), silent = TRUE)
+  if (inherits(m, "try-error")) return(c(NA, NA))
+  b <- coef(m, taus = c(0.1, 0.5)); c(b["long", 2] - b["long", 1], b["long", 2])
+})
+d_est <- eff$b[3] - eff$b[1]
+d_ci  <- quantile(boot_diff[1, ], c(0.025, 0.975), na.rm = TRUE)
+c(difference = d_est, d_ci)
+```
+
+The effect at the median is larger than at the 10% quantile by `r f2(d_est)`, 95% CI [`r f2(d_ci[[1]])`, `r f2(d_ci[[2]])`]. `r if (d_ci[[1]] > 0) "The interval excludes zero." else "The interval includes zero: with 575 patients we cannot prove that the effect changes, although the estimates say so."` It is good practice to say so, and not to tell a story about every bend of the curve.
+
+---
+
+## 6. The same by hand: inverse probability of censoring weights
+
+There is another approach that needs only `rq()`. Use the observed relapses only, but give each of them a **weight** that makes up for the cases like it that were censored: one over the probability of **not** being censored before that time,
+
+$$w_i = \frac{\text{relapse}_i}{\hat G(t_i)}$$
+
+where $\hat G$ is the Kaplan–Meier estimate of the **censoring** time (swap the roles of 0 and 1).
+
+```{r ipcw}
+G   <- survfit(Surv(time, 1 - relapse) ~ 1, data = uis)                # censoring is now the "event"
+g_i <- stepfun(G$time, c(1, G$surv))(uis$time - 1e-6)                   # probability of still being observed
+w   <- uis$relapse / g_i
+range(w[w > 0])
+ipcw <- sapply(c(0.1, 0.25, 0.5, 0.75), function(t) coef(rq(log(time) ~ long + age + recent_iv + prior + site, tau = t, data = uis, weights = w)))
+peng <- coef(crq(model, data = uis, method = "PengHuang"), taus = taus)
+cbind(Portnoy = eff$b, PengHuang = peng["long", ], weights = ipcw["long", ])
+```
+
+Portnoy's and Peng and Huang's estimates of the effect of the programme are close. The simple weights agree with them at the median and less at the other quantiles. The weights go up to `r f1(max(w))`: late relapses stand for many censored cases, and the upper quantiles are unstable for this reason. The simple weights also assume that the censoring does not depend on the predictors, which the other two do not need.
+
+---
+
+## 7. Predictions in days
+
+The model gives whole distributions of times. Two patients of 32 with one prior treatment, at the first site, who had not injected recently, one in each programme:
+
+```{r predictions}
+newdata <- data.frame(long = c(0, 1), age = 0, recent_iv = 0, prior = 1, site = 0)
+q_grid  <- seq(0.05, 0.80, by = 0.025)
+B       <- coef(fit, taus = q_grid)
+X_new   <- cbind(1, as.matrix(newdata))
+days    <- exp(X_new %*% B)
+pred    <- data.frame(tau = rep(q_grid, each = 2), days = as.vector(days), programme = c("short", "long"))
+crossing <- apply(days, 1, function(v) sum(diff(v) < 0))
+crossing
+pick <- function(p, t) pred$days[pred$programme == p & abs(pred$tau - t) < 1e-9]
+```
+
+```{r predictions_chart}
+ggplot(pred, aes(days, 1 - tau, colour = programme)) +
+  geom_line(linewidth = 1, orientation = "y") +
+  scale_colour_manual(values = c(short = "#eb6834", long = "#2a78d6")) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, 1)) +
+  labs(title = "Predicted share of such patients who are still off drugs", x = "days since admission", y = NULL) +
+  theme_bw() + theme(legend.position = "bottom")
+```
+
+For such a patient the model predicts a median of `r f0(pick("short", 0.5))` days in the short programme and `r f0(pick("long", 0.5))` in the long one; for the 25% quantile `r f0(pick("short", 0.25))` and `r f0(pick("long", 0.25))` days. The lines for different quantiles are fitted separately and could **cross**, which would mean that a later quantile comes earlier. For these two patients, on the grid of `r length(q_grid)` quantiles, the number of crossings was `r sum(crossing)`.
+
+---
+
+## 8. Things to keep in mind
+
+- **Only quantiles that the data reach.** With a third of the times censored, do not ask for the 90% quantile. `crq()` stops by itself; look at how far it went.
+- **Randomised and not randomised predictors.** The programme was assigned at random, so its coefficients are effects. The others are differences between patients. Do **not** add variables that were measured after the assignment, such as how much of the programme a patient completed: the programme itself changes them.
+- **What is "time to relapse" here?** It includes the days **in** the programme, and the long programme lasts longer. Part of its advantage may simply be the days of treatment. A comparison from the end of the treatment is another question, and not a randomised one.
+- **Portnoy or Peng–Huang?** Both are good, and similar. Peng–Huang has simpler theory; Portnoy's uses the data slightly more efficiently in some situations.
+- **Fixed censoring** at the same known point for everybody (a detection limit, a top-coded income) is another problem, with Powell's estimator (`crq(..., method = "Powell")`).
+- **Bootstrap** standard errors need many replications; 500 is a minimum for a paper. Set the seed.
+- **Global linearity.** The line must hold at all lower quantiles too. A bend at $\tau$ = 0.1 spoils the estimates at 0.5. Look at the whole path.
+- **Cox, parametric or quantile?** If one number is true, the Cox or a parametric model is more precise. Quantiles need more data, and tell more.
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the number of cases and events, the estimator, the scale of the outcome, the quantiles and why these, the bootstrap, and the estimates in time ratios or days. The numbers come from the R objects:
+
+```{r apa_numbers}
+terms <- c("long", "age", "recent_iv", "prior", "site")
+cell  <- function(q, t) { z <- s[[q]]$coefficients[t, ]; paste0(f2(exp(z[1])), " [", f2(exp(z[2])), ", ", f2(exp(z[3])), "]") }
+apa_table <- data.frame(Predictor = c("Longer programme", "Age (10 years)", "Recent injected drugs", "Prior treatments (each)", "Site"),
+                        sapply(1:4, function(q) sapply(terms, cell, q = q)), row.names = NULL)
+```
+
+**Method** (data analysis):
+
+> The time from admission to the return to drug use was analysed in `r nrow(uis)` patients who had been randomly assigned to a shorter or a longer residential programme; `r sum(uis$relapse)` returned to drug use, and `r sum(uis$relapse == 0)` times (`r pct(mean(uis$relapse == 0))`) were censored. We estimated the 10%, 25%, 50% and 75% quantiles of the log time with censored quantile regression (Portnoy, 2003), adjusting for age, recent use of injected drugs, number of prior treatments and site. Exponentiated coefficients are ratios of quantiles of the time. Confidence intervals are based on 500 bootstrap samples. For comparison we fitted a Cox proportional hazards model and a log-normal accelerated failure time model. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package quantreg (Koenker, 2008).
+
+**Results:**
+
+> The median time to the return to drug use was `r f0(km_q["short", "50"])` days in the short and `r f0(km_q["long", "50"])` days in the long programme (Kaplan–Meier). In the adjusted model the long programme multiplied the median time by `r f2(eff$ratio[3])`, 95% CI [`r f2(exp(eff$low[3]))`, `r f2(exp(eff$high[3]))`]. At the other quantiles the intervals included 1: ratio = `r f2(eff$ratio[1])`, 95% CI [`r f2(exp(eff$low[1]))`, `r f2(exp(eff$high[1]))`], at the 10% quantile, `r f2(eff$ratio[2])`, 95% CI [`r f2(exp(eff$low[2]))`, `r f2(exp(eff$high[2]))`], at the 25% quantile and `r f2(eff$ratio[4])`, 95% CI [`r f2(exp(eff$low[4]))`, `r f2(exp(eff$high[4]))`], at the 75% quantile (Table 1). The difference between the effects at the 10% quantile and at the median was `r f2(d_est)` on the log scale, 95% CI [`r f2(d_ci[[1]])`, `r f2(d_ci[[2]])`]. In the Cox model, the hazard ratio was `r f2(hr)`, 95% CI [`r f2(hr_ci[[1]])`, `r f2(hr_ci[[2]])`].
+
+**Table 1**
+
+*Ratios of Quantiles of the Time to the Return to Drug Use*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Predictor", "10%", "25%", "Median", "75%"), align = "lrrrr", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r nrow(uis)`, `r sum(uis$relapse)` relapses. Exponentiated coefficients of censored quantile regressions of the log time (Portnoy's estimator), with 95% bootstrap intervals. Values above 1: a longer time to relapse.
+
+**Points to remember:**
+
+- Give the number of events, not only of patients.
+- Say which quantiles can be estimated with this much censoring.
+- Report ratios (or days) with bootstrap intervals, and how many replications.
+- If you claim that an effect differs between quantiles, test the difference.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | A time (or another outcome) is censored, and you want effects on its median and other quantiles |
+| **The model** | $Q_{\log T}(\tau \mid x) = x^\top\beta(\tau)$, one line per quantile |
+| **Censored cases** | Portnoy: split into a part that stays and a part that goes to infinity; without predictors this is Kaplan–Meier |
+| **How (R)** | `quantreg::crq(Surv(log(time), event) ~ x, method = "Portnoy")`, then `summary(fit, taus, R)` |
+| **Reading it** | $e^{\beta(\tau)}$: how many times longer the $\tau$-quantile of the time is |
+| **Limits** | Quantiles beyond the last events; linearity at all lower quantiles; independent censoring |
+| **By hand** | `rq()` on the events with weights $1/\hat G(t)$ |
+| **Related pages** | [Quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd), [Tobit](EXAMPLE_TOBIT.Rmd) |
+
+---
+
+## References
+
+Hosmer, D. W., & Lemeshow, S. (1999). *Applied survival analysis: Regression modeling of time to event data*. Wiley.
+
+Koenker, R. (2008). Censored quantile regression redux. *Journal of Statistical Software*, *27*(6), 1–25. https://doi.org/10.18637/jss.v027.i06
+
+Peng, L., & Huang, Y. (2008). Survival analysis with quantile regression models. *Journal of the American Statistical Association*, *103*(482), 637–649. https://doi.org/10.1198/016214508000000355
+
+Portnoy, S. (2003). Censored regression quantiles. *Journal of the American Statistical Association*, *98*(464), 1001–1012. https://doi.org/10.1198/016214503000000954
+
+Powell, J. L. (1986). Censored regression quantiles. *Journal of Econometrics*, *32*(1), 143–155. https://doi.org/10.1016/0304-4076(86)90016-3

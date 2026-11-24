@@ -30,7 +30,7 @@ One worked example per regression, as `quarto/example/EXAMPLE_<NAME>.Rmd`. Ticke
 - [x] Truncated: EXAMPLE_TRUNCATED_REGRESSION
 - [x] Heckman selection: EXAMPLE_HECKMAN_SELECTION
 - [x] Hurdle / two-part: EXAMPLE_HURDLE_TWO_PART
-- [ ] Censored quantile
+- [x] Censored quantile: EXAMPLE_CENSORED_QUANTILE_REGRESSION
 
 ## Generalized linear
 - [x] Logistic: EXAMPLE_GENERALIZED, EXAMPLE_IMBALANCED_LOGISTIC
