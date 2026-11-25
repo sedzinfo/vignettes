@@ -230,11 +230,13 @@ second_stage <- lm(fml("lwage", paste("educ_hat +", controls)), card)
 W <- model.matrix(ols); Z <- model.matrix(first_stage); y <- card$lwage
 PW   <- Z %*% solve(crossprod(Z), crossprod(Z, W))                        # P_Z W
 beta <- drop(solve(crossprod(PW, W), crossprod(PW, y)))
-c(
-  OLS = coef(ols)[["educ"]],
-  reduced_form_over_first_stage = coef(reduced_form)[["nearc4"]] / coef(first_stage)[["nearc4"]],
-  second_stage = coef(second_stage)[["educ_hat"]],
-  matrix_formula = beta[["educ"]]
+cbind(
+  value = c(
+    OLS = coef(ols)[["educ"]],
+    reduced_form_over_first_stage = coef(reduced_form)[["nearc4"]] / coef(first_stage)[["nearc4"]],
+    second_stage = coef(second_stage)[["educ_hat"]],
+    matrix_formula = beta[["educ"]]
+  )
 )
 ```
 
@@ -538,10 +540,12 @@ card_test <- do.call(
     )
   })
 )
-print(data.frame(card_test[1:2], round(card_test[3:9], 3)), row.names = FALSE)
+tab <- t(round(card_test[-(1:2)], 3))
+colnames(tab) <- card_test$parents
+tab
 ```
 
-With the first definition the picture is the one of Card: the college matters more for the sons of less educated parents (`r f2(card_test$college_effect_others[1])` years for the others, `r f2(card_test$extra_for_low[1])` more for them), the IV estimate is `r f3(card_test$IV[1])` (*SE* `r f3(card_test$SE_IV[1])`), and the direct effect is `r f3(card_test$direct_effect[1])` (*SE* `r f3(card_test$SE_direct[1])`). With the second definition the extra effect has the wrong sign, and nothing can be estimated (*SE* of the IV estimate `r f2(card_test$SE_IV[2])`). The test says what Card wrote himself: "although imprecise", there is no evidence **against** the instrument. That is not the same as evidence for it.
+With the first definition (`r num(card_test$n_low[1])` men with less educated parents) the picture is the one of Card: the college matters more for the sons of less educated parents (`r f2(card_test$college_effect_others[1])` years for the others, `r f2(card_test$extra_for_low[1])` more for them), the IV estimate is `r f3(card_test$IV[1])` (*SE* `r f3(card_test$SE_IV[1])`), and the direct effect is `r f3(card_test$direct_effect[1])` (*SE* `r f3(card_test$SE_direct[1])`). With the second definition (`r num(card_test$n_low[2])` men) the extra effect has the wrong sign, and nothing can be estimated (*SE* of the IV estimate `r f2(card_test$SE_IV[2])`). The test says what Card wrote himself: "although imprecise", there is no evidence **against** the instrument. That is not the same as evidence for it.
 
 ### How large a violation would change the answer?
 
@@ -574,7 +578,14 @@ ggplot(data.frame(gamma, b = (rf - gamma) / fs), aes(gamma, b)) +
     y = "effect of a year of schooling"
   ) +
   theme_bw()
-c(reduced_form = rf, first_stage = fs, gamma_for_the_OLS_result = g_ols, gamma_for_zero = rf)
+cbind(
+  value = c(
+    reduced_form = rf,
+    first_stage = fs,
+    gamma_for_the_OLS_result = g_ols,
+    gamma_for_zero = rf
+  )
+)
 ```
 
 A direct effect of only `r pct(g_ols, 1)` on wages would bring the estimate down to the one of least squares, and one of `r pct(rf, 1)` to zero. Because IV **divides** by a small first stage, small violations become large errors. And nobody can rule out a direct effect of 2%.

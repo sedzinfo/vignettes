@@ -189,11 +189,13 @@ by_hand <- optim(
   control = list(maxit = 1000, abstol = 1e-4, reltol = 1e-8)
 )
 package <- nnet(X, y, size = 2, decay = 0.1, linout = TRUE, Wts = w0, maxit = 1000, trace = FALSE)
-c(
-  loss_at_the_start = loss(w0, X, y, 2, 0.1),
-  loss_by_hand = by_hand$value,
-  loss_nnet = package$value,
-  largest_difference_in_the_weights = max(abs(by_hand$par - package$wts))
+cbind(
+  value = c(
+    loss_at_the_start = loss(w0, X, y, 2, 0.1),
+    loss_by_hand = by_hand$value,
+    loss_nnet = package$value,
+    largest_difference_in_the_weights = max(abs(by_hand$par - package$wts))
+  )
 )
 ```
 
@@ -289,12 +291,14 @@ fits <- lapply(1:6, function(s) {
 loss_values <- sapply(fits, function(m) m$value)
 preds <- sapply(fits, function(m) back(drop(predict(m, z)), "power"))
 round(loss_values, 1)
-c(
-  largest_difference_in_a_weight = max(apply(sapply(fits, function(m) m$wts), 1, function(v) {
-    diff(range(v))
-  })),
-  typical_SD_between_the_predictions = mean(apply(preds, 1, sd)),
-  RMSE_of_the_first = rmse(preds[, 1], plant$power)
+cbind(
+  value = c(
+    largest_difference_in_a_weight = max(apply(sapply(fits, function(m) m$wts), 1, function(v) {
+      diff(range(v))
+    })),
+    typical_SD_between_the_predictions = mean(apply(preds, 1, sd)),
+    RMSE_of_the_first = rmse(preds[, 1], plant$power)
+  )
 )
 ```
 
@@ -473,12 +477,14 @@ ggplot(results, aes(rmse, method)) +
   theme(plot.title.position = "plot")
 w  <- function(m, v) wide[[v]][wide$method == m]
 by_fold <- function(m) subset(results, folds == "new conditions" & method == m)$rmse
-c(
-  folds_in_which_the_small_network_beats_the_forest = sum(
-    by_fold("small network") < by_fold("random forest")
-  ),
-  folds_in_which_the_average_beats_one_large_network = sum(
-    by_fold("3 large networks, averaged") < by_fold("large network")
+cbind(
+  value = c(
+    folds_in_which_the_small_network_beats_the_forest = sum(
+      by_fold("small network") < by_fold("random forest")
+    ),
+    folds_in_which_the_average_beats_one_large_network = sum(
+      by_fold("3 large networks, averaged") < by_fold("large network")
+    )
   )
 )
 ```

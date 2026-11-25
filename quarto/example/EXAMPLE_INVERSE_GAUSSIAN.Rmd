@@ -243,7 +243,7 @@ fams <- list(
 logs <- lm(log(rt) ~ freq * foreign, data = words)
 # on the scale of milliseconds
 aics <- c(sapply(fams, AIC), `log-normal` = AIC(logs) + 2 * sum(log(words$rt)))
-sort(round(aics, 1))
+cbind(AIC = sort(round(aics, 1)))
 ```
 
 The inverse Gaussian describes the reaction times best, then the log-normal and the gamma, and the normal distribution is far behind: an AIC `r f0(aics[["normal, identity"]] - aics[["inverse Gaussian, identity"]])` points larger. Between the two links there is little to choose.
@@ -386,7 +386,7 @@ ggplot(chk, aes(q, r)) +
   ) +
   theme_bw()
 tail_share <- tapply(chk$r, chk$model, function(v) mean(v > 3))
-round(100 * tail_share, 2)
+cbind(percent_above_3_SD = round(100 * tail_share, 2))
 ```
 
 If the model is right, the points lie on the line. The normal models have a long right tail: `r f1(100 * tail_share[["normal, mixed"]])`% of the residuals of the mixed normal model are above 3 SD, where 0.13% are expected. The inverse Gaussian models follow the line better over most of the range, and their tail is shorter (`r f1(100 * tail_share[["inverse Gaussian, mixed"]])`% for the mixed one), but still too long: a few very slow answers (lapses of attention) remain. They are usually cut off by a rule that is fixed **before** looking at the results.

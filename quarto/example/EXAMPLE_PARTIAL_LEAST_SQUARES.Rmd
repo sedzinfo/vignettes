@@ -64,8 +64,13 @@ Absorbance is $-\log_{10}$ of the share of light that comes through. The file is
 content <- paste(meat$water, meat$fat, meat$protein)
 train <- meat$set == "train"
 test  <- meat$set == "test"
-c(different_contents = length(unique(content)), samples = nrow(meat),
-  test_samples_with_a_twin_in_training = sum(content[test] %in% content[train]))
+cbind(
+  value = c(
+    different_contents = length(unique(content)),
+    samples = nrow(meat),
+    test_samples_with_a_twin_in_training = sum(content[test] %in% content[train])
+  )
+)
 ```
 
 Only `r length(unique(content))` different combinations of water, fat and protein occur in `r nrow(meat)` samples. Two samples with the same three numbers to one decimal are almost certainly the **same meat, measured twice**. And `r sum(content[test] %in% content[train])` of the 43 test samples have such a twin in the training set. If we ignored it, the test would be too easy. So we do two things: in the cross-validation, twins always stay **together**, and the test error is reported also for the test samples **without** a twin.

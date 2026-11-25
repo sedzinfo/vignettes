@@ -136,7 +136,9 @@ The data weigh `r f1(prec[["data"]])` here, the prior 1. So this prior counts as
 
 For the linear model there is a prior with which everything can be computed with a formula: the **normal–inverse-gamma** prior, $\beta \mid \sigma^2 \sim N(m_0, \sigma^2 V_0)$, $\sigma^2 \sim IG(a_0, b_0)$. The posterior is of the same kind, with
 
-$$V_n = (V_0^{-1} + X^\top X)^{-1}, \quad m_n = V_n(V_0^{-1}m_0 + X^\top y), \quad a_n = a_0 + \tfrac n2, \quad b_n = b_0 + \tfrac12\left(y^\top y + m_0^\top V_0^{-1}m_0 - m_n^\top V_n^{-1}m_n\right)$$
+$$V_n = (V_0^{-1} + X^\top X)^{-1}, \qquad m_n = V_n(V_0^{-1}m_0 + X^\top y),$$
+
+$$a_n = a_0 + \tfrac n2, \qquad b_n = b_0 + \tfrac12\left(y^\top y + m_0^\top V_0^{-1}m_0 - m_n^\top V_n^{-1}m_n\right)$$
 
 and each coefficient has a *t* distribution with $2a_n$ degrees of freedom. With $V_0^{-1} \to 0$, $a_0 = -p/2$ and $b_0 = 0$ (a *flat* prior) one gets the numbers of least squares:
 
@@ -271,9 +273,9 @@ difference <- max(abs(t(apply(hand, 2, summ))[, c("mean", "sd")] - stan_tab[, c(
 
 The check is the **R-hat** of Gelman and Rubin: the variance of all draws together, against the variance within each chain. If the chains are in different places the first is larger. By hand, with every chain cut in two halves, so that a drift within a chain also shows:
 
-$$\hat R = \sqrt{\frac{\frac{m-1}{m}W + \frac 1m B}{W}}, \quad W = \text{mean variance within a half}, \quad B = m \cdot \text{variance of the means of the halves}$$
+$$\hat R = \sqrt{\frac{\frac{m-1}{m}W + \frac 1m B}{W}}$$
 
-($m$: length of a half. Values above 1.01 are suspicious; Vehtari et al., 2021, recommend a version based on ranks.)
+($m$: length of a half; $W$: mean of the variances within the halves; $B$: $m$ times the variance of the means of the halves. Values above 1.01 are suspicious; Vehtari et al., 2021, recommend a version based on ranks.)
 
 ```{r rhat}
 halves <- function(cs) {
@@ -335,12 +337,14 @@ $$p(y^* \mid y) = \int p(y^* \mid \theta)\, p(\theta \mid y)\, d\theta$$
 set.seed(243)
 line_2 <- hand[, "alpha"] + hand[, "beta"] * (2 - mean(hibbs$growth))
 vote_2 <- line_2 + rnorm(nrow(hand), 0, hand[, "sigma"])
-c(
-  mean = mean(vote_2),
-  low = quantile(vote_2, 0.025)[[1]],
-  high = quantile(vote_2, 0.975)[[1]],
-  P_incumbent_party_above_50 = mean(vote_2 > 50),
-  P_line_above_50 = mean(line_2 > 50)
+cbind(
+  value = c(
+    mean = mean(vote_2),
+    low = quantile(vote_2, 0.025)[[1]],
+    high = quantile(vote_2, 0.975)[[1]],
+    P_incumbent_party_above_50 = mean(vote_2 > 50),
+    P_line_above_50 = mean(line_2 > 50)
+  )
 )
 ggplot(
   rbind(
@@ -566,7 +570,7 @@ cal <- c(
   `true slope 1 prior SD from 0` = mean(replicate(3000, sim_once(1))),
   `true slope 3 prior SDs from 0` = mean(replicate(3000, sim_once(3)))
 )
-round(cal, 3)
+cbind(coverage = round(cal, 3))
 ```
 
 Drawn from the prior: `r pct(cal[[1]], 1)`. For a true slope that the prior considers very unlikely (3 SDs away) it is `r pct(cal[[3]], 1)`. A frequentist confidence interval has its 95% for **every** value, and does not use any knowledge. Choose what you need, and say which.
