@@ -29,60 +29,61 @@ th, td {
   margin-right: auto;
 }
 
+/* Cards as on the landing pages, docs/index.html (.github/scripts/build_index.py) and
+   sedzinfo.github.io/index.html, so that every list of pages looks the same: a Bootstrap card
+   with a blue bar on the left (the blue of the code blocks), its title in the theme's primary
+   colour, lifted a little on hover. The three .site-card rules are copies of the rules there:
+   a change goes in all three places. */
+.site-card {
+  color: inherit;
+  text-decoration: none;
+  border-left: 5px solid #007ACC;
+  transition: box-shadow .15s, transform .15s;
+}
+.site-card:hover {
+  box-shadow: 0 .5rem 1rem rgba(0,0,0,.12);
+  transform: translateY(-2px);
+}
+.site-card .card-title {
+  color: var(--bs-primary);
+}
+
 /* Index pages (example, illustration): one card per page in a grid, two columns on a desktop
-   and one on a phone. In index.qmd a card is a list item that links to the page, inside a
-   ::: {.index-cards} div: an optional image (.card-image, quarto/<site>/thumbnails/, drawn by
-   _shared/thumbnails.R), the method or title (.card-method) and the question or subject
-   (.card-question). Colours come from the theme (Bootstrap variables). */
+   and one on a phone. In index.qmd a card is a list item inside a ::: {.index-cards} div: a link
+   with the classes {.card .site-card} that holds an optional image ({.card-img-top}, from
+   quarto/<site>/thumbnails/, drawn by _shared/thumbnails.R), the title ({.card-title .h5}) and
+   the question or subject ({.card-text}). Markdown cannot put the card-body div of the landing
+   pages inside a link, so the title and the text carry its padding themselves. */
 .index-cards ul {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
-  gap: 0.75rem;
+  gap: 1.5rem;                                   // the gutter of the landing pages (g-4)
   list-style: none;
   padding-left: 0;
-  margin: 0.75rem 0 2rem;
+  margin: 1rem 0 2rem;
 }
 .index-cards li {
   margin: 0;
 }
-.index-cards a {
-  display: block;
+.index-cards .site-card {
   height: 100%;
-  overflow: hidden;                              // the image follows the rounded corners
-  padding: 0.7rem 0.9rem;
-  border: 1px solid var(--bs-border-color);
-  border-radius: 0.4rem;
-  text-decoration: none;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
 }
-.index-cards a:hover,
-.index-cards a:focus-visible {
-  border-color: var(--bs-link-color);
-  background-color: var(--bs-tertiary-bg);
-}
-/* the image fills the top of the card, edge to edge, cut to 16:10 around its centre */
-.index-cards .card-image {
+.index-cards .card-title {
   display: block;
-  width: calc(100% + 1.8rem);
+  margin: 0;
+  padding: var(--bs-card-spacer-y) var(--bs-card-spacer-x) 0;
+}
+.index-cards .card-text {
+  display: block;
+  padding: var(--bs-card-title-spacer-y) var(--bs-card-spacer-x) var(--bs-card-spacer-y);
+}
+/* the image fills the top of the card, cut to 16:10 around its centre */
+.index-cards .card-img-top {
   max-width: none;
-  margin: -0.7rem -0.9rem 0.6rem;
   aspect-ratio: 16 / 10;
   object-fit: cover;
   object-position: center;
-  border-bottom: 1px solid var(--bs-border-color);
-}
-.card-method {
-  display: block;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--bs-link-color);
-}
-.card-question {
-  display: block;
-  margin-top: 0.2rem;
-  font-size: 0.9rem;
-  line-height: 1.35;
-  color: var(--bs-secondary-color);
+  border-bottom: var(--bs-card-border-width) solid var(--bs-card-border-color);
 }
 /* more air above a new group of cards */
 #quarto-document-content > section.level2:has(.index-cards) {
