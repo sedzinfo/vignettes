@@ -18,7 +18,7 @@ A party that holds a seat has a better chance to keep it. Is that because it **h
 
 But some elections were **very** close. A party that won by 0.3 points and a party that lost by 0.3 points had about the same voters, the same year and the same kind of candidates. Rain in one city, and the result would have been the other way round. At the cutoff of zero, winning is close to a **coin toss**. So compare those who just won with those who just lost (Lee, 2008).
 
-The design is called **regression discontinuity** (RD). It works whenever a *treatment* is given by a threshold in a *running variable* (score, age, income, votes) that nobody controls exactly. Thistlethwaite and Campbell (1960) invented it for scholarships that were given above a test score.
+The design is called **regression discontinuity** (RD). It works whenever a *treatment* is given by a threshold in a *running variable* (score, age, income, votes) that nobody controls exactly. Thistlethwaite and Campbell (1960) invented it to find out what a certificate of merit, given to pupils above a test score, does for their further way.
 
 ```{r packages}
 library(ggplot2)
@@ -29,7 +29,9 @@ library(rddensity)   # rddensity(): does the density of the running variable jum
 # number formats for the text
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
-pval <- function(p) ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+pval <- function(p) {
+  ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+}
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -39,7 +41,9 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 ## 1. The data
 
 ```{r download}
-senate <- read.csv("https://raw.githubusercontent.com/rdpackages/rdrobust/master/R/rdrobust_senate.csv")
+senate <- read.csv(
+  "https://raw.githubusercontent.com/rdpackages/rdrobust/master/R/rdrobust_senate.csv"
+)
 str(senate)
 senate$won <- as.numeric(senate$margin >= 0)
 s <- subset(senate, !is.na(vote))
@@ -57,13 +61,47 @@ The elections to the US Senate from `r min(senate$year)` to `r max(senate$year)`
 ## 2. Look at the data
 
 ```{r rd_plot, fig.height = 5}
-bins <- function(d, width) { b <- floor(d$margin / width); data.frame(margin = tapply(d$margin, b, mean), vote = tapply(d$vote, b, mean), n = as.numeric(table(b))) }
+bins <- function(d, width) {
+  b <- floor(d$margin / width)
+  data.frame(
+    margin = tapply(d$margin, b, mean),
+    vote = tapply(d$vote, b, mean),
+    n = as.numeric(table(b))
+  )
+}
 near <- subset(s, abs(margin) < 50); bm <- bins(near, 2.5)
-ggplot(near, aes(margin, vote)) + geom_point(alpha = 0.15, size = 0.8) + geom_point(data = bm, aes(size = n), colour = "#2a78d6") + geom_vline(xintercept = 0, linetype = "dashed") +
-  geom_smooth(data = subset(near, margin < 0), method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") + geom_smooth(data = subset(near, margin >= 0), method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") + scale_size_area(max_size = 5, guide = "none") +
-  labs(title = "Democratic share in the next election against the margin now", subtitle = "Blue: means of bins 2.5 points wide. Orange: a smooth curve on each side", x = "margin of the Democratic candidate (points)", y = "next share (%)") + theme_bw()
+ggplot(near, aes(margin, vote)) +
+  geom_point(alpha = 0.15, size = 0.8) +
+  geom_point(data = bm, aes(size = n), colour = "#2a78d6") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_smooth(
+    data = subset(near, margin < 0),
+    method = "loess",
+    formula = y ~ x,
+    se = FALSE,
+    colour = "#eb6834"
+  ) +
+  geom_smooth(
+    data = subset(near, margin >= 0),
+    method = "loess",
+    formula = y ~ x,
+    se = FALSE,
+    colour = "#eb6834"
+  ) +
+  scale_size_area(max_size = 5, guide = "none") +
+  labs(
+    title = "Democratic share in the next election against the margin now",
+    subtitle = "Blue: means of bins 2.5 points wide. Orange: a smooth curve on each side",
+    x = "margin of the Democratic candidate (points)",
+    y = "next share (%)"
+  ) +
+  theme_bw()
 naive <- t.test(vote ~ won, s)
-c(mean_lost = naive$estimate[[1]], mean_won = naive$estimate[[2]], difference = diff(naive$estimate)[[1]])
+c(
+  mean_lost = naive$estimate[[1]],
+  mean_won = naive$estimate[[2]],
+  difference = diff(naive$estimate)[[1]]
+)
 ```
 
 Seats that the Democrats won have `r f1(diff(naive$estimate))` points more in the next election than seats they lost. That number mixes the effect of holding the seat with the colour of the state. The curves rise on both sides, as they must. What we want is the **jump at zero**.
@@ -85,7 +123,21 @@ Nothing is assumed about the rest of the line. The effect is for elections **at 
 The simplest answer: take the elections with a margin below 1 point (or 2, or 5) and compare the two groups with a *t* test.
 
 ```{r windows}
-windows <- do.call(rbind, lapply(c(0.5, 1, 2, 3, 5, 10), function(k) { z <- subset(s, abs(margin) < k); t <- t.test(vote ~ won, z); data.frame(window = k, lost = sum(z$won == 0), won = sum(z$won), difference = diff(t$estimate)[[1]], low = -t$conf.int[2], high = -t$conf.int[1]) }))
+windows <- do.call(
+  rbind,
+  lapply(c(0.5, 1, 2, 3, 5, 10), function(k) {
+    z <- subset(s, abs(margin) < k)
+    t <- t.test(vote ~ won, z)
+    data.frame(
+      window = k,
+      lost = sum(z$won == 0),
+      won = sum(z$won),
+      difference = diff(t$estimate)[[1]],
+      low = -t$conf.int[2],
+      high = -t$conf.int[1]
+    )
+  })
+)
 print(round(windows, 2), row.names = FALSE)
 ```
 
@@ -102,15 +154,31 @@ $D$ is 1 for a win, and $\tau$ is the jump. The package chooses $h$; we take its
 ```{r by_hand}
 fit_rd <- rdrobust(s$vote, s$margin)
 h <- fit_rd$bws["h", "left"]
-local <- function(h, p, d = s) {                                         # weighted least squares on each side, p: degree; returns the jump and its robust (HC0) SE
-  side <- function(keep) { X <- outer(d$margin[keep], 0:p, "^"); w <- 1 - abs(d$margin[keep]) / h; A <- solve(crossprod(X, w * X)); b <- A %*% crossprod(X, w * d$vote[keep]); e <- drop(d$vote[keep] - X %*% b); V <- A %*% crossprod(X * (w * e)) %*% A; c(b[1], V[1, 1]) }
-  l <- side(d$margin < 0 & d$margin > -h); r <- side(d$margin >= 0 & d$margin < h)
+local <- function(h, p, d = s) {
+  # weighted least squares on each side, p: degree; returns the jump and its robust (HC0) SE
+  side <- function(keep) {
+    X <- outer(d$margin[keep], 0:p, "^")
+    w <- 1 - abs(d$margin[keep]) / h
+    A <- solve(crossprod(X, w * X))
+    b <- A %*% crossprod(X, w * d$vote[keep])
+    e <- drop(d$vote[keep] - X %*% b)
+    V <- A %*% crossprod(X * (w * e)) %*% A
+    c(b[1], V[1, 1])
+  }
+  l <- side(d$margin < 0 & d$margin > -h)
+  r <- side(d$margin >= 0 & d$margin < h)
   c(jump = r[1] - l[1], SE = sqrt(l[2] + r[2]))
 }
 z <- subset(s, abs(margin) < h); z$w <- 1 - abs(z$margin) / h
 wls <- lm(vote ~ won * margin, z, weights = w)
-rbind(by_hand = local(h, 1), lm_with_weights = c(coef(wls)[["won"]], sqrt(sandwich::vcovHC(wls, type = "HC0")["won", "won"])),
-      rdrobust_hc0 = with(rdrobust(s$vote, s$margin, h = h, vce = "hc0"), c(coef["Conventional", 1], se["Conventional", 1])))
+rbind(
+  by_hand = local(h, 1),
+  lm_with_weights = c(coef(wls)[["won"]], sqrt(sandwich::vcovHC(wls, type = "HC0")["won", "won"])),
+  rdrobust_hc0 = with(
+    rdrobust(s$vote, s$margin, h = h, vce = "hc0"),
+    c(coef["Conventional", 1], se["Conventional", 1])
+  )
+)
 ```
 
 Three times the same: a jump of `r f1(local(h, 1)[["jump"]])` points. The line through the points on the left ends at `r f1(coef(wls)[["(Intercept)"]])`%, the one on the right starts at `r f1(coef(wls)[["(Intercept)"]] + coef(wls)[["won"]])`%.
@@ -125,10 +193,24 @@ with $B$ from the curvature at the cutoff and $V$ from the scatter there. The be
 
 ```{r bandwidth_chart, fig.height = 4.5}
 hs  <- seq(4, 60, by = 1); bw <- t(sapply(hs, function(v) c(local(v, 1), local(v, 2))))
-bwd <- rbind(data.frame(h = hs, est = bw[, 1], se = bw[, 2], fit = "straight lines"), data.frame(h = hs, est = bw[, 3], se = bw[, 4], fit = "quadratic curves"))
+bwd <- rbind(
+  data.frame(h = hs, est = bw[, 1], se = bw[, 2], fit = "straight lines"),
+  data.frame(h = hs, est = bw[, 3], se = bw[, 4], fit = "quadratic curves")
+)
 bwd$fit <- factor(bwd$fit, levels = c("straight lines", "quadratic curves"))
-ggplot(subset(bwd, h >= 6), aes(h, est)) + geom_ribbon(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), fill = "#2a78d6", alpha = 0.2) + geom_line(colour = "#2a78d6", linewidth = 0.9) + geom_vline(xintercept = h, linetype = "dashed") + geom_hline(yintercept = 0) + facet_wrap(~ fit) +
-  labs(title = "Estimated jump for every bandwidth", subtitle = "Dashed: the bandwidth chosen by rdrobust", x = "bandwidth (points of margin)", y = "jump in the next share") + theme_bw()
+ggplot(subset(bwd, h >= 6), aes(h, est)) +
+  geom_ribbon(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), fill = "#2a78d6", alpha = 0.2) +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  geom_vline(xintercept = h, linetype = "dashed") +
+  geom_hline(yintercept = 0) +
+  facet_wrap(~fit) +
+  labs(
+    title = "Estimated jump for every bandwidth",
+    subtitle = "Dashed: the bandwidth chosen by rdrobust",
+    x = "bandwidth (points of margin)",
+    y = "jump in the next share"
+  ) +
+  theme_bw()
 ```
 
 With straight lines the estimate lies between `r f1(min(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))` and `r f1(max(bwd$est[bwd$fit == "straight lines" & bwd$h >= 10]))` for all bandwidths from 10 to 60. The interval never includes 0.
@@ -139,7 +221,10 @@ The best bandwidth for the **estimate** leaves a bias: at the minimum of the for
 
 ```{r robust_by_hand}
 rb <- rdrobust(s$vote, s$margin, h = h, b = h, vce = "hc0")
-rbind(local_quadratic_by_hand = local(h, 2), rdrobust_robust_same_bandwidth = c(rb$coef["Robust", 1], rb$se["Robust", 1]))
+rbind(
+  local_quadratic_by_hand = local(h, 2),
+  rdrobust_robust_same_bandwidth = c(rb$coef["Robust", 1], rb$se["Robust", 1])
+)
 ```
 
 By default `rdrobust()` uses a larger bandwidth for the bias (`r f1(fit_rd$bws["b", "left"])` points), which is less noisy.
@@ -150,7 +235,13 @@ By default `rdrobust()` uses a larger bandwidth for the bias (`r f1(fit_rd$bws["
 
 ```{r output}
 summary(fit_rd)
-res <- data.frame(estimate = fit_rd$coef[, 1], SE = fit_rd$se[, 1], low = fit_rd$ci[, 1], high = fit_rd$ci[, 2]); round(res, 2)
+res <- data.frame(
+  estimate = fit_rd$coef[, 1],
+  SE = fit_rd$se[, 1],
+  low = fit_rd$ci[, 1],
+  high = fit_rd$ci[, 2]
+)
+round(res, 2)
 ci <- fit_rd$ci["Robust", ]
 ```
 
@@ -171,12 +262,27 @@ The assumption (continuity) cannot be tested directly. Four checks come close.
 If candidates could **just** push themselves over the line, there would be too few narrow losses and too many narrow wins (McCrary, 2008). Count:
 
 ```{r density}
-counts <- do.call(rbind, lapply(c(0.5, 1, 2, 3, 5, 10), function(k) { l <- sum(s$margin < 0 & s$margin > -k); r <- sum(s$margin >= 0 & s$margin < k); data.frame(within = k, lost = l, won = r, p = binom.test(r, l + r)$p.value) }))
+counts <- do.call(
+  rbind,
+  lapply(c(0.5, 1, 2, 3, 5, 10), function(k) {
+    l <- sum(s$margin < 0 & s$margin > -k)
+    r <- sum(s$margin >= 0 & s$margin < k)
+    data.frame(within = k, lost = l, won = r, p = binom.test(r, l + r)$p.value)
+  })
+)
 print(transform(counts, p = round(p, 3)), row.names = FALSE)
 dens <- suppressWarnings(rddensity(s$margin))
 c(T = dens$test$t_jk, p = dens$test$p_jk)
-ggplot(subset(s, abs(margin) < 30), aes(margin, fill = margin >= 0)) + geom_histogram(breaks = seq(-30, 30, by = 2), colour = "white") + scale_fill_manual(values = c("#eb6834", "#2a78d6"), guide = "none") +
-  labs(title = "Number of elections by margin", subtitle = "A jump at zero would be suspicious", x = "margin (points)", y = "elections") + theme_bw()
+ggplot(subset(s, abs(margin) < 30), aes(margin, fill = margin >= 0)) +
+  geom_histogram(breaks = seq(-30, 30, by = 2), colour = "white") +
+  scale_fill_manual(values = c("#eb6834", "#2a78d6"), guide = "none") +
+  labs(
+    title = "Number of elections by margin",
+    subtitle = "A jump at zero would be suspicious",
+    x = "margin (points)",
+    y = "elections"
+  ) +
+  theme_bw()
 ```
 
 No sign of steering: for example `r counts$lost[counts$within == 1]` narrow losses and `r counts$won[counts$within == 1]` narrow wins within 1 point (*p* `r pval(counts$p[counts$within == 1])`), and the density test of Cattaneo et al. (2020) has *p* `r pval(dens$test$p_jk)`. (Simple counts are for narrow windows only. Within 10 points there are `r counts$lost[counts$within == 10]` losses and `r counts$won[counts$within == 10]` wins, and the slope of the distribution begins to matter; the density test allows for it.)
@@ -187,10 +293,25 @@ What was fixed **before** the election must not jump at the cutoff. We have the 
 
 ```{r placebo_outcomes}
 o <- order(senate$state, senate$class, senate$year); sorted <- senate[o, ]
-key <- paste(sorted$state, sorted$class); lag1 <- function(v) ave(v, key, FUN = function(x) c(NA, head(x, -1)))
-sorted$previous_margin <- ifelse(sorted$year - lag1(sorted$year) == 6, lag1(sorted$margin), NA); sorted$log_population <- log(sorted$population)
-placebo <- do.call(rbind, lapply(c("previous_margin", "termshouse", "termssenate", "log_population", "year"), function(v) { m <- rdrobust(sorted[[v]], sorted$margin)
-  data.frame(variable = v, jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2], p = m$pv["Robust", 1], bandwidth = m$bws["h", "left"], n = sum(m$N_h)) }))
+key <- paste(sorted$state, sorted$class)
+lag1 <- function(v) ave(v, key, FUN = function(x) c(NA, head(x, -1)))
+sorted$previous_margin <- ifelse(sorted$year - lag1(sorted$year) == 6, lag1(sorted$margin), NA)
+sorted$log_population <- log(sorted$population)
+placebo <- do.call(
+  rbind,
+  lapply(c("previous_margin", "termshouse", "termssenate", "log_population", "year"), function(v) {
+    m <- rdrobust(sorted[[v]], sorted$margin)
+    data.frame(
+      variable = v,
+      jump = m$coef["Conventional", 1],
+      low = m$ci["Robust", 1],
+      high = m$ci["Robust", 2],
+      p = m$pv["Robust", 1],
+      bandwidth = m$bws["h", "left"],
+      n = sum(m$N_h)
+    )
+  })
+)
 print(data.frame(placebo[1], round(placebo[2:6], 3), n = placebo$n), row.names = FALSE)
 ```
 
@@ -201,13 +322,56 @@ print(data.frame(placebo[1], round(placebo[2:6], 3), n = placebo$n), row.names =
 At other values of the margin nobody wins or loses anything, so there should be no jump. And the result should not depend on the few elections right at the edge:
 
 ```{r placebo_cutoffs, fig.height = 4.5}
-cuts <- do.call(rbind, lapply(c(-20, -15, -10, -5, 0, 5, 10, 15, 20), function(k) { zz <- if (k < 0) subset(s, margin < 0) else if (k > 0) subset(s, margin >= 0) else s; m <- rdrobust(zz$vote, zz$margin, c = k)
-  data.frame(cutoff = k, jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2], p = m$pv["Robust", 1], n = sum(m$N_h)) }))
+cuts <- do.call(
+  rbind,
+  lapply(c(-20, -15, -10, -5, 0, 5, 10, 15, 20), function(k) {
+    zz <- if (k < 0) {
+      subset(s, margin < 0)
+    } else if (k > 0) {
+      subset(s, margin >= 0)
+    } else {
+      s
+    }
+    m <- rdrobust(zz$vote, zz$margin, c = k)
+    data.frame(
+      cutoff = k,
+      jump = m$coef["Conventional", 1],
+      low = m$ci["Robust", 1],
+      high = m$ci["Robust", 2],
+      p = m$pv["Robust", 1],
+      n = sum(m$N_h)
+    )
+  })
+)
 print(round(cuts, 3), row.names = FALSE)
-donut <- do.call(rbind, lapply(c(0, 0.25, 0.5, 1, 2), function(k) { zz <- subset(s, abs(margin) >= k); m <- rdrobust(zz$vote, zz$margin); data.frame(left_out_within = k, removed = nrow(s) - nrow(zz), jump = m$coef["Conventional", 1], low = m$ci["Robust", 1], high = m$ci["Robust", 2]) }))
+donut <- do.call(
+  rbind,
+  lapply(c(0, 0.25, 0.5, 1, 2), function(k) {
+    zz <- subset(s, abs(margin) >= k)
+    m <- rdrobust(zz$vote, zz$margin)
+    data.frame(
+      left_out_within = k,
+      removed = nrow(s) - nrow(zz),
+      jump = m$coef["Conventional", 1],
+      low = m$ci["Robust", 1],
+      high = m$ci["Robust", 2]
+    )
+  })
+)
 print(round(donut, 2), row.names = FALSE)
-ggplot(cuts, aes(cutoff, jump)) + geom_hline(yintercept = 0, linetype = "dashed") + geom_linerange(aes(ymin = low, ymax = high, colour = cutoff == 0), linewidth = 0.8) + geom_point(aes(colour = cutoff == 0), size = 2.6) + scale_colour_manual(values = c("#2a78d6", "#eb6834"), guide = "none") + scale_x_continuous(breaks = cuts$cutoff) +
-  labs(title = "The jump at the real cutoff (orange) and at eight false ones", subtitle = "Robust 95% intervals", x = "cutoff (points of margin)", y = "jump") + theme_bw()
+ggplot(cuts, aes(cutoff, jump)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_linerange(aes(ymin = low, ymax = high, colour = cutoff == 0), linewidth = 0.8) +
+  geom_point(aes(colour = cutoff == 0), size = 2.6) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834"), guide = "none") +
+  scale_x_continuous(breaks = cuts$cutoff) +
+  labs(
+    title = "The jump at the real cutoff (orange) and at eight false ones",
+    subtitle = "Robust 95% intervals",
+    x = "cutoff (points of margin)",
+    y = "jump"
+  ) +
+  theme_bw()
 false_cuts <- subset(cuts, cutoff != 0); odd <- subset(false_cuts, p < .05)
 ```
 
@@ -220,7 +384,17 @@ Of the eight false cutoffs, `r nrow(odd)` has *p* < .05: at `r paste(odd$cutoff,
 Before local regression became common, people fitted a high polynomial in the running variable to **all** data and read off the jump:
 
 ```{r global_polynomials}
-global <- do.call(rbind, lapply(1:6, function(p) { m <- lm(vote ~ won * poly(margin, p, raw = TRUE), s); data.frame(degree = p, jump = coef(m)[["won"]], SE = sqrt(sandwich::vcovHC(m, type = "HC1")["won", "won"])) }))
+global <- do.call(
+  rbind,
+  lapply(1:6, function(p) {
+    m <- lm(vote ~ won * poly(margin, p, raw = TRUE), s)
+    data.frame(
+      degree = p,
+      jump = coef(m)[["won"]],
+      SE = sqrt(sandwich::vcovHC(m, type = "HC1")["won", "won"])
+    )
+  })
+)
 print(round(global, 2), row.names = FALSE)
 ```
 
@@ -234,11 +408,29 @@ We make a population that looks like ours: the curve is a polynomial of degree 4
 
 ```{r simulation}
 sim_rd <- function(degree, reps = 500) {
-  ml <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 0); mr <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 1)
-  mu <- ifelse(s$won == 1, predict(mr, s), predict(ml, s)); truth <- coef(mr)[[1]] - coef(ml)[[1]]; sigma <- sd(s$vote - mu)
-  r <- replicate(reps, { i <- sample(nrow(s), replace = TRUE); m <- rdrobust(mu[i] + rnorm(nrow(s), 0, sigma), s$margin[i], masspoints = "off")
-    c(m$coef["Conventional", 1], m$ci["Conventional", 1] < truth & truth < m$ci["Conventional", 2], m$ci["Robust", 1] < truth & truth < m$ci["Robust", 2], m$bws["h", "left"]) })
-  data.frame(degree = degree, true_jump = truth, mean_estimate = mean(r[1, ]), mean_bandwidth = mean(r[4, ]), coverage_usual = mean(r[2, ]), coverage_robust = mean(r[3, ]))
+  ml <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 0)
+  mr <- lm(vote ~ poly(margin, degree, raw = TRUE), s, subset = won == 1)
+  mu <- ifelse(s$won == 1, predict(mr, s), predict(ml, s))
+  truth <- coef(mr)[[1]] - coef(ml)[[1]]
+  sigma <- sd(s$vote - mu)
+  r <- replicate(reps, {
+    i <- sample(nrow(s), replace = TRUE)
+    m <- rdrobust(mu[i] + rnorm(nrow(s), 0, sigma), s$margin[i], masspoints = "off")
+    c(
+      m$coef["Conventional", 1],
+      m$ci["Conventional", 1] < truth & truth < m$ci["Conventional", 2],
+      m$ci["Robust", 1] < truth & truth < m$ci["Robust", 2],
+      m$bws["h", "left"]
+    )
+  })
+  data.frame(
+    degree = degree,
+    true_jump = truth,
+    mean_estimate = mean(r[1, ]),
+    mean_bandwidth = mean(r[4, ]),
+    coverage_usual = mean(r[2, ]),
+    coverage_robust = mean(r[3, ])
+  )
 }
 set.seed(221); sims <- do.call(rbind, lapply(3:5, sim_rd))
 print(round(sims, 3), row.names = FALSE)
@@ -257,8 +449,16 @@ print(round(sims, 3), row.names = FALSE)
 ```{r winning}
 s$wins_next <- as.numeric(s$vote > 50)
 win <- rdrobust(s$wins_next, s$margin); clustered <- rdrobust(s$vote, s$margin, cluster = s$state)
-c(jump_in_the_probability_to_win = win$coef["Conventional", 1], low = win$ci["Robust", 1], high = win$ci["Robust", 2])
-c(effect_on_the_share_clustered_by_state = clustered$coef["Conventional", 1], low = clustered$ci["Robust", 1], high = clustered$ci["Robust", 2])
+c(
+  jump_in_the_probability_to_win = win$coef["Conventional", 1],
+  low = win$ci["Robust", 1],
+  high = win$ci["Robust", 2]
+)
+c(
+  effect_on_the_share_clustered_by_state = clustered$coef["Conventional", 1],
+  low = clustered$ci["Robust", 1],
+  high = clustered$ci["Robust", 2]
+)
 ```
 
 A narrow win raises the probability of a majority next time by `r f1(100 * win$coef["Conventional", 1])` percentage points, 95% CI [`r f1(100 * win$ci["Robust", 1])`, `r f1(100 * win$ci["Robust", 2])`]. (With more than two candidates more than half is stricter than winning.) With standard errors clustered by state, the interval for the share is [`r f1(clustered$ci["Robust", 1])`, `r f1(clustered$ci["Robust", 2])`]: no important change.
@@ -282,9 +482,25 @@ A narrow win raises the probability of a majority next time by `r f1(100 * win$c
 A report (APA 7th edition) needs the rule and the running variable, the cutoff, the estimator (degree, kernel, bandwidth and how it was chosen), the numbers of observations on each side within the bandwidth, the estimate with a robust interval, and the checks. The numbers come from the R objects:
 
 ```{r apa_numbers}
-line <- function(label, m, scale = 1) data.frame(Outcome = label, n = paste(m$N_h, collapse = " / "), h = f1(m$bws["h", "left"]), jump = f2(scale * m$coef["Conventional", 1]), ci = paste0("[", f2(scale * m$ci["Robust", 1]), ", ", f2(scale * m$ci["Robust", 2]), "]"), p = sub("= ", "", pval(m$pv["Robust", 1])))
+line <- function(label, m, scale = 1) {
+  data.frame(
+    Outcome = label,
+    n = paste(m$N_h, collapse = " / "),
+    h = f1(m$bws["h", "left"]),
+    jump = f2(scale * m$coef["Conventional", 1]),
+    ci = paste0("[", f2(scale * m$ci["Robust", 1]), ", ", f2(scale * m$ci["Robust", 2]), "]"),
+    p = sub("= ", "", pval(m$pv["Robust", 1]))
+  )
+}
 pm <- function(v) rdrobust(sorted[[v]], sorted$margin)
-apa_table <- rbind(line("Share in the next election (%)", fit_rd), line("Majority in the next election (percentage points)", win, 100), line("Margin of the previous election (placebo)", pm("previous_margin")), line("Earlier terms in the House (placebo)", pm("termshouse")), line("Earlier terms in the Senate (placebo)", pm("termssenate")), line("Log population (placebo)", pm("log_population")))
+apa_table <- rbind(
+  line("Share in the next election (%)", fit_rd),
+  line("Majority in the next election (percentage points)", win, 100),
+  line("Margin of the previous election (placebo)", pm("previous_margin")),
+  line("Earlier terms in the House (placebo)", pm("termshouse")),
+  line("Earlier terms in the Senate (placebo)", pm("termssenate")),
+  line("Log population (placebo)", pm("log_population"))
+)
 ```
 
 **Method** (data analysis):

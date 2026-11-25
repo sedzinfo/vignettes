@@ -31,7 +31,8 @@ library(ggplot2)
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -44,26 +45,49 @@ Eurostat publishes statistics for the NUTS-2 regions of Europe, and the maps tha
 
 ```{r download}
 eurostat <- function(code, query) {
-  j <- fromJSON(paste0("https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/", code, "?format=JSON&lang=EN&geoLevel=nuts2&time=2019&", query))
-  place <- unlist(j$dimension$geo$category$index); value <- unlist(j$value)
-  data.frame(NUTS_ID = names(place), value = unname(value[match(as.character(place), names(value))]))
+  j <- fromJSON(paste0(
+    "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/",
+    code,
+    "?format=JSON&lang=EN&geoLevel=nuts2&time=2019&",
+    query
+  ))
+  place <- unlist(j$dimension$geo$category$index)
+  value <- unlist(j$value)
+  data.frame(
+    NUTS_ID = names(place),
+    value = unname(value[match(as.character(place), names(value))])
+  )
 }
-unemp  <- eurostat("lfst_r_lfu3rt", "sex=T&age=Y15-74")                          # unemployment rate (%)
-degree <- eurostat("edat_lfse_04", "sex=T&age=Y25-64&isced11=ED5-8")             # adults with tertiary education (%)
-gdp    <- eurostat("nama_10r_2gdp", "unit=PPS_EU27_2020_HAB")                    # GDP per head, purchasing power standards
-map    <- st_read("https://gisco-services.ec.europa.eu/distribution/v2/nuts/geojson/NUTS_RG_20M_2016_4326_LEVL_2.geojson", quiet = TRUE)
+unemp <- eurostat("lfst_r_lfu3rt", "sex=T&age=Y15-74") # unemployment rate (%)
+# adults with tertiary education (%)
+degree <- eurostat("edat_lfse_04", "sex=T&age=Y25-64&isced11=ED5-8")
+# GDP per head, purchasing power standards
+gdp <- eurostat("nama_10r_2gdp", "unit=PPS_EU27_2020_HAB")
+map <- st_read(
+  "https://gisco-services.ec.europa.eu/distribution/v2/nuts/geojson/NUTS_RG_20M_2016_4326_LEVL_2.geojson",
+  quiet = TRUE
+)
 
 map$unemp  <- unemp$value[match(map$NUTS_ID, unemp$NUTS_ID)]
 map$degree <- degree$value[match(map$NUTS_ID, degree$NUTS_ID)]
 map$gdp    <- gdp$value[match(map$NUTS_ID, gdp$NUTS_ID)]
-map <- st_transform(subset(map, !is.na(unemp) & !is.na(degree) & !is.na(gdp) & CNTR_CODE != "TR"), 3035)      # a projection in metres
+map <- st_transform(
+  subset(map, !is.na(unemp) & !is.na(degree) & !is.na(gdp) & CNTR_CODE != "TR"),
+  3035
+) # a projection in metres
 xy  <- st_coordinates(suppressWarnings(st_centroid(map)))
-europe <- map[xy[, 1] > 2.5e6 & xy[, 2] > 1.3e6, ]                               # without the islands far away (Canaries, Azores, overseas)
+# without the islands far away (Canaries, Azores, overseas)
+europe <- map[xy[, 1] > 2.5e6 & xy[, 2] > 1.3e6, ]
 xy  <- st_coordinates(suppressWarnings(st_centroid(europe)))
 d   <- st_drop_geometry(europe)
 d$log_u <- log(d$unemp); d$log_gdp <- log(d$gdp / 30000); d$deg10 <- (d$degree - 33) / 10
 c(regions = nrow(d), countries = length(unique(d$CNTR_CODE)))
-round(sapply(d[, c("unemp", "degree", "gdp")], function(v) c(min = min(v), median = median(v), max = max(v))), 1)
+round(
+  sapply(d[, c("unemp", "degree", "gdp")], function(v) {
+    c(min = min(v), median = median(v), max = max(v))
+  }),
+  1
+)
 ```
 
 There are `r nrow(d)` regions of `r length(unique(d$CNTR_CODE))` countries. The unemployment rate goes from `r f1(min(d$unemp))`% to `r f1(max(d$unemp))`%. Because it is skewed, we use its logarithm. `deg10` is the share of adults with a degree, in steps of 10 points from 33%, and `log_gdp` the log of the income per head, relative to 30,000.
@@ -73,10 +97,19 @@ There are `r nrow(d)` regions of `r length(unique(d$CNTR_CODE))` countries. The 
 ## 2. Look at the map
 
 ```{r look, fig.height = 5.5}
-ggplot(europe) + geom_sf(aes(fill = unemp), colour = "white", linewidth = 0.1) +
-  scale_fill_viridis_c(option = "B", direction = -1, trans = "log", breaks = c(2, 4, 8, 16), name = "%") +
+ggplot(europe) +
+  geom_sf(aes(fill = unemp), colour = "white", linewidth = 0.1) +
+  scale_fill_viridis_c(
+    option = "B",
+    direction = -1,
+    trans = "log",
+    breaks = c(2, 4, 8, 16),
+    name = "%"
+  ) +
   coord_sf(xlim = c(2.5e6, 6e6), ylim = c(1.4e6, 5.3e6)) +
-  labs(title = "Unemployment in the regions of Europe, 2019") + theme_bw() + theme(axis.text = element_blank(), axis.ticks = element_blank(), panel.grid = element_blank())
+  labs(title = "Unemployment in the regions of Europe, 2019") +
+  theme_bw() +
+  theme(axis.text = element_blank(), axis.ticks = element_blank(), panel.grid = element_blank())
 ```
 
 ### Who is whose neighbour?
@@ -91,8 +124,15 @@ moran$estimate[["Moran I statistic"]]
 ```
 
 ```{r moran_chart}
-ggplot(d, aes(log_u, lag_u)) + geom_point(alpha = 0.6, colour = "#2a78d6") + geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") +
-  labs(title = "Each region and the mean of its five neighbours", x = "log unemployment of the region", y = "mean of its neighbours") + theme_bw()
+ggplot(d, aes(log_u, lag_u)) +
+  geom_point(alpha = 0.6, colour = "#2a78d6") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") +
+  labs(
+    title = "Each region and the mean of its five neighbours",
+    x = "log unemployment of the region",
+    y = "mean of its neighbours"
+  ) +
+  theme_bw()
 ```
 
 **Moran's I** is a correlation between a region and its neighbours: the slope of the line in this chart. It is `r f2(moran$estimate[["Moran I statistic"]])`, where 0 would be no pattern. Unemployment is as clustered as it can be.
@@ -148,7 +188,11 @@ profile_ll <- function(rho) {
 rho_hat <- optimize(profile_ll, c(-0.9, 0.99), maximum = TRUE)$maximum
 sar <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W)
 naive <- lm(log_u ~ deg10 + log_gdp + lag_u, data = d)
-rbind(by_hand = c(rho = rho_hat, lm.fit(X, y - rho_hat * Wy)$coefficients), lagsarlm = c(sar$rho, sar$coefficients), `wrong: lm with the lag` = coef(naive)[c(4, 1:3)])
+rbind(
+  by_hand = c(rho = rho_hat, lm.fit(X, y - rho_hat * Wy)$coefficients),
+  lagsarlm = c(sar$rho, sar$coefficients),
+  `wrong: lm with the lag` = coef(naive)[c(4, 1:3)]
+)
 ```
 
 ---
@@ -157,14 +201,21 @@ rbind(by_hand = c(rho = rho_hat, lm.fit(X, y - rho_hat * Wy)$coefficients), lags
 
 ```{r fits}
 sem  <- errorsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W)
-sdm  <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W, Durbin = TRUE)      # with the neighbours' X as well
-tab <- rbind(OLS = c(coef(summary(ols))[2, 1:2], coef(summary(ols))[3, 1:2], NA, AIC(ols)),
-             `spatial lag` = c(summary(sar)$Coef[2, 1:2], summary(sar)$Coef[3, 1:2], sar$rho, AIC(sar)),
-             `spatial error` = c(summary(sem)$Coef[2, 1:2], summary(sem)$Coef[3, 1:2], sem$lambda, AIC(sem)),
-             `spatial Durbin` = c(summary(sdm)$Coef[2, 1:2], summary(sdm)$Coef[3, 1:2], sdm$rho, AIC(sdm)))
+# with the neighbours' X as well
+sdm <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = W, Durbin = TRUE)
+tab <- rbind(
+  OLS = c(coef(summary(ols))[2, 1:2], coef(summary(ols))[3, 1:2], NA, AIC(ols)),
+  `spatial lag` = c(summary(sar)$Coef[2, 1:2], summary(sar)$Coef[3, 1:2], sar$rho, AIC(sar)),
+  `spatial error` = c(summary(sem)$Coef[2, 1:2], summary(sem)$Coef[3, 1:2], sem$lambda, AIC(sem)),
+  `spatial Durbin` = c(summary(sdm)$Coef[2, 1:2], summary(sdm)$Coef[3, 1:2], sdm$rho, AIC(sdm))
+)
 colnames(tab) <- c("deg10", "SE", "log_gdp", "SE", "rho or lambda", "AIC")
 round(tab, 3)
-resid_I <- c(OLS = mr$estimate[[1]], lag = moran.test(residuals(sar), W)$estimate[[1]], error = moran.test(residuals(sem), W)$estimate[[1]])
+resid_I <- c(
+  OLS = mr$estimate[[1]],
+  lag = moran.test(residuals(sar), W)$estimate[[1]],
+  error = moran.test(residuals(sem), W)$estimate[[1]]
+)
 round(resid_I, 3)
 ```
 
@@ -194,13 +245,19 @@ In the lag model a change of $x$ in one region changes the unemployment of **all
 
 ```{r impacts}
 S <- solve(diag(n) - sar$rho * Wm)                              # (I - rho W)^-1
-by_hand <- sapply(c("deg10", "log_gdp"), function(v) { M <- S * sar$coefficients[[v]]; c(direct = mean(diag(M)), total = mean(rowSums(M))) })
+by_hand <- sapply(c("deg10", "log_gdp"), function(v) {
+  M <- S * sar$coefficients[[v]]
+  c(direct = mean(diag(M)), total = mean(rowSums(M)))
+})
 by_hand <- rbind(by_hand, indirect = by_hand["total", ] - by_hand["direct", ])
 round(by_hand, 3)
 set.seed(141)
 imp <- summary(impacts(sar, listw = W, R = 1000), zstats = TRUE, short = TRUE)
 round(cbind(direct = imp$res$direct, indirect = imp$res$indirect, total = imp$res$total), 3)
-imp_ci <- t(sapply(c(direct = "direct_sum", indirect = "indirect_sum", total = "total_sum"), function(k) imp[[k]]$quantiles[2, c("2.5%", "97.5%")]))
+imp_ci <- t(sapply(
+  c(direct = "direct_sum", indirect = "indirect_sum", total = "total_sum"),
+  function(k) imp[[k]]$quantiles[2, c("2.5%", "97.5%")]
+))
 round(imp_ci, 2)
 ```
 
@@ -217,8 +274,16 @@ ols_c <- lm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d)
 mc    <- lm.morantest(ols_c, W)
 sar_c <- lagsarlm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d, listw = W)
 sem_c <- errorsarlm(log_u ~ deg10 + log_gdp + factor(CNTR_CODE), data = d, listw = W)
-comp <- rbind(`OLS` = c(coef(ols)[2:3], mr$estimate[[1]], AIC(ols)), `spatial lag` = c(sar$coefficients[2:3], resid_I[["lag"]], AIC(sar)),
-              `OLS + countries` = c(coef(ols_c)[2:3], mc$estimate[[1]], AIC(ols_c)), `spatial lag + countries` = c(sar_c$coefficients[2:3], moran.test(residuals(sar_c), W)$estimate[[1]], AIC(sar_c)))
+comp <- rbind(
+  `OLS` = c(coef(ols)[2:3], mr$estimate[[1]], AIC(ols)),
+  `spatial lag` = c(sar$coefficients[2:3], resid_I[["lag"]], AIC(sar)),
+  `OLS + countries` = c(coef(ols_c)[2:3], mc$estimate[[1]], AIC(ols_c)),
+  `spatial lag + countries` = c(
+    sar_c$coefficients[2:3],
+    moran.test(residuals(sar_c), W)$estimate[[1]],
+    AIC(sar_c)
+  )
+)
 colnames(comp) <- c("deg10", "log_gdp", "Moran's I of the residuals", "AIC")
 round(comp, 2)
 c(rho_without_countries = sar$rho, rho_with_countries = sar_c$rho)
@@ -238,16 +303,23 @@ random_gap
 
 Neighbours in the **same** country differ by `r f2(gap[["TRUE"]])` on the log scale, neighbours **across a border** by `r f2(gap[["FALSE"]])`, and two random regions by `r f2(random_gap)`. The border explains a good part of the pattern, but not all of it: neighbours across a border are still more alike than strangers (compare Overman & Puga, 2002).
 
-This is the general problem of spatial regression: **a spatial lag absorbs whatever is missing and has a shape on the map.** Gibbons and Overman (2012) called much of the field "mostly pointless" for this reason. A spatial model is a good way to get honest standard errors and to see that something is missing. It is a weak way to prove that things spread.
+This is the general problem of spatial regression: **a spatial lag absorbs whatever is missing and has a shape on the map.** Gibbons and Overman (2012) gave their critique of the field the title "Mostly pointless spatial econometrics?" for this reason. A spatial model is a good way to get honest standard errors and to see that something is missing. It is a weak way to prove that things spread.
 
 ---
 
 ## 8. Does the definition of neighbours matter?
 
 ```{r sensitivity}
-make_W <- list(`4 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 4))), `5 nearest` = W, `8 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 8))),
-               `within 300 km` = nb2listw(dnearneigh(xy, 0, 300000), zero.policy = TRUE))
-sens <- t(sapply(make_W, function(w) { m <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = w, zero.policy = TRUE); c(rho = m$rho, m$coefficients[2:3], AIC = AIC(m)) }))
+make_W <- list(
+  `4 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 4))),
+  `5 nearest` = W,
+  `8 nearest` = nb2listw(knn2nb(knearneigh(xy, k = 8))),
+  `within 300 km` = nb2listw(dnearneigh(xy, 0, 300000), zero.policy = TRUE)
+)
+sens <- t(sapply(make_W, function(w) {
+  m <- lagsarlm(log_u ~ deg10 + log_gdp, data = d, listw = w, zero.policy = TRUE)
+  c(rho = m$rho, m$coefficients[2:3], AIC = AIC(m))
+}))
 round(sens, 3)
 ```
 
@@ -263,7 +335,7 @@ The definition changes the numbers a little and the story not at all. Report mor
 - **Never read the coefficients of a lag or Durbin model as effects.** Use impacts.
 - **$W$ is chosen, not estimated.** Say how, and try others.
 - **Areas are arbitrary.** Results can change with other borders or a finer division (the *modifiable areal unit problem*), and nothing follows for persons (the ecological fallacy, see [beta regression](EXAMPLE_BETA.Rmd)).
-- **Points instead of areas** (sensors, houses): geostatistics, kriging or a smooth of the coordinates, `mgcv::gam(y ~ x + s(lon, lat))`.
+- **Points instead of areas** (sensors, houses): geostatistics, kriging (a [Gaussian process](EXAMPLE_GAUSSIAN_PROCESS.Rmd) on the map) or a smooth of the coordinates, `mgcv::gam(y ~ x + s(lon, lat))`.
 - **Robust alternative**: OLS with standard errors that allow for spatial correlation (Conley), if only the standard errors are the problem.
 
 ---
@@ -273,10 +345,24 @@ The definition changes the numbers a little and the story not at all. Report mor
 A report (APA 7th edition) needs the units, the weights matrix, Moran's I before and after, the models and how they were chosen, impacts instead of coefficients for lag models, and the sensitivity to the weights. The numbers come from the R objects:
 
 ```{r apa_numbers}
-apa_table <- data.frame(Model = c("OLS", "Spatial lag", "Spatial error", "OLS with country effects"),
-  deg = paste0(f2(c(tab[1:3, 1], coef(ols_c)[[2]])), " (", f2(c(tab[1:3, 2], coef(summary(ols_c))[2, 2])), ")"),
-  gdp = paste0(f2(c(tab[1:3, 3], coef(ols_c)[[3]])), " (", f2(c(tab[1:3, 4], coef(summary(ols_c))[3, 2])), ")"),
-  rho = c("—", f2(c(sar$rho, sem$lambda)), "—"), I = f2(c(mr$estimate[[1]], resid_I[["lag"]], resid_I[["error"]], mc$estimate[[1]])), AIC = f1(c(AIC(ols), AIC(sar), AIC(sem), AIC(ols_c))))
+apa_table <- data.frame(
+  Model = c("OLS", "Spatial lag", "Spatial error", "OLS with country effects"),
+  deg = paste0(
+    f2(c(tab[1:3, 1], coef(ols_c)[[2]])),
+    " (",
+    f2(c(tab[1:3, 2], coef(summary(ols_c))[2, 2])),
+    ")"
+  ),
+  gdp = paste0(
+    f2(c(tab[1:3, 3], coef(ols_c)[[3]])),
+    " (",
+    f2(c(tab[1:3, 4], coef(summary(ols_c))[3, 2])),
+    ")"
+  ),
+  rho = c("—", f2(c(sar$rho, sem$lambda)), "—"),
+  I = f2(c(mr$estimate[[1]], resid_I[["lag"]], resid_I[["error"]], mc$estimate[[1]])),
+  AIC = f1(c(AIC(ols), AIC(sar), AIC(sem), AIC(ols_c)))
+)
 ```
 
 **Method** (data analysis):

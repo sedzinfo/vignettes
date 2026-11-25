@@ -30,7 +30,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -44,8 +45,12 @@ The data come with R, as the time series `Seatbelts`: 192 months, from January 1
 ```{r data}
 head(Seatbelts, 2)
 road <- data.frame(date = as.numeric(time(Seatbelts)), as.data.frame(Seatbelts))
-y    <- log(Seatbelts[, "drivers"])                                  # log of the car drivers killed or seriously injured
-X    <- cbind(law = Seatbelts[, "law"], petrol = log(Seatbelts[, "PetrolPrice"]), km = log(Seatbelts[, "kms"]))
+y <- log(Seatbelts[, "drivers"]) # log of the car drivers killed or seriously injured
+X <- cbind(
+  law = Seatbelts[, "law"],
+  petrol = log(Seatbelts[, "PetrolPrice"]),
+  km = log(Seatbelts[, "kms"])
+)
 c(months = nrow(road), months_with_the_law = sum(road$law))
 ```
 
@@ -56,10 +61,23 @@ c(months = nrow(road), months_with_the_law = sum(road$law))
 ## 2. Look at the data
 
 ```{r look, fig.height = 5.5}
-long <- rbind(data.frame(date = road$date, n = road$drivers, who = "drivers"), data.frame(date = road$date, n = road$rear, who = "rear-seat passengers (no law)"))
-ggplot(long, aes(date, n)) + geom_line(colour = "grey40", linewidth = 0.5) + geom_vline(xintercept = 1983 + 1/12, colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
-  facet_wrap(~ who, ncol = 1, scales = "free_y") + labs(title = "Killed or seriously injured, per month", subtitle = "Dashed line: the seat belt law", x = NULL, y = NULL) + theme_bw()
-before <- mean(road$drivers[road$date >= 1982 & road$date < 1983]); after <- mean(road$drivers[road$date >= 1983 + 1/12 & road$date < 1984 + 1/12])
+long <- rbind(
+  data.frame(date = road$date, n = road$drivers, who = "drivers"),
+  data.frame(date = road$date, n = road$rear, who = "rear-seat passengers (no law)")
+)
+ggplot(long, aes(date, n)) +
+  geom_line(colour = "grey40", linewidth = 0.5) +
+  geom_vline(xintercept = 1983 + 1 / 12, colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
+  facet_wrap(~who, ncol = 1, scales = "free_y") +
+  labs(
+    title = "Killed or seriously injured, per month",
+    subtitle = "Dashed line: the seat belt law",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_bw()
+before <- mean(road$drivers[road$date >= 1982 & road$date < 1983])
+after <- mean(road$drivers[road$date >= 1983 + 1 / 12 & road$date < 1984 + 1 / 12])
 c(mean_1982 = before, mean_of_the_first_year = after, change = after / before - 1)
 ```
 
@@ -107,16 +125,24 @@ With AR(1) errors, the likelihood is that of the regression on **quasi-differenc
 ```{r by_hand}
 months <- model.matrix(~ month)[, -1]; Xm <- matrix(X, ncol = 3, dimnames = list(NULL, colnames(X)))
 Z  <- cbind(months, Xm); XX <- cbind(1, Z); n <- length(y)
-profile_ll <- function(phi) {                                       # exact likelihood for a given phi (Prais-Winsten)
+profile_ll <- function(phi) {
+  # exact likelihood for a given phi (Prais-Winsten)
   q <- function(v) c(sqrt(1 - phi^2) * v[1], v[-1] - phi * v[-n])
-  f <- lm.fit(apply(XX, 2, q), q(as.numeric(y))); s2 <- mean(f$residuals^2)
+  f <- lm.fit(apply(XX, 2, q), q(as.numeric(y)))
+  s2 <- mean(f$residuals^2)
   -n / 2 * (log(2 * pi * s2) + 1) + 0.5 * log(1 - phi^2)
 }
 phi_hat <- optimize(profile_ll, c(-0.99, 0.99), maximum = TRUE)$maximum
 q <- function(v) c(sqrt(1 - phi_hat^2) * v[1], v[-1] - phi_hat * v[-n])
-hand <- setNames(lm.fit(apply(XX, 2, q), q(as.numeric(y)))$coefficients, c("(Intercept)", colnames(Z)))
+hand <- setNames(
+  lm.fit(apply(XX, 2, q), q(as.numeric(y)))$coefficients,
+  c("(Intercept)", colnames(Z))
+)
 ar1 <- arima(y, order = c(1, 0, 0), xreg = Z, method = "ML")
-rbind(by_hand = c(phi = phi_hat, hand[c("law", "petrol", "km")]), arima = coef(ar1)[c("ar1", "law", "petrol", "km")])
+rbind(
+  by_hand = c(phi = phi_hat, hand[c("law", "petrol", "km")]),
+  arima = coef(ar1)[c("ar1", "law", "petrol", "km")]
+)
 ```
 
 ---
@@ -124,12 +150,25 @@ rbind(by_hand = c(phi = phi_hat, hand[c("law", "petrol", "km")]), arima = coef(a
 ## 5. Choosing the order
 
 ```{r choose}
-auto <- auto.arima(y, xreg = X, stepwise = FALSE, approximation = FALSE)      # searches over the orders, with the AICc
+# searches over the orders, with the AICc
+auto <- auto.arima(y, xreg = X, stepwise = FALSE, approximation = FALSE)
 auto
-candidates <- list(`(1,0,0)(0,1,1)` = c(1, 0, 0), `(1,0,1)(0,1,1)` = c(1, 0, 1), `(2,0,1)(0,1,1)` = c(2, 0, 1), `(0,1,1)(0,1,1)` = c(0, 1, 1), `(1,0,3)(0,1,1)` = c(1, 0, 3))
+candidates <- list(
+  `(1,0,0)(0,1,1)` = c(1, 0, 0),
+  `(1,0,1)(0,1,1)` = c(1, 0, 1),
+  `(2,0,1)(0,1,1)` = c(2, 0, 1),
+  `(0,1,1)(0,1,1)` = c(0, 1, 1),
+  `(1,0,3)(0,1,1)` = c(1, 0, 3)
+)
 fits <- lapply(candidates, function(o) Arima(y, order = o, seasonal = c(0, 1, 1), xreg = X))
-comp <- t(sapply(fits, function(m) c(AICc = m$aicc, law = coef(m)[["law"]], SE = sqrt(vcov(m)["law", "law"]),
-                                     Ljung_Box_p = Box.test(resid(m), 24, fitdf = length(coef(m)) - 3, type = "Ljung-Box")$p.value)))
+comp <- t(sapply(fits, function(m) {
+  c(
+    AICc = m$aicc,
+    law = coef(m)[["law"]],
+    SE = sqrt(vcov(m)["law", "law"]),
+    Ljung_Box_p = Box.test(resid(m), 24, fitdf = length(coef(m)) - 3, type = "Ljung-Box")$p.value
+  )
+}))
 round(comp, 3)
 ```
 
@@ -157,9 +196,21 @@ If the model is right, the residuals are **white noise**: no pattern left.
 ```{r checks, fig.height = 5.5}
 res <- data.frame(date = road$date, r = as.numeric(resid(fit)))[-(1:13), ]
 a <- acf(res$r, plot = FALSE, lag.max = 24)
-pa <- ggplot(res, aes(date, r)) + geom_hline(yintercept = 0, colour = "grey60") + geom_line(colour = "#2a78d6", linewidth = 0.4) + labs(title = "Residuals", x = NULL, y = NULL) + theme_bw()
-pb <- ggplot(data.frame(lag = a$lag[-1], r = a$acf[-1]), aes(lag, r)) + geom_hline(yintercept = c(-1, 1) * 1.96 / sqrt(nrow(res)), linetype = "dashed", colour = "#eb6834") +
-  geom_segment(aes(xend = lag, yend = 0), linewidth = 0.9, colour = "#2a78d6") + geom_hline(yintercept = 0) + labs(title = "Their autocorrelations", x = "lag (months)", y = NULL) + theme_bw()
+pa <- ggplot(res, aes(date, r)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "#2a78d6", linewidth = 0.4) +
+  labs(title = "Residuals", x = NULL, y = NULL) +
+  theme_bw()
+pb <- ggplot(data.frame(lag = a$lag[-1], r = a$acf[-1]), aes(lag, r)) +
+  geom_hline(
+    yintercept = c(-1, 1) * 1.96 / sqrt(nrow(res)),
+    linetype = "dashed",
+    colour = "#eb6834"
+  ) +
+  geom_segment(aes(xend = lag, yend = 0), linewidth = 0.9, colour = "#2a78d6") +
+  geom_hline(yintercept = 0) +
+  labs(title = "Their autocorrelations", x = "lag (months)", y = NULL) +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 lb <- Box.test(resid(fit), lag = 24, fitdf = length(coef(fit)) - 3, type = "Ljung-Box")
 c(Ljung_Box = lb$statistic, p = lb$p.value, Shapiro_p = shapiro.test(res$r)$p.value)
@@ -176,23 +227,48 @@ Fit the model to the months **before** the law only, and let it forecast the two
 ```{r counterfactual}
 last   <- c(1983, 1)
 y_pre  <- window(y, end = last)
-X_pre  <- window(X[, c("petrol", "km")], end = last); X_post <- window(X[, c("petrol", "km")], start = c(1983, 2))
+X_pre <- window(X[, c("petrol", "km")], end = last)
+X_post <- window(X[, c("petrol", "km")], start = c(1983, 2))
 pre    <- Arima(y_pre, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = X_pre)
 fc     <- forecast(pre, xreg = X_post, level = 95)
 post   <- subset(road, law == 1)
-cf     <- data.frame(date = post$date, observed = post$drivers, expected = exp(as.numeric(fc$mean)), low = exp(as.numeric(fc$lower)), high = exp(as.numeric(fc$upper)))
+cf <- data.frame(
+  date = post$date,
+  observed = post$drivers,
+  expected = exp(as.numeric(fc$mean)),
+  low = exp(as.numeric(fc$lower)),
+  high = exp(as.numeric(fc$upper))
+)
 saved  <- sum(cf$expected - cf$observed)
-c(observed = sum(cf$observed), expected = sum(cf$expected), difference = saved, share = saved / sum(cf$expected))
+c(
+  observed = sum(cf$observed),
+  expected = sum(cf$expected),
+  difference = saved,
+  share = saved / sum(cf$expected)
+)
 below <- mean(cf$observed < cf$low)
 below
 ```
 
 ```{r counterfactual_chart}
 ggplot(subset(road, date >= 1978), aes(date, drivers)) +
-  geom_ribbon(data = cf, aes(date, ymin = low, ymax = high), inherit.aes = FALSE, fill = "#2a78d6", alpha = 0.2) +
-  geom_line(colour = "grey40") + geom_line(data = cf, aes(date, expected), colour = "#2a78d6", linewidth = 0.9) +
-  geom_vline(xintercept = 1983 + 1/12, linetype = "dashed", colour = "#eb6834") +
-  labs(title = "Observed (grey), and forecast from the years before the law (blue, 95% band)", x = NULL, y = "drivers killed or seriously injured") + theme_bw() + theme(plot.title = element_text(size = 11))
+  geom_ribbon(
+    data = cf,
+    aes(date, ymin = low, ymax = high),
+    inherit.aes = FALSE,
+    fill = "#2a78d6",
+    alpha = 0.2
+  ) +
+  geom_line(colour = "grey40") +
+  geom_line(data = cf, aes(date, expected), colour = "#2a78d6", linewidth = 0.9) +
+  geom_vline(xintercept = 1983 + 1 / 12, linetype = "dashed", colour = "#eb6834") +
+  labs(
+    title = "Observed (grey), and forecast from the years before the law (blue, 95% band)",
+    x = NULL,
+    y = "drivers killed or seriously injured"
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 11))
 ```
 
 In the `r nrow(cf)` months the forecast expected `r f0(sum(cf$expected))` casualties, and `r f0(sum(cf$observed))` happened: `r f0(saved)` fewer, or `r pct(saved / sum(cf$expected))`. In `r pct(below)` of the months the number was below the 95% band.
@@ -207,10 +283,20 @@ If the fall came from better weather, better roads or less traffic, the **rear-s
 
 ```{r control}
 y_rear <- log(Seatbelts[, "rear"]); y_front <- log(Seatbelts[, "front"])
-same_order <- function(v) Arima(v, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = X)
+same_order <- function(v) {
+  Arima(v, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = X)
+}
 rear  <- same_order(y_rear); front <- same_order(y_front)
-eff <- function(m) { bb <- coef(m)[["law"]]; s <- sqrt(vcov(m)["law", "law"]); 100 * c(effect = exp(bb) - 1, low = exp(bb - 1.96 * s) - 1, high = exp(bb + 1.96 * s) - 1) }
-controls <- rbind(drivers = eff(fit), `front-seat passengers` = eff(front), `rear-seat passengers` = eff(rear))
+eff <- function(m) {
+  bb <- coef(m)[["law"]]
+  s <- sqrt(vcov(m)["law", "law"])
+  100 * c(effect = exp(bb) - 1, low = exp(bb - 1.96 * s) - 1, high = exp(bb + 1.96 * s) - 1)
+}
+controls <- rbind(
+  drivers = eff(fit),
+  `front-seat passengers` = eff(front),
+  `rear-seat passengers` = eff(rear)
+)
 round(controls, 1)
 ```
 
@@ -224,12 +310,32 @@ Pretend that the law came at other dates, in the years **before** it existed, an
 dates <- seq(1971, 1981, by = 0.5)
 placebo <- sapply(dates, function(d) {
   fake <- as.numeric(time(y_pre) >= d)
-  m <- try(Arima(y_pre, order = arimaorder(fit)[1:3], seasonal = arimaorder(fit)[4:6], xreg = cbind(law = fake, X_pre)), silent = TRUE)
+  m <- try(
+    Arima(
+      y_pre,
+      order = arimaorder(fit)[1:3],
+      seasonal = arimaorder(fit)[4:6],
+      xreg = cbind(law = fake, X_pre)
+    ),
+    silent = TRUE
+  )
   if (inherits(m, "try-error")) NA else coef(m)[["law"]]
 })
-pl <- data.frame(date = c(dates, 1983.08), b = c(placebo, b[["law"]]), kind = c(rep("invented dates", length(dates)), "the real law"))
-ggplot(pl, aes(date, 100 * (exp(b) - 1), fill = kind)) + geom_col(width = 0.35) + scale_fill_manual(values = c("grey65", "#eb6834"), name = NULL) +
-  labs(title = "The 'effect' of invented laws, and of the real one", x = NULL, y = "change of casualties (%)") + theme_bw() + theme(legend.position = "bottom")
+pl <- data.frame(
+  date = c(dates, 1983.08),
+  b = c(placebo, b[["law"]]),
+  kind = c(rep("invented dates", length(dates)), "the real law")
+)
+ggplot(pl, aes(date, 100 * (exp(b) - 1), fill = kind)) +
+  geom_col(width = 0.35) +
+  scale_fill_manual(values = c("grey65", "#eb6834"), name = NULL) +
+  labs(
+    title = "The 'effect' of invented laws, and of the real one",
+    x = NULL,
+    y = "change of casualties (%)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 larger <- sum(placebo <= b[["law"]], na.rm = TRUE)
 c(placebos = sum(!is.na(placebo)), as_large_as_the_law = larger)
 ```
@@ -245,7 +351,14 @@ None of the invented dates should give much. A group of them does: those of the 
 
 ```{r spurious}
 set.seed(131)
-spur <- replicate(1000, { a <- cumsum(rnorm(100)); b <- cumsum(rnorm(100)); c(levels = summary(lm(a ~ b))$coefficients[2, 4] < .05, differences = summary(lm(diff(a) ~ diff(b)))$coefficients[2, 4] < .05) })
+spur <- replicate(1000, {
+  a <- cumsum(rnorm(100))
+  b <- cumsum(rnorm(100))
+  c(
+    levels = summary(lm(a ~ b))$coefficients[2, 4] < .05,
+    differences = summary(lm(diff(a) ~ diff(b)))$coefficients[2, 4] < .05
+  )
+})
 rowMeans(spur)
 ```
 
@@ -264,9 +377,21 @@ rowMeans(spur)
 A report (APA 7th edition) needs the series and its length, the transformation, the order of the ARIMA model and how it was chosen, the checks, the effect with its interval, and the evidence that it is the intervention. The numbers come from the R objects:
 
 ```{r apa_numbers}
-apa_table <- data.frame(Predictor = c("Seat belt law", "Petrol price (log)", "Distance driven (log)"), b = f3(tab[, "b"]), SE = f3(tab[, "SE"]), z = f2(tab[, "z"]),
-                        p = sapply(tab[, "p"], function(p) sub("^= ", "", pval(p))), CI = paste0("[", f3(b - 1.96 * se), ", ", f3(b + 1.96 * se), "]"))
-order_text <- paste0("ARIMA(", paste(arimaorder(fit)[1:3], collapse = ","), ")(", paste(arimaorder(fit)[4:6], collapse = ","), ")")
+apa_table <- data.frame(
+  Predictor = c("Seat belt law", "Petrol price (log)", "Distance driven (log)"),
+  b = f3(tab[, "b"]),
+  SE = f3(tab[, "SE"]),
+  z = f2(tab[, "z"]),
+  p = sapply(tab[, "p"], function(p) sub("^= ", "", pval(p))),
+  CI = paste0("[", f3(b - 1.96 * se), ", ", f3(b + 1.96 * se), "]")
+)
+order_text <- paste0(
+  "ARIMA(",
+  paste(arimaorder(fit)[1:3], collapse = ","),
+  ")(",
+  paste(arimaorder(fit)[4:6], collapse = ","),
+  ")"
+)
 ```
 
 **Method** (data analysis):

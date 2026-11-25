@@ -120,13 +120,21 @@ near$line <- coef(local)[[1]] + coef(local)[[2]] * (near$year - x0)
 
 ggplot(near, aes(year, temp)) +
   geom_point(aes(size = w, colour = w > 0)) +
-  geom_line(data = subset(near, abs(year - x0) < h), aes(y = line), colour = "#2a78d6", linewidth = 1) +
+  geom_line(
+    data = subset(near, abs(year - x0) < h),
+    aes(y = line),
+    colour = "#2a78d6",
+    linewidth = 1
+  ) +
   annotate("point", x = x0, y = coef(local)[[1]], size = 4, shape = 21, fill = "#eb6834") +
   scale_colour_manual(values = c(`TRUE` = "grey25", `FALSE` = "grey80"), guide = "none") +
   scale_size(range = c(1.5, 6), name = "weight") +
-  labs(title = "One local line, for 1945",
-       subtitle = "The size of a point is its weight. The orange point is the height of the curve in 1945",
-       x = NULL, y = "°C") +
+  labs(
+    title = "One local line, for 1945",
+    subtitle = "The size of a point is its weight. The orange point is the height of the curve in 1945",
+    x = NULL,
+    y = "°C"
+  ) +
   theme_bw()
 ```
 
@@ -179,15 +187,23 @@ NASA calls the column `Lowess(5)`. If the 5 means five years on each side, the n
 ```{r reproduce}
 ours <- lowess(earth$year, earth$temp, f = 10 / n, iter = 3)$y
 difference <- ours - earth$nasa
-c(largest_difference = max(abs(difference)), same_at_two_decimals = mean(round(ours, 2) == earth$nasa))
+c(
+  largest_difference = max(abs(difference)),
+  same_at_two_decimals = mean(round(ours, 2) == earth$nasa)
+)
 ```
 
 The largest difference in `r n` years is `r formatC(max(abs(difference)), format = "f", digits = 5)` °C, smaller than the rounding of the published numbers (0.005). **We have made NASA's line.** Other settings do not:
 
 ```{r settings}
 settings <- expand.grid(q = c(6, 8, 9, 10, 11, 12, 15), iter = c(0, 3))
-settings$largest_difference <- mapply(function(q, iter)
-  max(abs(lowess(earth$year, earth$temp, f = q / n, iter = iter)$y - earth$nasa)), settings$q, settings$iter)
+settings$largest_difference <- mapply(
+  function(q, iter) {
+    max(abs(lowess(earth$year, earth$temp, f = q / n, iter = iter)$y - earth$nasa))
+  },
+  settings$q,
+  settings$iter
+)
 reshape(settings, idvar = "q", timevar = "iter", direction = "wide")
 ```
 
@@ -209,9 +225,22 @@ The span is the one choice that matters. Small: the line follows every jump (low
 | `geom_smooth(method = "loess")` | | this one, with its defaults |
 
 ```{r spans}
-spans <- c(`0.07 (10 years)` = 10 / n, `0.21 (30 years)` = 30 / n, `0.41 (60 years)` = 60 / n, `0.75 (default)` = 0.75)
-span_lines <- do.call(rbind, lapply(names(spans), function(s)
-  data.frame(year = earth$year, temp = predict(loess(temp ~ year, data = earth, span = spans[[s]], degree = 1)), span = s)))
+spans <- c(
+  `0.07 (10 years)` = 10 / n,
+  `0.21 (30 years)` = 30 / n,
+  `0.41 (60 years)` = 60 / n,
+  `0.75 (default)` = 0.75
+)
+span_lines <- do.call(
+  rbind,
+  lapply(names(spans), function(s) {
+    data.frame(
+      year = earth$year,
+      temp = predict(loess(temp ~ year, data = earth, span = spans[[s]], degree = 1)),
+      span = s
+    )
+  })
+)
 span_lines$span <- factor(span_lines$span, levels = names(spans))
 
 ggplot(earth, aes(year, temp)) +
@@ -261,20 +290,33 @@ block_error <- function(q, half) {
   }))
 }
 qs <- c(6, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 50, 60, 80, 100)
-criteria <- do.call(rbind, lapply(qs, function(q) {
-  L <- hat_matrix(earth$year, q); e <- earth$temp - L %*% earth$temp; tr <- sum(diag(L)); rss <- sum(e^2)
-  data.frame(q, parameters = tr, GCV = n * rss / (n - tr)^2,
-             AICc = log(rss / n) + 1 + 2 * (tr + 1) / (n - tr - 2),
-             LOO = sqrt(mean((e / (1 - diag(L)))^2)), block = sqrt(block_error(q, 5)))
-}))
+criteria <- do.call(
+  rbind,
+  lapply(qs, function(q) {
+    L <- hat_matrix(earth$year, q)
+    e <- earth$temp - L %*% earth$temp
+    tr <- sum(diag(L))
+    rss <- sum(e^2)
+    data.frame(
+      q,
+      parameters = tr,
+      GCV = n * rss / (n - tr)^2,
+      AICc = log(rss / n) + 1 + 2 * (tr + 1) / (n - tr - 2),
+      LOO = sqrt(mean((e / (1 - diag(L)))^2)),
+      block = sqrt(block_error(q, 5))
+    )
+  })
+)
 round(criteria, 4)
 best_q <- sapply(criteria[c("GCV", "AICc", "LOO", "block")], function(v) criteria$q[which.min(v)])
 best_q
 ```
 
 ```{r criteria_chart}
-long <- rbind(data.frame(q = criteria$q, rmse = criteria$LOO,   kind = "leave one year out"),
-              data.frame(q = criteria$q, rmse = criteria$block, kind = "leave out 11 years, predict the middle"))
+long <- rbind(
+  data.frame(q = criteria$q, rmse = criteria$LOO, kind = "leave one year out"),
+  data.frame(q = criteria$q, rmse = criteria$block, kind = "leave out 11 years, predict the middle")
+)
 
 ggplot(long, aes(q, rmse, colour = kind)) +
   geom_line(linewidth = 0.8) + geom_point(size = 2) +
@@ -309,7 +351,13 @@ lag1
 
 ```{r band_chart}
 ggplot(earth, aes(year, temp)) +
-  geom_ribbon(data = band, aes(x = year, ymin = low, ymax = high), inherit.aes = FALSE, fill = "#2a78d6", alpha = 0.25) +
+  geom_ribbon(
+    data = band,
+    aes(x = year, ymin = low, ymax = high),
+    inherit.aes = FALSE,
+    fill = "#2a78d6",
+    alpha = 0.25
+  ) +
   geom_point(size = 1.2, colour = "grey45") +
   geom_line(data = band, aes(y = fit), colour = "#2a78d6", linewidth = 1) +
   scale_x_continuous(breaks = seq(1880, 2020, 20)) +
@@ -391,22 +439,34 @@ The robustness rounds protect the line from single bad values. We put a typing e
 ```{r outlier}
 bad <- earth
 bad$temp[bad$year == 1950] <- 2
-shown <- data.frame(year  = rep(earth$year, 3),
-                    value = c(lowess(earth$year, earth$temp, f = 10 / n, iter = 3)$y,
-                              lowess(bad$year, bad$temp, f = 10 / n, iter = 0)$y,
-                              lowess(bad$year, bad$temp, f = 10 / n, iter = 3)$y),
-                    line  = rep(c("correct data", "with the error, not robust", "with the error, robust"), each = n))
+shown <- data.frame(
+  year = rep(earth$year, 3),
+  value = c(
+    lowess(earth$year, earth$temp, f = 10 / n, iter = 3)$y,
+    lowess(bad$year, bad$temp, f = 10 / n, iter = 0)$y,
+    lowess(bad$year, bad$temp, f = 10 / n, iter = 3)$y
+  ),
+  line = rep(c("correct data", "with the error, not robust", "with the error, robust"), each = n)
+)
 at_1950 <- tapply(shown$value[shown$year == 1950], shown$line[shown$year == 1950], mean)
 round(at_1950, 3)
 ```
 
 ```{r outlier_chart}
-ggplot(subset(shown, year >= 1930 & year <= 1970), aes(year, value, colour = line, linetype = line)) +
+ggplot(
+  subset(shown, year >= 1930 & year <= 1970),
+  aes(year, value, colour = line, linetype = line)
+) +
   geom_line(linewidth = 1) +
   scale_colour_manual(values = c("grey50", "#eb6834", "#2a78d6"), name = NULL) +
   scale_linetype_manual(values = c("solid", "solid", "dashed"), name = NULL) +
-  labs(title = "One wrong value (2 °C in 1950), with and without robustness rounds", x = NULL, y = "°C") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "One wrong value (2 °C in 1950), with and without robustness rounds",
+    x = NULL,
+    y = "°C"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Without the rounds the curve has a bump of `r f2(at_1950[["with the error, not robust"]] - at_1950[["correct data"]])` °C. With them, it differs by `r f2(abs(at_1950[["with the error, robust"]] - at_1950[["correct data"]]))` °C. But robustness is not always what you want: if the strange value is **real**, such as the year of a volcanic eruption, the robust line hides it.
@@ -433,12 +493,19 @@ The report (APA 7th edition) must contain everything that is needed to make the 
 ```{r apa_numbers}
 show_years <- c(1900, 1920, 1940, 1960, 1980, 2000, max(earth$year))
 apa_table <- data.frame(
-  Year    = show_years,
+  Year = show_years,
   Anomaly = f2(earth$temp[match(show_years, earth$year)]),
-  L10     = f2(ours[match(show_years, earth$year)]),
-  L30     = f2(pred$fit[match(show_years, earth$year)]),
-  CI      = paste0("[", f2(band$low[match(show_years, earth$year)]), ", ", f2(band$high[match(show_years, earth$year)]), "]"),
-  rate    = f2(warming$rate[match(show_years, earth$year)]))
+  L10 = f2(ours[match(show_years, earth$year)]),
+  L30 = f2(pred$fit[match(show_years, earth$year)]),
+  CI = paste0(
+    "[",
+    f2(band$low[match(show_years, earth$year)]),
+    ", ",
+    f2(band$high[match(show_years, earth$year)]),
+    "]"
+  ),
+  rate = f2(warming$rate[match(show_years, earth$year)])
+)
 ```
 
 **Method** (data analysis):

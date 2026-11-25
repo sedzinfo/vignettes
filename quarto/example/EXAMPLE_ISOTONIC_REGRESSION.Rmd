@@ -31,7 +31,8 @@ f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
 f4   <- function(x) formatC(x, format = "f", digits = 4, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -44,14 +45,28 @@ pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%
 The site Football-Data publishes results and odds as one CSV file per league and season, free and with no login. We take ten seasons of the first division of six countries, and the odds of one bookmaker (Bet365).
 
 ```{r download}
-leagues <- c(England = "E0", Germany = "D1", Spain = "SP1", Italy = "I1", France = "F1", Greece = "G1")
-seasons <- c("1516", "1617", "1718", "1819", "1920", "2021", "2122", "2223", "2324", "2425")   # 2015-16 to 2024-25
+leagues <- c(
+  England = "E0",
+  Germany = "D1",
+  Spain = "SP1",
+  Italy = "I1",
+  France = "F1",
+  Greece = "G1"
+)
+# 2015-16 to 2024-25
+seasons <- c("1516", "1617", "1718", "1819", "1920", "2021", "2122", "2223", "2324", "2425")
 
 one_file <- function(country, season) {
   url <- paste0("https://www.football-data.co.uk/mmz4281/", season, "/", leagues[[country]], ".csv")
-  d   <- read.csv(url, fileEncoding = "latin1")
-  data.frame(country, season, result = d$FTR,
-             odds_home = as.numeric(d$B365H), odds_draw = as.numeric(d$B365D), odds_away = as.numeric(d$B365A))
+  d <- read.csv(url, fileEncoding = "latin1")
+  data.frame(
+    country,
+    season,
+    result = d$FTR,
+    odds_home = as.numeric(d$B365H),
+    odds_draw = as.numeric(d$B365D),
+    odds_away = as.numeric(d$B365A)
+  )
 }
 matches <- do.call(rbind, lapply(names(leagues), function(country)
   do.call(rbind, lapply(seasons, function(s) one_file(country, s)))))
@@ -86,7 +101,11 @@ The usual way to check is to make bins: all the matches with 0 to 10%, with 10 t
 ```{r look}
 binned <- function(width) {
   bin <- cut(matches$p, seq(0, 1, by = width))
-  d <- data.frame(p = tapply(matches$p, bin, mean), y = tapply(matches$y, bin, mean), n = as.vector(table(bin)))
+  d <- data.frame(
+    p = tapply(matches$p, bin, mean),
+    y = tapply(matches$y, bin, mean),
+    n = as.vector(table(bin))
+  )
   d[d$n > 0, ]
 }
 bins <- rbind(cbind(binned(0.10), width = "10 bins"), cbind(binned(0.02), width = "50 bins"))
@@ -123,16 +142,23 @@ If the data are already in order, then $\mu_i = y_i$ and we are done. If two nei
 
 ```{r pava}
 pava <- function(y, w = rep(1, length(y)), trace = FALSE) {
-  value <- numeric(0); weight <- numeric(0); size <- integer(0)      # the blocks built so far
+  value <- numeric(0)
+  weight <- numeric(0)
+  size <- integer(0) # the blocks built so far
   for (i in seq_along(y)) {
-    value <- c(value, y[i]); weight <- c(weight, w[i]); size <- c(size, 1L)
+    value <- c(value, y[i])
+    weight <- c(weight, w[i])
+    size <- c(size, 1L)
     # as long as the last block is below the one before it, pool the two into their weighted mean
     while (length(value) > 1 && value[length(value) - 1] >= value[length(value)]) {
       k <- length(value)
-      value[k - 1]  <- (weight[k - 1] * value[k - 1] + weight[k] * value[k]) / (weight[k - 1] + weight[k])
+      value[k - 1] <- (weight[k - 1] * value[k - 1] + weight[k] * value[k]) /
+        (weight[k - 1] + weight[k])
       weight[k - 1] <- weight[k - 1] + weight[k]
-      size[k - 1]   <- size[k - 1] + size[k]
-      value <- value[-k]; weight <- weight[-k]; size <- size[-k]
+      size[k - 1] <- size[k - 1] + size[k]
+      value <- value[-k]
+      weight <- weight[-k]
+      size <- size[-k]
     }
     if (trace) cat("after value", i, ":", format(rep(round(value, 2), size)), "\n")
   }
@@ -192,7 +218,11 @@ The `r num(length(y))` matches became `r n_blocks` blocks. The same from our own
 ```{r same_fit}
 different <- unique(p)                                      # p is sorted already
 which_one <- match(p, different)
-ties <- data.frame(p = different, y = as.vector(tapply(y, which_one, mean)), n = tabulate(which_one))
+ties <- data.frame(
+  p = different,
+  y = as.vector(tapply(y, which_one, mean)),
+  n = tabulate(which_one)
+)
 by_hand <- pava(ties$y, ties$n)
 package <- gpava(z = ties$p, y = ties$y, weights = ties$n)$x
 c(different_probabilities = nrow(ties),
@@ -216,11 +246,19 @@ step <- data.frame(p = p, fit = fitted_iso)
 ggplot(step, aes(p, fit)) +
   geom_abline(linetype = "dashed", colour = "grey50") +
   geom_step(colour = "#2a78d6", linewidth = 0.9) +
-  geom_rug(data = step[seq(1, nrow(step), by = 10), ], aes(x = p), inherit.aes = FALSE, alpha = 0.1) +
+  geom_rug(
+    data = step[seq(1, nrow(step), by = 10), ],
+    aes(x = p),
+    inherit.aes = FALSE,
+    alpha = 0.1
+  ) +
   coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(title = "Isotonic regression of the result on the implied probability",
-       subtitle = "Dashed: perfect calibration. The ticks show where the matches are (one in ten)",
-       x = "bookmaker's probability of a home win", y = "fitted probability of a home win") +
+  labs(
+    title = "Isotonic regression of the result on the implied probability",
+    subtitle = "Dashed: perfect calibration. The ticks show where the matches are (one in ten)",
+    x = "bookmaker's probability of a home win",
+    y = "fitted probability of a home win"
+  ) +
   theme_bw()
 
 at <- function(q) approx(p, fitted_iso, xout = q, method = "constant", rule = 2, ties = "ordered")$y
@@ -239,8 +277,10 @@ The fit has no standard errors. And a step function that follows the noise will 
 set.seed(7)
 reps <- 500
 grid <- seq(0.06, 0.90, by = 0.01)
-curve_at <- function(yy) approx(p, isoreg(p, yy)$yf, xout = grid, method = "constant", rule = 2, ties = "ordered")$y
-under_null <- replicate(reps, curve_at(rbinom(length(p), 1, p)))          # if the bookmaker were right
+curve_at <- function(yy) {
+  approx(p, isoreg(p, yy)$yf, xout = grid, method = "constant", rule = 2, ties = "ordered")$y
+}
+under_null <- replicate(reps, curve_at(rbinom(length(p), 1, p))) # if the bookmaker were right
 band <- data.frame(p = grid, lower = apply(under_null, 1, quantile, 0.05),
                    upper = apply(under_null, 1, quantile, 0.95), fit = curve_at(y))
 outside <- mean(band$fit < band$lower | band$fit > band$upper)
@@ -276,10 +316,19 @@ $$\underbrace{\text{Brier}(p)}_{\text{the score}} = \underbrace{\text{Brier}(p) 
 
 ```{r decomposition}
 decompose <- function(p, y) {
-  o  <- order(p); p <- p[o]; y <- y[o]
+  o <- order(p)
+  p <- p[o]
+  y <- y[o]
   mu <- isoreg(p, y)$yf
-  brier <- mean((p - y)^2); best <- mean((mu - y)^2); constant <- mean((mean(y) - y)^2)
-  c(brier = brier, miscalibration = brier - best, discrimination = constant - best, uncertainty = constant)
+  brier <- mean((p - y)^2)
+  best <- mean((mu - y)^2)
+  constant <- mean((mean(y) - y)^2)
+  c(
+    brier = brier,
+    miscalibration = brier - best,
+    discrimination = constant - best,
+    uncertainty = constant
+  )
 }
 all_matches <- decompose(p, y)
 round(all_matches, 4)
@@ -317,16 +366,29 @@ curves$country <- factor(curves$country, levels = names(leagues))
 ggplot(curves, aes(p, fit)) +
   geom_abline(linetype = "dashed", colour = "grey50") +
   geom_step(aes(colour = country == "Greece"), linewidth = 0.8) +
-  facet_wrap(~ country) +
+  facet_wrap(~country) +
   scale_colour_manual(values = c(`TRUE` = "#eb6834", `FALSE` = "#2a78d6"), guide = "none") +
   coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
-  labs(title = "The same fit in each country", x = "bookmaker's probability of a home win", y = "fitted probability") +
+  labs(
+    title = "The same fit in each country",
+    x = "bookmaker's probability of a home win",
+    y = "fitted probability"
+  ) +
   theme_bw()
 
 greek <- by_country[by_country$country == "Greece", ]
 others <- by_country[by_country$country != "Greece", ]
 gr <- matches[matches$country == "Greece", ]
-gr_at <- function(q) approx(sort(gr$p), isoreg(gr$p, gr$y)$yf, xout = q, method = "constant", rule = 2, ties = "ordered")$y
+gr_at <- function(q) {
+  approx(
+    sort(gr$p),
+    isoreg(gr$p, gr$y)$yf,
+    xout = q,
+    method = "constant",
+    rule = 2,
+    ties = "ordered"
+  )$y
+}
 ```
 
 One league is different. In **Greece** the miscalibration is `r f4(greek$miscalibration)`, `r f1(greek$miscalibration / greek$expected)` times what chance would give, where the other five have between `r f4(min(others$miscalibration))` and `r f4(max(others$miscalibration))`. When the odds said 80% for a Greek home team, it won `r pct(gr_at(0.8))` of the matches; when they said 45%, `r pct(gr_at(0.45))`. The same league has the largest discrimination (`r f3(greek$discrimination)`): a few teams are far stronger than the rest, and the odds followed this, but not far enough. Two explanations fit: fewer people bet on this league, so the odds are less sharp, and the margin there may be spread differently. The data cannot tell which.
@@ -341,13 +403,16 @@ The fitted curve is also a **recalibration**: feed it a bookmaker's probability 
 train <- subset(matches, season %in% seasons[1:8])
 test  <- subset(matches, season %in% seasons[9:10])
 
-isotonic_fit <- function(d) {                 # returns a function: probability in, recalibrated probability out
-  o  <- order(d$p)
+isotonic_fit <- function(d) {
+  # returns a function: probability in, recalibrated probability out
+  o <- order(d$p)
   mu <- isoreg(d$p, d$y)$yf
-  function(q) approx(d$p[o], mu, xout = q, rule = 2, ties = mean)$y      # straight lines between the points
+  # straight lines between the points
+  function(q) approx(d$p[o], mu, xout = q, rule = 2, ties = mean)$y
 }
 logit <- function(q) log(q / (1 - q))
-logistic_fit <- function(d) {                 # logistic regression of the result on the logit of the probability
+logistic_fit <- function(d) {
+  # logistic regression of the result on the logit of the probability
   m <- glm(y ~ logit(p), family = binomial, data = d)
   function(q) unname(predict(m, data.frame(p = q), type = "response"))
 }
@@ -356,19 +421,32 @@ judge <- function(tr, te) c(matches = nrow(te),
                             bookmaker = brier(te$p, te$y),
                             isotonic  = brier(isotonic_fit(tr)(te$p), te$y),
                             logistic  = brier(logistic_fit(tr)(te$p), te$y))
-repair <- rbind(`all six countries` = judge(train, test),
-                `Greece only`       = judge(subset(train, country == "Greece"), subset(test, country == "Greece")))
+repair <- rbind(
+  `all six countries` = judge(train, test),
+  `Greece only` = judge(subset(train, country == "Greece"), subset(test, country == "Greece"))
+)
 round(repair, 4)
 
-# is the gain more than luck? the change of the squared error, match by match, with its standard error
+# is the gain more than luck? the change of the squared error, match by match, with its standard
+# error
 gain <- function(tr, te, method) {
   change <- (method(tr)(te$p) - te$y)^2 - (te$p - te$y)^2
   c(change = mean(change), SE = sd(change) / sqrt(length(change)))
 }
-gains <- rbind(all_isotonic    = gain(train, test, isotonic_fit),
-               all_logistic    = gain(train, test, logistic_fit),
-               greece_isotonic = gain(subset(train, country == "Greece"), subset(test, country == "Greece"), isotonic_fit),
-               greece_logistic = gain(subset(train, country == "Greece"), subset(test, country == "Greece"), logistic_fit))
+gains <- rbind(
+  all_isotonic = gain(train, test, isotonic_fit),
+  all_logistic = gain(train, test, logistic_fit),
+  greece_isotonic = gain(
+    subset(train, country == "Greece"),
+    subset(test, country == "Greece"),
+    isotonic_fit
+  ),
+  greece_logistic = gain(
+    subset(train, country == "Greece"),
+    subset(test, country == "Greece"),
+    logistic_fit
+  )
+)
 round(gains, 5)
 
 logit_coefs <- coef(glm(y ~ logit(p), family = binomial, data = train))

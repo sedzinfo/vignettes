@@ -33,7 +33,9 @@ library(fixest)      # feols(): regression with fixed effects and clustered erro
 # number formats for the text
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
-pval <- function(p) ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+pval <- function(p) {
+  ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+}
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -44,19 +46,33 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 
 ```{r download}
 zip_file <- tempfile(fileext = ".zip")
-download.file("https://davidcard.berkeley.edu/data_sets/njmin.zip", zip_file, mode = "wb", quiet = TRUE)
+download.file(
+  "https://davidcard.berkeley.edu/data_sets/njmin.zip",
+  zip_file,
+  mode = "wb",
+  quiet = TRUE
+)
 data_file <- unzip(zip_file, "public.dat", exdir = tempfile("njmin"))
-names_in_codebook <- c("sheet", "chain", "co_owned", "state", "southj", "centralj", "northj", "pa1", "pa2", "shore", "ncalls", "empft", "emppt", "nmgrs", "wage_st", "inctime", "firstinc", "bonus", "pctaff", "meals", "open", "hrsopen", "psoda", "pfry", "pentree", "nregs", "nregs11",
-  "type2", "status2", "date2", "ncalls2", "empft2", "emppt2", "nmgrs2", "wage_st2", "inctime2", "firstin2", "special2", "meals2", "open2r", "hrsopen2", "psoda2", "pfry2", "pentree2", "nregs2", "nregs112")
+names_in_codebook <- c(
+  "sheet", "chain", "co_owned", "state", "southj", "centralj", "northj", "pa1", "pa2", "shore",
+  "ncalls", "empft", "emppt", "nmgrs", "wage_st", "inctime", "firstinc", "bonus", "pctaff", "meals",
+  "open", "hrsopen", "psoda", "pfry", "pentree", "nregs", "nregs11", "type2", "status2", "date2",
+  "ncalls2", "empft2", "emppt2", "nmgrs2", "wage_st2", "inctime2", "firstin2", "special2", "meals2",
+  "open2r", "hrsopen2", "psoda2", "pfry2", "pentree2", "nregs2", "nregs112"
+)
 stores <- read.table(data_file, col.names = names_in_codebook, na.strings = ".")
-stores$id  <- seq_len(nrow(stores))                                                  # (one sheet number is used twice)
-stores$nj  <- stores$state                                                           # 1 New Jersey, 0 Pennsylvania
-stores$fte1 <- stores$empft  + stores$nmgrs  + 0.5 * stores$emppt                    # full-time equivalents, first interview
-stores$fte2 <- stores$empft2 + stores$nmgrs2 + 0.5 * stores$emppt2                   # second interview
-table(state = ifelse(stores$nj == 1, "New Jersey", "Pennsylvania"), second_interview = stores$status2)
+stores$id <- seq_len(nrow(stores)) # (one sheet number is used twice)
+stores$nj <- stores$state # 1 New Jersey, 0 Pennsylvania
+# full-time equivalents, first interview
+stores$fte1 <- stores$empft + stores$nmgrs + 0.5 * stores$emppt
+stores$fte2 <- stores$empft2 + stores$nmgrs2 + 0.5 * stores$emppt2 # second interview
+table(
+  state = ifelse(stores$nj == 1, "New Jersey", "Pennsylvania"),
+  second_interview = stores$status2
+)
 ```
 
-Card and Krueger telephoned `r nrow(stores)` restaurants of four chains (Burger King, KFC, Roy Rogers, Wendy's), `r sum(stores$nj == 1)` in New Jersey and `r sum(stores$nj == 0)` in eastern Pennsylvania. The first interview was in February and March 1992, before the law, the second in November and December. The outcome is employment in **full-time equivalents** (FTE): full-time employees and managers count 1, part-time employees a half. The six restaurants that had closed for good (status 3) have an employment of zero in the second interview. The file is on David Card's web page.
+Card and Krueger interviewed `r nrow(stores)` restaurants of four chains (Burger King, KFC, Roy Rogers, Wendy's), `r sum(stores$nj == 1)` in New Jersey and `r sum(stores$nj == 0)` in eastern Pennsylvania. The first interview was in February and March 1992, before the law, the second in November and December. The outcome is employment in **full-time equivalents** (FTE): full-time employees and managers count 1, part-time employees a half. The six restaurants that had closed for good (status 3) have an employment of zero in the second interview. The file is on David Card's web page.
 
 ---
 
@@ -65,12 +81,35 @@ Card and Krueger telephoned `r nrow(stores)` restaurants of four chains (Burger 
 Did the law do anything to the wages? The starting wage in both interviews:
 
 ```{r wages_chart, fig.height = 4.5}
-w <- rbind(data.frame(state = stores$nj, wage = stores$wage_st, wave = "before"), data.frame(state = stores$nj, wage = stores$wage_st2, wave = "after"))
-w$state <- ifelse(w$state == 1, "New Jersey", "Pennsylvania"); w$wave <- factor(w$wave, levels = c("before", "after")); w <- subset(w, !is.na(wage))
+w <- rbind(
+  data.frame(state = stores$nj, wage = stores$wage_st, wave = "before"),
+  data.frame(state = stores$nj, wage = stores$wage_st2, wave = "after")
+)
+w$state <- ifelse(w$state == 1, "New Jersey", "Pennsylvania")
+w$wave <- factor(w$wave, levels = c("before", "after"))
+w <- subset(w, !is.na(wage))
 w$share <- ave(w$wage, w$state, w$wave, FUN = function(v) 1 / length(v))
-ggplot(w, aes(wage, weight = share, fill = state)) + geom_histogram(breaks = seq(4.2, 5.8, by = 0.1), colour = "white") + facet_grid(state ~ wave) + scale_fill_manual(values = c("#2a78d6", "#eb6834"), guide = "none") + scale_y_continuous(labels = scales::percent) +
-  labs(title = "Starting wages before and after the law", x = "starting wage (dollars per hour)", y = "share of restaurants") + theme_bw()
-wage_means <- with(stores, rbind(`New Jersey` = c(before = mean(wage_st[nj == 1], na.rm = TRUE), after = mean(wage_st2[nj == 1], na.rm = TRUE)), Pennsylvania = c(mean(wage_st[nj == 0], na.rm = TRUE), mean(wage_st2[nj == 0], na.rm = TRUE))))
+ggplot(w, aes(wage, weight = share, fill = state)) +
+  geom_histogram(breaks = seq(4.2, 5.8, by = 0.1), colour = "white") +
+  facet_grid(state ~ wave) +
+  scale_fill_manual(values = c("#2a78d6", "#eb6834"), guide = "none") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(
+    title = "Starting wages before and after the law",
+    x = "starting wage (dollars per hour)",
+    y = "share of restaurants"
+  ) +
+  theme_bw()
+wage_means <- with(
+  stores,
+  rbind(
+    `New Jersey` = c(
+      before = mean(wage_st[nj == 1], na.rm = TRUE),
+      after = mean(wage_st2[nj == 1], na.rm = TRUE)
+    ),
+    Pennsylvania = c(mean(wage_st[nj == 0], na.rm = TRUE), mean(wage_st2[nj == 0], na.rm = TRUE))
+  )
+)
 round(wage_means, 2)
 at_min <- mean(abs(stores$wage_st2[stores$nj == 1] - 5.05) < 0.001, na.rm = TRUE)
 ```
@@ -86,7 +125,16 @@ It did. Before, the two states looked the same. After, `r pct(at_min)` of the re
 $$\widehat{DiD} = (\bar y_{NJ,\text{after}} - \bar y_{NJ,\text{before}}) - (\bar y_{PA,\text{after}} - \bar y_{PA,\text{before}})$$
 
 ```{r four_means}
-m <- with(stores, rbind(`New Jersey` = c(before = mean(fte1[nj == 1], na.rm = TRUE), after = mean(fte2[nj == 1], na.rm = TRUE)), Pennsylvania = c(mean(fte1[nj == 0], na.rm = TRUE), mean(fte2[nj == 0], na.rm = TRUE))))
+m <- with(
+  stores,
+  rbind(
+    `New Jersey` = c(
+      before = mean(fte1[nj == 1], na.rm = TRUE),
+      after = mean(fte2[nj == 1], na.rm = TRUE)
+    ),
+    Pennsylvania = c(mean(fte1[nj == 0], na.rm = TRUE), mean(fte2[nj == 0], na.rm = TRUE))
+  )
+)
 cbind(m, change = m[, "after"] - m[, "before"])
 did_hand <- diff(m["New Jersey", ]) - diff(m["Pennsylvania", ])
 c(did = did_hand[[1]])
@@ -105,12 +153,35 @@ $\alpha$ is Pennsylvania before, $\beta$ the difference between the states befor
 $$V = \frac{G}{G-1}\,\frac{N-1}{N-K}\,(X^\top X)^{-1}\Big(\sum_g X_g^\top e_g e_g^\top X_g\Big)(X^\top X)^{-1}$$
 
 ```{r regression}
-long <- rbind(with(stores, data.frame(id, nj, after = 0, fte = fte1)), with(stores, data.frame(id, nj, after = 1, fte = fte2))); long <- subset(long, !is.na(fte))
+long <- rbind(
+  with(stores, data.frame(id, nj, after = 0, fte = fte1)),
+  with(stores, data.frame(id, nj, after = 1, fte = fte2))
+)
+long <- subset(long, !is.na(fte))
 fit <- lm(fte ~ nj * after, long)
-X <- model.matrix(fit); scores <- rowsum(X * residuals(fit), long$id); G <- nrow(scores); N <- nrow(X); K <- ncol(X)
-V <- G / (G - 1) * (N - 1) / (N - K) * solve(crossprod(X)) %*% crossprod(scores) %*% solve(crossprod(X))
+X <- model.matrix(fit)
+scores <- rowsum(X * residuals(fit), long$id)
+G <- nrow(scores)
+N <- nrow(X)
+K <- ncol(X)
+V <- G /
+  (G - 1) *
+  (N - 1) /
+  (N - K) *
+  solve(crossprod(X)) %*% crossprod(scores) %*% solve(crossprod(X))
 clustered <- feols(fte ~ nj * after, long, cluster = ~ id)
-rbind(estimate = c(lm = coef(fit)[["nj:after"]], by_hand = coef(fit)[["nj:after"]], feols = coef(clustered)[["nj:after"]]), SE = c(sqrt(vcov(fit)["nj:after", "nj:after"]), sqrt(V["nj:after", "nj:after"]), se(clustered)[["nj:after"]]))
+rbind(
+  estimate = c(
+    lm = coef(fit)[["nj:after"]],
+    by_hand = coef(fit)[["nj:after"]],
+    feols = coef(clustered)[["nj:after"]]
+  ),
+  SE = c(
+    sqrt(vcov(fit)["nj:after", "nj:after"]),
+    sqrt(V["nj:after", "nj:after"]),
+    se(clustered)[["nj:after"]]
+  )
+)
 ```
 
 The usual SE (`r f2(sqrt(vcov(fit)["nj:after", "nj:after"]))`) is too large here. It does not know that a restaurant is compared with itself.
@@ -123,8 +194,15 @@ With two periods one can also take the **change** of each restaurant and compare
 both <- subset(stores, !is.na(fte1) & !is.na(fte2)); both$change <- both$fte2 - both$fte1
 change_fit <- feols(change ~ nj, both, vcov = "hetero")
 twfe_fit   <- feols(fte ~ nj:after | id + after, subset(long, id %in% both$id), cluster = ~ id)
-v_hand <- with(both, sqrt(var(change[nj == 1]) / sum(nj == 1) + var(change[nj == 0]) / sum(nj == 0)))
-rbind(`regression of the changes` = c(estimate = coef(change_fit)[["nj"]], SE = se(change_fit)[["nj"]]), `two-way fixed effects` = c(coef(twfe_fit)[["nj:after"]], se(twfe_fit)[["nj:after"]]), `two means, by hand` = c(with(both, mean(change[nj == 1]) - mean(change[nj == 0])), v_hand))
+v_hand <- with(
+  both,
+  sqrt(var(change[nj == 1]) / sum(nj == 1) + var(change[nj == 0]) / sum(nj == 0))
+)
+rbind(
+  `regression of the changes` = c(estimate = coef(change_fit)[["nj"]], SE = se(change_fit)[["nj"]]),
+  `two-way fixed effects` = c(coef(twfe_fit)[["nj:after"]], se(twfe_fit)[["nj:after"]]),
+  `two means, by hand` = c(with(both, mean(change[nj == 1]) - mean(change[nj == 0])), v_hand)
+)
 ```
 
 `r nrow(both)` of the `r nrow(stores)` restaurants have both values, and the result is `r f2(coef(change_fit)[["nj"]])` (*SE* `r f2(se(change_fit)[["nj"]])`).
@@ -138,11 +216,56 @@ $$E[y_{\text{after}}(0) - y_{\text{before}}(0) \mid NJ] = E[y_{\text{after}}(0) 
 ($y(0)$: employment without the law.)
 
 ```{r trends_chart, fig.height = 4.5}
-lines <- data.frame(state = rep(c("New Jersey", "Pennsylvania", "New Jersey without the law (assumed)"), each = 2), time = rep(0:1, 3), fte = c(m["New Jersey", ], m["Pennsylvania", ], m["New Jersey", "before"], m["New Jersey", "before"] + diff(m["Pennsylvania", ])))
-ggplot(lines, aes(time, fte, colour = state, linetype = state)) + geom_line(linewidth = 1) + geom_point(size = 2.6) + scale_x_continuous(breaks = 0:1, labels = c("February 1992", "November 1992"), limits = c(-0.1, 1.15)) +
-  scale_colour_manual(values = c("New Jersey" = "#2a78d6", "Pennsylvania" = "#eb6834", "New Jersey without the law (assumed)" = "#2a78d6"), name = NULL) + scale_linetype_manual(values = c("New Jersey" = "solid", "Pennsylvania" = "solid", "New Jersey without the law (assumed)" = "dashed"), name = NULL) +
-  annotate("segment", x = 1.06, xend = 1.06, y = lines$fte[6], yend = lines$fte[2], arrow = arrow(length = unit(0.2, "cm"))) + annotate("text", x = 1.09, y = mean(lines$fte[c(2, 6)]), label = "DiD", hjust = 0) +
-  labs(title = "The four means, and what the assumption adds", x = NULL, y = "full-time equivalents per restaurant") + theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+lines <- data.frame(
+  state = rep(c("New Jersey", "Pennsylvania", "New Jersey without the law (assumed)"), each = 2),
+  time = rep(0:1, 3),
+  fte = c(
+    m["New Jersey", ],
+    m["Pennsylvania", ],
+    m["New Jersey", "before"],
+    m["New Jersey", "before"] + diff(m["Pennsylvania", ])
+  )
+)
+ggplot(lines, aes(time, fte, colour = state, linetype = state)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.6) +
+  scale_x_continuous(
+    breaks = 0:1,
+    labels = c("February 1992", "November 1992"),
+    limits = c(-0.1, 1.15)
+  ) +
+  scale_colour_manual(
+    values = c(
+      "New Jersey" = "#2a78d6",
+      "Pennsylvania" = "#eb6834",
+      "New Jersey without the law (assumed)" = "#2a78d6"
+    ),
+    name = NULL
+  ) +
+  scale_linetype_manual(
+    values = c(
+      "New Jersey" = "solid",
+      "Pennsylvania" = "solid",
+      "New Jersey without the law (assumed)" = "dashed"
+    ),
+    name = NULL
+  ) +
+  annotate(
+    "segment",
+    x = 1.06,
+    xend = 1.06,
+    y = lines$fte[6],
+    yend = lines$fte[2],
+    arrow = arrow(length = unit(0.2, "cm"))
+  ) +
+  annotate("text", x = 1.09, y = mean(lines$fte[c(2, 6)]), label = "DiD", hjust = 0) +
+  labs(
+    title = "The four means, and what the assumption adds",
+    x = NULL,
+    y = "full-time equivalents per restaurant"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 Note where the result comes from. New Jersey hardly moved. The effect is mostly the **fall in Pennsylvania**, which New Jersey is supposed to have been spared.
@@ -167,12 +290,30 @@ The law is estimated to have **raised** employment by `r f2(coef(clustered)[["nj
 Pennsylvania need not be the only comparison. In New Jersey some restaurants already paid \$5 or more. The law meant nothing to them. Card and Krueger used the **gap**: by how much a restaurant had to raise its starting wage to reach the new minimum.
 
 ```{r within_nj}
-stores$gap <- with(stores, ifelse(nj == 0, 0, pmax(0, (5.05 - wage_st) / wage_st))); both$gap <- stores$gap[match(both$id, stores$id)]
-gap_all <- feols(change ~ gap, both, vcov = "hetero"); gap_nj <- feols(change ~ gap, subset(both, nj == 1), vcov = "hetero")
-both$wage_group <- cut(both$wage_st, c(0, 4.251, 4.999, 10), labels = c("4.25", "4.26 to 4.99", "5.00 or more"))
-within <- with(subset(both, nj == 1 & !is.na(wage_group)), data.frame(starting_wage_before = levels(wage_group), restaurants = as.numeric(table(wage_group)), mean_before = as.numeric(tapply(fte1, wage_group, mean)), mean_change = as.numeric(tapply(change, wage_group, mean)), se = as.numeric(tapply(change, wage_group, function(v) sd(v) / sqrt(length(v))))))
+stores$gap <- with(stores, ifelse(nj == 0, 0, pmax(0, (5.05 - wage_st) / wage_st)))
+both$gap <- stores$gap[match(both$id, stores$id)]
+gap_all <- feols(change ~ gap, both, vcov = "hetero")
+gap_nj <- feols(change ~ gap, subset(both, nj == 1), vcov = "hetero")
+both$wage_group <- cut(
+  both$wage_st,
+  c(0, 4.251, 4.999, 10),
+  labels = c("4.25", "4.26 to 4.99", "5.00 or more")
+)
+within <- with(
+  subset(both, nj == 1 & !is.na(wage_group)),
+  data.frame(
+    starting_wage_before = levels(wage_group),
+    restaurants = as.numeric(table(wage_group)),
+    mean_before = as.numeric(tapply(fte1, wage_group, mean)),
+    mean_change = as.numeric(tapply(change, wage_group, mean)),
+    se = as.numeric(tapply(change, wage_group, function(v) sd(v) / sqrt(length(v))))
+  )
+)
 print(data.frame(within[1:2], round(within[3:5], 2)), row.names = FALSE)
-rbind(all_restaurants = c(slope = coef(gap_all)[["gap"]], SE = se(gap_all)[["gap"]]), new_jersey_only = c(coef(gap_nj)[["gap"]], se(gap_nj)[["gap"]]))
+rbind(
+  all_restaurants = c(slope = coef(gap_all)[["gap"]], SE = se(gap_all)[["gap"]]),
+  new_jersey_only = c(coef(gap_nj)[["gap"]], se(gap_nj)[["gap"]])
+)
 mean_gap <- mean(stores$gap[stores$nj == 1], na.rm = TRUE)
 ```
 
@@ -181,14 +322,37 @@ In New Jersey, employment changed by `r f2(within$mean_change[1])` in the restau
 ### Other outcomes, other definitions
 
 ```{r variants}
-change_in <- function(a, b) { d <- data.frame(nj = stores$nj, change = b - a); f <- feols(change ~ nj, d, vcov = "hetero"); c(estimate = coef(f)[["nj"]], SE = se(f)[["nj"]], p = pvalue(f)[["nj"]], n = nobs(f)) }
-fte_w <- function(weight) change_in(with(stores, empft + nmgrs + weight * emppt), with(stores, empft2 + nmgrs2 + weight * emppt2))
-pos <- function(v) ifelse(v > 0, log(v), NA); open_again <- ifelse(stores$status2 == 3, NA, stores$fte2)
-variants <- rbind(`FTE, part-time counts 0.5` = fte_w(0.5), `FTE, part-time counts 0.25` = fte_w(0.25), `FTE, part-time counts 1 (heads)` = fte_w(1), `FTE, closed restaurants left out` = change_in(stores$fte1, open_again), `log FTE` = change_in(pos(stores$fte1), pos(stores$fte2)),
-                  `full-time employees` = change_in(stores$empft, stores$empft2), `part-time employees` = change_in(stores$emppt, stores$emppt2), `hours open per day` = change_in(stores$hrsopen, stores$hrsopen2),
-                  `starting wage (dollars)` = change_in(stores$wage_st, stores$wage_st2), `log price of a full meal` = change_in(with(stores, log(psoda + pfry + pentree)), with(stores, log(psoda2 + pfry2 + pentree2))))
+change_in <- function(a, b) {
+  d <- data.frame(nj = stores$nj, change = b - a)
+  f <- feols(change ~ nj, d, vcov = "hetero")
+  c(estimate = coef(f)[["nj"]], SE = se(f)[["nj"]], p = pvalue(f)[["nj"]], n = nobs(f))
+}
+fte_w <- function(weight) {
+  change_in(
+    with(stores, empft + nmgrs + weight * emppt),
+    with(stores, empft2 + nmgrs2 + weight * emppt2)
+  )
+}
+pos <- function(v) ifelse(v > 0, log(v), NA)
+open_again <- ifelse(stores$status2 == 3, NA, stores$fte2)
+variants <- rbind(
+  `FTE, part-time counts 0.5` = fte_w(0.5),
+  `FTE, part-time counts 0.25` = fte_w(0.25),
+  `FTE, part-time counts 1 (heads)` = fte_w(1),
+  `FTE, closed restaurants left out` = change_in(stores$fte1, open_again),
+  `log FTE` = change_in(pos(stores$fte1), pos(stores$fte2)),
+  `full-time employees` = change_in(stores$empft, stores$empft2),
+  `part-time employees` = change_in(stores$emppt, stores$emppt2),
+  `hours open per day` = change_in(stores$hrsopen, stores$hrsopen2),
+  `starting wage (dollars)` = change_in(stores$wage_st, stores$wage_st2),
+  `log price of a full meal` = change_in(
+    with(stores, log(psoda + pfry + pentree)),
+    with(stores, log(psoda2 + pfry2 + pentree2))
+  )
+)
 round(variants, 3)
-median_did <- unname(coef(quantreg::rq(change ~ nj, data = both))[2]); c(difference_of_the_median_changes = median_did)
+median_did <- unname(coef(quantreg::rq(change ~ nj, data = both))[2])
+c(difference_of_the_median_changes = median_did)
 v <- function(name, what) variants[name, what]
 ```
 
@@ -206,7 +370,11 @@ With several periods before the law, one could look whether the two states moved
 
 ```{r trend_sensitivity}
 est <- coef(clustered)[["nj:after"]]; se_cl <- se(clustered)[["nj:after"]]
-c(d_that_removes_the_significance = est - 1.96 * se_cl, d_that_removes_the_effect = est, change_in_Pennsylvania = diff(m["Pennsylvania", ])[[1]])
+c(
+  d_that_removes_the_significance = est - 1.96 * se_cl,
+  d_that_removes_the_effect = est,
+  change_in_Pennsylvania = diff(m["Pennsylvania", ])[[1]]
+)
 ```
 
 A difference in trends of only `r f2(est - 1.96 * se_cl)` FTE takes the interval to zero, and one of `r f2(est)` takes the whole effect away. The change in Pennsylvania was `r f2(diff(m["Pennsylvania", ]))`.
@@ -217,10 +385,23 @@ The standard error counted `r num(G)` restaurants. But the law was given to **st
 
 ```{r state_shock, fig.height = 4}
 sig <- seq(0, 2, length.out = 100); sdw <- sqrt(se_cl^2 + 2 * sig^2)
-ggplot(data.frame(sig, lo = est - 1.96 * sdw, hi = est + 1.96 * sdw), aes(sig)) + geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#2a78d6", alpha = 0.25) + geom_hline(yintercept = est, colour = "#2a78d6") + geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "95% interval of the DiD, if states have shocks of their own", x = "standard deviation of the shock of a state (FTE per restaurant)", y = "DiD") + theme_bw()
-sigma_limit <- sqrt(((est / 1.96)^2 - se_cl^2) / 2); interval1 <- est + c(-1.96, 1.96) * sqrt(se_cl^2 + 2)
-c(sigma_at_which_the_interval_reaches_zero = sigma_limit, low_if_sigma_1 = interval1[1], high_if_sigma_1 = interval1[2])
+ggplot(data.frame(sig, lo = est - 1.96 * sdw, hi = est + 1.96 * sdw), aes(sig)) +
+  geom_ribbon(aes(ymin = lo, ymax = hi), fill = "#2a78d6", alpha = 0.25) +
+  geom_hline(yintercept = est, colour = "#2a78d6") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "95% interval of the DiD, if states have shocks of their own",
+    x = "standard deviation of the shock of a state (FTE per restaurant)",
+    y = "DiD"
+  ) +
+  theme_bw()
+sigma_limit <- sqrt(((est / 1.96)^2 - se_cl^2) / 2)
+interval1 <- est + c(-1.96, 1.96) * sqrt(se_cl^2 + 2)
+c(
+  sigma_at_which_the_interval_reaches_zero = sigma_limit,
+  low_if_sigma_1 = interval1[1],
+  high_if_sigma_1 = interval1[2]
+)
 ```
 
 Shocks with an SD of `r f2(sigma_limit)` FTE (`r pct(sigma_limit / m["New Jersey", "before"], 1)` of a restaurant's staff) are enough to take the significance away. And nothing in the data can tell us how large they are, because each state was seen once. With an SD of 1 the interval is [`r f1(interval1[1])`, `r f1(interval1[2])`]. A large loss of jobs is still hard to reconcile with the data; a small one is not. This is the general lesson of Bertrand et al. (2004) as well: cluster at the level at which the treatment was given, and have **many** such clusters.
@@ -231,15 +412,21 @@ The restaurants in Pennsylvania were **larger** at the first interview (`r f1(m[
 
 ```{r ancova}
 ancova <- feols(fte2 ~ nj + fte1, both, vcov = "hetero")
-rbind(`difference in differences` = c(estimate = coef(change_fit)[["nj"]], SE = se(change_fit)[["nj"]]), `adjusted for the first value` = c(coef(ancova)[["nj"]], se(ancova)[["nj"]]))
-c(slope_of_the_first_value = coef(ancova)[["fte1"]], correlation_of_the_two_interviews = with(both, cor(fte1, fte2)))
+rbind(
+  `difference in differences` = c(estimate = coef(change_fit)[["nj"]], SE = se(change_fit)[["nj"]]),
+  `adjusted for the first value` = c(coef(ancova)[["nj"]], se(ancova)[["nj"]])
+)
+c(
+  slope_of_the_first_value = coef(ancova)[["fte1"]],
+  correlation_of_the_two_interviews = with(both, cor(fte1, fte2))
+)
 ```
 
 With the first value as a control, the effect is `r f2(coef(ancova)[["nj"]])` (*SE* `r f2(se(ancova)[["nj"]])`). The two methods answer with different assumptions: DiD says that the states differ **permanently**, and that the difference would have stayed the same; the other says that a restaurant with 20 FTE in New Jersey and one with 20 in Pennsylvania would have had the same future. DiD forces the slope of the first value to be 1; the data say `r f2(coef(ancova)[["fte1"]])`. Neither is right by itself. (The conflict is known as Lord's paradox.)
 
 ### What others found
 
-Neumark and Wascher (2000) collected payroll records of restaurants in the same two states and found a **loss** of jobs in New Jersey. Card and Krueger (2000) answered with official employment records: probably no effect on employment, or a small positive one. How good the interview data are was a part of that debate.
+Neumark and Wascher (2000) collected payroll records of restaurants in the same two states and found a **loss** of jobs in New Jersey. Card and Krueger (2000) answered with official payroll records: employment grew as fast in New Jersey as in Pennsylvania, or slightly faster. How good the interview data are was a part of that debate.
 
 ---
 
@@ -249,15 +436,24 @@ Laws rarely come in one place and on one day. Some states raise the wage in 1990
 
 ```{r staggered}
 set.seed(231); n_unit <- 300; n_time <- 10
-panel <- expand.grid(t = 1:n_time, id = 1:n_unit); panel$first <- rep(c(4, 8, 0), each = n_unit / 3)[panel$id]           # treated from period 4, from period 8, never
+panel <- expand.grid(t = 1:n_time, id = 1:n_unit)
+# treated from period 4, from period 8, never
+panel$first <- rep(c(4, 8, 0), each = n_unit / 3)[panel$id]
 panel$treated <- as.numeric(panel$first > 0 & panel$t >= panel$first)
-panel$effect  <- panel$treated * ifelse(panel$first == 4, 1, 0.3) * (panel$t - panel$first + 1)                          # grows each year; faster in the early group
-unit_level <- rnorm(n_unit, 0, 2) + ifelse(rep(c(4, 8, 0), each = n_unit / 3) == 4, 2, 0); time_level <- cumsum(rnorm(n_time, 0.2, 0.5))
-panel$y <- unit_level[panel$id] + time_level[panel$t] + panel$effect + rnorm(nrow(panel))                                # parallel trends hold exactly
+# grows each year; faster in the early group
+panel$effect <- panel$treated * ifelse(panel$first == 4, 1, 0.3) * (panel$t - panel$first + 1)
+unit_level <- rnorm(n_unit, 0, 2) + ifelse(rep(c(4, 8, 0), each = n_unit / 3) == 4, 2, 0)
+time_level <- cumsum(rnorm(n_time, 0.2, 0.5))
+# parallel trends hold exactly
+panel$y <- unit_level[panel$id] + time_level[panel$t] + panel$effect + rnorm(nrow(panel))
 truth      <- mean(panel$effect[panel$treated == 1])
 twfe       <- feols(y ~ treated | id + t, panel, cluster = ~ id)
 twfe_no_never <- feols(y ~ treated | id + t, subset(panel, first > 0), cluster = ~ id)
-c(true_mean_effect = truth, TWFE = coef(twfe)[["treated"]], TWFE_without_the_never_treated = coef(twfe_no_never)[["treated"]])
+c(
+  true_mean_effect = truth,
+  TWFE = coef(twfe)[["treated"]],
+  TWFE_without_the_never_treated = coef(twfe_no_never)[["treated"]]
+)
 ```
 
 The true mean effect is `r f2(truth)`. Every single effect is positive, and the trends are exactly parallel. TWFE says `r f2(coef(twfe)[["treated"]])`, and without the group that was never treated even `r f2(coef(twfe_no_never)[["treated"]])`.
@@ -268,19 +464,63 @@ $$ATT(g, t) = (\bar y_{g,t} - \bar y_{g,g-1}) - (\bar y_{\text{never},t} - \bar 
 
 ```{r group_time}
 ym <- function(g, t) mean(panel$y[panel$first == g & panel$t == t])
-att <- do.call(rbind, lapply(c(4, 8), function(g) data.frame(group = g, t = g:n_time, by_hand = sapply(g:n_time, function(t) (ym(g, t) - ym(g, g - 1)) - (ym(0, t) - ym(0, g - 1))), truth = sapply(g:n_time, function(t) mean(panel$effect[panel$first == g & panel$t == t])))))
-cs <- did::att_gt(yname = "y", tname = "t", idname = "id", gname = "first", data = panel, control_group = "nevertreated", bstrap = FALSE, cband = FALSE, base_period = "universal")
+att <- do.call(
+  rbind,
+  lapply(c(4, 8), function(g) {
+    data.frame(
+      group = g,
+      t = g:n_time,
+      by_hand = sapply(g:n_time, function(t) (ym(g, t) - ym(g, g - 1)) - (ym(0, t) - ym(0, g - 1))),
+      truth = sapply(g:n_time, function(t) mean(panel$effect[panel$first == g & panel$t == t]))
+    )
+  })
+)
+cs <- did::att_gt(
+  yname = "y",
+  tname = "t",
+  idname = "id",
+  gname = "first",
+  data = panel,
+  control_group = "nevertreated",
+  bstrap = FALSE,
+  cband = FALSE,
+  base_period = "universal"
+)
 att$did_package <- cs$att[match(paste(att$group, att$t), paste(cs$group, cs$t))]
 print(round(att, 2), row.names = FALSE)
 overall <- did::aggte(cs, type = "simple", bstrap = FALSE, cband = FALSE)
-c(mean_by_hand = mean(att$by_hand), did_package = overall$overall.att, SE = overall$overall.se, truth = truth)
+c(
+  mean_by_hand = mean(att$by_hand),
+  did_package = overall$overall.att,
+  SE = overall$overall.se,
+  truth = truth
+)
 ```
 
 ```{r group_time_chart, fig.height = 4}
-es <- data.frame(group = cs$group, t = cs$t, est = cs$att, se = cs$se); es$rel <- es$t - es$group; es$group <- paste("treated from period", es$group); es$se[is.na(es$se)] <- 0
-tr <- data.frame(group = paste("treated from period", att$group), rel = att$t - att$group, truth = att$truth)
-ggplot(es, aes(rel, est)) + geom_hline(yintercept = 0, linetype = "dashed") + geom_vline(xintercept = -0.5, colour = "grey60") + geom_linerange(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), colour = "#2a78d6") + geom_point(colour = "#2a78d6", size = 2) +
-  geom_point(data = tr, aes(rel, truth), shape = 4, colour = "#eb6834", size = 2.4) + facet_wrap(~ group) + labs(title = "Group-time effects, before and after the treatment", subtitle = "Crosses: the truth. Left of the line: there should be nothing", x = "periods since the treatment began", y = "effect") + theme_bw()
+es <- data.frame(group = cs$group, t = cs$t, est = cs$att, se = cs$se)
+es$rel <- es$t - es$group
+es$group <- paste("treated from period", es$group)
+es$se[is.na(es$se)] <- 0
+tr <- data.frame(
+  group = paste("treated from period", att$group),
+  rel = att$t - att$group,
+  truth = att$truth
+)
+ggplot(es, aes(rel, est)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = -0.5, colour = "grey60") +
+  geom_linerange(aes(ymin = est - 1.96 * se, ymax = est + 1.96 * se), colour = "#2a78d6") +
+  geom_point(colour = "#2a78d6", size = 2) +
+  geom_point(data = tr, aes(rel, truth), shape = 4, colour = "#eb6834", size = 2.4) +
+  facet_wrap(~group) +
+  labs(
+    title = "Group-time effects, before and after the treatment",
+    subtitle = "Crosses: the truth. Left of the line: there should be nothing",
+    x = "periods since the treatment began",
+    y = "effect"
+  ) +
+  theme_bw()
 ```
 
 ```{r pre_check, echo=FALSE}
@@ -311,11 +551,19 @@ The group-time effects agree with the truth, and their mean is `r f2(mean(att$by
 A report (APA 7th edition) needs the treatment, the groups and the periods, the four means, the estimate with clustered standard errors and the level of the clusters, the argument for parallel trends with the evidence for it (or its absence), the other comparisons, and the sensitivity. The numbers come from the R objects:
 
 ```{r apa_numbers}
-mean_se <- function(v) paste0(f2(mean(v, na.rm = TRUE)), " (", f2(sd(v, na.rm = TRUE) / sqrt(sum(!is.na(v)))), ")")
-apa_table <- data.frame(State = c("New Jersey", "Pennsylvania", "Difference in differences"),
+mean_se <- function(v) {
+  paste0(f2(mean(v, na.rm = TRUE)), " (", f2(sd(v, na.rm = TRUE) / sqrt(sum(!is.na(v)))), ")")
+}
+apa_table <- data.frame(
+  State = c("New Jersey", "Pennsylvania", "Difference in differences"),
   before = c(mean_se(stores$fte1[stores$nj == 1]), mean_se(stores$fte1[stores$nj == 0]), ""),
-  after  = c(mean_se(stores$fte2[stores$nj == 1]), mean_se(stores$fte2[stores$nj == 0]), ""),
-  change = c(f2(diff(m["New Jersey", ])), f2(diff(m["Pennsylvania", ])), paste0(f2(est), " (", f2(se_cl), ")")))
+  after = c(mean_se(stores$fte2[stores$nj == 1]), mean_se(stores$fte2[stores$nj == 0]), ""),
+  change = c(
+    f2(diff(m["New Jersey", ])),
+    f2(diff(m["Pennsylvania", ])),
+    paste0(f2(est), " (", f2(se_cl), ")")
+  )
+)
 ```
 
 **Method** (data analysis):

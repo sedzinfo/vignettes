@@ -25,13 +25,18 @@ library(ggplot2)
 library(truncreg)   # truncreg(): truncated normal regression
 library(survival)   # survreg(): the censored (Tobit) model, for comparison (comes with R)
 
-line_colours <- c("all sons (the truth)" = "grey25", "OLS, tall sons only" = "#eb6834", "truncated regression" = "#2a78d6")
+line_colours <- c(
+  "all sons (the truth)" = "grey25",
+  "OLS, tall sons only" = "#eb6834",
+  "truncated regression" = "#2a78d6"
+)
 
 # number formats for the text
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -72,15 +77,32 @@ line_at <- function(b) c(intercept = b[[1]] + b[[3]] * mean(sons$mother), slope 
 two <- rbind(line_at(coef(full)), line_at(coef(naive)))
 
 ggplot(sons, aes(father, son)) +
-  geom_jitter(aes(shape = kept, alpha = kept), width = 0.15, height = 0.1, size = 1.6, colour = "grey30") +
+  geom_jitter(
+    aes(shape = kept, alpha = kept),
+    width = 0.15,
+    height = 0.1,
+    size = 1.6,
+    colour = "grey30"
+  ) +
   geom_hline(yintercept = minimum, linetype = "dashed") +
-  geom_abline(aes(intercept = two[1, 1], slope = two[1, 2], colour = "all sons (the truth)"), linewidth = 1) +
-  geom_abline(aes(intercept = two[2, 1], slope = two[2, 2], colour = "OLS, tall sons only"), linewidth = 1) +
+  geom_abline(
+    aes(intercept = two[1, 1], slope = two[1, 2], colour = "all sons (the truth)"),
+    linewidth = 1
+  ) +
+  geom_abline(
+    aes(intercept = two[2, 1], slope = two[2, 2], colour = "OLS, tall sons only"),
+    linewidth = 1
+  ) +
   scale_shape_manual(values = c(`TRUE` = 16, `FALSE` = 1), guide = "none") +
   scale_alpha_manual(values = c(`TRUE` = 0.6, `FALSE` = 0.35), guide = "none") +
   scale_colour_manual(values = line_colours, name = NULL) +
-  labs(title = "The regiment sees only the points above the dashed line", x = "father's height (inches)", y = "son's height (inches)") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "The regiment sees only the points above the dashed line",
+    x = "father's height (inches)",
+    y = "son's height (inches)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The orange line, fitted to the filled points only, is **too flat**. The reason can be seen at the left. Sons of short fathers are short on average, so only the unusually tall ones pass the limit: there the records contain only positive errors. Sons of tall fathers pass whatever their error is. So the errors of the men in the records are **related to the father's height**, and least squares is biased.
@@ -111,12 +133,26 @@ $$f(y_i \mid y_i \ge c) = \frac{\frac{1}{\sigma}\,\phi\!\left(\frac{y_i - \mu_i}
 ($\phi$ is the height of the standard normal curve, `dnorm()`; $\Phi$ the area to the left, `pnorm()`.)
 
 ```{r truncated_density}
-shape <- do.call(rbind, lapply(c(66.5, 69, 72), function(mu) {
-  h <- seq(60, 80, by = 0.05)
-  data.frame(h, whole = dnorm(h, mu, truth[["sigma"]]),
-             seen = ifelse(h >= minimum, dnorm(h, mu, truth[["sigma"]]) / pnorm((mu - minimum) / truth[["sigma"]]), NA),
-             label = sprintf("expected height %.1f: %s seen", mu, pct(pnorm((mu - minimum) / truth[["sigma"]]))))
-}))
+shape <- do.call(
+  rbind,
+  lapply(c(66.5, 69, 72), function(mu) {
+    h <- seq(60, 80, by = 0.05)
+    data.frame(
+      h,
+      whole = dnorm(h, mu, truth[["sigma"]]),
+      seen = ifelse(
+        h >= minimum,
+        dnorm(h, mu, truth[["sigma"]]) / pnorm((mu - minimum) / truth[["sigma"]]),
+        NA
+      ),
+      label = sprintf(
+        "expected height %.1f: %s seen",
+        mu,
+        pct(pnorm((mu - minimum) / truth[["sigma"]]))
+      )
+    )
+  })
+)
 ggplot(shape, aes(h)) +
   geom_area(data = subset(shape, !is.na(seen)), aes(y = seen), fill = "#2a78d6", alpha = 0.35) +
   geom_line(aes(y = whole), colour = "grey40") +
@@ -145,8 +181,10 @@ The first part is the ordinary normal likelihood. The second is the correction. 
 
 ```{r by_hand}
 X <- model.matrix(naive); y <- guards$son
-minus_loglik <- function(par, X, y, cut) {                      # par: the coefficients, then log(sigma)
-  mu <- drop(X %*% par[-length(par)]); s <- exp(par[length(par)])
+minus_loglik <- function(par, X, y, cut) {
+  # par: the coefficients, then log(sigma)
+  mu <- drop(X %*% par[-length(par)])
+  s <- exp(par[length(par)])
   -sum(dnorm(y, mu, s, log = TRUE) - pnorm((mu - cut) / s, log.p = TRUE))
 }
 start <- c(coef(naive), log(sigma(naive)))                      # start from OLS
@@ -182,17 +220,38 @@ print(cbind(term = compare$term, round(compare[, -1], 3)), row.names = FALSE)
 
 ```{r comparison_chart}
 plot_data <- rbind(
-  data.frame(term = c("Father", "Mother"), est = coef(full)[-1], se = coef(summary(full))[-1, 2], method = "all sons (the truth)"),
-  data.frame(term = c("Father", "Mother"), est = coef(naive)[-1], se = coef(summary(naive))[-1, 2], method = "OLS, tall sons only"),
-  data.frame(term = c("Father", "Mother"), est = b[2:3], se = se[2:3], method = "truncated regression"))
+  data.frame(
+    term = c("Father", "Mother"),
+    est = coef(full)[-1],
+    se = coef(summary(full))[-1, 2],
+    method = "all sons (the truth)"
+  ),
+  data.frame(
+    term = c("Father", "Mother"),
+    est = coef(naive)[-1],
+    se = coef(summary(naive))[-1, 2],
+    method = "OLS, tall sons only"
+  ),
+  data.frame(
+    term = c("Father", "Mother"),
+    est = b[2:3],
+    se = se[2:3],
+    method = "truncated regression"
+  )
+)
 plot_data$method <- factor(plot_data$method, levels = rev(names(line_colours)))
 
 ggplot(plot_data, aes(est, term, colour = method)) +
   geom_vline(xintercept = 0, colour = "grey60") +
-  geom_pointrange(aes(xmin = est - 1.96 * se, xmax = est + 1.96 * se), position = position_dodge(width = 0.5), linewidth = 0.9) +
+  geom_pointrange(
+    aes(xmin = est - 1.96 * se, xmax = est + 1.96 * se),
+    position = position_dodge(width = 0.5),
+    linewidth = 0.9
+  ) +
   scale_colour_manual(values = line_colours, name = NULL) +
   labs(title = "Slopes with 95% intervals", x = "inches of son per inch of parent", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The truncated regression brings the slopes back: `r f2(b[["father"]])` for the father (truth: `r f2(truth[["father"]])`) and `r f2(b[["mother"]])` for the mother (truth: `r f2(truth[["mother"]])`), and $\sigma$ = `r f2(b[["sigma"]])` (truth: `r f2(truth[["sigma"]])`). The price is the standard error: `r f2(se[["father"]])` instead of the `r f2(coef(summary(full))["father", 2])` of the full data. The intervals are **honest**: they are wide, and they contain the truth. The narrow OLS intervals do not.
@@ -208,8 +267,12 @@ mu    <- drop(X %*% b[1:3])
 alpha <- (minimum - mu) / b[["sigma"]]
 mills <- dnorm(alpha) / pnorm(alpha, lower.tail = FALSE)
 shrink <- 1 - mills * (mills - alpha)                   # always between 0 and 1
-c(average_factor = mean(shrink), effect_in_the_population = b[["father"]], effect_among_the_tall = b[["father"]] * mean(shrink),
-  OLS = coef(naive)[["father"]])
+c(
+  average_factor = mean(shrink),
+  effect_in_the_population = b[["father"]],
+  effect_among_the_tall = b[["father"]] * mean(shrink),
+  OLS = coef(naive)[["father"]]
+)
 ```
 
 Averaged over the men in the records, the factor is `r f2(mean(shrink))`, so one inch of father goes with `r f2(b[["father"]] * mean(shrink))` inches among the tall sons: about what OLS found. OLS is not "wrong". It answers the question about the regiment, and people read it as an answer about the population.
@@ -222,7 +285,11 @@ A **censored** sample is less damaged. There we know **how many** cases are beyo
 
 ```{r tobit}
 sons$recorded <- pmax(sons$son, minimum)
-tobit <- survreg(Surv(recorded, son >= minimum, type = "left") ~ father + mother, data = sons, dist = "gaussian")
+tobit <- survreg(
+  Surv(recorded, son >= minimum, type = "left") ~ father + mother,
+  data = sons,
+  dist = "gaussian"
+)
 rbind(truth = truth[1:3], tobit = coef(tobit), truncated = b[1:3])
 rbind(truth = coef(summary(full))[, 2], tobit = sqrt(diag(vcov(tobit)))[1:3], truncated = se[1:3])
 ```
@@ -270,31 +337,68 @@ kinds <- list(normal             = function(n) rnorm(n, 0, s0),
               `long tails (t, 4 df)` = function(n) rt(n, 4) * s0 / sqrt(2),
               `skewed (long to the right)` = function(n) (rgamma(n, 4) - 4) / 2 * s0)
 reps <- 500
-sim <- lapply(kinds, function(draw) t(replicate(reps, {
-  yy <- line + draw(length(line)); keep <- yy >= minimum
-  d  <- data.frame(son = yy, father = Xf[, 2], mother = Xf[, 3])[keep, ]
-  o  <- coef(lm(son ~ father + mother, d))
-  m  <- try(suppressWarnings(truncreg(son ~ father + mother, data = d, point = minimum, direction = "left")), silent = TRUE)
-  c(OLS = o[["father"]], truncated = if (inherits(m, "try-error")) NA else coef(m)[["father"]])
-})))
-bias <- do.call(rbind, lapply(names(sim), function(k) data.frame(errors = k, true = truth[["father"]],
-  OLS = mean(sim[[k]][, "OLS"]), truncated = mean(sim[[k]][, "truncated"], na.rm = TRUE),
-  SD_OLS = sd(sim[[k]][, "OLS"]), SD_truncated = sd(sim[[k]][, "truncated"], na.rm = TRUE), failed = sum(is.na(sim[[k]][, "truncated"])))))
+sim <- lapply(kinds, function(draw) {
+  t(replicate(reps, {
+    yy <- line + draw(length(line))
+    keep <- yy >= minimum
+    d <- data.frame(son = yy, father = Xf[, 2], mother = Xf[, 3])[keep, ]
+    o <- coef(lm(son ~ father + mother, d))
+    m <- try(
+      suppressWarnings(truncreg(
+        son ~ father + mother,
+        data = d,
+        point = minimum,
+        direction = "left"
+      )),
+      silent = TRUE
+    )
+    c(OLS = o[["father"]], truncated = if (inherits(m, "try-error")) NA else coef(m)[["father"]])
+  }))
+})
+bias <- do.call(
+  rbind,
+  lapply(names(sim), function(k) {
+    data.frame(
+      errors = k,
+      true = truth[["father"]],
+      OLS = mean(sim[[k]][, "OLS"]),
+      truncated = mean(sim[[k]][, "truncated"], na.rm = TRUE),
+      SD_OLS = sd(sim[[k]][, "OLS"]),
+      SD_truncated = sd(sim[[k]][, "truncated"], na.rm = TRUE),
+      failed = sum(is.na(sim[[k]][, "truncated"]))
+    )
+  })
+)
 print(cbind(errors = bias$errors, round(bias[, -1], 3)), row.names = FALSE)
 ```
 
 ```{r simulation_chart}
-sim_long <- do.call(rbind, lapply(names(sim), function(k) data.frame(
-  errors = k, slope = as.vector(sim[[k]]), method = rep(c("OLS, tall sons only", "truncated regression"), each = reps))))
+sim_long <- do.call(
+  rbind,
+  lapply(names(sim), function(k) {
+    data.frame(
+      errors = k,
+      slope = as.vector(sim[[k]]),
+      method = rep(c("OLS, tall sons only", "truncated regression"), each = reps)
+    )
+  })
+)
 sim_long$errors <- factor(sim_long$errors, levels = names(kinds))
 ggplot(sim_long, aes(slope, fill = method, colour = method)) +
   geom_density(alpha = 0.3, na.rm = TRUE) +
   geom_vline(xintercept = truth[["father"]], linetype = "dashed") +
-  facet_wrap(~ errors, ncol = 1) +
+  facet_wrap(~errors, ncol = 1) +
   coord_cartesian(xlim = c(0, 1)) +
-  scale_fill_manual(values = line_colours, name = NULL) + scale_colour_manual(values = line_colours, name = NULL) +
-  labs(title = "500 simulated regiments: the slope of the father's height", subtitle = "Dashed: the true slope", x = "estimated slope", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom", axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  scale_fill_manual(values = line_colours, name = NULL) +
+  scale_colour_manual(values = line_colours, name = NULL) +
+  labs(
+    title = "500 simulated regiments: the slope of the father's height",
+    subtitle = "Dashed: the true slope",
+    x = "estimated slope",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", axis.text.y = element_blank(), axis.ticks.y = element_blank())
 ```
 
 - With **normal** errors the truncated regression is right on average (`r f2(bias$truncated[1])`, truth `r f2(truth[["father"]])`), and OLS is far off (`r f2(bias$OLS[1])`).
@@ -307,12 +411,21 @@ Our errors are close to normal (the full data allow us to check), so the method 
 
 ```{r cutoffs}
 limits <- c(64, 66, 67, 68, 69, 70)
-by_limit <- do.call(rbind, lapply(limits, function(cc) {
-  d <- subset(sons, son >= cc)
-  m <- truncreg(son ~ father + mother, data = d, point = cc, direction = "left")
-  data.frame(limit = cc, kept = nrow(d), share = nrow(d) / nrow(sons), OLS = coef(lm(son ~ father + mother, d))[["father"]],
-             truncated = coef(m)[["father"]], SE = sqrt(vcov(m)["father", "father"]))
-}))
+by_limit <- do.call(
+  rbind,
+  lapply(limits, function(cc) {
+    d <- subset(sons, son >= cc)
+    m <- truncreg(son ~ father + mother, data = d, point = cc, direction = "left")
+    data.frame(
+      limit = cc,
+      kept = nrow(d),
+      share = nrow(d) / nrow(sons),
+      OLS = coef(lm(son ~ father + mother, d))[["father"]],
+      truncated = coef(m)[["father"]],
+      SE = sqrt(vcov(m)["father", "father"])
+    )
+  })
+)
 round(by_limit, 3)
 ```
 
@@ -327,14 +440,23 @@ The weak part of the estimation is $\sigma$. From the cut curve alone it is hard
 ```{r restricted}
 with_sigma <- function(s_fixed) {
   f <- function(par) minus_loglik(c(par, log(s_fixed)), X = X, y = y, cut = minimum)
-  o <- optim(coef(naive), f, method = "BFGS", hessian = TRUE, control = list(maxit = 1000, reltol = 1e-12, parscale = c(10, 0.1, 0.1)))
+  o <- optim(
+    coef(naive),
+    f,
+    method = "BFGS",
+    hessian = TRUE,
+    control = list(maxit = 1000, reltol = 1e-12, parscale = c(10, 0.1, 0.1))
+  )
   list(b = o$par, se = sqrt(diag(solve(o$hessian))))
 }
 known <- with_sigma(truth[["sigma"]])
 rbind(truth = truth[1:3], free_sigma = b[1:3], fixed_sigma = known$b)
 rbind(free_sigma = se[1:3], fixed_sigma = known$se)
 low <- with_sigma(0.9 * truth[["sigma"]]); high <- with_sigma(1.1 * truth[["sigma"]])
-c(father_if_sigma_10pct_too_small = low$b[["father"]], father_if_sigma_10pct_too_large = high$b[["father"]])
+c(
+  father_if_sigma_10pct_too_small = low$b[["father"]],
+  father_if_sigma_10pct_too_large = high$b[["father"]]
+)
 ```
 
 With $\sigma$ known, the standard error of the father's slope falls from `r f3(se[["father"]])` to `r f3(known$se[["father"]])`. But if the borrowed value is 10% too small or too large, the slope becomes `r f2(low$b[["father"]])` or `r f2(high$b[["father"]])`. Here we cheated and took the true value. In practice the value comes from other studies, and it must be the spread **given the predictors**, not the plain one.
@@ -343,7 +465,7 @@ With $\sigma$ known, the standard error of the father's slope falls from `r f3(s
 
 ## 8. Things to keep in mind
 
-- **Is it really truncated?** If you know how many cases are beyond the limit, it is censored: use [Tobit](EXAMPLE_TOBIT.Rmd). If the cases are missing because of **another** variable (people who did not answer, women who do not work), it is sample selection, the subject of the Heckman model.
+- **Is it really truncated?** If you know how many cases are beyond the limit, it is censored: use [Tobit](EXAMPLE_TOBIT.Rmd). If the cases are missing because of **another** variable (people who did not answer, women who do not work), it is sample selection, the subject of the [Heckman model](EXAMPLE_HECKMAN_SELECTION.Rmd).
 - **Selecting on a predictor is harmless.** Keeping only the sons of tall **fathers** does not bias the slope (it costs precision). Only selection on the outcome does.
 - **The limit must be known and strict.** In real armies, short volunteers were let in when soldiers were needed, and the density near the limit thins out gradually. Historians cut at a higher point, where the records are complete.
 - **Normality cannot be checked** where it matters. Try other distributions (`crch::trch()` has logistic and *t* errors) and report how much the answer moves.
@@ -364,10 +486,14 @@ pv <- 2 * pnorm(-abs(z))
 apa_table <- data.frame(
   Predictor = c("Intercept", "Father's height", "Mother's height", "σ"),
   full = paste0(f2(truth), c(paste0(" (", f2(coef(summary(full))[, 2]), ")"), "")),
-  ols  = paste0(f2(c(coef(naive), sigma(naive))), c(paste0(" (", f2(coef(summary(naive))[, 2]), ")"), "")),
-  tr   = paste0(f2(b), " (", f2(se), ")"),
-  ci   = paste0("[", f2(b - 1.96 * se), ", ", f2(b + 1.96 * se), "]"),
-  p    = c(sapply(pv[1:3], function(p) sub("^= ", "", pval(p))), "—"))
+  ols = paste0(
+    f2(c(coef(naive), sigma(naive))),
+    c(paste0(" (", f2(coef(summary(naive))[, 2]), ")"), "")
+  ),
+  tr = paste0(f2(b), " (", f2(se), ")"),
+  ci = paste0("[", f2(b - 1.96 * se), ", ", f2(b + 1.96 * se), "]"),
+  p = c(sapply(pv[1:3], function(p) sub("^= ", "", pval(p))), "—")
+)
 ```
 
 **Method** (data analysis):

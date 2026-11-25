@@ -35,7 +35,8 @@ line_colours <- c("equal readings" = "grey40", "OLS: machine on stethoscope" = "
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 ```
@@ -49,8 +50,12 @@ The CDC publishes the files free and with no login: `BPX_J` (physician, mercury,
 ```{r download}
 nhanes <- function(file) {
   path <- tempfile(fileext = ".xpt")
-  download.file(paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/", file, ".xpt"),
-                path, mode = "wb", quiet = TRUE)
+  download.file(
+    paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2017/DataFiles/", file, ".xpt"),
+    path,
+    mode = "wb",
+    quiet = TRUE
+  )
   read.xport(path)
 }
 steth_names   <- paste0("BPXSY",  1:3)    # systolic, stethoscope, readings 1 to 3 (mmHg)
@@ -102,11 +107,20 @@ lines_ols <- data.frame(
 
 ggplot(bp, aes(steth, machine)) +
   geom_point(alpha = 0.12, size = 1, colour = "grey30") +
-  geom_abline(data = lines_ols, aes(intercept = intercept, slope = slope, colour = line), linewidth = 1) +
+  geom_abline(
+    data = lines_ols,
+    aes(intercept = intercept, slope = slope, colour = line),
+    linewidth = 1
+  ) +
   scale_colour_manual(values = line_colours, name = NULL) +
   coord_fixed(xlim = c(75, 225), ylim = c(75, 225)) +
-  labs(title = "Systolic blood pressure, two ways", x = "stethoscope (mmHg)", y = "machine (mmHg)") +
-  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+  labs(
+    title = "Systolic blood pressure, two ways",
+    x = "stethoscope (mmHg)",
+    y = "machine (mmHg)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 - **Regress the machine on the stethoscope:** the slope is `r f2(slopes[[1]])`. A person at 180 mmHg would get only `r f1(coef(ols)[[1]] + coef(ols)[[2]] * 180)` from the machine. Conclusion: the machine **underestimates** high blood pressure.
@@ -239,11 +253,20 @@ lines_all <- rbind(lines_ols, data.frame(line = "Deming", intercept = b[["b0"]],
 
 ggplot(bp, aes(steth, machine)) +
   geom_point(alpha = 0.1, size = 1, colour = "grey30") +
-  geom_abline(data = lines_all, aes(intercept = intercept, slope = slope, colour = line), linewidth = 1) +
+  geom_abline(
+    data = lines_all,
+    aes(intercept = intercept, slope = slope, colour = line),
+    linewidth = 1
+  ) +
   scale_colour_manual(values = line_colours, name = NULL) +
   coord_fixed(xlim = c(75, 225), ylim = c(75, 225)) +
-  labs(title = "The Deming line lies between the two OLS lines", x = "stethoscope (mmHg)", y = "machine (mmHg)") +
-  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+  labs(
+    title = "The Deming line lies between the two OLS lines",
+    x = "stethoscope (mmHg)",
+    y = "machine (mmHg)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 ---
@@ -258,8 +281,12 @@ We have three readings. A single reading is noisier than the mean of three, so i
 one_x <- bp$BPXSY1
 one_y <- bp$BPXOSY1
 proof <- rbind(
-  `mean of 3 readings` = c(OLS = coef(lm(y ~ x))[[2]],         Deming = dem_slope(x, y, lambda)[["b1"]]),
-  `first reading only` = c(OLS = coef(lm(one_y ~ one_x))[[2]], Deming = dem_slope(one_x, one_y, lambda)[["b1"]]))
+  `mean of 3 readings` = c(OLS = coef(lm(y ~ x))[[2]], Deming = dem_slope(x, y, lambda)[["b1"]]),
+  `first reading only` = c(
+    OLS = coef(lm(one_y ~ one_x))[[2]],
+    Deming = dem_slope(one_x, one_y, lambda)[["b1"]]
+  )
+)
 round(proof, 3)
 ```
 
@@ -272,19 +299,27 @@ OLS falls from `r f3(proof[1, "OLS"])` to `r f3(proof[2, "OLS"])`. Deming stays 
 ```{r simulation}
 set.seed(11)
 sim <- t(replicate(2000, {
-  xi <- rnorm(300, mean(x), sd(x))          # the true blood pressures
+  xi <- rnorm(300, mean(x), sd(x)) # the true blood pressures
   xs <- xi + rnorm(300, 0, 7)
   ys <- xi + rnorm(300, 0, 7)
-  c(OLS = cov(xs, ys) / var(xs), reversed = var(ys) / cov(xs, ys), Deming = dem_slope(xs, ys, 1)[["b1"]])
+  c(
+    OLS = cov(xs, ys) / var(xs),
+    reversed = var(ys) / cov(xs, ys),
+    Deming = dem_slope(xs, ys, 1)[["b1"]]
+  )
 }))
 reliability <- var(x) / (var(x) + 49)
 c(colMeans(sim), expected_OLS = reliability)
 ```
 
 ```{r simulation_chart}
-sim_long <- data.frame(slope = as.vector(sim),
-                       method = factor(rep(c("OLS: machine on stethoscope", "OLS: stethoscope on machine", "Deming"), each = 2000),
-                                       levels = names(line_colours)))
+sim_long <- data.frame(
+  slope = as.vector(sim),
+  method = factor(
+    rep(c("OLS: machine on stethoscope", "OLS: stethoscope on machine", "Deming"), each = 2000),
+    levels = names(line_colours)
+  )
+)
 
 ggplot(sim_long, aes(slope, colour = method, fill = method)) +
   geom_density(alpha = 0.25, linewidth = 0.8) +
@@ -326,13 +361,20 @@ path <- data.frame(lambda = grid, slope = sapply(grid, function(l) dem_slope(x, 
 ggplot(path, aes(lambda, slope)) +
   annotate("rect", xmin = 0.5, xmax = 2, ymin = -Inf, ymax = Inf, fill = "grey85", alpha = 0.6) +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey40") +
-  geom_hline(yintercept = c(slopes[[1]], rev_line[["slope"]]), colour = c("#eb6834", "#eda100"), linewidth = 0.8) +
+  geom_hline(
+    yintercept = c(slopes[[1]], rev_line[["slope"]]),
+    colour = c("#eb6834", "#eda100"),
+    linewidth = 0.8
+  ) +
   geom_line(colour = "#2a78d6", linewidth = 1) +
   geom_point(data = data.frame(lambda = lambda, slope = b[["b1"]]), size = 3, colour = "#2a78d6") +
   scale_x_log10(breaks = c(0.1, 0.5, 1, 2, 10)) +
-  labs(title = "The Deming slope for every possible λ",
-       subtitle = "Horizontal lines: the two OLS slopes. Grey band: one error variance up to twice the other",
-       x = "λ = error variance of the machine / error variance of the stethoscope (log scale)", y = "slope") +
+  labs(
+    title = "The Deming slope for every possible λ",
+    subtitle = "Horizontal lines: the two OLS slopes. Grey band: one error variance up to twice the other",
+    x = "λ = error variance of the machine / error variance of the stethoscope (log scale)",
+    y = "slope"
+  ) +
   theme_bw()
 ```
 
@@ -360,9 +402,12 @@ ggplot(data.frame(middle, difference), aes(middle, difference)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_hline(yintercept = mean(difference), colour = "#2a78d6", linewidth = 1) +
   geom_hline(yintercept = limits, colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
-  labs(title = "Machine minus stethoscope, against the mean of the two",
-       subtitle = "Blue: mean difference. Orange: limits of agreement, which hold 95% of the differences",
-       x = "mean of the two (mmHg)", y = "difference (mmHg)") +
+  labs(
+    title = "Machine minus stethoscope, against the mean of the two",
+    subtitle = "Blue: mean difference. Orange: limits of agreement, which hold 95% of the differences",
+    x = "mean of the two (mmHg)",
+    y = "difference (mmHg)"
+  ) +
   theme_bw()
 
 crosses <- mean((x >= 130) != (y >= 130))
@@ -387,8 +432,11 @@ spread_by_level <- data.frame(stethoscope = tapply(apply(X, 1, var), level_bands
                               machine     = tapply(apply(Y, 1, var), level_bands, mean))
 round(sqrt(spread_by_level), 1)           # error SD of one reading, by quarter of blood pressure
 
-weighted_fit <- deming(machine ~ steth, data = bp,
-                       stdpat = c(0, sqrt(var_steth / 3) / mean(x), 0, sqrt(var_machine / 3) / mean(y)))
+weighted_fit <- deming(
+  machine ~ steth,
+  data = bp,
+  stdpat = c(0, sqrt(var_steth / 3) / mean(x), 0, sqrt(var_machine / 3) / mean(y))
+)
 coef(weighted_fit)
 ```
 
@@ -406,11 +454,22 @@ A report (APA 7th edition) needs the two instruments, the number of readings, wh
 
 ```{r apa_numbers}
 apa_table <- data.frame(
-  Method    = c("OLS, machine on stethoscope", "OLS, stethoscope on machine (turned around)", "Deming, λ from the repeated readings", "Deming, λ = 1"),
+  Method = c(
+    "OLS, machine on stethoscope", "OLS, stethoscope on machine (turned around)",
+    "Deming, λ from the repeated readings", "Deming, λ = 1"
+  ),
   Intercept = f2(c(coef(ols)[[1]], rev_line[[1]], b[["b0"]], dem_slope(x, y, 1)[["b0"]])),
-  Slope     = f3(c(coef(ols)[[2]], rev_line[[2]], b[["b1"]], dem_slope(x, y, 1)[["b1"]])),
-  At180     = f1(c(coef(ols)[[1]] + 180 * coef(ols)[[2]], rev_line[[1]] + 180 * rev_line[[2]],
-                   b[["b0"]] + 180 * b[["b1"]], sum(dem_slope(x, y, 1) * c(1, 180))) - 180))
+  Slope = f3(c(coef(ols)[[2]], rev_line[[2]], b[["b1"]], dem_slope(x, y, 1)[["b1"]])),
+  At180 = f1(
+    c(
+      coef(ols)[[1]] + 180 * coef(ols)[[2]],
+      rev_line[[1]] + 180 * rev_line[[2]],
+      b[["b0"]] + 180 * b[["b1"]],
+      sum(dem_slope(x, y, 1) * c(1, 180))
+    ) -
+      180
+  )
+)
 ```
 
 **Method** (data analysis):

@@ -31,7 +31,8 @@ born_colours <- c(`born in the US` = "#2a78d6", `born elsewhere` = "#eb6834")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -46,17 +47,41 @@ NHANES tested the stored blood of its participants aged 6 and older in 2011–20
 ```{r download}
 nhanes <- function(year, file) {
   path <- tempfile(fileext = ".xpt")
-  download.file(paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/", year, "/DataFiles/", file, ".xpt"), path, mode = "wb", quiet = TRUE)
+  download.file(
+    paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/", year, "/DataFiles/", file, ".xpt"),
+    path,
+    mode = "wb",
+    quiet = TRUE
+  )
   read.xport(path)
 }
-cycle <- function(year, letter) merge(nhanes(year, paste0("SSTOXO_", letter))[, c("SEQN", "SSTOXG")],
-                                      nhanes(year, paste0("DEMO_", letter))[, c("SEQN", "RIDAGEYR", "RIAGENDR", "DMDBORN4", "INDFMPIR")])
+cycle <- function(year, letter) {
+  merge(
+    nhanes(year, paste0("SSTOXO_", letter))[, c("SEQN", "SSTOXG")],
+    nhanes(year, paste0("DEMO_", letter))[, c(
+      "SEQN", "RIDAGEYR", "RIAGENDR", "DMDBORN4", "INDFMPIR"
+    )]
+  )
+}
 raw <- rbind(cycle(2011, "G"), cycle(2013, "H"))
-tox <- subset(raw, !is.na(SSTOXG) & DMDBORN4 %in% 1:2 & RIDAGEYR < 80)      # 80 means "80 or older": age unknown
-tox <- with(tox, data.frame(positive = as.integer(SSTOXG >= 33), age = RIDAGEYR, male = as.integer(RIAGENDR == 1),
-                            elsewhere = as.integer(DMDBORN4 == 2), income = INDFMPIR))
+# 80 means "80 or older": age unknown
+tox <- subset(raw, !is.na(SSTOXG) & DMDBORN4 %in% 1:2 & RIDAGEYR < 80)
+tox <- with(
+  tox,
+  data.frame(
+    positive = as.integer(SSTOXG >= 33),
+    age = RIDAGEYR,
+    male = as.integer(RIAGENDR == 1),
+    elsewhere = as.integer(DMDBORN4 == 2),
+    income = INDFMPIR
+  )
+)
 nrow(tox)
-c(positive = mean(tox$positive), born_in_US = mean(tox$positive[tox$elsewhere == 0]), born_elsewhere = mean(tox$positive[tox$elsewhere == 1]))
+c(
+  positive = mean(tox$positive),
+  born_in_US = mean(tox$positive[tox$elsewhere == 0]),
+  born_elsewhere = mean(tox$positive[tox$elsewhere == 1])
+)
 ```
 
 We keep `r num(nrow(tox))` people aged 6 to 79 whose country of birth is known. `r pct(mean(tox$positive))` have antibodies: `r pct(mean(tox$positive[tox$elsewhere == 0]))` of those born in the United States and `r pct(mean(tox$positive[tox$elsewhere == 1]))` of those born elsewhere. `income` is the family income divided by the poverty line. (NHANES is a complex sample with weights. We do not use them: we study the relations in the data, not the share in the US population.)
@@ -69,7 +94,10 @@ We keep `r num(nrow(tox))` people aged 6 to 79 whose country of birth is known. 
 tox$band <- cut(tox$age, c(5, 11, 19, 29, 39, 49, 59, 69, 79))
 bands <- aggregate(cbind(positive, age) ~ band + elsewhere, data = tox, FUN = mean)
 bands$n    <- aggregate(positive ~ band + elsewhere, data = tox, FUN = length)$positive
-bands$born <- factor(ifelse(bands$elsewhere == 1, "born elsewhere", "born in the US"), levels = names(born_colours))
+bands$born <- factor(
+  ifelse(bands$elsewhere == 1, "born elsewhere", "born in the US"),
+  levels = names(born_colours)
+)
 bands$se   <- sqrt(bands$positive * (1 - bands$positive) / bands$n)
 
 ggplot(bands, aes(age, positive, colour = born)) +
@@ -122,13 +150,20 @@ The logit and the probit are symmetric: the curve goes to 1 as it leaves 0. The 
 
 ```{r links_chart}
 eta <- seq(-4, 3, by = 0.02)
-shapes <- rbind(data.frame(eta, p = 1 - exp(-exp(eta)), link = "complementary log-log"),
-                data.frame(eta, p = plogis(eta), link = "logit"), data.frame(eta, p = pnorm(eta), link = "probit"))
+shapes <- rbind(
+  data.frame(eta, p = 1 - exp(-exp(eta)), link = "complementary log-log"),
+  data.frame(eta, p = plogis(eta), link = "logit"),
+  data.frame(eta, p = pnorm(eta), link = "probit")
+)
 ggplot(shapes, aes(eta, p, colour = link)) +
   geom_line(linewidth = 1) +
-  scale_colour_manual(values = c(`complementary log-log` = "#2a78d6", logit = "#eb6834", probit = "#1baf7a"), name = NULL) +
+  scale_colour_manual(
+    values = c(`complementary log-log` = "#2a78d6", logit = "#eb6834", probit = "#1baf7a"),
+    name = NULL
+  ) +
   labs(title = "Three links", x = "linear predictor", y = "probability") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Because of the asymmetry it matters which answer is coded 1. Coding "no antibodies" as 1 would be another model (the log-log link).
@@ -163,7 +198,11 @@ ci_fit <- exp(confint.default(fit))
 With more predictors, each $e^{\beta}$ is a rate ratio given the others:
 
 ```{r more}
-fit_more <- glm(positive ~ offset(log(age)) + elsewhere + male + income, family = binomial("cloglog"), data = tox)
+fit_more <- glm(
+  positive ~ offset(log(age)) + elsewhere + male + income,
+  family = binomial("cloglog"),
+  data = tox
+)
 tab <- cbind(exp(coef(fit_more)), exp(confint.default(fit_more)))
 colnames(tab) <- c("rate ratio", "low", "high")
 round(tab[-1, ], 2)
@@ -194,19 +233,31 @@ For those born in the US, the exponent is `r f2(k_us)`, clearly above 1: the sha
 
 ```{r fitted_chart}
 grid <- expand.grid(age = 6:79, elsewhere = 0:1)
-grid$born <- factor(ifelse(grid$elsewhere == 1, "born elsewhere", "born in the US"), levels = names(born_colours))
+grid$born <- factor(
+  ifelse(grid$elsewhere == 1, "born elsewhere", "born in the US"),
+  levels = names(born_colours)
+)
 grid$constant <- predict(fit, grid, type = "response")
 grid$free     <- predict(fit_groups, grid, type = "response")
-long <- rbind(data.frame(grid[, 1:3], p = grid$constant, model = "constant rate"), data.frame(grid[, 1:3], p = grid$free, model = "rate changes with age"))
+long <- rbind(
+  data.frame(grid[, 1:3], p = grid$constant, model = "constant rate"),
+  data.frame(grid[, 1:3], p = grid$free, model = "rate changes with age")
+)
 
 ggplot(long, aes(age, p, colour = born)) +
-  geom_pointrange(data = bands, aes(age, positive, ymin = positive - 1.96 * se, ymax = positive + 1.96 * se), alpha = 0.6, size = 0.3) +
+  geom_pointrange(
+    data = bands,
+    aes(age, positive, ymin = positive - 1.96 * se, ymax = positive + 1.96 * se),
+    alpha = 0.6,
+    size = 0.3
+  ) +
   geom_line(aes(linetype = model), linewidth = 0.9) +
   scale_colour_manual(values = born_colours, name = NULL) +
   scale_linetype_manual(values = c("dashed", "solid"), name = NULL) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
   labs(title = "Constant and changing rates", x = "age (years)", y = "share with antibodies") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ### Age or birth cohort?
@@ -228,12 +279,27 @@ AIC(fit_groups, logit, probit)
 simple_c <- glm(positive ~ offset(log(age)) + elsewhere, family = binomial("cloglog"), data = tox)
 simple_l <- glm(positive ~ log(age) + elsewhere, family = binomial("logit"), data = tox)
 p40 <- predict(simple_c, data.frame(age = 40, elsewhere = 0:1), type = "response")
-c(rate_ratio = exp(coef(simple_c)[["elsewhere"]]), odds_ratio = exp(coef(simple_l)[["elsewhere"]]), risk_ratio_at_40 = p40[[2]] / p40[[1]])
+c(
+  rate_ratio = exp(coef(simple_c)[["elsewhere"]]),
+  odds_ratio = exp(coef(simple_l)[["elsewhere"]]),
+  risk_ratio_at_40 = p40[[2]] / p40[[1]]
+)
 
 # and how the risk ratio changes with the age, when the rate ratio does not
 ages <- c(10, 20, 40, 60, 79)
-pc <- sapply(0:1, function(e) predict(simple_c, data.frame(age = ages, elsewhere = e), type = "response"))
-round(data.frame(age = ages, US = pc[, 1], elsewhere = pc[, 2], risk_ratio = pc[, 2] / pc[, 1], odds_ratio = (pc[, 2] / (1 - pc[, 2])) / (pc[, 1] / (1 - pc[, 1]))), 3)
+pc <- sapply(0:1, function(e) {
+  predict(simple_c, data.frame(age = ages, elsewhere = e), type = "response")
+})
+round(
+  data.frame(
+    age = ages,
+    US = pc[, 1],
+    elsewhere = pc[, 2],
+    risk_ratio = pc[, 2] / pc[, 1],
+    odds_ratio = (pc[, 2] / (1 - pc[, 2])) / (pc[, 1] / (1 - pc[, 1]))
+  ),
+  3
+)
 ```
 
 - The **fit** hardly decides. The complementary log-log and the logit are within `r f1(abs(AIC(fit_groups) - AIC(logit)))` AIC points of each other, and the probit `r f1(AIC(probit) - AIC(fit_groups))` points behind: with probabilities below 40% the curves are nearly the same.
@@ -257,7 +323,11 @@ p_link <- coef(summary(lt))[3, 4]
 ```{r calibration}
 p_hat <- fitted(fit_groups)
 tenth <- cut(p_hat, unique(quantile(p_hat, 0:10 / 10)), include.lowest = TRUE)
-cal   <- data.frame(predicted = tapply(p_hat, tenth, mean), observed = tapply(tox$positive, tenth, mean), n = as.vector(table(tenth)))
+cal <- data.frame(
+  predicted = tapply(p_hat, tenth, mean),
+  observed = tapply(tox$positive, tenth, mean),
+  n = as.vector(table(tenth))
+)
 cal$z <- (cal$observed - cal$predicted) / sqrt(cal$predicted * (1 - cal$predicted) / cal$n)
 round(cal, 3)
 ```
@@ -268,19 +338,26 @@ The quadratic term of the link test has *p* `r pval(p_link)`, and the largest di
 
 ## 8. The same link for survival in intervals
 
-The other great use of the link is **time to an event**, when time is recorded in intervals: years of school until dropping out, months until a job is found. Make one row for each person **and interval** at risk, with a 1 in the interval where the event happens. A regression of this 0/1 with the cloglog link gives **the same coefficients as a Cox model** for the underlying continuous time (Prentice & Gloeckler, 1978). We check it with the lung-cancer data that come with R, cut into intervals of 90 days:
+The other great use of the link is **time to an event**, when time is recorded in intervals: years of school until dropping out, months until a job is found. Make one row for each person **and interval** at risk, with a 1 in the interval where the event happens. A regression of this 0/1 with the cloglog link gives **the same coefficients as a [Cox model](EXAMPLE_COX.Rmd)** for the underlying continuous time (Prentice & Gloeckler, 1978). We check it with the lung-cancer data that come with R, cut into intervals of 90 days:
 
 ```{r discrete_time}
 lung2 <- na.omit(lung[, c("time", "status", "sex", "age")])
 lung2$event <- as.integer(lung2$status == 2)
 lung2$interval <- pmin(ceiling(lung2$time / 90), 10)
-rows <- lung2[rep(seq_len(nrow(lung2)), lung2$interval), ]                # one row per person and interval
+rows <- lung2[rep(seq_len(nrow(lung2)), lung2$interval), ] # one row per person and interval
 rows$t <- sequence(lung2$interval)
 rows$y <- as.integer(rows$t == rows$interval & rows$event == 1)
 discrete <- glm(y ~ factor(t) + sex + age, family = binomial("cloglog"), data = rows)
 cox      <- coxph(Surv(time, event) ~ sex + age, data = lung2)
 logit_d  <- glm(y ~ factor(t) + sex + age, family = binomial("logit"), data = rows)
-round(cbind(cloglog = exp(coef(discrete)[c("sex", "age")]), Cox = exp(coef(cox)), logit = exp(coef(logit_d)[c("sex", "age")])), 3)
+round(
+  cbind(
+    cloglog = exp(coef(discrete)[c("sex", "age")]),
+    Cox = exp(coef(cox)),
+    logit = exp(coef(logit_d)[c("sex", "age")])
+  ),
+  3
+)
 ```
 
 The hazard ratios of the discrete model (`r f2(exp(coef(discrete)[["sex"]]))` for sex) and of the Cox model (`r f2(exp(coef(cox)[["sex"]]))`) are close, and would be closer with shorter intervals. The logit gives odds ratios (`r f2(exp(coef(logit_d)[["sex"]]))`), further from 1.

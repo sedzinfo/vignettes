@@ -39,7 +39,8 @@ f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
 f4   <- function(x) formatC(x, format = "f", digits = 4, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 ```
 
@@ -78,7 +79,10 @@ General Electric is the larger firm, and the two series move together. But do th
 ```{r separate}
 ols_ge <- lm(invest ~ value + capital, data = ge)
 ols_wh <- lm(invest ~ value + capital, data = wh)
-round(rbind(GE = coef(summary(ols_ge))["value", ], Westinghouse = coef(summary(ols_wh))["value", ]), 4)
+round(
+  rbind(GE = coef(summary(ols_ge))["value", ], Westinghouse = coef(summary(ols_wh))["value", ]),
+  4
+)
 r_errors <- cor(resid(ols_ge), resid(ols_wh))
 r_errors
 ```
@@ -147,7 +151,10 @@ Tn <- nrow(X_ge); k <- ncol(X_ge)
 Z  <- matrix(0, Tn, k)
 X  <- rbind(cbind(X_ge, Z), cbind(Z, X_wh))                            # the block matrix of step 2
 y  <- c(ge$invest, wh$invest)
-colnames(X) <- c(paste0("GE_", c("intercept", "value", "capital")), paste0("W_", c("intercept", "value", "capital")))
+colnames(X) <- c(
+  paste0("GE_", c("intercept", "value", "capital")),
+  paste0("W_", c("intercept", "value", "capital"))
+)
 
 E     <- cbind(GE = resid(ols_ge), W = resid(ols_wh))
 Sigma <- crossprod(E) / Tn
@@ -168,7 +175,8 @@ wide <- data.frame(year = ge$year,
 equations <- list(GE = invest_ge ~ value_ge + capital_ge,
                   W  = invest_wh ~ value_wh + capital_wh)
 ols <- systemfit(equations, method = "OLS", data = wide)
-sur <- systemfit(equations, method = "SUR", data = wide, methodResidCov = "noDfCor")   # divide by T, as by hand
+# divide by T, as by hand
+sur <- systemfit(equations, method = "SUR", data = wide, methodResidCov = "noDfCor")
 max(abs(coef(sur) - b_sur))
 max(abs(sqrt(diag(vcov(sur))) - sqrt(diag(V_sur))))
 ```
@@ -188,24 +196,46 @@ b <- coef(sur); se <- sqrt(diag(vcov(sur))); se_ols <- sqrt(diag(vcov(ols)))
 - **`McElroy R²`** is a single $R^2$ for the whole system. The $R^2$ of an equation can be lower than with OLS, because OLS makes each $R^2$ as large as possible, and SUR does not aim for that.
 
 ```{r gain_table}
-gain <- data.frame(term = names(b), OLS = coef(ols), SE_OLS = se_ols, SUR = b, SE_SUR = se, ratio = se / se_ols, row.names = NULL)
+gain <- data.frame(
+  term = names(b),
+  OLS = coef(ols),
+  SE_OLS = se_ols,
+  SUR = b,
+  SE_SUR = se,
+  ratio = se / se_ols,
+  row.names = NULL
+)
 print(cbind(term = gain$term, round(gain[, -1], 4)), row.names = FALSE)
 ```
 
 ```{r gain_chart}
 rows <- c("GE_value_ge", "GE_capital_ge", "W_value_wh", "W_capital_wh")
-plot_data <- rbind(data.frame(term = rows, est = coef(ols)[rows], se = se_ols[rows], method = "OLS"),
-                   data.frame(term = rows, est = b[rows], se = se[rows], method = "SUR"))
-plot_data$label <- factor(plot_data$term, levels = rev(rows),
-                          labels = rev(c("GE: value", "GE: capital", "Westinghouse: value", "Westinghouse: capital")))
+plot_data <- rbind(
+  data.frame(term = rows, est = coef(ols)[rows], se = se_ols[rows], method = "OLS"),
+  data.frame(term = rows, est = b[rows], se = se[rows], method = "SUR")
+)
+plot_data$label <- factor(
+  plot_data$term,
+  levels = rev(rows),
+  labels = rev(c("GE: value", "GE: capital", "Westinghouse: value", "Westinghouse: capital"))
+)
 t_crit <- qt(0.975, Tn - k)
 
 ggplot(plot_data, aes(est, label, colour = method)) +
   geom_vline(xintercept = 0, colour = "grey60") +
-  geom_pointrange(aes(xmin = est - t_crit * se, xmax = est + t_crit * se), position = position_dodge(width = 0.5), linewidth = 0.8) +
+  geom_pointrange(
+    aes(xmin = est - t_crit * se, xmax = est + t_crit * se),
+    position = position_dodge(width = 0.5),
+    linewidth = 0.8
+  ) +
   scale_colour_manual(values = c(OLS = "#eb6834", SUR = "#2a78d6"), name = NULL) +
-  labs(title = "Separate (OLS) and joint (SUR) estimates with 95% intervals", x = "coefficient", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Separate (OLS) and joint (SUR) estimates with 95% intervals",
+    x = "coefficient",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The standard errors of SUR are `r f1(100 * (1 - max(gain$ratio[-c(1, 4)])))` to `r f1(100 * (1 - min(gain$ratio[-c(1, 4)])))`% smaller for the slopes. The estimates move too: the slope of value for General Electric goes from `r f3(coef(ols)[["GE_value_ge"]])` (*t* = `r f2(coef(ols)[["GE_value_ge"]] / se_ols[["GE_value_ge"]])`) to `r f3(b[["GE_value_ge"]])` (*t* = `r f2(b[["GE_value_ge"]] / se[["GE_value_ge"]])`).
@@ -232,7 +262,11 @@ The question of the title compares coefficients **between** equations. Separate 
 $$H_0:\; \beta_2 = \gamma_2 \;\text{ and }\; \beta_3 = \gamma_3$$
 
 ```{r equal}
-equal_slopes <- linearHypothesis(sur, c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0"), test = "F")
+equal_slopes <- linearHypothesis(
+  sur,
+  c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0"),
+  test = "F"
+)
 equal_slopes
 
 difference <- function(term_a, term_b) {
@@ -240,22 +274,36 @@ difference <- function(term_a, term_b) {
   s <- sqrt(vcov(sur)[term_a, term_a] + vcov(sur)[term_b, term_b] - 2 * vcov(sur)[term_a, term_b])
   c(difference = d, SE = s, t = d / s)
 }
-diffs <- rbind(value = difference("GE_value_ge", "W_value_wh"), capital = difference("GE_capital_ge", "W_capital_wh"))
+diffs <- rbind(
+  value = difference("GE_value_ge", "W_value_wh"),
+  capital = difference("GE_capital_ge", "W_capital_wh")
+)
 diffs
 ```
 
 We cannot say that the slopes differ, *F*(`r equal_slopes$Df[2]`, `r equal_slopes$Res.Df[2]`) = `r f2(equal_slopes$F[2])`, *p* `r pval(equal_slopes$"Pr(>F)"[2])`. That is not evidence that they are the same: with `r Tn` years the standard errors of the differences are large. If theory says that the slopes are equal, we can impose it, and estimate them with both firms' data:
 
 ```{r restricted}
-restricted <- systemfit(equations, method = "SUR", data = wide,
-                        restrict.matrix = c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0"))
+restricted <- systemfit(
+  equations,
+  method = "SUR",
+  data = wide,
+  restrict.matrix = c("GE_value_ge - W_value_wh = 0", "GE_capital_ge - W_capital_wh = 0")
+)
 round(coef(summary(restricted))[c("GE_value_ge", "GE_capital_ge"), 1:2], 4)
 ```
 
 ### Iterating to maximum likelihood
 
 ```{r iterate}
-iterated <- systemfit(equations, method = "SUR", data = wide, methodResidCov = "noDfCor", maxiter = 500, tol = 1e-8)
+iterated <- systemfit(
+  equations,
+  method = "SUR",
+  data = wide,
+  methodResidCov = "noDfCor",
+  maxiter = 500,
+  tol = 1e-8
+)
 cbind(two_steps = coef(sur), iterated = coef(iterated))
 c(iterations = iterated$iter)
 ```
@@ -273,7 +321,10 @@ If each firm had **all four** predictors (its own and the other's), the equation
 ```{r identical}
 same_rhs <- list(GE = invest_ge ~ value_ge + capital_ge + value_wh + capital_wh,
                  W  = invest_wh ~ value_ge + capital_ge + value_wh + capital_wh)
-max(abs(coef(systemfit(same_rhs, method = "OLS", data = wide)) - coef(systemfit(same_rhs, method = "SUR", data = wide))))
+max(abs(
+  coef(systemfit(same_rhs, method = "OLS", data = wide)) -
+    coef(systemfit(same_rhs, method = "SUR", data = wide))
+))
 ```
 
 The largest difference between OLS and SUR is zero, up to rounding, although the errors are correlated. This is the case of [multivariate regression](EXAMPLE_MULTIVARIATE_REGRESSION.Rmd).
@@ -288,16 +339,27 @@ truth <- b_sur
 sds   <- sqrt(diag(Sigma))
 fit_both <- function(yy) {
   b_o <- c(qr.coef(qr(X_ge), yy[1:Tn]), qr.coef(qr(X_wh), yy[Tn + 1:Tn]))
-  e   <- matrix(yy - X %*% b_o, Tn)
-  S   <- crossprod(e) / (Tn - k)                                     # the cautious version, with degrees of freedom
-  Si  <- solve(S)
-  A   <- rbind(cbind(Si[1, 1] * crossprod(X_ge), Si[1, 2] * crossprod(X_ge, X_wh)),
-               cbind(Si[2, 1] * crossprod(X_wh, X_ge), Si[2, 2] * crossprod(X_wh)))
-  y1 <- yy[1:Tn]; y2 <- yy[Tn + 1:Tn]
-  V  <- solve(A)
-  b_s <- V %*% c(Si[1, 1] * crossprod(X_ge, y1) + Si[1, 2] * crossprod(X_ge, y2),
-                 Si[2, 1] * crossprod(X_wh, y1) + Si[2, 2] * crossprod(X_wh, y2))
-  c(ols = b_o[[2]], sur = b_s[[2]], se_ols = sqrt(S[1, 1] * solve(crossprod(X_ge))[2, 2]), se_sur = sqrt(V[2, 2]))
+  e <- matrix(yy - X %*% b_o, Tn)
+  S <- crossprod(e) / (Tn - k) # the cautious version, with degrees of freedom
+  Si <- solve(S)
+  A <- rbind(
+    cbind(Si[1, 1] * crossprod(X_ge), Si[1, 2] * crossprod(X_ge, X_wh)),
+    cbind(Si[2, 1] * crossprod(X_wh, X_ge), Si[2, 2] * crossprod(X_wh))
+  )
+  y1 <- yy[1:Tn]
+  y2 <- yy[Tn + 1:Tn]
+  V <- solve(A)
+  b_s <- V %*%
+    c(
+      Si[1, 1] * crossprod(X_ge, y1) + Si[1, 2] * crossprod(X_ge, y2),
+      Si[2, 1] * crossprod(X_wh, y1) + Si[2, 2] * crossprod(X_wh, y2)
+    )
+  c(
+    ols = b_o[[2]],
+    sur = b_s[[2]],
+    se_ols = sqrt(S[1, 1] * solve(crossprod(X_ge))[2, 2]),
+    se_sur = sqrt(V[2, 2])
+  )
 }
 rhos <- c(0, 0.3, 0.5, 0.73, 0.9)
 experiment <- do.call(rbind, lapply(rhos, function(rho) {
@@ -312,17 +374,32 @@ round(experiment, 4)
 ```
 
 ```{r simulation_chart}
-sim_long <- rbind(data.frame(rho = rhos, sd = experiment$SD_OLS, what = "OLS: true spread"),
-                  data.frame(rho = rhos, sd = experiment$SD_SUR, what = "SUR: true spread"),
-                  data.frame(rho = rhos, sd = experiment$reported_SUR, what = "SUR: reported standard error"))
+sim_long <- rbind(
+  data.frame(rho = rhos, sd = experiment$SD_OLS, what = "OLS: true spread"),
+  data.frame(rho = rhos, sd = experiment$SD_SUR, what = "SUR: true spread"),
+  data.frame(rho = rhos, sd = experiment$reported_SUR, what = "SUR: reported standard error")
+)
 ggplot(sim_long, aes(rho, sd, colour = what, linetype = what)) +
-  geom_line(linewidth = 1) + geom_point(size = 2.2) +
-  scale_colour_manual(values = c("#eb6834", "#2a78d6", "#2a78d6"), name = NULL, breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")) +
-  scale_linetype_manual(values = c("solid", "solid", "dashed"), name = NULL, breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.2) +
+  scale_colour_manual(
+    values = c("#eb6834", "#2a78d6", "#2a78d6"),
+    name = NULL,
+    breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")
+  ) +
+  scale_linetype_manual(
+    values = c("solid", "solid", "dashed"),
+    name = NULL,
+    breaks = c("OLS: true spread", "SUR: true spread", "SUR: reported standard error")
+  ) +
   scale_y_continuous(limits = c(0, NA)) +
-  labs(title = "The slope of value for General Electric, 1,000 simulations each",
-       x = "correlation of the errors of the two equations", y = "standard deviation of the estimate") +
-  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+  labs(
+    title = "The slope of value for General Electric, 1,000 simulations each",
+    x = "correlation of the errors of the two equations",
+    y = "standard deviation of the estimate"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 - With uncorrelated errors SUR gains nothing (`r f1(100 * experiment$gain[1])`%). It even loses a little, because it estimates a correlation that is zero.
@@ -339,13 +416,19 @@ round(R5, 2)
 lm5 <- Tn * sum(R5[lower.tri(R5)]^2)
 c(LM = lm5, df = 10, p = pchisq(lm5, 10, lower.tail = FALSE))
 
-panel5 <- plm::pdata.frame(subset(grunfeld, firm %in% five)[, c("firm", "year", "invest", "value", "capital")], index = c("firm", "year"))
+panel5 <- plm::pdata.frame(
+  subset(grunfeld, firm %in% five)[, c("firm", "year", "invest", "value", "capital")],
+  index = c("firm", "year")
+)
 sur5 <- systemfit(invest ~ value + capital, method = "SUR", data = panel5)
 ols5 <- systemfit(invest ~ value + capital, method = "OLS", data = panel5)
 ratio5 <- sqrt(diag(vcov(sur5)) / diag(vcov(ols5)))
 ge_rows <- c("General.Electric_value", "General.Electric_capital")
-data.frame(two_firms = se[c("GE_value_ge", "GE_capital_ge")], five_firms = sqrt(diag(vcov(sur5)))[ge_rows],
-           row.names = c("GE value", "GE capital"))
+data.frame(
+  two_firms = se[c("GE_value_ge", "GE_capital_ge")],
+  five_firms = sqrt(diag(vcov(sur5)))[ge_rows],
+  row.names = c("GE value", "GE capital")
+)
 ```
 
 With five firms there are 10 correlations to estimate from `r Tn` years. They range from `r f2(min(R5[lower.tri(R5)]))` to `r f2(max(R5[lower.tri(R5)]))`: the electrical firms and US Steel go together, the car makers do not go with them. The reported standard errors of General Electric get smaller with more firms. Can we believe them?
@@ -358,24 +441,42 @@ Again a known truth: the predictors of 2, 5 and 10 of the firms, their OLS coeff
 set.seed(13)
 firms <- setdiff(unique(grunfeld$firm), "American Steel")             # ten firms
 many <- function(m, reps = 500) {
-  d    <- lapply(c("General Electric", setdiff(firms, "General Electric"))[1:m], function(f) subset(grunfeld, firm == f))
-  Xs   <- lapply(d, function(z) cbind(1, z$value, z$capital))
+  d <- lapply(c("General Electric", setdiff(firms, "General Electric"))[1:m], function(f) {
+    subset(grunfeld, firm == f)
+  })
+  Xs <- lapply(d, function(z) cbind(1, z$value, z$capital))
   fits <- lapply(seq_len(m), function(j) lm.fit(Xs[[j]], d[[j]]$invest))
-  mu   <- sapply(fits, function(f) f$fitted.values)
-  s0   <- sapply(fits, function(f) sqrt(sum(f$residuals^2) / (Tn - k)))
-  R    <- matrix(0.4, m, m); diag(R) <- 1
-  L    <- t(chol(diag(s0) %*% R %*% diag(s0)))
+  mu <- sapply(fits, function(f) f$fitted.values)
+  s0 <- sapply(fits, function(f) sqrt(sum(f$residuals^2) / (Tn - k)))
+  R <- matrix(0.4, m, m)
+  diag(R) <- 1
+  L <- t(chol(diag(s0) %*% R %*% diag(s0)))
   r <- replicate(reps, {
     Ys <- mu + t(L %*% matrix(rnorm(m * Tn), m))
     Es <- sapply(seq_len(m), function(j) lm.fit(Xs[[j]], Ys[, j])$residuals)
     Si <- solve(crossprod(Es) / (Tn - k))
-    A  <- do.call(rbind, lapply(1:m, function(i) do.call(cbind, lapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Xs[[j]])))))
-    v  <- do.call(c, lapply(1:m, function(i) rowSums(sapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Ys[, j])))))
-    V  <- solve(A)
+    A <- do.call(
+      rbind,
+      lapply(1:m, function(i) {
+        do.call(cbind, lapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Xs[[j]])))
+      })
+    )
+    v <- do.call(
+      c,
+      lapply(1:m, function(i) {
+        rowSums(sapply(1:m, function(j) Si[i, j] * crossprod(Xs[[i]], Ys[, j])))
+      })
+    )
+    V <- solve(A)
     c(est = sum(V[2, ] * v), se = sqrt(V[2, 2]))
   })
-  data.frame(equations = m, covariances = m * (m + 1) / 2, true_spread = sd(r["est", ]), reported_SE = mean(r["se", ]),
-             ratio = mean(r["se", ]) / sd(r["est", ]))
+  data.frame(
+    equations = m,
+    covariances = m * (m + 1) / 2,
+    true_spread = sd(r["est", ]),
+    reported_SE = mean(r["se", ]),
+    ratio = mean(r["se", ]) / sd(r["est", ])
+  )
 }
 trap <- do.call(rbind, lapply(c(2, 5, 10), many))
 round(trap, 4)
@@ -391,13 +492,16 @@ With two equations the reported standard error is `r f2(trap$ratio[1])` times th
 - **Autocorrelation.** SUR allows errors to correlate between equations in the same year, not between years. Our residuals fail here:
 
 ```{r durbin_watson}
-dw <- rbind(GE = unlist(dwtest(ols_ge)[c("statistic", "p.value")]), Westinghouse = unlist(dwtest(ols_wh)[c("statistic", "p.value")]))
+dw <- rbind(
+  GE = unlist(dwtest(ols_ge)[c("statistic", "p.value")]),
+  Westinghouse = unlist(dwtest(ols_wh)[c("statistic", "p.value")])
+)
 round(dw, 3)
 ```
 
 - The Durbin–Watson statistics (`r f2(dw[1, 1])` and `r f2(dw[2, 1])`, far below 2) show positive autocorrelation, so **all** the standard errors of this page, OLS and SUR, are too small. A serious analysis would add autoregressive errors to each equation (Parks' method), or dynamics.
 - **One wrong equation spoils the others.** If the equation of one firm lacks an important predictor, its error goes through $\Sigma$ into the estimates of the other firms. OLS keeps such damage inside its own equation. SUR is more precise when everything is right, and less robust when something is wrong.
-- **Endogeneity.** SUR does not help if a predictor depends on the errors, for example if investment raises the value of the firm in the same year. (Here the value is that of the beginning of the year.) Three-stage least squares combines SUR with instrumental variables: `method = "3SLS"`.
+- **Endogeneity.** SUR does not help if a predictor depends on the errors, for example if investment raises the value of the firm in the same year. (Here the value is that of the beginning of the year.) Three-stage least squares combines SUR with [instrumental variables](EXAMPLE_INSTRUMENTAL_VARIABLES.Rmd): `method = "3SLS"`.
 - **Pooling.** If the coefficients are the same in all equations, a panel model is simpler and more precise. SUR is for few units, many times and different coefficients.
 - **In psychology and sociology** the same model appears as a *path model* with correlated residuals. `lavaan` fits it with `y1 ~ x1; y2 ~ x2; y1 ~~ y2`, and with maximum likelihood it gives the iterated estimates. For categorical outcomes, the bivariate probit model is the relative of SUR.
 

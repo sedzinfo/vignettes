@@ -31,7 +31,8 @@ library(ggplot2)
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -44,19 +45,31 @@ pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%
 NOAA keeps the daily records of more than 100,000 weather stations in one archive (GHCN-Daily; Menne et al., 2012), one CSV file per station, free and with no login. The station of Corfu airport starts in 1955.
 
 ```{r download}
-raw  <- read.csv("https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/GR000016641.csv")
-rain <- data.frame(date = as.Date(raw$DATE), mm = raw$PRCP / 10)                 # the file has tenths of a millimetre
+raw <- read.csv(
+  "https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/GR000016641.csv"
+)
+# the file has tenths of a millimetre
+rain <- data.frame(date = as.Date(raw$DATE), mm = raw$PRCP / 10)
 rain$year  <- as.integer(format(rain$date, "%Y"))
 rain$month <- as.integer(format(rain$date, "%m"))
 rain <- subset(rain, !is.na(mm) & year <= 2024)
-rain$before <- rain$mm[match(rain$date - 1, rain$date)]                          # the rain of the day before
+rain$before <- rain$mm[match(rain$date - 1, rain$date)] # the rain of the day before
 rain <- subset(rain, !is.na(before))
 rain$wet_before <- as.integer(rain$before > 0)
 rain$decade <- (rain$year - 1990) / 10
-angle <- 2 * pi * as.integer(format(rain$date, "%j")) / 365.25                   # the season, as a wave with two harmonics
-rain$sin1 <- sin(angle); rain$cos1 <- cos(angle); rain$sin2 <- sin(2 * angle); rain$cos2 <- cos(2 * angle)
+# the season, as a wave with two harmonics
+angle <- 2 * pi * as.integer(format(rain$date, "%j")) / 365.25
+rain$sin1 <- sin(angle)
+rain$cos1 <- cos(angle)
+rain$sin2 <- sin(2 * angle)
+rain$cos2 <- cos(2 * angle)
 nrow(rain)
-c(dry_days = mean(rain$mm == 0), mean = mean(rain$mm), largest = max(rain$mm), mm_per_year = 365.25 * mean(rain$mm))
+c(
+  dry_days = mean(rain$mm == 0),
+  mean = mean(rain$mm),
+  largest = max(rain$mm),
+  mm_per_year = 365.25 * mean(rain$mm)
+)
 ```
 
 There are `r num(nrow(rain))` days with a record for the day and the day before, from `r min(rain$year)` to `r max(rain$year)`. `r pct(mean(rain$mm == 0))` of them are dry. The mean is `r f1(mean(rain$mm))` mm a day, about `r num(round(365.25 * mean(rain$mm)))` mm a year.
@@ -66,17 +79,40 @@ There are `r num(nrow(rain))` days with a record for the day and the day before,
 ## 2. Look at the data
 
 ```{r look, fig.height = 6}
-by_month <- do.call(rbind, lapply(split(rain, rain$month), function(d) data.frame(month = d$month[1], mean = mean(d$mm), dry = mean(d$mm == 0), mean_wet = mean(d$mm[d$mm > 0]))))
+by_month <- do.call(
+  rbind,
+  lapply(split(rain, rain$month), function(d) {
+    data.frame(
+      month = d$month[1],
+      mean = mean(d$mm),
+      dry = mean(d$mm == 0),
+      mean_wet = mean(d$mm[d$mm > 0])
+    )
+  })
+)
 by_month$name <- factor(month.abb[by_month$month], levels = month.abb)
-pa <- ggplot(subset(rain, mm > 0), aes(mm)) + geom_histogram(binwidth = 2, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+pa <- ggplot(subset(rain, mm > 0), aes(mm)) +
+  geom_histogram(binwidth = 2, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
   coord_cartesian(xlim = c(0, 100)) +
-  labs(title = "Rain on wet days", subtitle = paste0(pct(mean(rain$mm == 0), 0), " of the days are dry, and not in this chart"), x = "mm", y = "days") + theme_bw()
-long <- rbind(data.frame(name = by_month$name, value = by_month$mean, what = "mean rain per day (mm)"),
-              data.frame(name = by_month$name, value = 100 * (1 - by_month$dry), what = "wet days (%)"),
-              data.frame(name = by_month$name, value = by_month$mean_wet, what = "mean rain on a wet day (mm)"))
+  labs(
+    title = "Rain on wet days",
+    subtitle = paste0(pct(mean(rain$mm == 0), 0), " of the days are dry, and not in this chart"),
+    x = "mm",
+    y = "days"
+  ) +
+  theme_bw()
+long <- rbind(
+  data.frame(name = by_month$name, value = by_month$mean, what = "mean rain per day (mm)"),
+  data.frame(name = by_month$name, value = 100 * (1 - by_month$dry), what = "wet days (%)"),
+  data.frame(name = by_month$name, value = by_month$mean_wet, what = "mean rain on a wet day (mm)")
+)
 long$what <- factor(long$what, levels = unique(long$what))
-pb <- ggplot(long, aes(name, value)) + geom_col(fill = "#2a78d6") + facet_wrap(~ what, scales = "free_y", ncol = 3) +
-  labs(x = NULL, y = NULL) + theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 7))
+pb <- ggplot(long, aes(name, value)) +
+  geom_col(fill = "#2a78d6") +
+  facet_wrap(~what, scales = "free_y", ncol = 3) +
+  labs(x = NULL, y = NULL) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, size = 7))
 patchwork::wrap_plots(pa, pb, ncol = 1)
 ```
 
@@ -107,10 +143,19 @@ $$\lambda = \frac{\mu^{2-p}}{\phi\,(2 - p)}, \qquad \alpha = \frac{2 - p}{p - 1}
 ```{r simulate}
 set.seed(111)
 mu <- 3; p <- 1.6; phi <- 8
-lambda <- mu^(2 - p) / (phi * (2 - p)); alpha <- (2 - p) / (p - 1); theta <- phi * (p - 1) * mu^(p - 1)
+lambda <- mu^(2 - p) / (phi * (2 - p))
+alpha <- (2 - p) / (p - 1)
+theta <- phi * (p - 1) * mu^(p - 1)
 showers <- rpois(200000, lambda)
-y_sim   <- rgamma(200000, shape = alpha * showers, scale = theta)        # the sum of n gammas is a gamma (0 showers: 0)
-c(mean = mean(y_sim), variance = var(y_sim), theory = phi * mu^p, dry = mean(y_sim == 0), theory_dry = exp(-lambda))
+# the sum of n gammas is a gamma (0 showers: 0)
+y_sim <- rgamma(200000, shape = alpha * showers, scale = theta)
+c(
+  mean = mean(y_sim),
+  variance = var(y_sim),
+  theory = phi * mu^p,
+  dry = mean(y_sim == 0),
+  theory_dry = exp(-lambda)
+)
 ```
 
 ### Step 3: the regression
@@ -128,7 +173,12 @@ Given $p$, the $\beta$'s are estimated like those of any generalized linear mode
 ## 4. Fitting the model and reading the output
 
 ```{r fit}
-fit <- gam(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = tw(), data = rain, method = "ML")
+fit <- gam(
+  mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade,
+  family = tw(),
+  data = rain,
+  method = "ML"
+)
 summary(fit)
 p_hat   <- fit$family$getTheta(TRUE)
 phi_hat <- fit$scale
@@ -144,7 +194,11 @@ b <- coef(fit); se <- sqrt(diag(vcov(fit)))
 The same as a plain GLM, with the power fixed at its estimate:
 
 ```{r glm}
-fit_glm <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = tweedie(var.power = p_hat, link.power = 0), data = rain)
+fit_glm <- glm(
+  mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade,
+  family = tweedie(var.power = p_hat, link.power = 0),
+  data = rain
+)
 round(rbind(gam = b, glm = coef(fit_glm)), 4)
 round(rbind(gam_ML = se, glm = coef(summary(fit_glm))[, 2]), 4)
 c(dispersion_ML = phi_hat, dispersion_Pearson = summary(fit_glm)$dispersion)
@@ -154,13 +208,24 @@ The coefficients agree. The standard errors do not, because the two estimate $\p
 
 ```{r season_chart}
 grid <- expand.grid(day = 1:365, wet_before = 0:1); ag <- 2 * pi * grid$day / 365.25
-grid <- transform(grid, sin1 = sin(ag), cos1 = cos(ag), sin2 = sin(2 * ag), cos2 = cos(2 * ag), decade = 0)
+grid <- transform(
+  grid,
+  sin1 = sin(ag),
+  cos1 = cos(ag),
+  sin2 = sin(2 * ag),
+  cos2 = cos(2 * ag),
+  decade = 0
+)
 grid$mean <- predict(fit, grid, type = "response")
 grid$dry  <- exp(-grid$mean^(2 - p_hat) / (phi_hat * (2 - p_hat)))
 grid$after <- ifelse(grid$wet_before == 1, "after a wet day", "after a dry day")
-ggplot(grid, aes(as.Date("2023-12-31") + day, mean, colour = after)) + geom_line(linewidth = 1) +
-  scale_colour_manual(values = c("#eb6834", "#2a78d6"), name = NULL) + scale_x_date(date_labels = "%b", date_breaks = "2 months") +
-  labs(title = "Mean rain by day of the year", x = NULL, y = "mm per day") + theme_bw() + theme(legend.position = "bottom")
+ggplot(grid, aes(as.Date("2023-12-31") + day, mean, colour = after)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("#eb6834", "#2a78d6"), name = NULL) +
+  scale_x_date(date_labels = "%b", date_breaks = "2 months") +
+  labs(title = "Mean rain by day of the year", x = NULL, y = "mm per day") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ---
@@ -172,8 +237,13 @@ A Tweedie model has an opinion about the probability of a dry day, $e^{-\lambda}
 ```{r zeros}
 lambda_i <- fitted(fit)^(2 - p_hat) / (phi_hat * (2 - p_hat))
 c(observed_dry = mean(rain$mm == 0), expected_dry = mean(exp(-lambda_i)))
-check <- data.frame(month = 1:12, mean_obs = tapply(rain$mm, rain$month, mean), mean_fit = tapply(fitted(fit), rain$month, mean),
-                    dry_obs = tapply(rain$mm == 0, rain$month, mean), dry_fit = tapply(exp(-lambda_i), rain$month, mean))
+check <- data.frame(
+  month = 1:12,
+  mean_obs = tapply(rain$mm, rain$month, mean),
+  mean_fit = tapply(fitted(fit), rain$month, mean),
+  dry_obs = tapply(rain$mm == 0, rain$month, mean),
+  dry_fit = tapply(exp(-lambda_i), rain$month, mean)
+)
 round(check, 2)
 ```
 
@@ -184,26 +254,68 @@ Overall, the model expects `r pct(mean(exp(-lambda_i)))` dry days, and there are
 Let $\phi$ depend on the season too. `mgcv` has a family for it, `twlss()`, with three formulas: for the mean, for the power and for the dispersion.
 
 ```{r twlss}
-fit2 <- gam(list(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, ~ 1, ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade),
-            family = twlss(), data = rain)
-eta2 <- predict(fit2, type = "link")                                        # three linear predictors: log(mean), power (transformed), log(phi)
-mu2  <- exp(eta2[, 1]); p2 <- 1.01 + 0.98 * plogis(eta2[, 2]); phi2 <- exp(eta2[, 3])   # the power is kept between 1.01 and 1.99
+fit2 <- gam(
+  list(
+    mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade,
+    ~1,
+    ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade
+  ),
+  family = twlss(),
+  data = rain
+)
+# three linear predictors: log(mean), power (transformed), log(phi)
+eta2 <- predict(fit2, type = "link")
+mu2 <- exp(eta2[, 1])
+p2 <- 1.01 + 0.98 * plogis(eta2[, 2])
+phi2 <- exp(eta2[, 3]) # the power is kept between 1.01 and 1.99
 lambda2 <- mu2^(2 - p2) / (phi2 * (2 - p2))
-check$mean_fit2 <- tapply(mu2, rain$month, mean); check$dry_fit2 <- tapply(exp(-lambda2), rain$month, mean)
+check$mean_fit2 <- tapply(mu2, rain$month, mean)
+check$dry_fit2 <- tapply(exp(-lambda2), rain$month, mean)
 c(AIC_one_dispersion = AIC(fit), AIC_seasonal_dispersion = AIC(fit2), power = p2[[1]])
-round(tapply(phi2, rain$month, mean), 1)                                    # the dispersion by month
-dry_error <- c(one = max(abs(check$dry_fit - check$dry_obs)), seasonal = max(abs(check$dry_fit2 - check$dry_obs)))
+round(tapply(phi2, rain$month, mean), 1) # the dispersion by month
+dry_error <- c(
+  one = max(abs(check$dry_fit - check$dry_obs)),
+  seasonal = max(abs(check$dry_fit2 - check$dry_obs))
+)
 dry_error
 ```
 
 ```{r zeros_chart}
-zero_data <- rbind(data.frame(month = 1:12, dry = check$dry_obs, what = "observed"), data.frame(month = 1:12, dry = check$dry_fit, what = "Tweedie, one dispersion"),
-                   data.frame(month = 1:12, dry = check$dry_fit2, what = "Tweedie, dispersion by season and day before"))
-ggplot(zero_data, aes(month, dry, colour = what, linetype = what)) + geom_line(linewidth = 0.9) + geom_point(size = 2) +
-  scale_colour_manual(values = c("grey30", "#2a78d6", "#eb6834"), breaks = c("observed", "Tweedie, dispersion by season and day before", "Tweedie, one dispersion"), name = NULL) +
-  scale_linetype_manual(values = c("solid", "dashed", "solid"), breaks = c("observed", "Tweedie, dispersion by season and day before", "Tweedie, one dispersion"), name = NULL) +
-  scale_x_continuous(breaks = 1:12, labels = month.abb) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
-  labs(title = "Dry days by month", x = NULL, y = NULL) + theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+zero_data <- rbind(
+  data.frame(month = 1:12, dry = check$dry_obs, what = "observed"),
+  data.frame(month = 1:12, dry = check$dry_fit, what = "Tweedie, one dispersion"),
+  data.frame(
+    month = 1:12,
+    dry = check$dry_fit2,
+    what = "Tweedie, dispersion by season and day before"
+  )
+)
+ggplot(zero_data, aes(month, dry, colour = what, linetype = what)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_colour_manual(
+    values = c("grey30", "#2a78d6", "#eb6834"),
+    breaks = c(
+      "observed",
+      "Tweedie, dispersion by season and day before",
+      "Tweedie, one dispersion"
+    ),
+    name = NULL
+  ) +
+  scale_linetype_manual(
+    values = c("solid", "dashed", "solid"),
+    breaks = c(
+      "observed",
+      "Tweedie, dispersion by season and day before",
+      "Tweedie, one dispersion"
+    ),
+    name = NULL
+  ) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  labs(title = "Dry days by month", x = NULL, y = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 The AIC falls by `r num(round(AIC(fit) - AIC(fit2)))`, and the largest error in the share of dry days falls from `r f1(100 * dry_error[["one"]])` to `r f1(100 * dry_error[["seasonal"]])` percentage points. The model for the mean does not change its meaning. It now knows that the same mean can come from a few heavy or from many light showers.
@@ -215,16 +327,32 @@ The AIC falls by `r num(round(AIC(fit) - AIC(fit2)))`, and the largest error in 
 A [two-part model](EXAMPLE_HURDLE_TWO_PART.Rmd) has separate coefficients for **whether** and **how much**: a logistic regression and a gamma regression.
 
 ```{r two_part}
-whether <- glm(I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = binomial, data = rain)
-amount  <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade, family = Gamma("log"), data = subset(rain, mm > 0))
+whether <- glm(
+  I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade,
+  family = binomial,
+  data = rain
+)
+amount <- glm(
+  mm ~ sin1 + cos1 + sin2 + cos2 + wet_before + decade,
+  family = Gamma("log"),
+  data = subset(rain, mm > 0)
+)
 mean_two <- predict(whether, rain, type = "response") * predict(amount, rain, type = "response")
-shape <- 1 / MASS::gamma.dispersion(amount)                                  # ML estimate of the dispersion of the gamma
-ll_two <- as.numeric(logLik(whether)) + sum(dgamma(amount$y, shape = shape, scale = fitted(amount) / shape, log = TRUE))
+shape <- 1 / MASS::gamma.dispersion(amount) # ML estimate of the dispersion of the gamma
+ll_two <- as.numeric(logLik(whether)) +
+  sum(dgamma(amount$y, shape = shape, scale = fitted(amount) / shape, log = TRUE))
 aic_two <- -2 * ll_two + 2 * (length(coef(whether)) + length(coef(amount)) + 1)
-ll_tw <- c(`Tweedie` = AIC(fit), `Tweedie, varying dispersion` = AIC(fit2), `two-part (logistic + gamma)` = aic_two)
+ll_tw <- c(
+  `Tweedie` = AIC(fit),
+  `Tweedie, varying dispersion` = AIC(fit2),
+  `two-part (logistic + gamma)` = aic_two
+)
 round(ll_tw)
-compare <- cbind(Tweedie_ratio = exp(coef(fit)[c("wet_before", "decade")]), odds_of_rain = exp(coef(whether)[c("wet_before", "decade")]),
-                 amount_ratio = exp(coef(amount)[c("wet_before", "decade")]))
+compare <- cbind(
+  Tweedie_ratio = exp(coef(fit)[c("wet_before", "decade")]),
+  odds_of_rain = exp(coef(whether)[c("wet_before", "decade")]),
+  amount_ratio = exp(coef(amount)[c("wet_before", "decade")])
+)
 round(compare, 3)
 ```
 
@@ -246,22 +374,65 @@ Has the rain of Corfu changed? Now we leave `wet_before` out, because a change o
 ```{r trend}
 by_year <- function(m, d) coeftest(m, vcov = vcovCL(m, cluster = d$year))["decade", ]
 wet_days <- subset(rain, mm > 0)
-tw0 <- glm(mm ~ sin1 + cos1 + sin2 + cos2 + decade, family = tweedie(var.power = p_hat, link.power = 0), data = rain)
+tw0 <- glm(
+  mm ~ sin1 + cos1 + sin2 + cos2 + decade,
+  family = tweedie(var.power = p_hat, link.power = 0),
+  data = rain
+)
 st <- by_year(tw0, rain)
-sw <- by_year(glm(I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain), rain)
-sa <- by_year(glm(mm ~ sin1 + cos1 + sin2 + cos2 + decade, family = Gamma("log"), data = wet_days), wet_days)
-s1 <- by_year(glm(I(mm >= 1) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain), rain)
-signif(rbind(`total (Tweedie)` = st, `whether (logistic)` = sw, `how much (gamma)` = sa, `at least 1 mm (logistic)` = s1), 3)
-yearly <- do.call(rbind, lapply(split(rain, rain$year), function(d) data.frame(year = d$year[1], days = nrow(d), wet = mean(d$mm > 0), wet1 = mean(d$mm >= 1), per_wet = mean(d$mm[d$mm > 0]), mean = mean(d$mm))))
+sw <- by_year(
+  glm(I(mm > 0) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain),
+  rain
+)
+sa <- by_year(
+  glm(mm ~ sin1 + cos1 + sin2 + cos2 + decade, family = Gamma("log"), data = wet_days),
+  wet_days
+)
+s1 <- by_year(
+  glm(I(mm >= 1) ~ sin1 + cos1 + sin2 + cos2 + decade, family = binomial, data = rain),
+  rain
+)
+signif(
+  rbind(
+    `total (Tweedie)` = st,
+    `whether (logistic)` = sw,
+    `how much (gamma)` = sa,
+    `at least 1 mm (logistic)` = s1
+  ),
+  3
+)
+yearly <- do.call(
+  rbind,
+  lapply(split(rain, rain$year), function(d) {
+    data.frame(
+      year = d$year[1],
+      days = nrow(d),
+      wet = mean(d$mm > 0),
+      wet1 = mean(d$mm >= 1),
+      per_wet = mean(d$mm[d$mm > 0]),
+      mean = mean(d$mm)
+    )
+  })
+)
 yearly <- subset(yearly, days >= 350)
 ```
 
 ```{r trend_chart}
-yl <- rbind(data.frame(year = yearly$year, value = 100 * yearly$wet, what = "wet days (%)"), data.frame(year = yearly$year, value = yearly$per_wet, what = "rain on a wet day (mm)"),
-            data.frame(year = yearly$year, value = yearly$mean, what = "rain per day (mm)"))
-yl$what <- factor(yl$what, levels = c("wet days (%)", "rain on a wet day (mm)", "rain per day (mm)"))
-ggplot(yl, aes(year, value)) + geom_point(size = 1.2, colour = "grey40") + geom_smooth(method = "lm", formula = y ~ x, colour = "#eb6834", fill = "#eb6834", alpha = 0.2) +
-  facet_wrap(~ what, scales = "free_y") + labs(title = "Corfu, year by year", x = NULL, y = NULL) + theme_bw()
+yl <- rbind(
+  data.frame(year = yearly$year, value = 100 * yearly$wet, what = "wet days (%)"),
+  data.frame(year = yearly$year, value = yearly$per_wet, what = "rain on a wet day (mm)"),
+  data.frame(year = yearly$year, value = yearly$mean, what = "rain per day (mm)")
+)
+yl$what <- factor(
+  yl$what,
+  levels = c("wet days (%)", "rain on a wet day (mm)", "rain per day (mm)")
+)
+ggplot(yl, aes(year, value)) +
+  geom_point(size = 1.2, colour = "grey40") +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "#eb6834", fill = "#eb6834", alpha = 0.2) +
+  facet_wrap(~what, scales = "free_y") +
+  labs(title = "Corfu, year by year", x = NULL, y = NULL) +
+  theme_bw()
 ```
 
 The **total** changed by `r pct(exp(st[[1]]) - 1)` per decade, which is not distinguishable from zero (*p* `r pval(st[[4]])`). But over the decades the **odds of a wet day fell**, by `r pct(1 - exp(sw[[1]]))` per decade (*p* `r pval(sw[[4]])`), and the **rain on a wet day rose**, by `r pct(exp(sa[[1]]) - 1)` per decade (*p* `r pval(sa[[4]])`). In the mean, the two partly cancel. Fewer wet days with more rain each would be a real change of the climate. But it could also be a change of the **measurement**: if small amounts of a few tenths of a millimetre were recorded less often, there would be fewer wet days with a larger average. Counting only days with at least 1 mm, the odds change by `r pct(exp(s1[[1]]) - 1)` per decade (*p* `r pval(s1[[4]])`). `r if (s1[[4]] > .05) "So most of the trend is in the smallest amounts, and the suspicion of the measurement is justified." else "So the fall is not only a matter of the smallest amounts."` One station with changed instruments cannot settle it.
@@ -289,9 +460,26 @@ A report (APA 7th edition) needs the share of zeros, the power and how it was es
 s_glm <- coef(summary(fit_glm))
 low <- exp(s_glm[, 1] - 1.96 * s_glm[, 2]); high <- exp(s_glm[, 1] + 1.96 * s_glm[, 2])
 keep <- c("wet_before", "decade")
-apa_table <- data.frame(Predictor = c("Wet day before", "Decade"), tw = paste0(f2(exp(s_glm[keep, 1])), " [", f2(low[keep]), ", ", f2(high[keep]), "]"),
-                        or = paste0(f2(exp(coef(whether)[keep])), " [", f2(exp(confint.default(whether)[keep, 1])), ", ", f2(exp(confint.default(whether)[keep, 2])), "]"),
-                        am = paste0(f2(exp(coef(amount)[keep])), " [", f2(exp(confint.default(amount)[keep, 1])), ", ", f2(exp(confint.default(amount)[keep, 2])), "]"))
+apa_table <- data.frame(
+  Predictor = c("Wet day before", "Decade"),
+  tw = paste0(f2(exp(s_glm[keep, 1])), " [", f2(low[keep]), ", ", f2(high[keep]), "]"),
+  or = paste0(
+    f2(exp(coef(whether)[keep])),
+    " [",
+    f2(exp(confint.default(whether)[keep, 1])),
+    ", ",
+    f2(exp(confint.default(whether)[keep, 2])),
+    "]"
+  ),
+  am = paste0(
+    f2(exp(coef(amount)[keep])),
+    " [",
+    f2(exp(confint.default(amount)[keep, 1])),
+    ", ",
+    f2(exp(confint.default(amount)[keep, 2])),
+    "]"
+  )
+)
 ```
 
 **Method** (data analysis):

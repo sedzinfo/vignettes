@@ -28,7 +28,8 @@ library(sampleSelection)   # selection(): two-step and maximum likelihood
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -43,7 +44,7 @@ The data come from the Panel Study of Income Dynamics: married white women, 30 t
 ```{r download}
 women <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/sampleSelection/Mroz87.csv")
 women <- women[, c("lfp", "wage", "educ", "exper", "age", "kids5", "kids618", "nwifeinc")]
-women$logwage <- ifelse(women$lfp == 1, log(women$wage), NA)       # no wage for those who do not work
+women$logwage <- ifelse(women$lfp == 1, log(women$wage), NA) # no wage for those who do not work
 str(women)
 works <- women$lfp == 1
 c(women = nrow(women), working = sum(works), share = mean(works))
@@ -56,7 +57,11 @@ c(women = nrow(women), working = sum(works), share = mean(works))
 ## 2. Look at the data
 
 ```{r look_table}
-groups <- aggregate(cbind(educ, exper, age, kids5, kids618, nwifeinc) ~ lfp, data = women, FUN = mean)
+groups <- aggregate(
+  cbind(educ, exper, age, kids5, kids618, nwifeinc) ~ lfp,
+  data = women,
+  FUN = mean
+)
 groups$lfp <- c("not working", "working")
 print(cbind(group = groups$lfp, round(groups[, -1], 2)), row.names = FALSE)
 ```
@@ -65,12 +70,19 @@ print(cbind(group = groups$lfp, round(groups[, -1], 2)), row.names = FALSE)
 kids_share <- aggregate(lfp ~ kids5, data = women, FUN = mean)
 pa <- ggplot(women, aes(factor(kids5), fill = factor(lfp))) +
   geom_bar() +
-  scale_fill_manual(values = c(`0` = "grey70", `1` = "#2a78d6"), labels = c("not working: no wage", "working"), name = NULL) +
-  labs(title = "Children under 6", x = "number", y = "women") + theme_bw() + theme(legend.position = "bottom")
+  scale_fill_manual(
+    values = c(`0` = "grey70", `1` = "#2a78d6"),
+    labels = c("not working: no wage", "working"),
+    name = NULL
+  ) +
+  labs(title = "Children under 6", x = "number", y = "women") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 pb <- ggplot(subset(women, works), aes(educ, logwage)) +
   geom_jitter(width = 0.2, alpha = 0.4, colour = "grey30", size = 1.4) +
   geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") +
-  labs(title = "Wages, where they are known", x = "years of education", y = "log hourly wage") + theme_bw()
+  labs(title = "Wages, where they are known", x = "years of education", y = "log hourly wage") +
+  theme_bw()
 patchwork::wrap_plots(pa, pb)
 ```
 
@@ -133,7 +145,11 @@ If $x$ and $z$ contain the same variables, the only thing that tells $\lambda_i$
 
 ```{r two_step}
 # step 1: probit for working
-probit <- glm(lfp ~ nwifeinc + educ + exper + I(exper^2) + age + kids5 + kids618, family = binomial("probit"), data = women)
+probit <- glm(
+  lfp ~ nwifeinc + educ + exper + I(exper^2) + age + kids5 + kids618,
+  family = binomial("probit"),
+  data = women
+)
 round(coef(summary(probit)), 3)
 zg <- predict(probit, type = "link")
 women$mills <- dnorm(zg) / pnorm(zg)
@@ -147,9 +163,14 @@ round(cbind(OLS = c(coef(ols), NA), two_step = coef(step2)), 4)
 ```{r mills_chart}
 ggplot(women, aes(pnorm(zg), mills, colour = factor(lfp))) +
   geom_point(alpha = 0.5, size = 1.4) +
-  scale_colour_manual(values = c(`0` = "grey60", `1` = "#2a78d6"), labels = c("not working", "working"), name = NULL) +
+  scale_colour_manual(
+    values = c(`0` = "grey60", `1` = "#2a78d6"),
+    labels = c("not working", "working"),
+    name = NULL
+  ) +
   labs(title = "The inverse Mills ratio", x = "probability of working, from the probit", y = "λ") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Small children make work much less likely, age and the family's other income too; education and experience make it more likely. The coefficient of $\hat\lambda$ is `r f3(coef(step2)[["mills"]])`: close to zero.
@@ -170,13 +191,34 @@ summary(ml)
 Z <- model.matrix(probit); X <- model.matrix(~ educ + exper + I(exper^2), data = women)
 y <- ifelse(works, women$logwage, 0)
 minus_loglik <- function(par) {
-  g <- par[1:ncol(Z)]; b <- par[ncol(Z) + 1:ncol(X)]; s <- exp(par[length(par) - 1]); r <- tanh(par[length(par)])
-  a <- drop(Z %*% g); e <- (y - drop(X %*% b)) / s
-  -sum(ifelse(works, dnorm(e, log = TRUE) - log(s) + pnorm((a + r * e) / sqrt(1 - r^2), log.p = TRUE), pnorm(-a, log.p = TRUE)))
+  g <- par[1:ncol(Z)]
+  b <- par[ncol(Z) + 1:ncol(X)]
+  s <- exp(par[length(par) - 1])
+  r <- tanh(par[length(par)])
+  a <- drop(Z %*% g)
+  e <- (y - drop(X %*% b)) / s
+  -sum(ifelse(
+    works,
+    dnorm(e, log = TRUE) - log(s) + pnorm((a + r * e) / sqrt(1 - r^2), log.p = TRUE),
+    pnorm(-a, log.p = TRUE)
+  ))
 }
-hand <- optim(c(coef(probit), coef(ols), log(sigma(ols)), 0), minus_loglik, method = "BFGS",
-              control = list(maxit = 2000, reltol = 1e-12, parscale = c(0.5, 0.01, 0.1, 0.1, 0.01, 0.05, 0.3, 0.1, 0.3, 0.1, 0.1, 0.01, 0.1, 0.1)))
-c(our_logLik = -hand$value, package_logLik = as.numeric(logLik(ml)), our_rho = tanh(hand$par[[14]]), package_rho = coef(ml)[["rho"]])
+hand <- optim(
+  c(coef(probit), coef(ols), log(sigma(ols)), 0),
+  minus_loglik,
+  method = "BFGS",
+  control = list(
+    maxit = 2000,
+    reltol = 1e-12,
+    parscale = c(0.5, 0.01, 0.1, 0.1, 0.01, 0.05, 0.3, 0.1, 0.3, 0.1, 0.1, 0.01, 0.1, 0.1)
+  )
+)
+c(
+  our_logLik = -hand$value,
+  package_logLik = as.numeric(logLik(ml)),
+  our_rho = tanh(hand$par[[14]]),
+  package_rho = coef(ml)[["rho"]]
+)
 ```
 
 ### How to read the output
@@ -212,14 +254,27 @@ What if we had no excluded variables, and the probit contained only what is in t
 ```{r no_exclusion}
 probit0 <- glm(lfp ~ educ + exper + I(exper^2), family = binomial("probit"), data = women)
 zg0 <- predict(probit0, type = "link"); women$mills0 <- dnorm(zg0) / pnorm(zg0)
-r2_with    <- summary(lm(mills  ~ educ + exper + I(exper^2), data = women, subset = works))$r.squared
-r2_without <- summary(lm(mills0 ~ educ + exper + I(exper^2), data = women, subset = works))$r.squared
+r2_with <- summary(lm(mills ~ educ + exper + I(exper^2), data = women, subset = works))$r.squared
+r2_without <- summary(lm(
+  mills0 ~ educ + exper + I(exper^2),
+  data = women,
+  subset = works
+))$r.squared
 c(R2_of_mills_on_x_with_exclusions = r2_with, without = r2_without)
 
-no_excl <- selection(lfp ~ educ + exper + I(exper^2), logwage ~ educ + exper + I(exper^2), data = women, method = "2step")
+no_excl <- selection(
+  lfp ~ educ + exper + I(exper^2),
+  logwage ~ educ + exper + I(exper^2),
+  data = women,
+  method = "2step"
+)
 mills_est <- c(with = coef(two_step)[["invMillsRatio"]], without = coef(no_excl)[["invMillsRatio"]])
-mills_se  <- c(with = sqrt(vcov(two_step)["invMillsRatio", "invMillsRatio"]), without = sqrt(vcov(no_excl)["invMillsRatio", "invMillsRatio"]))
-educ_est  <- c(with = coef(two_step)[[10]], without = coef(no_excl)[[6]])            # education in the wage equation
+mills_se <- c(
+  with = sqrt(vcov(two_step)["invMillsRatio", "invMillsRatio"]),
+  without = sqrt(vcov(no_excl)["invMillsRatio", "invMillsRatio"])
+)
+# education in the wage equation
+educ_est <- c(with = coef(two_step)[[10]], without = coef(no_excl)[[6]])
 educ_se   <- c(with = sqrt(vcov(two_step)[10, 10]), without = sqrt(vcov(no_excl)[6, 6]))
 rbind(education = educ_est, SE_education = educ_se, mills = mills_est, SE_mills = mills_se)
 ```
@@ -240,29 +295,59 @@ heck  <- function(yy, d, Zm) {                                         # two-ste
   unname(lm.fit(cbind(X[d == 1, ], m[d == 1]), yy[d == 1])$coefficients[2])
 }
 one <- function(rho) {
-  u <- rnorm(nrow(X)); e <- s0 * (rho * u + sqrt(1 - rho^2) * rnorm(nrow(X)))
-  d <- as.integer(drop(Z %*% gamma0) + u > 0); yy <- drop(X %*% beta) + e
-  c(OLS = unname(lm.fit(X[d == 1, ], yy[d == 1])$coefficients[2]), two_step = heck(yy, d, Z), no_exclusions = heck(yy, d, X))
+  u <- rnorm(nrow(X))
+  e <- s0 * (rho * u + sqrt(1 - rho^2) * rnorm(nrow(X)))
+  d <- as.integer(drop(Z %*% gamma0) + u > 0)
+  yy <- drop(X %*% beta) + e
+  c(
+    OLS = unname(lm.fit(X[d == 1, ], yy[d == 1])$coefficients[2]),
+    two_step = heck(yy, d, Z),
+    no_exclusions = heck(yy, d, X)
+  )
 }
-sims <- do.call(rbind, lapply(c(0, 0.5, 0.8), function(rho) {
-  r <- t(replicate(reps, one(rho)))
-  data.frame(rho, method = colnames(r), mean = colMeans(r), SD = apply(r, 2, sd), RMSE = sqrt(colMeans((r - 0.10)^2)), row.names = NULL)
-}))
-print(transform(sims, mean = round(mean, 4), SD = round(SD, 4), RMSE = round(RMSE, 4)), row.names = FALSE)
+sims <- do.call(
+  rbind,
+  lapply(c(0, 0.5, 0.8), function(rho) {
+    r <- t(replicate(reps, one(rho)))
+    data.frame(
+      rho,
+      method = colnames(r),
+      mean = colMeans(r),
+      SD = apply(r, 2, sd),
+      RMSE = sqrt(colMeans((r - 0.10)^2)),
+      row.names = NULL
+    )
+  })
+)
+print(
+  transform(sims, mean = round(mean, 4), SD = round(SD, 4), RMSE = round(RMSE, 4)),
+  row.names = FALSE
+)
 get <- function(rho, m, col) sims[sims$rho == rho & sims$method == m, col]
 ```
 
 ```{r simulation_chart}
-sims$label <- factor(sims$method, levels = c("OLS", "two_step", "no_exclusions"),
-                     labels = c("OLS", "two-step, with exclusion restrictions", "two-step, without"))
+sims$label <- factor(
+  sims$method,
+  levels = c("OLS", "two_step", "no_exclusions"),
+  labels = c("OLS", "two-step, with exclusion restrictions", "two-step, without")
+)
 ggplot(sims, aes(mean, factor(rho), colour = label)) +
   geom_vline(xintercept = 0.10, linetype = "dashed") +
-  geom_pointrange(aes(xmin = mean - 2 * SD, xmax = mean + 2 * SD), position = position_dodge(width = 0.6), linewidth = 0.9) +
+  geom_pointrange(
+    aes(xmin = mean - 2 * SD, xmax = mean + 2 * SD),
+    position = position_dodge(width = 0.6),
+    linewidth = 0.9
+  ) +
   scale_colour_manual(values = c("#eb6834", "#2a78d6", "grey50"), name = NULL) +
-  labs(title = "500 simulated studies: the return to education (truth: 0.10)",
-       subtitle = "Points: mean of the estimates. Lines: plus and minus two standard deviations",
-       x = "estimate", y = "correlation of the errors, ρ") +
-  theme_bw() + theme(legend.position = "bottom", legend.direction = "vertical")
+  labs(
+    title = "500 simulated studies: the return to education (truth: 0.10)",
+    subtitle = "Points: mean of the estimates. Lines: plus and minus two standard deviations",
+    x = "estimate",
+    y = "correlation of the errors, ρ"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.direction = "vertical")
 ```
 
 - With $\rho$ = 0.8, OLS gives `r f3(get(0.8, "OLS", "mean"))` on average, below the truth of 0.10: the bias is real. The two steps give `r f3(get(0.8, "two_step", "mean"))`.
@@ -325,10 +410,25 @@ sm  <- coef(summary(ml))
 est <- sm[, 1]; se <- sm[, 2]
 fmt <- function(v, d) mapply(function(x, k) formatC(x, format = "f", digits = k), v, d)
 apa_table <- data.frame(
-  Predictor = c("Intercept", "Education (years)", "Experience (years)", "Experience squared", "Non-wife income ($1,000)", "Age (years)", "Children under 6", "Children 6–18"),
-  sel = paste0(fmt(est[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)), " (", fmt(se[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)), ")"),
-  out = c(paste0(fmt(est[9:12], c(3, 3, 3, 4)), " (", fmt(se[9:12], c(3, 3, 3, 4)), ")"), rep("—", 4)),
-  ols = c(paste0(fmt(coef(ols), c(3, 3, 3, 4)), " (", fmt(coef(summary(ols))[, 2], c(3, 3, 3, 4)), ")"), rep("—", 4)))
+  Predictor = c(
+    "Intercept", "Education (years)", "Experience (years)", "Experience squared",
+    "Non-wife income ($1,000)", "Age (years)", "Children under 6", "Children 6–18"
+  ),
+  sel = paste0(
+    fmt(est[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)),
+    " (",
+    fmt(se[c(1, 3, 4, 5, 2, 6, 7, 8)], c(3, 3, 3, 4, 3, 3, 3, 3)),
+    ")"
+  ),
+  out = c(
+    paste0(fmt(est[9:12], c(3, 3, 3, 4)), " (", fmt(se[9:12], c(3, 3, 3, 4)), ")"),
+    rep("—", 4)
+  ),
+  ols = c(
+    paste0(fmt(coef(ols), c(3, 3, 3, 4)), " (", fmt(coef(summary(ols))[, 2], c(3, 3, 3, 4)), ")"),
+    rep("—", 4)
+  )
+)
 ```
 
 **Method** (data analysis):

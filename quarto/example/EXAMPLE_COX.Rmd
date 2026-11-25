@@ -30,7 +30,8 @@ arm_colours <- c(`no payment` = "#eb6834", payment = "#2a78d6")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -41,8 +42,19 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 
 ```{r download}
 raw <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/carData/Rossi.csv")
-rossi <- with(raw, data.frame(id = seq_len(nrow(raw)), week, arrest, money = as.integer(fin == "yes"), age = (age - 25) / 5, prior = prio))
-work  <- as.matrix(raw[, paste0("emp", 1:52)]) == "yes"              # employed in week 1, ..., 52 (NA after the arrest)
+rossi <- with(
+  raw,
+  data.frame(
+    id = seq_len(nrow(raw)),
+    week,
+    arrest,
+    money = as.integer(fin == "yes"),
+    age = (age - 25) / 5,
+    prior = prio
+  )
+)
+# employed in week 1, ..., 52 (NA after the arrest)
+work <- as.matrix(raw[, paste0("emp", 1:52)]) == "yes"
 nrow(rossi)
 table(money = rossi$money, arrest = rossi$arrest)
 summary(rossi$week)
@@ -56,14 +68,29 @@ Each row is a man. `week` is the week of the first arrest, or 52; `arrest` is 1 
 
 ```{r look}
 km <- survfit(Surv(week, arrest) ~ money, data = rossi)
-km_data <- data.frame(time = km$time, surv = km$surv, low = km$lower, high = km$upper, arm = rep(names(arm_colours), km$strata))
-km_data <- rbind(data.frame(time = 0, surv = 1, low = 1, high = 1, arm = names(arm_colours)), km_data)
+km_data <- data.frame(
+  time = km$time,
+  surv = km$surv,
+  low = km$lower,
+  high = km$upper,
+  arm = rep(names(arm_colours), km$strata)
+)
+km_data <- rbind(
+  data.frame(time = 0, surv = 1, low = 1, high = 1, arm = names(arm_colours)),
+  km_data
+)
 ggplot(km_data, aes(time, surv, colour = arm, fill = arm)) +
   geom_step(linewidth = 1) +
-  scale_colour_manual(values = arm_colours, name = NULL) + scale_fill_manual(values = arm_colours, name = NULL) +
+  scale_colour_manual(values = arm_colours, name = NULL) +
+  scale_fill_manual(values = arm_colours, name = NULL) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0.6, 1)) +
-  labs(title = "Men who have not been arrested (Kaplan–Meier)", x = "weeks since release", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Men who have not been arrested (Kaplan–Meier)",
+    x = "weeks since release",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 free <- summary(km, times = 52)$surv
 logrank <- survdiff(Surv(week, arrest) ~ money, data = rossi)
 logrank
@@ -99,9 +126,12 @@ Multiply these over all the arrests, and find the $\beta$ that makes the product
 
 ```{r by_hand}
 X <- as.matrix(rossi[, c("money", "age", "prior")])
-minus_partial <- function(b) {                                             # with Breslow's treatment of ties
+minus_partial <- function(b) {
+  # with Breslow's treatment of ties
   eta <- drop(X %*% b)
-  -sum(sapply(which(rossi$arrest == 1), function(i) eta[i] - log(sum(exp(eta[rossi$week >= rossi$week[i]])))))
+  -sum(sapply(which(rossi$arrest == 1), function(i) {
+    eta[i] - log(sum(exp(eta[rossi$week >= rossi$week[i]])))
+  }))
 }
 hand <- optim(c(0, 0, 0), minus_partial, method = "BFGS", control = list(reltol = 1e-12))
 fit_breslow <- coxph(Surv(week, arrest) ~ money + age + prior, data = rossi, ties = "breslow")
@@ -134,17 +164,30 @@ con <- summary(fit)$concordance[[1]]
 An HR of `r f2(hr[["money"]])` does **not** mean that `r pct(1 - hr[["money"]])` fewer men are arrested, nor that they stay free `r f2(1 / hr[["money"]])` times as long. It is a ratio of rates among those still free. For people, translate it into survival curves:
 
 ```{r predicted}
-new  <- data.frame(money = c(0, 1), age = 0, prior = 2)                    # 25 years old, two earlier convictions
+new <- data.frame(money = c(0, 1), age = 0, prior = 2) # 25 years old, two earlier convictions
 sf   <- survfit(fit, newdata = new)
 at52 <- summary(sf, times = 52)$surv[1, ]
 at52
-curves <- data.frame(time = rep(sf$time, 2), surv = as.vector(sf$surv), low = as.vector(sf$lower), high = as.vector(sf$upper), arm = rep(names(arm_colours), each = length(sf$time)))
+curves <- data.frame(
+  time = rep(sf$time, 2),
+  surv = as.vector(sf$surv),
+  low = as.vector(sf$lower),
+  high = as.vector(sf$upper),
+  arm = rep(names(arm_colours), each = length(sf$time))
+)
 ggplot(curves, aes(time, surv, colour = arm, fill = arm)) +
-  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.15, colour = NA) + geom_step(linewidth = 1) +
-  scale_colour_manual(values = arm_colours, name = NULL) + scale_fill_manual(values = arm_colours, name = NULL) +
+  geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.15, colour = NA) +
+  geom_step(linewidth = 1) +
+  scale_colour_manual(values = arm_colours, name = NULL) +
+  scale_fill_manual(values = arm_colours, name = NULL) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0.4, 1)) +
-  labs(title = "Predicted: a man of 25 with two earlier convictions", x = "weeks since release", y = "not arrested") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Predicted: a man of 25 with two earlier convictions",
+    x = "weeks since release",
+    y = "not arrested"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 For such a man the model predicts a chance of `r pct(at52[1])` of staying free for a year without the payment, and `r pct(at52[2])` with it: `r f1(100 * (at52[2] - at52[1]))` points more.
@@ -157,7 +200,13 @@ Another number for the whole experiment needs no model: the mean number of weeks
 tab  <- summary(km, rmean = 52)$table
 rm   <- tab[, "rmean"]; rm_se <- tab[, "se(rmean)"]
 diff <- rm[[2]] - rm[[1]]; diff_se <- sqrt(sum(rm_se^2))
-c(no_payment = rm[[1]], payment = rm[[2]], difference = diff, low = diff - 1.96 * diff_se, high = diff + 1.96 * diff_se)
+c(
+  no_payment = rm[[1]],
+  payment = rm[[2]],
+  difference = diff,
+  low = diff - 1.96 * diff_se,
+  high = diff + 1.96 * diff_se
+)
 ```
 
 On average the men with the payment were free for `r f1(diff)` weeks more of the 52, 95% CI [`r f1(diff - 1.96 * diff_se)`, `r f1(diff + 1.96 * diff_se)`].
@@ -174,12 +223,34 @@ zph
 ```
 
 ```{r zph_chart}
-zd <- data.frame(time = rep(zph$time, 3), beta = as.vector(zph$y), term = rep(colnames(zph$y), each = length(zph$time)))
-ggplot(zd, aes(time, beta)) + geom_point(alpha = 0.5, colour = "grey40", size = 1.2) +
-  geom_smooth(method = "loess", formula = y ~ x, colour = "#2a78d6", fill = "#2a78d6", alpha = 0.2) +
-  geom_hline(data = data.frame(term = names(coef(fit)), b = coef(fit)), aes(yintercept = b), colour = "#eb6834", linetype = "dashed") +
-  facet_wrap(~ term, scales = "free_y") +
-  labs(title = "Does the coefficient change over time?", subtitle = "Blue: smoothed residuals. Dashed: the constant coefficient of the model", x = "weeks (transformed scale)", y = "coefficient") + theme_bw()
+zd <- data.frame(
+  time = rep(zph$time, 3),
+  beta = as.vector(zph$y),
+  term = rep(colnames(zph$y), each = length(zph$time))
+)
+ggplot(zd, aes(time, beta)) +
+  geom_point(alpha = 0.5, colour = "grey40", size = 1.2) +
+  geom_smooth(
+    method = "loess",
+    formula = y ~ x,
+    colour = "#2a78d6",
+    fill = "#2a78d6",
+    alpha = 0.2
+  ) +
+  geom_hline(
+    data = data.frame(term = names(coef(fit)), b = coef(fit)),
+    aes(yintercept = b),
+    colour = "#eb6834",
+    linetype = "dashed"
+  ) +
+  facet_wrap(~term, scales = "free_y") +
+  labs(
+    title = "Does the coefficient change over time?",
+    subtitle = "Blue: smoothed residuals. Dashed: the constant coefficient of the model",
+    x = "weeks (transformed scale)",
+    y = "coefficient"
+  ) +
+  theme_bw()
 ```
 
 For the payment there is no sign of a change (*p* `r pval(zph$table["money", "p"])`). For **age** there is (*p* `r pval(zph$table["age", "p"])`): the line falls. Age hardly matters in the first weeks, and a lot later. What can be done?
@@ -187,7 +258,11 @@ For the payment there is no sign of a change (*p* `r pval(zph$table["money", "p"
 1. **Let the effect change with time**, for example linearly. `tt()` does it:
 
 ```{r tt}
-fit_tt <- coxph(Surv(week, arrest) ~ money + age + prior + tt(age), data = rossi, tt = function(x, t, ...) x * (t - 26) / 26)
+fit_tt <- coxph(
+  Surv(week, arrest) ~ money + age + prior + tt(age),
+  data = rossi,
+  tt = function(x, t, ...) x * (t - 26) / 26
+)
 round(coef(summary(fit_tt)), 3)
 age_at <- function(w) exp(coef(fit_tt)[["age"]] + coef(fit_tt)[["tt(age)"]] * (w - 26) / 26)
 c(week_5 = age_at(5), week_26 = age_at(26), week_52 = age_at(52))
@@ -200,7 +275,14 @@ Five years more multiply the hazard by `r f2(age_at(5))` in week 5 and by `r f2(
 ```{r strata}
 rossi$age_group <- cut(raw$age, c(0, 19, 22, 25, 100), labels = c("-19", "20-22", "23-25", "26-"))
 fit_strata <- coxph(Surv(week, arrest) ~ money + prior + strata(age_group), data = rossi)
-round(rbind(original = coef(summary(fit))["money", ], stratified = coef(summary(fit_strata))["money", ], time_varying_age = coef(summary(fit_tt))["money", ]), 3)
+round(
+  rbind(
+    original = coef(summary(fit))["money", ],
+    stratified = coef(summary(fit_strata))["money", ],
+    time_varying_age = coef(summary(fit_tt))["money", ]
+  ),
+  3
+)
 ```
 
 3. **Or leave it**, and read the HR as an average over time, if the predictor is only there for adjustment. The effect of the payment, our question, is the same in all three: `r f2(exp(coef(fit_strata)[["money"]]))` and `r f2(exp(coef(fit_tt)[["money"]]))` against `r f2(hr[["money"]])`.
@@ -226,17 +308,32 @@ Men who were ever employed have a hazard `r f2(exp(coef(wrong)[["ever"]]))` time
 Split each man's time into weeks. In each, the job status is what it was **then**:
 
 ```{r counting_process}
-long <- do.call(rbind, lapply(seq_len(nrow(rossi)), function(i) {
-  w <- rossi$week[i]
-  data.frame(rossi[i, c("id", "money", "age", "prior")], start = 0:(w - 1), stop = 1:w,
-             arrest = c(rep(0, w - 1), rossi$arrest[i]), job = as.integer(work[i, 1:w]), row.names = NULL)
-}))
-long$job_before <- ave(long$job, long$id, FUN = function(v) c(NA, head(v, -1)))      # the week before
+long <- do.call(
+  rbind,
+  lapply(seq_len(nrow(rossi)), function(i) {
+    w <- rossi$week[i]
+    data.frame(
+      rossi[i, c("id", "money", "age", "prior")],
+      start = 0:(w - 1),
+      stop = 1:w,
+      arrest = c(rep(0, w - 1), rossi$arrest[i]),
+      job = as.integer(work[i, 1:w]),
+      row.names = NULL
+    )
+  })
+)
+long$job_before <- ave(long$job, long$id, FUN = function(v) c(NA, head(v, -1))) # the week before
 subset(long, id == 1)[14:20, ]
 nrow(long)
 same_week <- coxph(Surv(start, stop, arrest) ~ money + age + prior + job, data = long)
 week_before <- coxph(Surv(start, stop, arrest) ~ money + age + prior + job_before, data = long)
-round(rbind(same_week = coef(summary(same_week))["job", ], week_before = coef(summary(week_before))["job_before", ]), 4)
+round(
+  rbind(
+    same_week = coef(summary(same_week))["job", ],
+    week_before = coef(summary(week_before))["job_before", ]
+  ),
+  4
+)
 ```
 
 The outcome is now `Surv(start, stop, arrest)`. Each row is at risk only in its own week, and a man leaves the risk set when he is arrested. (The rows of one man are not repeated observations that need a correction: at each event he appears once.)
@@ -252,9 +349,20 @@ And note: the job may be **on the way** from the payment to freedom (or away fro
 
 ```{r martingale}
 m0 <- coxph(Surv(week, arrest) ~ money, data = rossi)
-md <- rbind(data.frame(x = raw$age, r = residuals(m0, type = "martingale"), what = "age (years)"), data.frame(x = rossi$prior, r = residuals(m0, type = "martingale"), what = "earlier convictions"))
-ggplot(md, aes(x, r)) + geom_point(alpha = 0.3, size = 1) + geom_smooth(method = "loess", formula = y ~ x, colour = "#2a78d6", se = FALSE) +
-  facet_wrap(~ what, scales = "free_x") + labs(title = "Martingale residuals: what shape should the predictor have?", x = NULL, y = "residual of a model without it") + theme_bw()
+md <- rbind(
+  data.frame(x = raw$age, r = residuals(m0, type = "martingale"), what = "age (years)"),
+  data.frame(x = rossi$prior, r = residuals(m0, type = "martingale"), what = "earlier convictions")
+)
+ggplot(md, aes(x, r)) +
+  geom_point(alpha = 0.3, size = 1) +
+  geom_smooth(method = "loess", formula = y ~ x, colour = "#2a78d6", se = FALSE) +
+  facet_wrap(~what, scales = "free_x") +
+  labs(
+    title = "Martingale residuals: what shape should the predictor have?",
+    x = NULL,
+    y = "residual of a model without it"
+  ) +
+  theme_bw()
 infl <- residuals(fit, type = "dfbetas"); colnames(infl) <- names(coef(fit))
 worst <- apply(abs(infl), 2, max)
 worst
@@ -285,8 +393,14 @@ c(AIC_linear_age = AIC(fit), AIC_log_age = AIC(fit_log))
 A report (APA 7th edition) needs the start and end of the time, the number of events, the method for ties, hazard ratios with intervals, the check of proportional hazards, and survival at some times. The numbers come from the R objects:
 
 ```{r apa_numbers}
-apa_table <- data.frame(Predictor = c("Payment", "Age (5 years)", "Earlier convictions (each)"), b = f2(s[, 1]), SE = f2(s[, 3]), z = f2(s[, 4]),
-                        p = sapply(s[, 5], function(p) sub("^= ", "", pval(p))), HR = paste0(f2(hr), " [", f2(ci[, 1]), ", ", f2(ci[, 2]), "]"))
+apa_table <- data.frame(
+  Predictor = c("Payment", "Age (5 years)", "Earlier convictions (each)"),
+  b = f2(s[, 1]),
+  SE = f2(s[, 3]),
+  z = f2(s[, 4]),
+  p = sapply(s[, 5], function(p) sub("^= ", "", pval(p))),
+  HR = paste0(f2(hr), " [", f2(ci[, 1]), ", ", f2(ci[, 2]), "]")
+)
 ```
 
 **Method** (data analysis):

@@ -30,7 +30,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -43,10 +44,12 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 New York State publishes every hospital stay, without names, in the SPARCS data. They are free, and the portal answers queries, so we ask only for what we need: the stays for heart failure (diagnosis group 194) in the hospitals of Suffolk County in 2021.
 
 ```{r download}
-query <- paste0("https://health.data.ny.gov/resource/tg3i-cinn.csv?",
-                "$select=facility_name,age_group,gender,length_of_stay,apr_severity_of_illness,total_costs",
-                "&$where=apr_drg_code='194' and hospital_county='Suffolk'",
-                "&$order=facility_name,total_costs&$limit=10000")
+query <- paste0(
+  "https://health.data.ny.gov/resource/tg3i-cinn.csv?",
+  "$select=facility_name,age_group,gender,length_of_stay,apr_severity_of_illness,total_costs",
+  "&$where=apr_drg_code='194' and hospital_county='Suffolk'",
+  "&$order=facility_name,total_costs&$limit=10000"
+)
 raw <- read.csv(URLencode(query))
 stays <- subset(raw, total_costs > 0 & age_group %in% c("30 to 49", "50 to 69", "70 or Older") &
                      apr_severity_of_illness %in% c("Minor", "Moderate", "Major", "Extreme"))
@@ -57,7 +60,7 @@ stays <- with(stays, data.frame(
   male     = as.integer(gender == "M"),
   days     = suppressWarnings(as.numeric(length_of_stay)),
   hospital = facility_name))
-small <- names(which(table(stays$hospital) < 100))                       # hospitals with few stays go together
+small <- names(which(table(stays$hospital) < 100)) # hospitals with few stays go together
 stays$hospital <- factor(ifelse(stays$hospital %in% small, "Other", stays$hospital))
 stays$hospital <- relevel(stays$hospital, ref = names(which.max(table(stays$hospital))))
 nrow(stays)
@@ -74,16 +77,34 @@ There are `r num(nrow(stays))` stays in `r nlevels(stays$hospital)` hospitals (t
 pa <- ggplot(stays, aes(pmin(cost, 80000) / 1000)) +
   geom_histogram(binwidth = 2, boundary = 0, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
   labs(title = "Cost of a stay (80 = 80 or more)", x = "thousand dollars", y = "stays") + theme_bw()
-spread <- do.call(rbind, lapply(split(stays$cost, stays$severity), function(v) data.frame(n = length(v), mean = mean(v), sd = sd(v), cv = sd(v) / mean(v))))
-cell <- aggregate(cost ~ severity + hospital, data = stays, FUN = function(v) c(mean = mean(v), sd = sd(v), n = length(v)))
-cell <- data.frame(severity = cell$severity, mean = cell$cost[, "mean"], sd = cell$cost[, "sd"], n = cell$cost[, "n"])
+spread <- do.call(
+  rbind,
+  lapply(split(stays$cost, stays$severity), function(v) {
+    data.frame(n = length(v), mean = mean(v), sd = sd(v), cv = sd(v) / mean(v))
+  })
+)
+cell <- aggregate(cost ~ severity + hospital, data = stays, FUN = function(v) {
+  c(mean = mean(v), sd = sd(v), n = length(v))
+})
+cell <- data.frame(
+  severity = cell$severity,
+  mean = cell$cost[, "mean"],
+  sd = cell$cost[, "sd"],
+  n = cell$cost[, "n"]
+)
 cell <- subset(cell, n >= 20)
 pb <- ggplot(cell, aes(mean / 1000, sd / 1000, colour = severity)) +
   geom_abline(slope = mean(spread$cv), linetype = "dashed", colour = "grey50") +
-  geom_point(aes(size = n)) + scale_size_area(max_size = 5, guide = "none") +
+  geom_point(aes(size = n)) +
+  scale_size_area(max_size = 5, guide = "none") +
   scale_colour_viridis_d(end = 0.9, name = NULL) +
-  labs(title = "Mean and standard deviation in each hospital and severity class",
-       x = "mean (thousand dollars)", y = "SD (thousand dollars)") + theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Mean and standard deviation in each hospital and severity class",
+    x = "mean (thousand dollars)",
+    y = "SD (thousand dollars)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 patchwork::wrap_plots(pa, pb, ncol = 1, heights = c(1, 1.3))
 round(spread, 2)
 ```
@@ -104,11 +125,23 @@ The variance is proportional to the **square** of the mean, so the SD is proport
 
 ```{r gamma_shapes}
 grid <- seq(0.1, 60, by = 0.1)
-shapes <- do.call(rbind, lapply(c(1, 2, 5, 20), function(nu) data.frame(y = grid, d = dgamma(grid, shape = nu, scale = 20 / nu), shape = paste0("ν = ", nu, ", CV = ", f2(1 / sqrt(nu))))))
+shapes <- do.call(
+  rbind,
+  lapply(c(1, 2, 5, 20), function(nu) {
+    data.frame(
+      y = grid,
+      d = dgamma(grid, shape = nu, scale = 20 / nu),
+      shape = paste0("ν = ", nu, ", CV = ", f2(1 / sqrt(nu)))
+    )
+  })
+)
 shapes$shape <- factor(shapes$shape, levels = unique(shapes$shape))
 ggplot(shapes, aes(y, d, colour = shape)) +
-  geom_line(linewidth = 0.9) + scale_colour_viridis_d(end = 0.9, name = NULL) +
-  labs(title = "Gamma distributions with a mean of 20", x = "y", y = "density") + theme_bw() + theme(legend.position = "bottom")
+  geom_line(linewidth = 0.9) +
+  scale_colour_viridis_d(end = 0.9, name = NULL) +
+  labs(title = "Gamma distributions with a mean of 20", x = "y", y = "density") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ### Step 2: the log link
@@ -132,8 +165,9 @@ The **relative** errors $(y - \mu)/\mu$ are balanced against each predictor. A 1
 ```{r by_hand}
 X <- model.matrix(~ severity + age + male + hospital, data = stays); y <- stays$cost
 beta <- c(log(mean(y)), rep(0, ncol(X) - 1))
-for (it in 1:30) {                                             # Fisher scoring: regress the relative error on X, and step
-  mu   <- exp(drop(X %*% beta))
+for (it in 1:30) {
+  # Fisher scoring: regress the relative error on X, and step
+  mu <- exp(drop(X %*% beta))
   step <- solve(crossprod(X), crossprod(X, (y - mu) / mu))
   beta <- beta + drop(step)
   if (max(abs(step)) < 1e-10) break
@@ -151,16 +185,33 @@ With the log link, Fisher scoring is nothing but a repeated ordinary regression 
 ```{r fit}
 sm <- summary(fit)
 round(sm$coefficients[1:7, ], 3)                                  # the hospitals are in section 5
-c(dispersion = sm$dispersion, CV = sqrt(sm$dispersion), null_deviance = fit$null.deviance, deviance = fit$deviance, df = fit$df.residual)
+c(
+  dispersion = sm$dispersion,
+  CV = sqrt(sm$dispersion),
+  null_deviance = fit$null.deviance,
+  deviance = fit$deviance,
+  df = fit$df.residual
+)
 ```
 
 ```{r robust}
-V      <- vcovHC(fit, type = "HC0")                              # sandwich: valid when the variance is not mu^2
+V <- vcovHC(fit, type = "HC0") # sandwich: valid when the variance is not mu^2
 robust <- coeftest(fit, vcov = V)
 ci     <- exp(coefci(fit, vcov. = V))
 ratio  <- exp(coef(fit))
-key    <- c("severityModerate", "severityMajor", "severityExtreme", "age50 to 69", "age70 or Older", "male")
-round(cbind(ratio = ratio[key], low = ci[key, 1], high = ci[key, 2], SE_usual = sm$coefficients[key, 2], SE_robust = robust[key, 2]), 3)
+key <- c(
+  "severityModerate", "severityMajor", "severityExtreme", "age50 to 69", "age70 or Older", "male"
+)
+round(
+  cbind(
+    ratio = ratio[key],
+    low = ci[key, 1],
+    high = ci[key, 2],
+    SE_usual = sm$coefficients[key, 2],
+    SE_robust = robust[key, 2]
+  ),
+  3
+)
 ```
 
 - **`(Intercept)`**: $e^{`r f2(coef(fit)[[1]])`}$ = `r f0(exp(coef(fit)[[1]]))` dollars, the mean cost of the reference case: minor severity, 30 to 49 years, a woman, at the largest hospital.
@@ -186,7 +237,12 @@ Age as a whole is significant, *p* `r pval(drops["age", "Pr(>F)"])`, although ne
 
 ```{r hospitals}
 hosp <- grep("^hospital", names(coef(fit)), value = TRUE)
-hosp_data <- data.frame(hospital = sub("^hospital", "", hosp), ratio = ratio[hosp], low = ci[hosp, 1], high = ci[hosp, 2])
+hosp_data <- data.frame(
+  hospital = sub("^hospital", "", hosp),
+  ratio = ratio[hosp],
+  low = ci[hosp, 1],
+  high = ci[hosp, 2]
+)
 hosp_data$short <- sub(" of Port Jefferson New York Inc", "", hosp_data$hospital)
 hosp_data$short <- factor(hosp_data$short, levels = hosp_data$short[order(hosp_data$ratio)])
 
@@ -209,11 +265,17 @@ Among patients of the same severity class, age group and sex, the mean cost at t
 ```{r alternatives}
 ols     <- lm(cost ~ severity + age + male + hospital, data = stays)
 logs    <- lm(log(cost) ~ severity + age + male + hospital, data = stays)
-smear   <- mean(exp(resid(logs)))                                                  # one smearing factor for all
-smear_s <- tapply(exp(resid(logs)), stays$severity, mean)                          # one for each severity class
-pred <- data.frame(severity = stays$severity, observed = stays$cost, gamma = fitted(fit), OLS = fitted(ols),
-                   logs_naive = exp(fitted(logs)), logs_smeared = exp(fitted(logs)) * smear,
-                   logs_smeared_by_severity = exp(fitted(logs)) * smear_s[as.character(stays$severity)])
+smear <- mean(exp(resid(logs))) # one smearing factor for all
+smear_s <- tapply(exp(resid(logs)), stays$severity, mean) # one for each severity class
+pred <- data.frame(
+  severity = stays$severity,
+  observed = stays$cost,
+  gamma = fitted(fit),
+  OLS = fitted(ols),
+  logs_naive = exp(fitted(logs)),
+  logs_smeared = exp(fitted(logs)) * smear,
+  logs_smeared_by_severity = exp(fitted(logs)) * smear_s[as.character(stays$severity)]
+)
 means <- aggregate(. ~ severity, data = pred, FUN = mean)
 print(cbind(severity = as.character(means$severity), round(means[, -1])), row.names = FALSE)
 smear_s
@@ -229,21 +291,37 @@ smear_s
 Is the variance proportional to $\mu^2$, as the gamma assumes? Regress the log of the squared residuals on the log of the mean, with a gamma GLM (Manning & Mullahy, 2001). The slope is the **power** of the mean: 0 for the normal, 1 for Poisson-like, 2 for the gamma, 3 for the inverse Gaussian.
 
 ```{r park}
-park <- glm((stays$cost - fitted(fit))^2 ~ log(fitted(fit)), family = Gamma("log"), control = list(maxit = 100))
+park <- glm(
+  (stays$cost - fitted(fit))^2 ~ log(fitted(fit)),
+  family = Gamma("log"),
+  control = list(maxit = 100)
+)
 park_slope <- coef(park)[[2]]; park_se <- sqrt(vcovHC(park, type = "HC0")[2, 2])
 c(power = park_slope, SE = park_se)
 
-invg  <- glm(cost ~ severity + age + male + hospital, family = inverse.gaussian("log"), data = stays, start = coef(fit))
-aic_log <- AIC(logs) + 2 * sum(log(stays$cost))                   # on the scale of dollars, to compare
+invg <- glm(
+  cost ~ severity + age + male + hospital,
+  family = inverse.gaussian("log"),
+  data = stays,
+  start = coef(fit)
+)
+aic_log <- AIC(logs) + 2 * sum(log(stays$cost)) # on the scale of dollars, to compare
 c(gamma = AIC(fit), inverse_gaussian = AIC(invg), log_normal = aic_log, normal = AIC(ols))
 ```
 
 The power is `r f2(park_slope)` (robust *SE* `r f2(park_se)`): larger than 2, towards the 3 of the inverse Gaussian. The AIC agrees: the log-normal and the inverse Gaussian describe the **distribution** of the costs better than the gamma, and the normal distribution is hopeless. So the gamma is not the true distribution of these costs. Does it matter for the ratios?
 
 ```{r stability}
-weights_check <- cbind(gamma = exp(coef(fit))[key], inverse_gaussian = exp(coef(invg))[key],
-                       poisson_type = exp(coef(glm(cost ~ severity + age + male + hospital, family = quasipoisson("log"), data = stays)))[key],
-                       logs = exp(coef(logs))[key])
+weights_check <- cbind(
+  gamma = exp(coef(fit))[key],
+  inverse_gaussian = exp(coef(invg))[key],
+  poisson_type = exp(coef(glm(
+    cost ~ severity + age + male + hospital,
+    family = quasipoisson("log"),
+    data = stays
+  )))[key],
+  logs = exp(coef(logs))[key]
+)
 round(weights_check, 2)
 ```
 
@@ -256,15 +334,28 @@ Hardly. The three models for the mean agree on the ratios to within a few percen
 ```{r residuals, fig.height = 6}
 chk <- data.frame(mu = fitted(fit), dev = rstandard(fit, type = "deviance"))
 chk$q <- qqnorm(chk$dev, plot.it = FALSE)$x
-pa <- ggplot(chk, aes(mu / 1000, dev)) + geom_hline(yintercept = 0, colour = "grey60") + geom_point(alpha = 0.15, size = 0.8) +
+pa <- ggplot(chk, aes(mu / 1000, dev)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_point(alpha = 0.15, size = 0.8) +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") +
-  labs(title = "Deviance residuals against the fitted mean", x = "fitted mean (thousand dollars)", y = "residual") + theme_bw()
-pb <- ggplot(chk, aes(q, dev)) + geom_abline(colour = "grey60") + geom_point(colour = "#2a78d6", alpha = 0.4, size = 0.9) +
-  labs(title = "Normal Q-Q plot of the deviance residuals", x = "normal quantile", y = "residual") + theme_bw()
+  labs(
+    title = "Deviance residuals against the fitted mean",
+    x = "fitted mean (thousand dollars)",
+    y = "residual"
+  ) +
+  theme_bw()
+pb <- ggplot(chk, aes(q, dev)) +
+  geom_abline(colour = "grey60") +
+  geom_point(colour = "#2a78d6", alpha = 0.4, size = 0.9) +
+  labs(title = "Normal Q-Q plot of the deviance residuals", x = "normal quantile", y = "residual") +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 
 tenth <- cut(fitted(fit), quantile(fitted(fit), 0:10 / 10), include.lowest = TRUE, labels = 1:10)
-cal <- data.frame(predicted = tapply(fitted(fit), tenth, mean), observed = tapply(stays$cost, tenth, mean))
+cal <- data.frame(
+  predicted = tapply(fitted(fit), tenth, mean),
+  observed = tapply(stays$cost, tenth, mean)
+)
 cal$ratio <- cal$observed / cal$predicted
 round(cal, 2)
 worst <- order(-cooks.distance(fit))[1:3]
@@ -285,11 +376,20 @@ from `r f2(ratio[["severityExtreme"]])`.
 ## 8. Predicted costs
 
 ```{r predictions}
-new <- expand.grid(severity = levels(stays$severity), age = "70 or Older", male = 0, hospital = levels(stays$hospital)[1:2])
-eta <- predict(fit, new, type = "link"); Xn <- model.matrix(delete.response(terms(fit)), new, xlev = fit$xlevels)
+new <- expand.grid(
+  severity = levels(stays$severity),
+  age = "70 or Older",
+  male = 0,
+  hospital = levels(stays$hospital)[1:2]
+)
+eta <- predict(fit, new, type = "link")
+Xn <- model.matrix(delete.response(terms(fit)), new, xlev = fit$xlevels)
 se  <- sqrt(rowSums((Xn %*% V) * Xn))
 new$cost <- exp(eta); new$low <- exp(eta - 1.96 * se); new$high <- exp(eta + 1.96 * se)
-print(cbind(new[, c("severity", "hospital")], round(new[, c("cost", "low", "high")])), row.names = FALSE)
+print(
+  cbind(new[, c("severity", "hospital")], round(new[, c("cost", "low", "high")])),
+  row.names = FALSE
+)
 ```
 
 The intervals are for the **mean** cost of such patients. For **one** patient the range is much wider: with a CV of `r f2(sqrt(sm$dispersion))`, a gamma distribution with a mean of 20,000 dollars has 95% of its values between `r f0(qgamma(0.025, 1 / sm$dispersion, scale = 20000 * sm$dispersion))` and `r f0(qgamma(0.975, 1 / sm$dispersion, scale = 20000 * sm$dispersion))`.
@@ -298,7 +398,7 @@ The intervals are for the **mean** cost of such patients. For **one** patient th
 
 ## 9. Things to keep in mind
 
-- **Positive outcomes only.** A gamma variable is never zero. With real zeros, use a [two-part model](EXAMPLE_HURDLE_TWO_PART.Rmd) or Tweedie regression.
+- **Positive outcomes only.** A gamma variable is never zero. With real zeros, use a [two-part model](EXAMPLE_HURDLE_TWO_PART.Rmd) or [Tweedie regression](EXAMPLE_TWEEDIE.Rmd).
 - **Log link**, unless you have a reason. Ratios are easy to explain.
 - **Robust standard errors** cost nothing and protect against a wrong variance. Here the usual and the robust ones are similar for most terms.
 - **Do not adjust for what lies between.** The length of the stay is the main **way** in which severity costs money. With `days` in the model, the coefficient of severity would be the cost of severity **at the same length of stay**, which is another question.
@@ -315,10 +415,16 @@ A report (APA 7th edition) needs the distribution and link, the reference catego
 
 ```{r apa_numbers}
 apa_table <- data.frame(
-  Predictor = c("Severity: moderate", "Severity: major", "Severity: extreme", "Age 50–69", "Age 70 or older", "Male"),
-  b  = f2(coef(fit)[key]), SE = f3(robust[key, 2]), z = f2(robust[key, 3]),
-  p  = sapply(robust[key, 4], function(p) sub("^= ", "", pval(p))),
-  ratio = paste0(f2(ratio[key]), " [", f2(ci[key, 1]), ", ", f2(ci[key, 2]), "]"))
+  Predictor = c(
+    "Severity: moderate", "Severity: major", "Severity: extreme", "Age 50–69", "Age 70 or older",
+    "Male"
+  ),
+  b = f2(coef(fit)[key]),
+  SE = f3(robust[key, 2]),
+  z = f2(robust[key, 3]),
+  p = sapply(robust[key, 4], function(p) sub("^= ", "", pval(p))),
+  ratio = paste0(f2(ratio[key]), " [", f2(ci[key, 1]), ", ", f2(ci[key, 2]), "]")
+)
 F_sev <- drops["severity", ]; F_hosp <- drops["hospital", ]
 ```
 

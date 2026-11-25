@@ -18,7 +18,7 @@ Two residential programmes treat people who are addicted to drugs. One is short,
 
 For about one patient in five the time is not known. They had not returned to drugs when the study lost sight of them, so we know only that their time is **longer** than some value. Such times are **censored**.
 
-The usual answer is a survival model, such as the Cox model, which gives one number, a hazard ratio, for the whole time. But a programme may do nothing for the patients who relapse in the first weeks, and a lot for those who hold out. One number hides that. And "the hazard is 22% lower" is hard to explain to a patient. **Quantile regression** answers in days: by how much does the longer programme move the **median** time? The time by which a quarter of the patients have relapsed? Or three quarters?
+The usual answer is a survival model, such as the [Cox model](EXAMPLE_COX.Rmd), which gives one number, a hazard ratio, for the whole time. But a programme may do nothing for the patients who relapse in the first weeks, and a lot for those who hold out. One number hides that. And "the hazard is 22% lower" is hard to explain to a patient. **Quantile regression** answers in days: by how much does the longer programme move the **median** time? The time by which a quarter of the patients have relapsed? Or three quarters?
 
 [Quantile regression](EXAMPLE_QUANTILE_REGRESSION.Rmd) needs complete data. **Censored quantile regression** is the version for times that are only partly known.
 
@@ -32,7 +32,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -60,7 +61,11 @@ table(uis$long)
 
 ```{r look}
 km <- survfit(Surv(time, relapse) ~ long, data = uis)
-km_data <- data.frame(time = km$time, surv = km$surv, programme = rep(c("short", "long"), km$strata))
+km_data <- data.frame(
+  time = km$time,
+  surv = km$surv,
+  programme = rep(c("short", "long"), km$strata)
+)
 km_data <- rbind(data.frame(time = 0, surv = 1, programme = c("short", "long")), km_data)
 
 ggplot(km_data, aes(time, surv, colour = programme)) +
@@ -68,10 +73,14 @@ ggplot(km_data, aes(time, surv, colour = programme)) +
   geom_hline(yintercept = c(0.25, 0.5, 0.75), linetype = "dotted", colour = "grey50") +
   scale_colour_manual(values = c(short = "#eb6834", long = "#2a78d6"), name = "programme") +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, 1)) +
-  labs(title = "Share of patients who have not returned to drugs (Kaplan–Meier)",
-       subtitle = "On a horizontal line, the gap between the curves is the difference of a quantile",
-       x = "days since admission", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Share of patients who have not returned to drugs (Kaplan–Meier)",
+    subtitle = "On a horizontal line, the gap between the curves is the difference of a quantile",
+    x = "days since admission",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 
 km_q <- quantile(km, c(0.1, 0.25, 0.5, 0.75))$quantile
 rownames(km_q) <- c("short", "long")
@@ -84,9 +93,11 @@ A **quantile** of the time is read **horizontally** off such a curve. The 25% qu
 
 ```{r naive}
 km_all <- quantile(survfit(Surv(time, relapse) ~ 1, data = uis), c(0.25, 0.5, 0.75, 0.82))$quantile
-rbind(`Kaplan-Meier (right)`        = km_all,
-      `as if all were relapses`     = quantile(uis$time, c(0.25, 0.5, 0.75, 0.82)),
-      `without the censored cases`  = quantile(uis$time[uis$relapse == 1], c(0.25, 0.5, 0.75, 0.82)))
+rbind(
+  `Kaplan-Meier (right)` = km_all,
+  `as if all were relapses` = quantile(uis$time, c(0.25, 0.5, 0.75, 0.82)),
+  `without the censored cases` = quantile(uis$time[uis$relapse == 1], c(0.25, 0.5, 0.75, 0.82))
+)
 ```
 
 Dropping the censored cases is the worst: the patients who stayed off drugs **longest** are thrown away, and the median falls from `r f0(km_all[["50"]])` to `r f0(median(uis$time[uis$relapse == 1]))` days. Taking the censored times as relapse times does little harm up to the 75% quantile here, because most of the censoring comes late in this study (half of the censored times are longer than `r f0(median(uis$time[uis$relapse == 0]))` days). Above that it fails: `r f0(quantile(uis$time, 0.82))` days for the 82% quantile instead of `r f0(km_all[["82"]])`. In a study with earlier censoring the error would begin lower.
@@ -155,7 +166,13 @@ set.seed(61)
 s <- summary(fit, taus = taus, R = 500)                    # bootstrap standard errors
 s[[3]]$coefficients                                        # the median
 row_of <- function(term, col) sapply(s, function(q) q$coefficients[term, col])
-eff <- data.frame(tau = taus, b = row_of("long", 1), SE = row_of("long", 4), low = row_of("long", 2), high = row_of("long", 3))
+eff <- data.frame(
+  tau = taus,
+  b = row_of("long", 1),
+  SE = row_of("long", 4),
+  low = row_of("long", 2),
+  high = row_of("long", 3)
+)
 eff$ratio <- exp(eff$b)
 round(eff, 3)
 ```
@@ -172,25 +189,56 @@ The output for one quantile looks like that of an ordinary regression. The stand
 grid <- seq(0.05, 0.80, by = 0.025)
 set.seed(62)
 sg <- summary(fit, taus = grid, R = 300)
-path <- do.call(rbind, lapply(c("long", "age", "recent_iv", "prior"), function(v)
-  data.frame(term = v, tau = grid, b = sapply(sg, function(q) q$coefficients[v, 1]),
-             low = sapply(sg, function(q) q$coefficients[v, 2]), high = sapply(sg, function(q) q$coefficients[v, 3]))))
-labels <- c(long = "longer programme", age = "ten years older", recent_iv = "recent injected drugs", prior = "one more prior treatment")
+path <- do.call(
+  rbind,
+  lapply(c("long", "age", "recent_iv", "prior"), function(v) {
+    data.frame(
+      term = v,
+      tau = grid,
+      b = sapply(sg, function(q) q$coefficients[v, 1]),
+      low = sapply(sg, function(q) q$coefficients[v, 2]),
+      high = sapply(sg, function(q) q$coefficients[v, 3])
+    )
+  })
+)
+labels <- c(
+  long = "longer programme",
+  age = "ten years older",
+  recent_iv = "recent injected drugs",
+  prior = "one more prior treatment"
+)
 path$label <- factor(labels[path$term], levels = labels)
 
-weibull <- survreg(Surv(time, relapse) ~ long + age + recent_iv + prior + site, data = uis, dist = "weibull")
-lognorm <- survreg(Surv(time, relapse) ~ long + age + recent_iv + prior + site, data = uis, dist = "lognormal")
+weibull <- survreg(
+  Surv(time, relapse) ~ long + age + recent_iv + prior + site,
+  data = uis,
+  dist = "weibull"
+)
+lognorm <- survreg(
+  Surv(time, relapse) ~ long + age + recent_iv + prior + site,
+  data = uis,
+  dist = "lognormal"
+)
 flat <- data.frame(label = factor(labels, levels = labels), b = coef(lognorm)[names(labels)])
 
 ggplot(path, aes(tau, b)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_ribbon(aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.2) +
   geom_line(colour = "#2a78d6", linewidth = 0.9) +
-  geom_hline(data = flat, aes(yintercept = b), colour = "#eb6834", linetype = "dashed", linewidth = 0.8) +
-  facet_wrap(~ label, scales = "free_y") +
-  labs(title = "Effects on the log time, across the quantiles",
-       subtitle = "Blue: censored quantile regression, 95% bootstrap band.\nOrange: log-normal model, one number",
-       x = "quantile τ (left: the patients who relapse early)", y = "coefficient") +
+  geom_hline(
+    data = flat,
+    aes(yintercept = b),
+    colour = "#eb6834",
+    linetype = "dashed",
+    linewidth = 0.8
+  ) +
+  facet_wrap(~label, scales = "free_y") +
+  labs(
+    title = "Effects on the log time, across the quantiles",
+    subtitle = "Blue: censored quantile regression, 95% bootstrap band.\nOrange: log-normal model, one number",
+    x = "quantile τ (left: the patients who relapse early)",
+    y = "coefficient"
+  ) +
   theme_bw()
 ```
 
@@ -206,7 +254,12 @@ hr  <- exp(coef(cox)[["long"]]); hr_ci <- exp(confint(cox)["long", ])
 zph <- cox.zph(cox)
 wb  <- exp(coef(weibull)[["long"]]); ln <- exp(coef(lognorm)[["long"]])
 ln_ci <- exp(confint(lognorm)["long", ])
-c(hazard_ratio = hr, low = hr_ci[[1]], high = hr_ci[[2]], test_of_proportional_hazards = zph$table["long", "p"])
+c(
+  hazard_ratio = hr,
+  low = hr_ci[[1]],
+  high = hr_ci[[2]],
+  test_of_proportional_hazards = zph$table["long", "p"]
+)
 c(weibull_time_ratio = wb, lognormal_time_ratio = ln)
 AIC(weibull, lognorm)
 ```
@@ -226,9 +279,15 @@ The bands are wide. A direct test: bootstrap the **difference** between the coef
 ```{r difference_test}
 set.seed(63)
 boot_diff <- replicate(400, {
-  m <- try(crq(model, data = uis[sample(nrow(uis), replace = TRUE), ], method = "Portnoy"), silent = TRUE)
-  if (inherits(m, "try-error")) return(c(NA, NA))
-  b <- coef(m, taus = c(0.1, 0.5)); c(b["long", 2] - b["long", 1], b["long", 2])
+  m <- try(
+    crq(model, data = uis[sample(nrow(uis), replace = TRUE), ], method = "Portnoy"),
+    silent = TRUE
+  )
+  if (inherits(m, "try-error")) {
+    return(c(NA, NA))
+  }
+  b <- coef(m, taus = c(0.1, 0.5))
+  c(b["long", 2] - b["long", 1], b["long", 2])
 })
 d_est <- eff$b[3] - eff$b[1]
 d_ci  <- quantile(boot_diff[1, ], c(0.025, 0.975), na.rm = TRUE)
@@ -248,11 +307,13 @@ $$w_i = \frac{\text{relapse}_i}{\hat G(t_i)}$$
 where $\hat G$ is the Kaplan–Meier estimate of the **censoring** time (swap the roles of 0 and 1).
 
 ```{r ipcw}
-G   <- survfit(Surv(time, 1 - relapse) ~ 1, data = uis)                # censoring is now the "event"
-g_i <- stepfun(G$time, c(1, G$surv))(uis$time - 1e-6)                   # probability of still being observed
+G <- survfit(Surv(time, 1 - relapse) ~ 1, data = uis) # censoring is now the "event"
+g_i <- stepfun(G$time, c(1, G$surv))(uis$time - 1e-6) # probability of still being observed
 w   <- uis$relapse / g_i
 range(w[w > 0])
-ipcw <- sapply(c(0.1, 0.25, 0.5, 0.75), function(t) coef(rq(log(time) ~ long + age + recent_iv + prior + site, tau = t, data = uis, weights = w)))
+ipcw <- sapply(c(0.1, 0.25, 0.5, 0.75), function(t) {
+  coef(rq(log(time) ~ long + age + recent_iv + prior + site, tau = t, data = uis, weights = w))
+})
 peng <- coef(crq(model, data = uis, method = "PengHuang"), taus = taus)
 cbind(Portnoy = eff$b, PengHuang = peng["long", ], weights = ipcw["long", ])
 ```
@@ -271,7 +332,11 @@ q_grid  <- seq(0.05, 0.80, by = 0.025)
 B       <- coef(fit, taus = q_grid)
 X_new   <- cbind(1, as.matrix(newdata))
 days    <- exp(X_new %*% B)
-pred    <- data.frame(tau = rep(q_grid, each = 2), days = as.vector(days), programme = c("short", "long"))
+pred <- data.frame(
+  tau = rep(q_grid, each = 2),
+  days = as.vector(days),
+  programme = c("short", "long")
+)
 crossing <- apply(days, 1, function(v) sum(diff(v) < 0))
 crossing
 pick <- function(p, t) pred$days[pred$programme == p & abs(pred$tau - t) < 1e-9]
@@ -282,8 +347,13 @@ ggplot(pred, aes(days, 1 - tau, colour = programme)) +
   geom_line(linewidth = 1, orientation = "y") +
   scale_colour_manual(values = c(short = "#eb6834", long = "#2a78d6")) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, 1)) +
-  labs(title = "Predicted share of such patients who are still off drugs", x = "days since admission", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Predicted share of such patients who are still off drugs",
+    x = "days since admission",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 For such a patient the model predicts a median of `r f0(pick("short", 0.5))` days in the short programme and `r f0(pick("long", 0.5))` in the long one; for the 25% quantile `r f0(pick("short", 0.25))` and `r f0(pick("long", 0.25))` days. The lines for different quantiles are fitted separately and could **cross**, which would mean that a later quantile comes earlier. For these two patients, on the grid of `r length(q_grid)` quantiles, the number of crossings was `r sum(crossing)`.
@@ -309,9 +379,17 @@ A report (APA 7th edition) needs the number of cases and events, the estimator, 
 
 ```{r apa_numbers}
 terms <- c("long", "age", "recent_iv", "prior", "site")
-cell  <- function(q, t) { z <- s[[q]]$coefficients[t, ]; paste0(f2(exp(z[1])), " [", f2(exp(z[2])), ", ", f2(exp(z[3])), "]") }
-apa_table <- data.frame(Predictor = c("Longer programme", "Age (10 years)", "Recent injected drugs", "Prior treatments (each)", "Site"),
-                        sapply(1:4, function(q) sapply(terms, cell, q = q)), row.names = NULL)
+cell <- function(q, t) {
+  z <- s[[q]]$coefficients[t, ]
+  paste0(f2(exp(z[1])), " [", f2(exp(z[2])), ", ", f2(exp(z[3])), "]")
+}
+apa_table <- data.frame(
+  Predictor = c(
+    "Longer programme", "Age (10 years)", "Recent injected drugs", "Prior treatments (each)", "Site"
+  ),
+  sapply(1:4, function(q) sapply(terms, cell, q = q)),
+  row.names = NULL
+)
 ```
 
 **Method** (data analysis):

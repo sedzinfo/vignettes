@@ -34,7 +34,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -45,14 +46,29 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 ## 1. The data
 
 ```{r download}
-rand_all <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/sampleSelection/RandHIE.csv")
-rand <- subset(rand_all, year == 2 & !is.na(educdec))           # the second year, one row per person
-rand <- with(rand, data.frame(
-  spending = meddol,                                            # medical spending in the year, US dollars
-  visits   = mdvis,                                             # visits to a physician
-  plan     = factor(coins, levels = c(0, 25, 50, 95, 100), labels = c("free", "25%", "50%", "95%", "deductible")),
-  age = xage, female, child, income = income / 1000, disease = disea,
-  fair_poor = as.integer(hlthf + hlthp > 0), education = educdec))
+rand_all <- read.csv(
+  "https://vincentarelbundock.github.io/Rdatasets/csv/sampleSelection/RandHIE.csv"
+)
+rand <- subset(rand_all, year == 2 & !is.na(educdec)) # the second year, one row per person
+rand <- with(
+  rand,
+  data.frame(
+    spending = meddol, # medical spending in the year, US dollars
+    visits = mdvis, # visits to a physician
+    plan = factor(
+      coins,
+      levels = c(0, 25, 50, 95, 100),
+      labels = c("free", "25%", "50%", "95%", "deductible")
+    ),
+    age = xage,
+    female,
+    child,
+    income = income / 1000,
+    disease = disea,
+    fair_poor = as.integer(hlthf + hlthp > 0),
+    education = educdec
+  )
+)
 rand$any <- as.integer(rand$spending > 0)
 nrow(rand)
 table(rand$plan)
@@ -75,16 +91,31 @@ pb <- ggplot(subset(rand, any == 1), aes(log(spending))) +
   labs(title = "Log of the spending above zero", x = "log(dollars)", y = NULL) + theme_bw()
 patchwork::wrap_plots(pa, pb)
 
-c(share_zero = mean(rand$any == 0), median = median(rand$spending), mean = mean(rand$spending), max = max(rand$spending))
-top1 <- sum(sort(rand$spending, decreasing = TRUE)[seq_len(round(0.01 * nrow(rand)))]) / sum(rand$spending)
+c(
+  share_zero = mean(rand$any == 0),
+  median = median(rand$spending),
+  mean = mean(rand$spending),
+  max = max(rand$spending)
+)
+top1 <- sum(sort(rand$spending, decreasing = TRUE)[seq_len(round(0.01 * nrow(rand)))]) /
+  sum(rand$spending)
 top1
 ```
 
 `r pct(mean(rand$any == 0))` spent nothing. The median is `r f0(median(rand$spending))` dollars and the mean `r f0(mean(rand$spending))`; the top 1% of the people account for `r pct(top1)` of all the spending. On a log scale the positive part looks almost normal.
 
 ```{r by_plan}
-by_plan <- do.call(rbind, lapply(split(rand, rand$plan), function(d)
-  data.frame(n = nrow(d), share_any = mean(d$any), mean_if_any = mean(d$spending[d$any == 1]), mean_all = mean(d$spending))))
+by_plan <- do.call(
+  rbind,
+  lapply(split(rand, rand$plan), function(d) {
+    data.frame(
+      n = nrow(d),
+      share_any = mean(d$any),
+      mean_if_any = mean(d$spending[d$any == 1]),
+      mean_all = mean(d$spending)
+    )
+  })
+)
 round(by_plan, 3)
 ```
 
@@ -140,27 +171,45 @@ $$\underbrace{p_1\mu_1 - p_0\mu_0}_{\text{total}} = \underbrace{(p_1 - p_0)\,\mu
 ## 4. Fitting the model and reading the output
 
 ```{r part1}
-part1 <- glm(any ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
-             family = binomial, data = rand)
+part1 <- glm(
+  any ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+  family = binomial,
+  data = rand
+)
 round(coef(summary(part1)), 3)
 ```
 
 ```{r part2}
 users <- subset(rand, any == 1)
-part2_gamma <- glm(spending ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
-                   family = Gamma("log"), data = users, control = list(maxit = 100))
-part2_log   <- lm(log(spending) ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education, data = users)
+part2_gamma <- glm(
+  spending ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+  family = Gamma("log"),
+  data = users,
+  control = list(maxit = 100)
+)
+part2_log <- lm(
+  log(spending) ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+  data = users
+)
 smear <- mean(exp(resid(part2_log)))
 c(users = nrow(users), smearing_factor = smear, if_normal = exp(sigma(part2_log)^2 / 2))
 rows <- c(paste0("plan", levels(rand$plan)[-1]), "female", "disease", "fair_poor")
-round(cbind(gamma = coef(summary(part2_gamma))[rows, 1:2], lognormal = coef(summary(part2_log))[rows, 1:2]), 3)
+round(
+  cbind(
+    gamma = coef(summary(part2_gamma))[rows, 1:2],
+    lognormal = coef(summary(part2_log))[rows, 1:2]
+  ),
+  3
+)
 ```
 
 Read the two parts side by side:
 
 ```{r read_parts}
 or <- exp(coef(part1)); ratio_g <- exp(coef(part2_gamma)); ratio_l <- exp(coef(part2_log))
-p1 <- coef(summary(part1))[, 4]; p2 <- coef(summary(part2_gamma))[, 4]; p2l <- coef(summary(part2_log))[, 4]
+p1 <- coef(summary(part1))[, 4]
+p2 <- coef(summary(part2_gamma))[, 4]
+p2l <- coef(summary(part2_log))[, 4]
 ```
 
 - **The plan and whether.** Compared with free care, the odds of using any care are `r f2(or[["plan95%"]])` times as high with the 95% plan (*p* `r pval(p1[["plan95%"]])`). The price keeps people away from the first visit.
@@ -209,16 +258,29 @@ There is no formula for the standard error of a product of two predictions avera
 ```{r bootstrap}
 effect_of <- function(d) {
   m1 <- glm(formula(part1), family = binomial, data = d)
-  m2 <- glm(formula(part2_gamma), family = Gamma("log"), data = subset(d, any == 1), control = list(maxit = 100))
+  m2 <- glm(
+    formula(part2_gamma),
+    family = Gamma("log"),
+    data = subset(d, any == 1),
+    control = list(maxit = 100)
+  )
   s <- sapply(c("free", "25%", "95%"), function(pl) {
-    z <- d; z$plan <- factor(pl, levels = levels(rand$plan))
-    p <- predict(m1, z, type = "response"); m <- predict(m2, z, type = "response")
+    z <- d
+    z$plan <- factor(pl, levels = levels(rand$plan))
+    p <- predict(m1, z, type = "response")
+    m <- predict(m2, z, type = "response")
     c(p = mean(p), amount = sum(p * m) / sum(p), mean = mean(p * m))
   })
   total <- s["mean", "95%"] - s["mean", "free"]
   whether <- (s["p", "95%"] - s["p", "free"]) * s["amount", "free"]
-  c(total = total, whether = whether, how_much = total - whether, ratio = s["mean", "95%"] / s["mean", "free"],
-    d_p = s["p", "95%"] - s["p", "free"], d_amount = s["amount", "95%"] - s["amount", "free"])
+  c(
+    total = total,
+    whether = whether,
+    how_much = total - whether,
+    ratio = s["mean", "95%"] / s["mean", "free"],
+    d_p = s["p", "95%"] - s["p", "free"],
+    d_amount = s["amount", "95%"] - s["amount", "free"]
+  )
 }
 set.seed(51)
 point <- effect_of(rand)
@@ -233,13 +295,26 @@ The split of step 6:
 
 ```{r split_chart}
 split_data <- data.frame(
-  part = factor(c("fewer users", "less per user", "total"), levels = c("total", "less per user", "fewer users")),
-  est = point[c("whether", "how_much", "total")], low = ci[1, c("whether", "how_much", "total")], high = ci[2, c("whether", "how_much", "total")])
+  part = factor(
+    c("fewer users", "less per user", "total"),
+    levels = c("total", "less per user", "fewer users")
+  ),
+  est = point[c("whether", "how_much", "total")],
+  low = ci[1, c("whether", "how_much", "total")],
+  high = ci[2, c("whether", "how_much", "total")]
+)
 ggplot(split_data, aes(est, part, colour = part)) +
   geom_vline(xintercept = 0, colour = "grey60") +
   geom_pointrange(aes(xmin = low, xmax = high), linewidth = 1) +
-  scale_colour_manual(values = c(total = "grey25", `less per user` = "#eb6834", `fewer users` = "#2a78d6"), guide = "none") +
-  labs(title = "The effect of paying 95% instead of nothing, in two parts", x = "dollars per person and year (95% bootstrap interval)", y = NULL) +
+  scale_colour_manual(
+    values = c(total = "grey25", `less per user` = "#eb6834", `fewer users` = "#2a78d6"),
+    guide = "none"
+  ) +
+  labs(
+    title = "The effect of paying 95% instead of nothing, in two parts",
+    x = "dollars per person and year (95% bootstrap interval)",
+    y = NULL
+  ) +
   theme_bw()
 ```
 
@@ -254,17 +329,31 @@ What if we model the spending in one piece?
 ```{r one_part}
 f_rhs  <- ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education
 ols    <- lm(update(f_rhs, spending ~ .), data = rand)
-quasi  <- glm(update(f_rhs, spending ~ .), family = quasipoisson, data = rand)            # log link, zeros allowed
-tobit  <- survreg(update(f_rhs, Surv(log(spending + 1), spending > 0, type = "left") ~ .), data = rand, dist = "gaussian")
+# log link, zeros allowed
+quasi <- glm(update(f_rhs, spending ~ .), family = quasipoisson, data = rand)
+tobit <- survreg(
+  update(f_rhs, Surv(log(spending + 1), spending > 0, type = "left") ~ .),
+  data = rand,
+  dist = "gaussian"
+)
 
-tobit_mean <- function(d) {                              # E(y) by the Tobit model for log(y + 1): by simulation
-  mu <- predict(tobit, d); set.seed(1)
-  z  <- rnorm(400); mean(sapply(z, function(e) mean(pmax(exp(mu + tobit$scale * e) - 1, 0))))
+tobit_mean <- function(d) {
+  # E(y) by the Tobit model for log(y + 1): by simulation
+  mu <- predict(tobit, d)
+  set.seed(1)
+  z <- rnorm(400)
+  mean(sapply(z, function(e) mean(pmax(exp(mu + tobit$scale * e) - 1, 0))))
 }
 plan_mean <- function(pl, kind) {
-  d <- rand; d$plan <- factor(pl, levels = levels(rand$plan))
-  switch(kind, OLS = mean(predict(ols, d)), `one-part, log link` = mean(predict(quasi, d, type = "response")),
-         Tobit = tobit_mean(d), `two-part` = mean(predict_mean(d)))
+  d <- rand
+  d$plan <- factor(pl, levels = levels(rand$plan))
+  switch(
+    kind,
+    OLS = mean(predict(ols, d)),
+    `one-part, log link` = mean(predict(quasi, d, type = "response")),
+    Tobit = tobit_mean(d),
+    `two-part` = mean(predict_mean(d))
+  )
 }
 kinds <- c("OLS", "one-part, log link", "Tobit", "two-part")
 models <- sapply(kinds, function(k) sapply(c("free", "25%", "95%"), plan_mean, kind = k))
@@ -279,15 +368,31 @@ c(OLS_negative_predictions = negative)
 
 ```{r calibration_chart}
 rand$predicted <- predict_mean(rand)
-rand$tenth <- cut(rand$predicted, quantile(rand$predicted, 0:10 / 10), include.lowest = TRUE, labels = 1:10)
+rand$tenth <- cut(
+  rand$predicted,
+  quantile(rand$predicted, 0:10 / 10),
+  include.lowest = TRUE,
+  labels = 1:10
+)
 cal <- aggregate(cbind(predicted, spending) ~ tenth, data = rand, FUN = mean)
-cal_long <- rbind(data.frame(tenth = cal$tenth, dollars = cal$predicted, what = "predicted by the two-part model"),
-                  data.frame(tenth = cal$tenth, dollars = cal$spending,  what = "observed"))
+cal_long <- rbind(
+  data.frame(tenth = cal$tenth, dollars = cal$predicted, what = "predicted by the two-part model"),
+  data.frame(tenth = cal$tenth, dollars = cal$spending, what = "observed")
+)
 ggplot(cal_long, aes(tenth, dollars, colour = what, group = what)) +
-  geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
-  scale_colour_manual(values = c(observed = "grey30", `predicted by the two-part model` = "#2a78d6"), name = NULL) +
-  labs(title = "Mean spending in tenths of the predicted spending", x = "tenth of the people, by predicted spending", y = "dollars") +
-  theme_bw() + theme(legend.position = "bottom")
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.2) +
+  scale_colour_manual(
+    values = c(observed = "grey30", `predicted by the two-part model` = "#2a78d6"),
+    name = NULL
+  ) +
+  labs(
+    title = "Mean spending in tenths of the predicted spending",
+    x = "tenth of the people, by predicted spending",
+    y = "dollars"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The two-part model sorts people well, from `r f0(cal$spending[1])` dollars observed in the lowest tenth to `r f0(cal$spending[10])` in the highest, with the noise that a few large bills bring.
@@ -299,12 +404,25 @@ The two-part model sorts people well, from `r f0(cal$spending[1])` dollars obser
 For counts such as the number of visits, the second part is a **zero-truncated** count distribution: a Poisson or negative binomial without its zero. The **hurdle** is the step from 0 to 1 (Mullahy, 1986). `pscl::hurdle()` fits both parts at once:
 
 ```{r hurdle}
-hurdle_nb <- hurdle(visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
-                    data = rand, dist = "negbin", zero.dist = "binomial")
-nb <- glm.nb(visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education, data = rand)
+hurdle_nb <- hurdle(
+  visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+  data = rand,
+  dist = "negbin",
+  zero.dist = "binomial"
+)
+nb <- glm.nb(
+  visits ~ plan + age + I(age^2) + female + child + income + disease + fair_poor + education,
+  data = rand
+)
 pois <- glm(formula(nb), family = poisson, data = rand)
 hs <- summary(hurdle_nb)$coefficients
-round(cbind(zero_part = hs$zero[c("plan95%", "female", "disease"), c(1, 2, 4)], count_part = hs$count[c("plan95%", "female", "disease"), c(1, 2, 4)]), 3)
+round(
+  cbind(
+    zero_part = hs$zero[c("plan95%", "female", "disease"), c(1, 2, 4)],
+    count_part = hs$count[c("plan95%", "female", "disease"), c(1, 2, 4)]
+  ),
+  3
+)
 counts_aic <- AIC(pois, nb, hurdle_nb)
 counts_aic
 zeros <- c(observed = sum(rand$visits == 0), poisson = sum(dpois(0, fitted(pois))),
@@ -336,12 +454,20 @@ A **zero-inflated** model is the close relative: there, zeros come from two sour
 A report (APA 7th edition) needs the share of zeros, the model of each part, the estimates of both, and the combined effect with its interval. The numbers come from the R objects:
 
 ```{r apa_numbers}
-show <- c("plan25%", "plan50%", "plan95%", "plandeductible", "female", "disease", "fair_poor", "income")
+show <- c(
+  "plan25%", "plan50%", "plan95%", "plandeductible", "female", "disease", "fair_poor", "income"
+)
 ci1 <- exp(confint.default(part1)); ci2 <- exp(confint.default(part2_gamma))
 apa_table <- data.frame(
-  Predictor = c("Plan: 25%", "Plan: 50%", "Plan: 95%", "Plan: deductible", "Female", "Chronic diseases (each)", "Fair or poor health", "Income ($1,000)"),
-  or  = f2(or[show]), orci = paste0("[", f2(ci1[show, 1]), ", ", f2(ci1[show, 2]), "]"),
-  rr  = f2(ratio_g[show]), rrci = paste0("[", f2(ci2[show, 1]), ", ", f2(ci2[show, 2]), "]"))
+  Predictor = c(
+    "Plan: 25%", "Plan: 50%", "Plan: 95%", "Plan: deductible", "Female", "Chronic diseases (each)",
+    "Fair or poor health", "Income ($1,000)"
+  ),
+  or = f2(or[show]),
+  orci = paste0("[", f2(ci1[show, 1]), ", ", f2(ci1[show, 2]), "]"),
+  rr = f2(ratio_g[show]),
+  rrci = paste0("[", f2(ci2[show, 1]), ", ", f2(ci2[show, 2]), "]")
+)
 ```
 
 **Method** (data analysis):

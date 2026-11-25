@@ -33,7 +33,8 @@ library(glmnet)     # ridge regression, for comparison
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -49,18 +50,18 @@ fred <- function(id) {
   d <- read.csv(paste0("https://fred.stlouisfed.org/graph/fredgraph.csv?id=", id), na.strings = ".")
   names(d) <- c("date", "value")
   quarter <- paste0(substr(d$date, 1, 4), "Q", (as.integer(substr(d$date, 6, 7)) + 2) %/% 3)
-  tapply(d$value, quarter, mean)                                       # the mean of the months of the quarter
+  tapply(d$value, quarter, mean) # the mean of the months of the quarter
 }
 maturities <- c(`3 months` = "TB3MS", `6 months` = "TB6MS", `1 year` = "GS1", `2 years` = "GS2",
                 `3 years` = "GS3", `5 years` = "GS5", `7 years` = "GS7", `10 years` = "GS10")
 rates <- lapply(maturities, fred)
 gdp   <- fred("GDPC1")
 
-quarters <- names(rates[["2 years"]])                                  # the shortest series: it starts in 1976
+quarters <- names(rates[["2 years"]]) # the shortest series: it starts in 1976
 quarters <- quarters[quarters >= "1976Q3" & quarters <= "2018Q4"]
 X <- sapply(rates, function(r) r[quarters])                            # 8 columns: percent per year
 at <- match(quarters, names(gdp))
-y  <- as.numeric(100 * (gdp[at + 4] / gdp[at] - 1))                    # growth in the NEXT four quarters, in %
+y <- as.numeric(100 * (gdp[at + 4] / gdp[at] - 1)) # growth in the NEXT four quarters, in %
 n  <- nrow(X)
 c(quarters = n, rates = ncol(X))
 summary(y)
@@ -74,14 +75,24 @@ A row is a quarter. The predictors are the rates of that quarter; the outcome is
 
 ```{r look, fig.height = 6.5}
 time  <- as.numeric(substr(quarters, 1, 4)) + (as.numeric(substr(quarters, 6, 6)) - 1) / 4
-long  <- data.frame(time = rep(time, 8), rate = as.vector(X), maturity = factor(rep(colnames(X), each = n), levels = colnames(X)))
+long <- data.frame(
+  time = rep(time, 8),
+  rate = as.vector(X),
+  maturity = factor(rep(colnames(X), each = n), levels = colnames(X))
+)
 pa <- ggplot(long, aes(time, rate, colour = maturity)) +
   geom_line(linewidth = 0.5) +
   scale_colour_viridis_d(option = "D", end = 0.9, name = NULL) +
   labs(title = "Eight interest rates", x = NULL, y = "% per year") + theme_bw()
 pb <- ggplot(data.frame(time, y), aes(time, y)) +
-  geom_hline(yintercept = 0, colour = "grey60") + geom_line(colour = "#eb6834", linewidth = 0.7) +
-  labs(title = "Growth of the economy in the following year", x = "quarter in which the rates were observed", y = "%") + theme_bw()
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_line(colour = "#eb6834", linewidth = 0.7) +
+  labs(
+    title = "Growth of the economy in the following year",
+    x = "quarter in which the rates were observed",
+    y = "%"
+  ) +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 
 R <- cor(X)
@@ -110,7 +121,13 @@ The **variance inflation factor** says how many times the variance of a coeffici
 
 ```{r unstable}
 half <- time < 1998
-round(cbind(first_half = coef(lm(y ~ X, subset = half))[-1], second_half = coef(lm(y ~ X, subset = !half))[-1]), 1)
+round(
+  cbind(
+    first_half = coef(lm(y ~ X, subset = half))[-1],
+    second_half = coef(lm(y ~ X, subset = !half))[-1]
+  ),
+  1
+)
 ```
 
 ---
@@ -127,7 +144,8 @@ $$S = \frac{X^\top X}{n-1}, \qquad S v_j = \lambda_j v_j, \qquad \text{Var}(t_j)
 Xc      <- scale(X, scale = FALSE)                 # centred, not divided by the SD
 eig     <- eigen(cov(X))
 V       <- eig$vectors
-turn    <- sign(c(V[1, 1], V[8, 2] - V[1, 2], V[1, 3] + V[8, 3], rep(1, 5)))   # +1 or -1 for each component
+# +1 or -1 for each component
+turn <- sign(c(V[1, 1], V[8, 2] - V[1, 2], V[1, 3] + V[8, 3], rep(1, 5)))
 V       <- V %*% diag(turn)
 dimnames(V) <- list(colnames(X), paste0("PC", 1:8))
 Tscores <- Xc %*% V
@@ -140,9 +158,14 @@ The sign of a component is arbitrary (if $v$ is a solution, so is $-v$), and we 
 
 ```{r loadings}
 years <- c(0.25, 0.5, 1, 2, 3, 5, 7, 10)
-load_long <- data.frame(years = rep(years, 3), loading = as.vector(V[, 1:3]),
-                        component = factor(rep(c("PC1: level", "PC2: slope", "PC3: curvature"), each = 8),
-                                           levels = c("PC1: level", "PC2: slope", "PC3: curvature")))
+load_long <- data.frame(
+  years = rep(years, 3),
+  loading = as.vector(V[, 1:3]),
+  component = factor(
+    rep(c("PC1: level", "PC2: slope", "PC3: curvature"), each = 8),
+    levels = c("PC1: level", "PC2: slope", "PC3: curvature")
+  )
+)
 ggplot(load_long, aes(years, loading, colour = component)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_line(linewidth = 1) + geom_point(size = 2.2) +
@@ -217,7 +240,8 @@ cv_error <- function(predict_fun) {
   pred <- numeric(n)
   for (k in 1:10) {
     test <- which(block == k)
-    near <- which(sapply(seq_len(n), function(i) min(abs(i - test))) <= 4)      # the block and its neighbours
+    # the block and its neighbours
+    near <- which(sapply(seq_len(n), function(i) min(abs(i - test))) <= 4)
     pred[test] <- predict_fun(setdiff(seq_len(n), near), test)
   }
   sqrt(mean((y - pred)^2))
@@ -227,16 +251,26 @@ pcr_predict <- function(a) function(train, test) {
   m <- pcr(y ~ X, ncomp = a, data = list(y = y[train], X = X[train, ]))
   drop(predict(m, newdata = list(X = X[test, , drop = FALSE]), ncomp = a))
 }
-spread <- X[, "10 years"] - X[, "3 months"]                                    # the classic single predictor
+spread <- X[, "10 years"] - X[, "3 months"] # the classic single predictor
 spread_predict <- function(train, test) {
   b <- coef(lm(y[train] ~ spread[train])); b[1] + b[2] * spread[test]
 }
 set.seed(21)
 ridge_predict <- function(train, test) {
-  m <- cv.glmnet(X[train, ], y[train], alpha = 0, standardize = FALSE, lambda = 10^seq(3, -4, length.out = 80))
+  m <- cv.glmnet(
+    X[train, ],
+    y[train],
+    alpha = 0,
+    standardize = FALSE,
+    lambda = 10^seq(3, -4, length.out = 80)
+  )
   drop(predict(m, X[test, , drop = FALSE], s = "lambda.min"))
 }
-cv <- c(sapply(0:8, function(a) cv_error(pcr_predict(a))), cv_error(spread_predict), cv_error(ridge_predict))
+cv <- c(
+  sapply(0:8, function(a) cv_error(pcr_predict(a))),
+  cv_error(spread_predict),
+  cv_error(ridge_predict)
+)
 names(cv) <- c(paste(0:8, "components"), "spread 10 years - 3 months", "ridge")
 round(cv, 3)
 best <- which.min(cv[2:9])
@@ -245,12 +279,20 @@ best <- which.min(cv[2:9])
 ```{r cv_chart}
 cv_data <- data.frame(a = 0:8, rmse = cv[1:9])
 ggplot(cv_data, aes(a, rmse)) +
-  geom_line(colour = "#2a78d6", linewidth = 0.9) + geom_point(colour = "#2a78d6", size = 2.5) +
-  geom_hline(yintercept = cv[["spread 10 years - 3 months"]], linetype = "dashed", colour = "#eb6834") +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  geom_point(colour = "#2a78d6", size = 2.5) +
+  geom_hline(
+    yintercept = cv[["spread 10 years - 3 months"]],
+    linetype = "dashed",
+    colour = "#eb6834"
+  ) +
   scale_x_continuous(breaks = 0:8) +
-  labs(title = "Error of the forecast in left-out blocks of years",
-       subtitle = "Dashed: a regression on the difference of the 10-year and the 3-month rate",
-       x = "number of components", y = "root mean squared error (points of growth)") +
+  labs(
+    title = "Error of the forecast in left-out blocks of years",
+    subtitle = "Dashed: a regression on the difference of the 10-year and the 3-month rate",
+    x = "number of components",
+    y = "root mean squared error (points of growth)"
+  ) +
   theme_bw()
 ```
 
@@ -275,14 +317,23 @@ max(abs(beta_pcr - beta_hand))
 ### Back to the interest rates
 
 ```{r coefficients_chart}
-coef_data <- data.frame(years = rep(years, 2), beta = c(coef(ols)[-1], beta_pcr),
-                        method = rep(c("Least squares (8 components)", paste0("PCR (", best, " components)")), each = 8))
+coef_data <- data.frame(
+  years = rep(years, 2),
+  beta = c(coef(ols)[-1], beta_pcr),
+  method = rep(c("Least squares (8 components)", paste0("PCR (", best, " components)")), each = 8)
+)
 ggplot(coef_data, aes(years, beta, colour = method)) +
   geom_hline(yintercept = 0, colour = "grey60") +
-  geom_line(linewidth = 0.9) + geom_point(size = 2.2) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2.2) +
   scale_colour_manual(values = c("#eb6834", "#2a78d6"), name = NULL) +
-  labs(title = "Coefficients of the eight rates", x = "maturity (years)", y = "points of growth per point of the rate") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Coefficients of the eight rates",
+    x = "maturity (years)",
+    y = "points of growth per point of the rate"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The coefficients of PCR are small and follow a smooth pattern; those of least squares jump up and down. Both predict. Only one can be read: what matters is the shape of the curve, the long end against the short end and the middle.
@@ -302,14 +353,25 @@ c(sd_of_slope_score = sd_slope, effect_of_one_sd = unname(gamma["slope"]) * sd_s
 A quarter whose slope score is one standard deviation above average was followed by growth that was `r f2(gamma["slope"] * sd_slope)` points higher, 95% CI [`r f2(ci["slope", 1] * sd_slope)`, `r f2(ci["slope", 2] * sd_slope)`].
 
 ```{r scores_chart}
-ggplot(data.frame(slope = Tscores[, "PC2"], y, decade = factor(paste0(10 * (as.numeric(substr(quarters, 1, 4)) %/% 10), "s"))), aes(slope, y)) +
+ggplot(
+  data.frame(
+    slope = Tscores[, "PC2"],
+    y,
+    decade = factor(paste0(10 * (as.numeric(substr(quarters, 1, 4)) %/% 10), "s"))
+  ),
+  aes(slope, y)
+) +
   geom_vline(xintercept = 0, colour = "grey70") +
   geom_point(aes(colour = decade), size = 1.8, alpha = 0.8) +
   geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "grey20", linewidth = 0.8) +
   scale_colour_viridis_d(option = "C", end = 0.9, name = NULL) +
-  labs(title = "The slope of the yield curve and growth in the following year",
-       x = "score of PC2 (left: flat or inverted curve; right: steep)", y = "growth (%)") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "The slope of the yield curve and growth in the following year",
+    x = "score of PC2 (left: flat or inverted curve; right: steep)",
+    y = "growth (%)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Is the relation stable?
@@ -394,7 +456,7 @@ knitr::kable(apa_table, col.names = c("Component", "Variance of the rates", "*r*
 | **How (R)** | `pls::pcr(y ~ X, ncomp = , scale = , validation = "CV")`, or `prcomp()` and `lm()` |
 | **Choose $a$** | Cross-validation, with the components computed inside |
 | **Weak point** | The components ignore $y$; small-variance components can matter most |
-| **Relatives** | Ridge (shrinks instead of cutting), partial least squares (looks at $y$) |
+| **Relatives** | Ridge (shrinks instead of cutting), [partial least squares](EXAMPLE_PARTIAL_LEAST_SQUARES.Rmd) (looks at $y$) |
 | **Related pages** | [Regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd), [stepwise regression](EXAMPLE_STEPWISE_REGRESSION.Rmd), [generalized least squares](EXAMPLE_GENERALIZED_LEAST_SQUARES.Rmd) |
 
 ---

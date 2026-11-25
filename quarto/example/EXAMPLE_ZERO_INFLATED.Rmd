@@ -32,7 +32,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -45,10 +46,24 @@ The data were collected by J. Scott Long (1990) for a study of sex differences i
 
 ```{r download}
 phd <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/pscl/bioChemists.csv")
-phd <- with(phd, data.frame(articles = art, female = as.integer(fem == "Women"), married = as.integer(mar == "Married"),
-                            kids = kid5, prestige = phd, mentor = ment))
+phd <- with(
+  phd,
+  data.frame(
+    articles = art,
+    female = as.integer(fem == "Women"),
+    married = as.integer(mar == "Married"),
+    kids = kid5,
+    prestige = phd,
+    mentor = ment
+  )
+)
 str(phd)
-c(students = nrow(phd), mean = mean(phd$articles), variance = var(phd$articles), zeros = sum(phd$articles == 0))
+c(
+  students = nrow(phd),
+  mean = mean(phd$articles),
+  variance = var(phd$articles),
+  zeros = sum(phd$articles == 0)
+)
 ```
 
 `articles` is the number of articles in the last three years of the PhD, `kids` the number of children under 6, `prestige` the prestige of the department (1 to 5) and `mentor` the number of articles of the student's mentor in the same time.
@@ -96,7 +111,9 @@ A [hurdle model](EXAMPLE_HURDLE_TWO_PART.Rmd) has **one** kind of zero, and its 
 ### Step 5: maximum likelihood, by hand
 
 ```{r by_hand}
-X <- model.matrix(~ female + married + kids + prestige + mentor, data = phd); y <- phd$articles; k <- ncol(X)
+X <- model.matrix(~ female + married + kids + prestige + mentor, data = phd)
+y <- phd$articles
+k <- ncol(X)
 minus_loglik <- function(par) {                              # zero-inflated Poisson
   mu <- exp(drop(X %*% par[1:k])); p <- plogis(drop(X %*% par[k + 1:k]))
   -sum(log(ifelse(y == 0, p + (1 - p) * dpois(0, mu), (1 - p) * dpois(y, mu))))
@@ -104,7 +121,11 @@ minus_loglik <- function(par) {                              # zero-inflated Poi
 pois  <- glm(articles ~ female + married + kids + prestige + mentor, family = poisson, data = phd)
 start <- c(coef(pois), -1, rep(0, k - 1))
 hand  <- optim(start, minus_loglik, method = "BFGS", control = list(maxit = 1000, reltol = 1e-12))
-zip   <- zeroinfl(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "poisson")
+zip <- zeroinfl(
+  articles ~ female + married + kids + prestige + mentor,
+  data = phd,
+  dist = "poisson"
+)
 c(by_hand = -hand$value, zeroinfl = as.numeric(logLik(zip)))
 round(rbind(by_hand = hand$par[c(1:2, k + 6)], zeroinfl = unname(coef(zip))[c(1:2, k + 6)]), 3)
 ```
@@ -117,7 +138,11 @@ Four models: Poisson, negative binomial, and their zero-inflated versions.
 
 ```{r fit}
 nb   <- glm.nb(articles ~ female + married + kids + prestige + mentor, data = phd)
-zinb <- zeroinfl(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "negbin")
+zinb <- zeroinfl(
+  articles ~ female + married + kids + prestige + mentor,
+  data = phd,
+  dist = "negbin"
+)
 summary(zinb)
 ```
 
@@ -136,8 +161,13 @@ By the rest of the table we cannot say much about who the certain zeros are: the
 
 ```{r example_students}
 two <- data.frame(female = 0, married = 1, kids = 0, prestige = 3, mentor = c(0, 10))
-pr  <- data.frame(mentor = two$mentor, certain_zero = predict(zinb, two, type = "zero"), mean_if_not = predict(zinb, two, type = "count"),
-                  overall_mean = predict(zinb, two, type = "response"), chance_of_0 = predict(zinb, two, type = "prob")[, 1])
+pr <- data.frame(
+  mentor = two$mentor,
+  certain_zero = predict(zinb, two, type = "zero"),
+  mean_if_not = predict(zinb, two, type = "count"),
+  overall_mean = predict(zinb, two, type = "response"),
+  chance_of_0 = predict(zinb, two, type = "prob")[, 1]
+)
 round(pr, 3)
 ```
 
@@ -148,9 +178,18 @@ round(pr, 3)
 ### The zeros, and everything else
 
 ```{r zeros}
-hurdle_nb <- hurdle(articles ~ female + married + kids + prestige + mentor, data = phd, dist = "negbin")
-zeros <- c(observed = sum(y == 0), Poisson = sum(dpois(0, fitted(pois))), ZIP = sum(predict(zip, type = "prob")[, 1]),
-           NB = sum(dnbinom(0, mu = fitted(nb), size = nb$theta)), ZINB = sum(predict(zinb, type = "prob")[, 1]))
+hurdle_nb <- hurdle(
+  articles ~ female + married + kids + prestige + mentor,
+  data = phd,
+  dist = "negbin"
+)
+zeros <- c(
+  observed = sum(y == 0),
+  Poisson = sum(dpois(0, fitted(pois))),
+  ZIP = sum(predict(zip, type = "prob")[, 1]),
+  NB = sum(dnbinom(0, mu = fitted(nb), size = nb$theta)),
+  ZINB = sum(predict(zinb, type = "prob")[, 1])
+)
 round(zeros, 1)
 ```
 
@@ -166,18 +205,35 @@ expected <- list(
   NB      = sapply(0:kmax, function(j) sum(dnbinom(j, mu = fitted(nb), size = nb$theta))),
   ZINB    = colSums(predict(zinb, type = "prob"))[1:(kmax + 1)])
 observed <- sapply(0:kmax, function(j) sum(y == j))
-roots <- do.call(rbind, lapply(names(expected), function(m)
-  data.frame(model = m, count = 0:kmax, top = sqrt(expected[[m]]), bottom = sqrt(expected[[m]]) - sqrt(observed))))
+roots <- do.call(
+  rbind,
+  lapply(names(expected), function(m) {
+    data.frame(
+      model = m,
+      count = 0:kmax,
+      top = sqrt(expected[[m]]),
+      bottom = sqrt(expected[[m]]) - sqrt(observed)
+    )
+  })
+)
 roots$model <- factor(roots$model, levels = names(model_colours))
 
 ggplot(roots, aes(count)) +
-  geom_rect(aes(xmin = count - 0.4, xmax = count + 0.4, ymin = bottom, ymax = top), fill = "grey75") +
+  geom_rect(
+    aes(xmin = count - 0.4, xmax = count + 0.4, ymin = bottom, ymax = top),
+    fill = "grey75"
+  ) +
   geom_hline(yintercept = 0) +
-  geom_line(aes(y = top, colour = model), linewidth = 0.9) + geom_point(aes(y = top, colour = model), size = 1.8) +
-  facet_wrap(~ model) +
+  geom_line(aes(y = top, colour = model), linewidth = 0.9) +
+  geom_point(aes(y = top, colour = model), size = 1.8) +
+  facet_wrap(~model) +
   scale_colour_manual(values = model_colours, guide = "none") +
   scale_x_continuous(breaks = 0:kmax) +
-  labs(title = "Rootograms: observed bars hanging from the expected curve", x = "articles", y = "square root of the frequency") +
+  labs(
+    title = "Rootograms: observed bars hanging from the expected curve",
+    x = "articles",
+    y = "square root of the frequency"
+  ) +
   theme_bw()
 ```
 
@@ -187,9 +243,18 @@ The Poisson model fails everywhere. ZIP repairs the zero and misses the rest: it
 
 ```{r criteria}
 models <- list(Poisson = pois, ZIP = zip, NB = nb, ZINB = zinb, `hurdle NB` = hurdle_nb)
-crit <- data.frame(model = names(models), parameters = sapply(models, function(m) attr(logLik(m), "df")),
-                   logLik = sapply(models, function(m) as.numeric(logLik(m))), AIC = sapply(models, AIC), BIC = sapply(models, BIC), row.names = NULL)
-print(transform(crit, logLik = round(logLik, 1), AIC = round(AIC, 1), BIC = round(BIC, 1)), row.names = FALSE)
+crit <- data.frame(
+  model = names(models),
+  parameters = sapply(models, function(m) attr(logLik(m), "df")),
+  logLik = sapply(models, function(m) as.numeric(logLik(m))),
+  AIC = sapply(models, AIC),
+  BIC = sapply(models, BIC),
+  row.names = NULL
+)
+print(
+  transform(crit, logLik = round(logLik, 1), AIC = round(AIC, 1), BIC = round(BIC, 1)),
+  row.names = FALSE
+)
 get <- function(m, col) crit[crit$model == m, col]
 ```
 
@@ -212,13 +277,23 @@ The honest test simulates. Take the fitted NB (no inflation), generate new data 
 gain <- 2 * (as.numeric(logLik(zinb)) - as.numeric(logLik(nb)))
 set.seed(81)
 gains <- replicate(200, {
-  d <- phd; d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
+  d <- phd
+  d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
   a <- try(suppressWarnings(glm.nb(formula(nb), data = d)), silent = TRUE)
   z <- try(suppressWarnings(zeroinfl(formula(zinb), data = d, dist = "negbin")), silent = TRUE)
-  if (inherits(a, "try-error") || inherits(z, "try-error")) NA else 2 * (as.numeric(logLik(z)) - as.numeric(logLik(a)))
+  if (inherits(a, "try-error") || inherits(z, "try-error")) {
+    NA
+  } else {
+    2 * (as.numeric(logLik(z)) - as.numeric(logLik(a)))
+  }
 })
 p_boot <- (1 + sum(gains >= gain, na.rm = TRUE)) / (1 + sum(!is.na(gains)))
-c(our_gain = gain, mean_gain_without_inflation = mean(gains, na.rm = TRUE), p = p_boot, failed = sum(is.na(gains)))
+c(
+  our_gain = gain,
+  mean_gain_without_inflation = mean(gains, na.rm = TRUE),
+  p = p_boot,
+  failed = sum(is.na(gains))
+)
 ```
 
 Our gain is `r f1(gain)`. Without any inflation the gain is `r f1(mean(gains, na.rm = TRUE))` on average, and a gain as large as ours has the probability *p* `r pval(p_boot)`. So the ZINB describes something that the NB does not. The next section asks what.
@@ -234,20 +309,42 @@ grid <- data.frame(female = 0, married = 1, kids = 0, prestige = 3, mentor = 0:3
 grid$zero  <- predict(zinb, grid, type = "zero")
 grid$ZINB  <- predict(zinb, grid, type = "response")
 grid$NB    <- predict(nb, grid, type = "response")
-long <- rbind(data.frame(mentor = grid$mentor, articles = grid$ZINB, model = "ZINB"), data.frame(mentor = grid$mentor, articles = grid$NB, model = "NB"))
-by_m <- aggregate(articles ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE), data = phd, FUN = mean)
-by_m$mentor <- aggregate(mentor ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE), data = phd, FUN = mean)$mentor
+long <- rbind(
+  data.frame(mentor = grid$mentor, articles = grid$ZINB, model = "ZINB"),
+  data.frame(mentor = grid$mentor, articles = grid$NB, model = "NB")
+)
+by_m <- aggregate(
+  articles ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE),
+  data = phd,
+  FUN = mean
+)
+by_m$mentor <- aggregate(
+  mentor ~ cut(mentor, c(-1, 0, 2, 5, 10, 15, 20, 30, 80), labels = FALSE),
+  data = phd,
+  FUN = mean
+)$mentor
 ggplot(long, aes(mentor, articles, colour = model)) +
-  geom_point(data = by_m, aes(mentor, articles), inherit.aes = FALSE, size = 2.4, colour = "grey30") +
+  geom_point(
+    data = by_m,
+    aes(mentor, articles),
+    inherit.aes = FALSE,
+    size = 2.4,
+    colour = "grey30"
+  ) +
   geom_line(linewidth = 1) +
   scale_colour_manual(values = model_colours, name = NULL) +
   coord_cartesian(xlim = c(0, 30)) +
-  labs(title = "Expected articles and the mentor's articles",
-       subtitle = "Points: mean of all students in groups of mentors. Lines: a married man without children",
-       x = "articles of the mentor", y = "articles of the student") +
-  theme_bw() + theme(legend.position = "bottom")
-certain   <- sum(predict(zinb, type = "zero"))                                           # expected number of certain zeros
-posterior <- predict(zinb, type = "zero") / predict(zinb, type = "prob")[, 1]            # P(certain zero | 0 articles)
+  labs(
+    title = "Expected articles and the mentor's articles",
+    subtitle = "Points: mean of all students in groups of mentors. Lines: a married man without children",
+    x = "articles of the mentor",
+    y = "articles of the student"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+certain <- sum(predict(zinb, type = "zero")) # expected number of certain zeros
+# P(certain zero | 0 articles)
+posterior <- predict(zinb, type = "zero") / predict(zinb, type = "prob")[, 1]
 c(certain_zeros = certain, share_among_those_with_0 = mean(posterior[y == 0]))
 ```
 
@@ -255,9 +352,17 @@ By the ZINB, about `r f0(certain)` of the 915 students are certain zeros, which 
 
 ```{r bend}
 nb_bend <- glm.nb(articles ~ female + married + kids + prestige + log1p(mentor), data = phd)
-zinb_bend <- zeroinfl(articles ~ female + married + kids + prestige + log1p(mentor), data = phd, dist = "negbin")
-bend <- data.frame(model = c("NB, mentor", "ZINB, mentor", "NB, log(1 + mentor)", "ZINB, log(1 + mentor)"),
-                   parameters = c(7, 13, 7, 13), AIC = c(AIC(nb), AIC(zinb), AIC(nb_bend), AIC(zinb_bend)), BIC = c(BIC(nb), BIC(zinb), BIC(nb_bend), BIC(zinb_bend)))
+zinb_bend <- zeroinfl(
+  articles ~ female + married + kids + prestige + log1p(mentor),
+  data = phd,
+  dist = "negbin"
+)
+bend <- data.frame(
+  model = c("NB, mentor", "ZINB, mentor", "NB, log(1 + mentor)", "ZINB, log(1 + mentor)"),
+  parameters = c(7, 13, 7, 13),
+  AIC = c(AIC(nb), AIC(zinb), AIC(nb_bend), AIC(zinb_bend)),
+  BIC = c(BIC(nb), BIC(zinb), BIC(nb_bend), BIC(zinb_bend))
+)
 print(transform(bend, AIC = round(AIC, 1), BIC = round(BIC, 1)), row.names = FALSE)
 ```
 
@@ -270,8 +375,10 @@ What does one conclude who compares only Poisson with ZIP, when the truth is a n
 ```{r false_inflation}
 set.seed(82)
 false_zip <- replicate(200, {
-  d <- phd; d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
-  p0 <- glm(formula(pois), family = poisson, data = d); z0 <- suppressWarnings(zeroinfl(formula(zip), data = d))
+  d <- phd
+  d$articles <- rnbinom(nrow(d), mu = fitted(nb), size = nb$theta)
+  p0 <- glm(formula(pois), family = poisson, data = d)
+  z0 <- suppressWarnings(zeroinfl(formula(zip), data = d))
   c(zip_wins = AIC(z0) < AIC(p0), certain_zeros = mean(predict(z0, type = "zero")))
 })
 rowMeans(false_zip)
@@ -302,9 +409,16 @@ A report (APA 7th edition) needs the distribution of the counts, the models that
 ```{r apa_numbers}
 s_nb <- coef(summary(nb_bend)); ci_nb <- suppressMessages(confint(nb_bend))
 apa_table <- data.frame(
-  Predictor = c("Intercept", "Female", "Married", "Children under 6", "Prestige of the department", "log(1 + mentor's articles)"),
-  b  = f2(s_nb[, 1]), SE = f2(s_nb[, 2]), z = f2(s_nb[, 3]), p = sapply(s_nb[, 4], function(p) sub("^= ", "", pval(p))),
-  IRR = paste0(f2(exp(s_nb[, 1])), " [", f2(exp(ci_nb[, 1])), ", ", f2(exp(ci_nb[, 2])), "]"))
+  Predictor = c(
+    "Intercept", "Female", "Married", "Children under 6", "Prestige of the department",
+    "log(1 + mentor's articles)"
+  ),
+  b = f2(s_nb[, 1]),
+  SE = f2(s_nb[, 2]),
+  z = f2(s_nb[, 3]),
+  p = sapply(s_nb[, 4], function(p) sub("^= ", "", pval(p))),
+  IRR = paste0(f2(exp(s_nb[, 1])), " [", f2(exp(ci_nb[, 1])), ", ", f2(exp(ci_nb[, 2])), "]")
+)
 ```
 
 **Method** (data analysis):

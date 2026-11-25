@@ -31,7 +31,8 @@ line_colours <- c("regression line" = "#2a78d6", "son = father" = "#eb6834")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 ```
 
@@ -52,7 +53,8 @@ Heights are in **inches** (1 inch = 2.54 cm), most of them rounded to the neares
 ```{r tidy}
 sons <- subset(galton, gender == "male", select = c(family, father, childHeight))
 names(sons)[3] <- "son"
-parents <- unique(subset(galton, gender == "male", select = c(family, father, mother)))   # one row per couple
+# one row per couple
+parents <- unique(subset(galton, gender == "male", select = c(family, father, mother)))
 nrow(sons)
 length(unique(sons$family))   # how many fathers
 summary(sons[, c("father", "son")])
@@ -66,13 +68,22 @@ There are `r nrow(sons)` sons of `r length(unique(sons$family))` fathers. Father
 
 ```{r look, fig.height = 6.5}
 ggplot(sons, aes(father, son)) +
-  geom_abline(aes(intercept = 0, slope = 1, colour = "son = father"), linewidth = 0.8, linetype = "dashed") +
+  geom_abline(
+    aes(intercept = 0, slope = 1, colour = "son = father"),
+    linewidth = 0.8,
+    linetype = "dashed"
+  ) +
   geom_jitter(width = 0.1, height = 0.1, alpha = 0.4, colour = "grey30", size = 1.5) +
   geom_smooth(aes(colour = "regression line"), method = "lm", se = FALSE, linewidth = 1) +
   scale_colour_manual(values = line_colours, name = NULL) +
   coord_fixed(xlim = c(61, 79), ylim = c(59, 80)) +
-  labs(title = "Sons against fathers", x = "father's height (inches)", y = "son's height (inches)") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Sons against fathers",
+    x = "father's height (inches)",
+    y = "son's height (inches)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The cloud rises: taller fathers have taller sons. (The points are nudged a little, because the rounding puts many of them on the same spot.) If every son were as tall as his father, the points would lie along the dashed line. They do not. The regression line is **flatter**: on the right it lies below the dashed line, on the left above it. That is what Galton saw:
@@ -212,27 +223,41 @@ Predicting fathers from sons is a different regression, and not the first line t
 
 ```{r two_lines}
 reverse <- lm(father ~ son, data = sons)
-c(son_on_father = b1, father_on_son = coef(reverse)[["son"]], turned_around = 1 / coef(reverse)[["son"]])
+c(
+  son_on_father = b1,
+  father_on_son = coef(reverse)[["son"]],
+  turned_around = 1 / coef(reverse)[["son"]]
+)
 c(product_of_slopes = b1 * coef(reverse)[["son"]], r_squared = r^2)
 ```
 
 ```{r two_lines_chart, fig.height = 6.5}
 two <- rbind(
   data.frame(line = "son predicted from father", intercept = b0, slope = b1),
-  data.frame(line = "father predicted from son", intercept = -coef(reverse)[[1]] / coef(reverse)[[2]],
-             slope = 1 / coef(reverse)[[2]]))
+  data.frame(
+    line = "father predicted from son",
+    intercept = -coef(reverse)[[1]] / coef(reverse)[[2]],
+    slope = 1 / coef(reverse)[[2]]
+  )
+)
 
 ggplot(sons, aes(father, son)) +
   geom_jitter(width = 0.1, height = 0.1, alpha = 0.25, colour = "grey40", size = 1.2) +
   geom_abline(data = two, aes(intercept = intercept, slope = slope, colour = line), linewidth = 1) +
   annotate("point", x = mean(x), y = mean(y), size = 3) +
-  scale_colour_manual(values = c("son predicted from father" = "#2a78d6", "father predicted from son" = "#1baf7a"),
-                      name = NULL) +
+  scale_colour_manual(
+    values = c("son predicted from father" = "#2a78d6", "father predicted from son" = "#1baf7a"),
+    name = NULL
+  ) +
   coord_fixed(xlim = c(61, 79), ylim = c(59, 80)) +
-  labs(title = "Two regression lines through the same cloud",
-       subtitle = "They cross at the two means (black point)",
-       x = "father's height (inches)", y = "son's height (inches)") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Two regression lines through the same cloud",
+    subtitle = "They cross at the two means (black point)",
+    x = "father's height (inches)",
+    y = "son's height (inches)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Least squares measures **vertical** distances, the errors in what we predict. Swap the roles and the errors to make small are the horizontal ones, so the line changes. The product of the two slopes is $r^2$, and the lines coincide only when $r = \pm 1$. The choice of $y$ is the choice of what to predict. When neither variable is the outcome, because both measure the same thing with error, use [Deming regression](EXAMPLE_DEMING_REGRESSION.Rmd).
@@ -263,8 +288,18 @@ The average of such sons is `r f1(conf[1])` inches, 95% CI [`r f1(conf[2])`, `r 
 
 ```{r bands}
 grid  <- data.frame(father = seq(62, 78.5, by = 0.25))
-bands <- rbind(cbind(grid, predict(fit, grid, interval = "prediction"), band = "95% prediction interval: one son"),
-               cbind(grid, predict(fit, grid, interval = "confidence"), band = "95% confidence interval: the average son"))
+bands <- rbind(
+  cbind(
+    grid,
+    predict(fit, grid, interval = "prediction"),
+    band = "95% prediction interval: one son"
+  ),
+  cbind(
+    grid,
+    predict(fit, grid, interval = "confidence"),
+    band = "95% confidence interval: the average son"
+  )
+)
 bands$band <- factor(bands$band, levels = unique(bands$band))
 
 ggplot(sons, aes(father, son)) +
@@ -296,7 +331,11 @@ pa <- ggplot(check, aes(fitted, resid)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_jitter(width = 0.05, height = 0.05, alpha = 0.4, colour = "grey30") +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834", linewidth = 0.9) +
-  labs(title = "Residuals against fitted values", x = "fitted height (inches)", y = "residual (inches)") +
+  labs(
+    title = "Residuals against fitted values",
+    x = "fitted height (inches)",
+    y = "residual (inches)"
+  ) +
   theme_bw()
 pb <- ggplot(check, aes(q, std)) +
   geom_abline(colour = "grey60") +

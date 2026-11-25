@@ -23,14 +23,20 @@ The answer needs a model with a full distribution. The [Cox model](EXAMPLE_COX.R
 library(survival)   # survreg(): parametric survival regression (comes with R, as do the data)
 library(ggplot2)
 
-dist_colours <- c(weibull = "#2a78d6", lognormal = "#eb6834", loglogistic = "#1baf7a", exponential = "#eda100")
+dist_colours <- c(
+  weibull = "#2a78d6",
+  lognormal = "#eb6834",
+  loglogistic = "#1baf7a",
+  exponential = "#eda100"
+)
 
 # number formats for the text
 f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -43,9 +49,10 @@ The data come with R, in the package `survival`:
 
 ```{r data}
 motors <- as.data.frame(imotor)
-motors$x <- 1000 / (motors$temp + 273.16)             # 1000 divided by the absolute temperature (Kelvin): see step 3
+# 1000 divided by the absolute temperature (Kelvin): see step 3
+motors$x <- 1000 / (motors$temp + 273.16)
 table(temperature = motors$temp, failed = motors$status)
-aggregate(time ~ temp, data = motors, FUN = max)      # when the test of each group was stopped (hours)
+aggregate(time ~ temp, data = motors, FUN = max) # when the test of each group was stopped (hours)
 ```
 
 `time` is in hours, `status` is 1 for a failure and 0 for a motor that was still running when the test of its group ended (**censored**). Of `r nrow(motors)` motors `r sum(motors$status)` failed. (Failures were found at inspections, so several have the same time. We take the times as they are.)
@@ -58,11 +65,20 @@ aggregate(time ~ temp, data = motors, FUN = max)      # when the test of each gr
 ggplot(motors, aes(temp, time, colour = factor(status), shape = factor(status))) +
   geom_jitter(width = 1.5, height = 0, size = 2.6) +
   scale_y_log10(breaks = c(300, 1000, 3000, 10000, 30000, 100000)) +
-  scale_colour_manual(values = c(`0` = "grey55", `1` = "#eb6834"), labels = c("still running", "failed"), name = NULL) +
-  scale_shape_manual(values = c(`0` = 2, `1` = 16), labels = c("still running", "failed"), name = NULL) +
+  scale_colour_manual(
+    values = c(`0` = "grey55", `1` = "#eb6834"),
+    labels = c("still running", "failed"),
+    name = NULL
+  ) +
+  scale_shape_manual(
+    values = c(`0` = 2, `1` = 16),
+    labels = c("still running", "failed"),
+    name = NULL
+  ) +
   coord_cartesian(xlim = c(125, 225), ylim = c(300, 100000)) +
   labs(title = "40 motors", x = "temperature (°C)", y = "hours (log scale)") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The hotter, the sooner. At 220 °C half of the motors failed within 504 hours; at 150 °C all were running after 8,064. On the log scale the relation looks like a line, and the spread looks similar at each temperature. Both are assumptions of the model that follows.
@@ -81,10 +97,19 @@ $\eta$ is the **scale**, the time at which 63% have failed. $k$ is the **shape**
 
 ```{r shapes}
 grid <- seq(0.02, 3, by = 0.02)
-shapes <- do.call(rbind, lapply(c(0.7, 1, 1.5, 3), function(k) data.frame(t = grid, h = k * grid^(k - 1), shape = paste("k =", k))))
-ggplot(shapes, aes(t, h, colour = shape)) + geom_line(linewidth = 1) + coord_cartesian(ylim = c(0, 5)) +
-  scale_colour_viridis_d(end = 0.9, name = NULL) + labs(title = "The hazard of the Weibull distribution (η = 1)", x = "time", y = "hazard") +
-  theme_bw() + theme(legend.position = "bottom")
+shapes <- do.call(
+  rbind,
+  lapply(c(0.7, 1, 1.5, 3), function(k) {
+    data.frame(t = grid, h = k * grid^(k - 1), shape = paste("k =", k))
+  })
+)
+ggplot(shapes, aes(t, h, colour = shape)) +
+  geom_line(linewidth = 1) +
+  coord_cartesian(ylim = c(0, 5)) +
+  scale_colour_viridis_d(end = 0.9, name = NULL) +
+  labs(title = "The hazard of the Weibull distribution (η = 1)", x = "time", y = "hazard") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ### Step 2: predictors stretch time
@@ -106,14 +131,23 @@ $$\log L = \sum_{\text{failed}} \log f(t_i) + \sum_{\text{running}} \log S(t_i)$
 By hand, with R's Weibull functions (`dweibull`, `pweibull`):
 
 ```{r by_hand}
-minus_loglik <- function(par) {                              # intercept, slope, log(sigma)
-  eta <- exp(par[1] + par[2] * motors$x); k <- 1 / exp(par[3])
-  -sum(ifelse(motors$status == 1, dweibull(motors$time, k, eta, log = TRUE), pweibull(motors$time, k, eta, lower.tail = FALSE, log.p = TRUE)))
+minus_loglik <- function(par) {
+  # intercept, slope, log(sigma)
+  eta <- exp(par[1] + par[2] * motors$x)
+  k <- 1 / exp(par[3])
+  -sum(ifelse(
+    motors$status == 1,
+    dweibull(motors$time, k, eta, log = TRUE),
+    pweibull(motors$time, k, eta, lower.tail = FALSE, log.p = TRUE)
+  ))
 }
 hand <- optim(c(-12, 9, -1), minus_loglik, control = list(maxit = 5000, reltol = 1e-14))
 hand <- optim(hand$par, minus_loglik, control = list(maxit = 5000, reltol = 1e-14))
 fit  <- survreg(Surv(time, status) ~ x, data = motors, dist = "weibull")
-rbind(by_hand = c(hand$par[1:2], sigma = exp(hand$par[3]), logLik = -hand$value), survreg = c(coef(fit), fit$scale, logLik(fit)))
+rbind(
+  by_hand = c(hand$par[1:2], sigma = exp(hand$par[3]), logLik = -hand$value),
+  survreg = c(coef(fit), fit$scale, logLik(fit))
+)
 ```
 
 ---
@@ -123,7 +157,7 @@ rbind(by_hand = c(hand$par[1:2], sigma = exp(hand$par[3]), logLik = -hand$value)
 ```{r fit}
 summary(fit)
 b <- coef(fit); s <- summary(fit)$table; k <- 1 / fit$scale
-ratio10 <- exp(b[["x"]] * (1000 / (150 + 273.16) - 1000 / (160 + 273.16)))         # from 160 to 150 degrees
+ratio10 <- exp(b[["x"]] * (1000 / (150 + 273.16) - 1000 / (160 + 273.16))) # from 160 to 150 degrees
 ```
 
 - **`x`** = `r f2(b[["x"]])`: the slope of the Arrhenius line. Easier to say: going from 160 to 150 °C multiplies the lifetime by `r f2(ratio10)`. An old rule of engineers says that 10 degrees less double the life.
@@ -151,10 +185,21 @@ round(cbind(temp = at$temp, q))
 
 ```{r distributions}
 dists <- names(dist_colours)
-fits <- lapply(dists, function(d) survreg(Surv(time, status) ~ x, data = motors, dist = d)); names(fits) <- dists
+fits <- lapply(dists, function(d) survreg(Surv(time, status) ~ x, data = motors, dist = d))
+names(fits) <- dists
 at130 <- data.frame(x = 1000 / (130 + 273.16))
-interval <- function(m, p) { r <- predict(m, at130, type = "uquantile", p = p, se.fit = TRUE); exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit)) }
-compare <- t(sapply(fits, function(m) c(AIC = AIC(m), median_130 = interval(m, 0.5)[[1]], q10_130 = interval(m, 0.1)[[1]], q0.1_130 = interval(m, 0.001)[[1]])))
+interval <- function(m, p) {
+  r <- predict(m, at130, type = "uquantile", p = p, se.fit = TRUE)
+  exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit))
+}
+compare <- t(sapply(fits, function(m) {
+  c(
+    AIC = AIC(m),
+    median_130 = interval(m, 0.5)[[1]],
+    q10_130 = interval(m, 0.1)[[1]],
+    q0.1_130 = interval(m, 0.001)[[1]]
+  )
+}))
 round(compare)
 ```
 
@@ -165,19 +210,52 @@ By the AIC the Weibull (`r f1(compare["weibull", "AIC"])`) and the log-logistic 
 
 ```{r extrapolation}
 line <- data.frame(temp = seq(125, 225, by = 1)); line$x <- 1000 / (line$temp + 273.16)
-qs <- do.call(rbind, lapply(c(0.1, 0.5, 0.9), function(p) { r <- predict(fit, line, type = "uquantile", p = p, se.fit = TRUE)
-  data.frame(temp = line$temp, est = exp(r$fit), low = exp(r$fit - 1.96 * r$se.fit), high = exp(r$fit + 1.96 * r$se.fit), q = paste0(100 * p, "% have failed")) }))
+qs <- do.call(
+  rbind,
+  lapply(c(0.1, 0.5, 0.9), function(p) {
+    r <- predict(fit, line, type = "uquantile", p = p, se.fit = TRUE)
+    data.frame(
+      temp = line$temp,
+      est = exp(r$fit),
+      low = exp(r$fit - 1.96 * r$se.fit),
+      high = exp(r$fit + 1.96 * r$se.fit),
+      q = paste0(100 * p, "% have failed")
+    )
+  })
+)
 qs$q <- factor(qs$q, levels = unique(qs$q))
 ggplot(qs, aes(temp, est, colour = q)) +
-  geom_ribbon(data = subset(qs, q == "50% have failed"), aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.15, colour = NA) +
+  geom_ribbon(
+    data = subset(qs, q == "50% have failed"),
+    aes(ymin = low, ymax = high),
+    fill = "#2a78d6",
+    alpha = 0.15,
+    colour = NA
+  ) +
   geom_line(linewidth = 0.9) +
-  geom_point(data = motors, aes(temp, time, shape = factor(status)), inherit.aes = FALSE, size = 1.8, colour = "grey30") +
+  geom_point(
+    data = motors,
+    aes(temp, time, shape = factor(status)),
+    inherit.aes = FALSE,
+    size = 1.8,
+    colour = "grey30"
+  ) +
   geom_vline(xintercept = 130, linetype = "dashed") +
-  scale_shape_manual(values = c(`0` = 2, `1` = 16), labels = c("still running", "failed"), name = NULL) +
+  scale_shape_manual(
+    values = c(`0` = 2, `1` = 16),
+    labels = c("still running", "failed"),
+    name = NULL
+  ) +
   scale_colour_manual(values = c("#eda100", "#2a78d6", "#1baf7a"), name = NULL) +
   scale_y_log10(breaks = c(300, 1000, 3000, 10000, 30000, 100000)) +
-  labs(title = "Weibull model: quantiles of the lifetime", subtitle = "Band: 95% interval of the median. Dashed line: the working temperature", x = "temperature (°C)", y = "hours (log scale)") +
-  theme_bw() + theme(legend.position = "bottom", legend.box = "vertical")
+  labs(
+    title = "Weibull model: quantiles of the lifetime",
+    subtitle = "Band: 95% interval of the median. Dashed line: the working temperature",
+    x = "temperature (°C)",
+    y = "hours (log scale)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.box = "vertical")
 med130 <- interval(fit, 0.5); q10 <- interval(fit, 0.1)
 ```
 
@@ -192,7 +270,8 @@ The median at 130 °C is **`r f0(med130[1])` hours**, 95% CI [`r f0(med130[2])`,
 The AFT model assumes one $\sigma$. Let each temperature have its own (`strata`):
 
 ```{r strata}
-with_failures <- subset(motors, temp > 150)                                    # at 150 degrees nothing failed: no information about sigma
+# at 150 degrees nothing failed: no information about sigma
+with_failures <- subset(motors, temp > 150)
 one  <- survreg(Surv(time, status) ~ x, data = with_failures, dist = "weibull")
 many <- survreg(Surv(time, status) ~ x + strata(temp), data = with_failures, dist = "weibull")
 lr   <- 2 * (as.numeric(logLik(many)) - as.numeric(logLik(one)))
@@ -226,12 +305,21 @@ Without the motors tested at 220 °C the median at 130 °C becomes `r f0(m2[1])`
 ### Residuals
 
 ```{r residuals}
-z <- (log(motors$time) - predict(fit, type = "lp")) / fit$scale                 # standardised log times, censored like the times
+# standardised log times, censored like the times
+z <- (log(motors$time) - predict(fit, type = "lp")) / fit$scale
 km <- survfit(Surv(exp(z), motors$status) ~ 1)
 resid_data <- data.frame(z = log(km$time), S = km$surv)
 resid_data <- subset(resid_data, S > 0 & S < 1)
-ggplot(resid_data, aes(z, log(-log(S)))) + geom_abline(colour = "grey60") + geom_point(size = 2.2, colour = "#2a78d6") +
-  labs(title = "Standardised residuals on Weibull paper", subtitle = "A straight line with slope 1 if the Weibull model is right", x = "residual", y = "log(-log(share not failed))") + theme_bw()
+ggplot(resid_data, aes(z, log(-log(S)))) +
+  geom_abline(colour = "grey60") +
+  geom_point(size = 2.2, colour = "#2a78d6") +
+  labs(
+    title = "Standardised residuals on Weibull paper",
+    subtitle = "A straight line with slope 1 if the Weibull model is right",
+    x = "residual",
+    y = "log(-log(share not failed))"
+  ) +
+  theme_bw()
 ```
 
 ---
@@ -251,7 +339,14 @@ aft <- survreg(Surv(week, arrest) ~ money + age + prio, data = rossi, dist = "we
 cox <- coxph(Surv(week, arrest) ~ money + age + prio, data = rossi)
 tr  <- exp(coef(aft)[["money"]]); tr_ci <- exp(confint(aft)["money", ])
 hr_weibull <- exp(-coef(aft) / aft$scale)[-1]
-round(rbind(time_ratio = exp(coef(aft))[-1], hazard_ratio_Weibull = hr_weibull, hazard_ratio_Cox = exp(coef(cox))), 3)
+round(
+  rbind(
+    time_ratio = exp(coef(aft))[-1],
+    hazard_ratio_Weibull = hr_weibull,
+    hazard_ratio_Cox = exp(coef(cox))
+  ),
+  3
+)
 c(shape = 1 / aft$scale)
 ```
 
@@ -286,9 +381,27 @@ c(shape = 1 / aft$scale)
 A report (APA 7th edition) needs the number of events and of censored cases, the distribution and why, the transformation of the predictors, time ratios or quantiles with intervals, and the basis of any extrapolation. The numbers come from the R objects:
 
 ```{r apa_numbers}
-apa_table <- data.frame(Term = c("Intercept", "1000 / temperature (K)", "log σ"), b = f2(s[, 1]), SE = f2(s[, 2]), z = f2(s[, 3]), p = sapply(s[, 4], function(p) sub("^= ", "", pval(p))))
+apa_table <- data.frame(
+  Term = c("Intercept", "1000 / temperature (K)", "log σ"),
+  b = f2(s[, 1]),
+  SE = f2(s[, 2]),
+  z = f2(s[, 3]),
+  p = sapply(s[, 4], function(p) sub("^= ", "", pval(p)))
+)
 pred_table <- data.frame(temp = c(130, 150, 170, 190, 220))
-pred_table <- cbind(pred_table, t(sapply(pred_table$temp, function(tt) { r <- predict(fit, data.frame(x = 1000 / (tt + 273.16)), type = "uquantile", p = 0.5, se.fit = TRUE); exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit)) })))
+pred_table <- cbind(
+  pred_table,
+  t(sapply(pred_table$temp, function(tt) {
+    r <- predict(
+      fit,
+      data.frame(x = 1000 / (tt + 273.16)),
+      type = "uquantile",
+      p = 0.5,
+      se.fit = TRUE
+    )
+    exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit))
+  }))
+)
 names(pred_table) <- c("temp", "med", "low", "high")
 ```
 

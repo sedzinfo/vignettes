@@ -32,7 +32,8 @@ event_colours <- c(`cancer (PCM)` = "#eb6834", `death without cancer` = "#2a78d6
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -46,8 +47,13 @@ The data come with R, in the package `survival`:
 
 ```{r data}
 mgus <- subset(mgus2, !is.na(mspike))
-mgus$time  <- with(mgus, ifelse(pstat == 1, ptime, futime)) / 12                      # years until the first event, or the end
-mgus$event <- factor(with(mgus, ifelse(pstat == 1, 1, 2 * death)), 0:2, c("censored", "PCM", "death"))
+# years until the first event, or the end
+mgus$time <- with(mgus, ifelse(pstat == 1, ptime, futime)) / 12
+mgus$event <- factor(
+  with(mgus, ifelse(pstat == 1, 1, 2 * death)),
+  0:2,
+  c("censored", "PCM", "death")
+)
 mgus <- subset(mgus, time > 0)
 mgus$age10 <- (mgus$age - 70) / 10; mgus$male <- as.integer(mgus$sex == "M")
 nrow(mgus)
@@ -64,8 +70,8 @@ Each patient has **one** first event: the cancer (`PCM`), or `death` without it,
 The tempting calculation: call the cancer the event, treat deaths as censored, and take one minus the Kaplan–Meier curve.
 
 ```{r naive}
-km  <- survfit(Surv(time, event == "PCM") ~ 1, data = mgus)          # deaths treated as censored: wrong
-cif <- survfit(Surv(time, event) ~ 1, data = mgus)                   # event is a factor with several outcomes: right
+km <- survfit(Surv(time, event == "PCM") ~ 1, data = mgus) # deaths treated as censored: wrong
+cif <- survfit(Surv(time, event) ~ 1, data = mgus) # event is a factor with several outcomes: right
 at  <- c(5, 10, 20, 25)
 risk <- rbind(`1 - Kaplan-Meier`        = 1 - summary(km, times = at)$surv,
               `cumulative incidence`    = summary(cif, times = at)$pstate[, 2],
@@ -74,12 +80,22 @@ colnames(risk) <- paste(at, "years"); round(risk, 3)
 ```
 
 ```{r naive_chart}
-curves <- rbind(data.frame(time = km$time, risk = 1 - km$surv, what = "1 − Kaplan–Meier (deaths as censored)"),
-                data.frame(time = cif$time, risk = cif$pstate[, 2], what = "cumulative incidence of the cancer"))
-ggplot(curves, aes(time, risk, colour = what)) + geom_step(linewidth = 1) +
-  scale_colour_manual(values = c("grey55", "#eb6834"), name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
-  coord_cartesian(xlim = c(0, 30)) + labs(title = "Two answers to: what is the risk of the cancer?", x = "years since diagnosis", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+curves <- rbind(
+  data.frame(time = km$time, risk = 1 - km$surv, what = "1 − Kaplan–Meier (deaths as censored)"),
+  data.frame(time = cif$time, risk = cif$pstate[, 2], what = "cumulative incidence of the cancer")
+)
+ggplot(curves, aes(time, risk, colour = what)) +
+  geom_step(linewidth = 1) +
+  scale_colour_manual(values = c("grey55", "#eb6834"), name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  coord_cartesian(xlim = c(0, 30)) +
+  labs(
+    title = "Two answers to: what is the risk of the cancer?",
+    x = "years since diagnosis",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 After 25 years the first method says `r pct(risk[1, 4])`, and the truth about these patients is `r pct(risk[2, 4])`. The difference is the patients who died: `r pct(risk[3, 4])` of them in 25 years. Kaplan–Meier assumes that they would have got the cancer at the same rate as the survivors, if they had only lived. They did not live. The Kaplan–Meier answer is about an imaginary world, and even there only if those who died and those who did not had the same risk, which nobody can check.
@@ -108,13 +124,19 @@ By hand (the **Aalen–Johansen** estimate):
 times <- sort(unique(mgus$time)); S <- 1; F1 <- F2 <- 0; out <- NULL
 for (t in times) {
   at_risk <- sum(mgus$time >= t)
-  d1 <- sum(mgus$time == t & mgus$event == "PCM"); d2 <- sum(mgus$time == t & mgus$event == "death")
-  F1 <- F1 + S * d1 / at_risk; F2 <- F2 + S * d2 / at_risk        # the share still free just before t, times the two rates
-  S  <- S * (1 - (d1 + d2) / at_risk)
+  d1 <- sum(mgus$time == t & mgus$event == "PCM")
+  d2 <- sum(mgus$time == t & mgus$event == "death")
+  F1 <- F1 + S * d1 / at_risk
+  F2 <- F2 + S * d2 / at_risk # the share still free just before t, times the two rates
+  S <- S * (1 - (d1 + d2) / at_risk)
   out <- rbind(out, c(t, F1, F2, S))
 }
 i <- max(which(out[, 1] <= 20))
-c(by_hand = out[i, 2], survfit = summary(cif, times = 20)$pstate[, 2], sum_of_all_three = sum(out[i, 2:4]))
+c(
+  by_hand = out[i, 2],
+  survfit = summary(cif, times = 20)$pstate[, 2],
+  sum_of_all_three = sum(out[i, 2:4])
+)
 ```
 
 ### Step 3: two kinds of regression
@@ -136,14 +158,30 @@ People who die stay in the risk set, but for how long would they have been follo
 ## 4. The regressions
 
 ```{r fits}
-cs_pcm   <- coxph(Surv(time, event == "PCM")   ~ age10 + male + mspike, data = mgus)        # cause-specific: the cancer
-cs_death <- coxph(Surv(time, event == "death") ~ age10 + male + mspike, data = mgus)        # cause-specific: death
+# cause-specific: the cancer
+cs_pcm <- coxph(Surv(time, event == "PCM") ~ age10 + male + mspike, data = mgus)
+# cause-specific: death
+cs_death <- coxph(Surv(time, event == "death") ~ age10 + male + mspike, data = mgus)
 
-fg_data  <- finegray(Surv(time, event) ~ ., data = mgus, etype = "PCM")                     # the weighted data set
-fg_pcm   <- coxph(Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike, weights = fgwt, data = fg_data)
+fg_data <- finegray(Surv(time, event) ~ ., data = mgus, etype = "PCM") # the weighted data set
+fg_pcm <- coxph(
+  Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike,
+  weights = fgwt,
+  data = fg_data
+)
 fg_dead  <- finegray(Surv(time, event) ~ ., data = mgus, etype = "death")
-fg_death <- coxph(Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike, weights = fgwt, data = fg_dead)
-crr_pcm  <- crr(mgus$time, as.integer(mgus$event) - 1, as.matrix(mgus[, c("age10", "male", "mspike")]), failcode = 1, cencode = 0)
+fg_death <- coxph(
+  Surv(fgstart, fgstop, fgstatus) ~ age10 + male + mspike,
+  weights = fgwt,
+  data = fg_dead
+)
+crr_pcm <- crr(
+  mgus$time,
+  as.integer(mgus$event) - 1,
+  as.matrix(mgus[, c("age10", "male", "mspike")]),
+  failcode = 1,
+  cencode = 0
+)
 c(rows_before = nrow(mgus), rows_after_finegray = nrow(fg_data))
 round(rbind(finegray_coxph = coef(fg_pcm), crr = crr_pcm$coef), 4)
 ```
@@ -152,21 +190,59 @@ The two programs for the Fine–Gray model agree. Now all the hazard ratios in o
 
 ```{r table}
 hr <- function(m) { ci <- exp(confint(m)); cbind(HR = exp(coef(m)), low = ci[, 1], high = ci[, 2]) }
-all_hr <- rbind(data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "cancer", model = "cause-specific", hr(cs_pcm)),
-                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "cancer", model = "Fine–Gray", hr(fg_pcm)),
-                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "death", model = "cause-specific", hr(cs_death)),
-                data.frame(term = c("age (10 years)", "male", "M-spike (g/dl)"), event = "death", model = "Fine–Gray", hr(fg_death)))
-print(transform(all_hr, HR = round(HR, 2), low = round(low, 2), high = round(high, 2)), row.names = FALSE)
-get <- function(term, event, model, col = "HR") all_hr[all_hr$term == term & all_hr$event == event & all_hr$model == model, col]
+all_hr <- rbind(
+  data.frame(
+    term = c("age (10 years)", "male", "M-spike (g/dl)"),
+    event = "cancer",
+    model = "cause-specific",
+    hr(cs_pcm)
+  ),
+  data.frame(
+    term = c("age (10 years)", "male", "M-spike (g/dl)"),
+    event = "cancer",
+    model = "Fine–Gray",
+    hr(fg_pcm)
+  ),
+  data.frame(
+    term = c("age (10 years)", "male", "M-spike (g/dl)"),
+    event = "death",
+    model = "cause-specific",
+    hr(cs_death)
+  ),
+  data.frame(
+    term = c("age (10 years)", "male", "M-spike (g/dl)"),
+    event = "death",
+    model = "Fine–Gray",
+    hr(fg_death)
+  )
+)
+print(
+  transform(all_hr, HR = round(HR, 2), low = round(low, 2), high = round(high, 2)),
+  row.names = FALSE
+)
+get <- function(term, event, model, col = "HR") {
+  all_hr[all_hr$term == term & all_hr$event == event & all_hr$model == model, col]
+}
 ```
 
 ```{r hr_chart}
 all_hr$label <- factor(all_hr$term, levels = rev(unique(all_hr$term)))
-ggplot(all_hr, aes(HR, label, colour = model)) + geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
-  geom_pointrange(aes(xmin = low, xmax = high), position = position_dodge(width = 0.5), linewidth = 0.8) +
-  facet_wrap(~ event) + scale_x_log10(breaks = c(0.6, 0.8, 1, 1.5, 2, 3)) +
-  scale_colour_manual(values = c(`cause-specific` = "#2a78d6", `Fine–Gray` = "#eb6834"), name = NULL) +
-  labs(title = "Hazard ratios from the two models", x = "hazard ratio (log scale)", y = NULL) + theme_bw() + theme(legend.position = "bottom")
+ggplot(all_hr, aes(HR, label, colour = model)) +
+  geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(
+    aes(xmin = low, xmax = high),
+    position = position_dodge(width = 0.5),
+    linewidth = 0.8
+  ) +
+  facet_wrap(~event) +
+  scale_x_log10(breaks = c(0.6, 0.8, 1, 1.5, 2, 3)) +
+  scale_colour_manual(
+    values = c(`cause-specific` = "#2a78d6", `Fine–Gray` = "#eb6834"),
+    name = NULL
+  ) +
+  labs(title = "Hazard ratios from the two models", x = "hazard ratio (log scale)", y = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 Read **age** in the panel of the cancer.
@@ -197,25 +273,60 @@ The two routes to the risk of one patient: from the Fine–Gray model directly, 
 
 ```{r predictions}
 new <- data.frame(age10 = c(-1, 1, -1, 1), male = 1, mspike = c(0.5, 0.5, 2, 2))
-new$who <- c("60 years, M-spike 0.5", "80 years, M-spike 0.5", "60 years, M-spike 2", "80 years, M-spike 2")
+new$who <- c(
+  "60 years, M-spike 0.5", "80 years, M-spike 0.5", "60 years, M-spike 2", "80 years, M-spike 2"
+)
 sf_fg <- survfit(fg_pcm, newdata = new)
-multi <- coxph(Surv(time, event) ~ age10 + male + mspike, data = mgus, id = id)               # both cause-specific models at once
+# both cause-specific models at once
+multi <- coxph(Surv(time, event) ~ age10 + male + mspike, data = mgus, id = id)
 sf_cs <- survfit(multi, newdata = new)
-risk_at <- function(t) data.frame(who = new$who, FineGray = 1 - summary(sf_fg, times = t)$surv[1, ],
-                                  cause_specific = summary(sf_cs, times = t)$pstate[1, , 2], death_first = summary(sf_cs, times = t)$pstate[1, , 3])
+risk_at <- function(t) {
+  data.frame(
+    who = new$who,
+    FineGray = 1 - summary(sf_fg, times = t)$surv[1, ],
+    cause_specific = summary(sf_cs, times = t)$pstate[1, , 2],
+    death_first = summary(sf_cs, times = t)$pstate[1, , 3]
+  )
+}
 r20 <- risk_at(20)
 print(cbind(who = r20$who, round(r20[, -1], 3)), row.names = FALSE)
 ```
 
 ```{r predictions_chart}
-pd <- do.call(rbind, lapply(1:4, function(j) rbind(
-  data.frame(who = new$who[j], time = sf_cs$time, p = sf_cs$pstate[, j, 2], event = "cancer (PCM)"),
-  data.frame(who = new$who[j], time = sf_cs$time, p = sf_cs$pstate[, j, 3], event = "death without cancer"))))
+pd <- do.call(
+  rbind,
+  lapply(1:4, function(j) {
+    rbind(
+      data.frame(
+        who = new$who[j],
+        time = sf_cs$time,
+        p = sf_cs$pstate[, j, 2],
+        event = "cancer (PCM)"
+      ),
+      data.frame(
+        who = new$who[j],
+        time = sf_cs$time,
+        p = sf_cs$pstate[, j, 3],
+        event = "death without cancer"
+      )
+    )
+  })
+)
 pd$who <- factor(pd$who, levels = new$who)
-ggplot(pd, aes(time, p, fill = event)) + geom_area(alpha = 0.75) + facet_wrap(~ who) +
-  scale_fill_manual(values = event_colours, name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%")) + coord_cartesian(xlim = c(0, 25)) +
-  labs(title = "Four men: what will have happened?", subtitle = "The rest, up to 100%, is alive without cancer", x = "years since diagnosis", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+ggplot(pd, aes(time, p, fill = event)) +
+  geom_area(alpha = 0.75) +
+  facet_wrap(~who) +
+  scale_fill_manual(values = event_colours, name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
+  coord_cartesian(xlim = c(0, 25)) +
+  labs(
+    title = "Four men: what will have happened?",
+    subtitle = "The rest, up to 100%, is alive without cancer",
+    x = "years since diagnosis",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 A man of 60 with a large protein has a 20-year risk of the cancer of `r pct(r20$cause_specific[3], 0)`; a man of 80 with the same protein, `r pct(r20$cause_specific[4], 0)`, because `r pct(r20$death_first[4], 0)` of such men die of something else within 20 years. The two routes agree to within `r f1(100 * max(abs(r20$FineGray - r20$cause_specific)))` points.
@@ -225,7 +336,11 @@ A man of 60 with a large protein has a 20-year risk of the cancer of `r pct(r20$
 ## 7. Checking the model
 
 ```{r zph}
-rbind(cause_specific_PCM = cox.zph(cs_pcm)$table[, "p"], cause_specific_death = cox.zph(cs_death)$table[, "p"], fine_gray_PCM = cox.zph(fg_pcm)$table[, "p"])
+rbind(
+  cause_specific_PCM = cox.zph(cs_pcm)$table[, "p"],
+  cause_specific_death = cox.zph(cs_death)$table[, "p"],
+  fine_gray_PCM = cox.zph(fg_pcm)$table[, "p"]
+)
 ```
 
 Proportional hazards can be checked for each model in the usual way. If the cause-specific hazards are proportional, the subdistribution hazards in general **cannot** be, and the other way round: the two models cannot both be exactly right. In practice both are approximations. That is what we see. For the cause-specific hazard of the **cancer** no predictor fails. For **death**, age does: its effect on mortality changes over 30 years of follow-up, as one would expect. And in the **Fine–Gray** model age fails as well: the subdistribution hazard mixes the two processes, and the competing deaths of the old come at other times than those of the young. Its single ratio for age is an average over the follow-up. For the risks of section 6, where this could matter, the two routes gave similar answers.
@@ -249,8 +364,18 @@ Proportional hazards can be checked for each model in the usual way. If the caus
 A report (APA 7th edition) needs the events and their numbers, cumulative incidences, the cause-specific hazard ratios of all the events, and, for prognosis, the subdistribution hazard ratios, clearly labelled. The numbers come from the R objects:
 
 ```{r apa_numbers}
-cell <- function(e, m) sapply(c("age (10 years)", "male", "M-spike (g/dl)"), function(t) paste0(f2(get(t, e, m)), " [", f2(get(t, e, m, "low")), ", ", f2(get(t, e, m, "high")), "]"))
-apa_table <- data.frame(Predictor = c("Age (10 years)", "Male", "M-spike (g/dl)"), a = cell("cancer", "cause-specific"), b = cell("death", "cause-specific"), c = cell("cancer", "Fine–Gray"), row.names = NULL)
+cell <- function(e, m) {
+  sapply(c("age (10 years)", "male", "M-spike (g/dl)"), function(t) {
+    paste0(f2(get(t, e, m)), " [", f2(get(t, e, m, "low")), ", ", f2(get(t, e, m, "high")), "]")
+  })
+}
+apa_table <- data.frame(
+  Predictor = c("Age (10 years)", "Male", "M-spike (g/dl)"),
+  a = cell("cancer", "cause-specific"),
+  b = cell("death", "cause-specific"),
+  c = cell("cancer", "Fine–Gray"),
+  row.names = NULL
+)
 ```
 
 **Method** (data analysis):

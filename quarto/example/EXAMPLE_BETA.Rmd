@@ -29,7 +29,8 @@ library(sandwich)   # vcovCL(): standard errors for districts of the same region
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -42,23 +43,42 @@ pct  <- function(x, d = 1) paste0(formatC(100 * x, format = "f", digits = d), "%
 The Electoral Commission publishes the result of every district. The 2011 census, through the service *Nomis* of the Office for National Statistics, has their people. Both are free and need no login:
 
 ```{r download}
-votes <- read.csv("https://www.electoralcommission.org.uk/sites/default/files/2019-07/EU-referendum-result-data.csv")
-census <- function(table, cells) {                                  # percentage of the residents, by district
-  d <- read.csv(paste0("https://www.nomisweb.co.uk/api/v01/dataset/", table, ".data.csv?date=latest&geography=TYPE464",
-                       "&rural_urban=0&cell=", cells, "&measures=20301&select=geography_code,cell,obs_value"))
+votes <- read.csv(
+  "https://www.electoralcommission.org.uk/sites/default/files/2019-07/EU-referendum-result-data.csv"
+)
+census <- function(table, cells) {
+  # percentage of the residents, by district
+  d <- read.csv(paste0(
+    "https://www.nomisweb.co.uk/api/v01/dataset/",
+    table,
+    ".data.csv?date=latest&geography=TYPE464",
+    "&rural_urban=0&cell=",
+    cells,
+    "&measures=20301&select=geography_code,cell,obs_value"
+  ))
   aggregate(OBS_VALUE ~ GEOGRAPHY_CODE, data = d, FUN = sum)
 }
-degree <- census("NM_623_1", "6")                                   # highest qualification: level 4 or more (degree), % of 16+
+degree <- census("NM_623_1", "6") # highest qualification: level 4 or more (degree), % of 16+
 old    <- census("NM_145_1", "13,14,15,16")                         # aged 65 and over
 uk     <- census("NM_611_1", "100")                                 # born in the United Kingdom
 
-brexit <- merge(votes[, c("Area_Code", "Area", "Region", "Leave", "Valid_Votes")], degree, by.x = "Area_Code", by.y = "GEOGRAPHY_CODE")
+brexit <- merge(
+  votes[, c("Area_Code", "Area", "Region", "Leave", "Valid_Votes")],
+  degree,
+  by.x = "Area_Code",
+  by.y = "GEOGRAPHY_CODE"
+)
 names(brexit)[6] <- "degree"
 brexit$age65  <- old$OBS_VALUE[match(brexit$Area_Code, old$GEOGRAPHY_CODE)]
 brexit$abroad <- 100 - uk$OBS_VALUE[match(brexit$Area_Code, uk$GEOGRAPHY_CODE)]
 brexit$leave  <- brexit$Leave / brexit$Valid_Votes
 nrow(brexit)
-round(sapply(brexit[, c("leave", "degree", "age65", "abroad")], function(v) c(min = min(v), mean = mean(v), max = max(v))), 2)
+round(
+  sapply(brexit[, c("leave", "degree", "age65", "abroad")], function(v) {
+    c(min = min(v), mean = mean(v), max = max(v))
+  }),
+  2
+)
 ```
 
 There are `r nrow(brexit)` districts of England and Wales (Scotland and Northern Ireland have other censuses). `leave` is the share of the valid votes for Leave. `degree`, `age65` and `abroad` are percentages: people with a degree or similar, people of 65 and over, and people born outside the United Kingdom.
@@ -71,10 +91,19 @@ There are `r nrow(brexit)` districts of England and Wales (Scotland and Northern
 ggplot(brexit, aes(degree, leave)) +
   geom_point(aes(colour = Region == "London"), alpha = 0.7, size = 2) +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "grey30", linewidth = 0.8) +
-  scale_colour_manual(values = c(`TRUE` = "#eb6834", `FALSE` = "#2a78d6"), labels = c("other districts", "London"), name = NULL) +
+  scale_colour_manual(
+    values = c(`TRUE` = "#eb6834", `FALSE` = "#2a78d6"),
+    labels = c("other districts", "London"),
+    name = NULL
+  ) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
-  labs(title = "Leave vote and education in 348 districts", x = "adults with a degree (%)", y = "vote for Leave") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Leave vote and education in 348 districts",
+    x = "adults with a degree (%)",
+    y = "vote for Leave"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 cor(brexit$leave, brexit$degree)
 brexit[order(brexit$leave)[c(1:3, 346:348)], c("Area", "leave", "degree", "age65", "abroad")]
 ```
@@ -95,13 +124,31 @@ The variance is largest in the middle, and goes to zero at 0 and 1. The larger $
 
 ```{r shapes}
 grid <- seq(0.002, 0.998, by = 0.002)
-shapes <- do.call(rbind, lapply(c(0.1, 0.5, 0.85), function(mu) do.call(rbind, lapply(c(5, 20, 80), function(phi)
-  data.frame(y = grid, d = dbeta(grid, mu * phi, (1 - mu) * phi), mean = paste("mean", mu), precision = paste0("φ = ", phi))))))
+shapes <- do.call(
+  rbind,
+  lapply(c(0.1, 0.5, 0.85), function(mu) {
+    do.call(
+      rbind,
+      lapply(c(5, 20, 80), function(phi) {
+        data.frame(
+          y = grid,
+          d = dbeta(grid, mu * phi, (1 - mu) * phi),
+          mean = paste("mean", mu),
+          precision = paste0("φ = ", phi)
+        )
+      })
+    )
+  })
+)
 shapes$precision <- factor(shapes$precision, levels = paste0("φ = ", c(5, 20, 80)))
 ggplot(shapes, aes(y, d, colour = precision)) +
-  geom_line(linewidth = 0.9) + facet_wrap(~ mean) + coord_cartesian(ylim = c(0, 12)) +
+  geom_line(linewidth = 0.9) +
+  facet_wrap(~mean) +
+  coord_cartesian(ylim = c(0, 12)) +
   scale_colour_manual(values = c("#eda100", "#2a78d6", "#1baf7a"), name = NULL) +
-  labs(title = "Beta distributions", x = "y", y = "density") + theme_bw() + theme(legend.position = "bottom")
+  labs(title = "Beta distributions", x = "y", y = "density") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ### Step 2: the mean depends on predictors, through a link
@@ -123,13 +170,20 @@ The simplest model has one $\phi$ for all. Modelling it lets some districts scat
 The density is $\frac{\Gamma(\phi)}{\Gamma(\mu\phi)\,\Gamma((1-\mu)\phi)}\, y^{\mu\phi - 1}(1 - y)^{(1-\mu)\phi - 1}$, which R knows as `dbeta(y, mu * phi, (1 - mu) * phi)`:
 
 ```{r by_hand}
-brexit$deg10 <- (brexit$degree - 27) / 10; brexit$old10 <- (brexit$age65 - 17) / 10; brexit$abr10 <- (brexit$abroad - 10) / 10   # per 10 points
+brexit$deg10 <- (brexit$degree - 27) / 10
+brexit$old10 <- (brexit$age65 - 17) / 10
+brexit$abr10 <- (brexit$abroad - 10) / 10 # per 10 points
 X <- model.matrix(~ deg10 + old10 + abr10, data = brexit); y <- brexit$leave
 minus_loglik <- function(par) {
   mu <- plogis(drop(X %*% par[1:4])); phi <- exp(par[5])
   -sum(dbeta(y, mu * phi, (1 - mu) * phi, log = TRUE))
 }
-hand <- optim(c(0, 0, 0, 0, 4), minus_loglik, method = "BFGS", control = list(reltol = 1e-14, maxit = 1000))
+hand <- optim(
+  c(0, 0, 0, 0, 4),
+  minus_loglik,
+  method = "BFGS",
+  control = list(reltol = 1e-14, maxit = 1000)
+)
 fit  <- betareg(leave ~ deg10 + old10 + abr10, data = brexit)
 rbind(by_hand = c(hand$par[1:4], exp(hand$par[5])), betareg = coef(fit))
 ```
@@ -161,7 +215,7 @@ Odds of a share are hard to picture. The **average marginal effect** is the mean
 mu  <- fitted(fit)
 ame <- b[-1] * mean(mu * (1 - mu))
 set.seed(91)
-draws <- MASS::mvrnorm(2000, coef(fit)[1:4], vcov(fit)[1:4, 1:4])         # uncertainty by simulation
+draws <- MASS::mvrnorm(2000, coef(fit)[1:4], vcov(fit)[1:4, 1:4]) # uncertainty by simulation
 sim   <- apply(draws, 1, function(bb) { m <- plogis(drop(X %*% bb)); bb[-1] * mean(m * (1 - m)) })
 ame_ci <- apply(sim, 1, quantile, c(0.025, 0.975))
 round(100 * rbind(ame, ame_ci), 1)
@@ -174,10 +228,17 @@ Ten points more graduates go with a Leave share that is **`r f1(100 * abs(ame[["
 ## 5. Does the scatter change? A model for the precision
 
 ```{r precision}
-fit_phi <- betareg(leave ~ deg10 + old10 + abr10 | deg10 + abr10, data = brexit)      # after the bar: the precision
+# after the bar: the precision
+fit_phi <- betareg(leave ~ deg10 + old10 + abr10 | deg10 + abr10, data = brexit)
 round(summary(fit_phi)$coefficients$precision, 3)
 lr <- 2 * (as.numeric(logLik(fit_phi)) - as.numeric(logLik(fit)))
-c(LR = lr, df = 2, p = pchisq(lr, 2, lower.tail = FALSE), AIC_constant = AIC(fit), AIC_varying = AIC(fit_phi))
+c(
+  LR = lr,
+  df = 2,
+  p = pchisq(lr, 2, lower.tail = FALSE),
+  AIC_constant = AIC(fit),
+  AIC_varying = AIC(fit_phi)
+)
 g <- coef(fit_phi, model = "precision")
 sd_at <- function(abr) sqrt(0.25 / (1 + exp(g[[1]] + g[[3]] * (abr - 10) / 10)))
 c(SD_at_5pct_abroad = sd_at(5), SD_at_40pct_abroad = sd_at(40))
@@ -186,7 +247,15 @@ c(SD_at_5pct_abroad = sd_at(5), SD_at_40pct_abroad = sd_at(40))
 The districts do not all scatter equally: the likelihood-ratio test of a varying precision gives $\chi^2$(2) = `r f1(lr)`, *p* `r pval(pchisq(lr, 2, lower.tail = FALSE))`. Around the same mean of 50%, districts with 5% born abroad have an SD of `r pct(sd_at(5))`, those with 40%, `r pct(sd_at(40))`. Diverse districts are less predictable. The coefficients of the **mean** and their standard errors change little:
 
 ```{r mean_compare}
-round(cbind(constant = coef(fit)[1:4], SE = se, varying = coef(fit_phi, model = "mean"), SE_varying = sqrt(diag(vcov(fit_phi)))[1:4]), 3)
+round(
+  cbind(
+    constant = coef(fit)[1:4],
+    SE = se,
+    varying = coef(fit_phi, model = "mean"),
+    SE_varying = sqrt(diag(vcov(fit_phi)))[1:4]
+  ),
+  3
+)
 ```
 
 ---
@@ -196,8 +265,16 @@ round(cbind(constant = coef(fit)[1:4], SE = se, varying = coef(fit_phi, model = 
 ```{r alternatives}
 ols   <- lm(leave ~ deg10 + old10 + abr10, data = brexit)
 logit <- lm(qlogis(leave) ~ deg10 + old10 + abr10, data = brexit)
-binom <- glm(cbind(Leave, Valid_Votes - Leave) ~ deg10 + old10 + abr10, family = binomial, data = brexit)
-quasi <- glm(cbind(Leave, Valid_Votes - Leave) ~ deg10 + old10 + abr10, family = quasibinomial, data = brexit)
+binom <- glm(
+  cbind(Leave, Valid_Votes - Leave) ~ deg10 + old10 + abr10,
+  family = binomial,
+  data = brexit
+)
+quasi <- glm(
+  cbind(Leave, Valid_Votes - Leave) ~ deg10 + old10 + abr10,
+  family = quasibinomial,
+  data = brexit
+)
 effects <- rbind(`beta regression`       = c(coef(fit)["deg10"], sqrt(vcov(fit)["deg10", "deg10"])),
                  `OLS on the logit`      = coef(summary(logit))["deg10", 1:2],
                  `binomial (wrong)`      = coef(summary(binom))["deg10", 1:2],
@@ -221,13 +298,25 @@ Which is right? The chance variation of `r num(round(mean(brexit$Valid_Votes)))`
 ## 7. Checking the model
 
 ```{r residuals, fig.height = 6}
-res <- data.frame(fitted = fitted(fit_phi), r = residuals(fit_phi, type = "quantile"), Region = brexit$Region, Area = brexit$Area)
+res <- data.frame(
+  fitted = fitted(fit_phi),
+  r = residuals(fit_phi, type = "quantile"),
+  Region = brexit$Region,
+  Area = brexit$Area
+)
 res$q <- qqnorm(res$r, plot.it = FALSE)$x
-pa <- ggplot(res, aes(fitted, r)) + geom_hline(yintercept = 0, colour = "grey60") + geom_point(alpha = 0.5, colour = "grey30") +
+pa <- ggplot(res, aes(fitted, r)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_point(alpha = 0.5, colour = "grey30") +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834") +
-  labs(title = "Quantile residuals against the fitted share", x = "fitted share", y = "residual") + theme_bw()
-pb <- ggplot(res, aes(reorder(Region, r, median), r)) + geom_hline(yintercept = 0, colour = "grey60") + geom_boxplot(fill = "grey90") +
-  coord_flip() + labs(title = "The same, by region", x = NULL, y = "residual") + theme_bw()
+  labs(title = "Quantile residuals against the fitted share", x = "fitted share", y = "residual") +
+  theme_bw()
+pb <- ggplot(res, aes(reorder(Region, r, median), r)) +
+  geom_hline(yintercept = 0, colour = "grey60") +
+  geom_boxplot(fill = "grey90") +
+  coord_flip() +
+  labs(title = "The same, by region", x = NULL, y = "residual") +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 shapiro.test(res$r)$p.value
 res[order(-abs(res$r))[1:5], c("Area", "Region", "fitted", "r")]
@@ -242,7 +331,13 @@ df_reg  <- length(unique(brexit$Region)) - 1
 V_cl    <- vcovCL(fit, cluster = brexit$Region)
 rbind(without_regions = coef(fit)[2:4], with_regions = coef(fit_reg)[2:4])
 rbind(SE_usual = se[2:4], SE_clustered_by_region = sqrt(diag(V_cl))[2:4])
-c(LR_regions = lr_reg, df = df_reg, p = pchisq(lr_reg, df_reg, lower.tail = FALSE), R2_without = fit$pseudo.r.squared, R2_with = fit_reg$pseudo.r.squared)
+c(
+  LR_regions = lr_reg,
+  df = df_reg,
+  p = pchisq(lr_reg, df_reg, lower.tail = FALSE),
+  R2_without = fit$pseudo.r.squared,
+  R2_with = fit_reg$pseudo.r.squared
+)
 ```
 
 Adding the regions improves the fit a lot, $\chi^2$(`r df_reg`) = `r f1(lr_reg)`, and changes the coefficients: that of the share born abroad goes from `r f2(coef(fit)[["abr10"]])` to `r f2(coef(fit_reg)[["abr10"]])`, because most districts with many people born abroad are in London. The standard errors that allow for correlation within regions are `r f1(sqrt(diag(V_cl))[["deg10"]] / se[["deg10"]])` times as large for education. (With only `r df_reg + 1` regions they are rough themselves. A spatial model is the proper tool.)
@@ -262,9 +357,30 @@ ggplot(grid, aes(degree, mean)) +
   geom_line(colour = "#2a78d6", linewidth = 1) +
   geom_point(data = brexit, aes(degree, leave), alpha = 0.3, size = 1.3) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, 1)) +
-  labs(title = "Fitted mean and 90% range for a district with average age and few people born abroad",
-       x = "adults with a degree (%)", y = "vote for Leave") + theme_bw() + theme(plot.title = element_text(size = 11))
-at <- function(d) round(100 * c(predict(fit_phi, data.frame(deg10 = (d - 27) / 10, old10 = 0, abr10 = 0)), sapply(c(0.05, 0.95), function(q) predict(fit_phi, data.frame(deg10 = (d - 27) / 10, old10 = 0, abr10 = 0), type = "quantile", at = q))), 1)
+  labs(
+    title = "Fitted mean and 90% range for a district with average age and few people born abroad",
+    x = "adults with a degree (%)",
+    y = "vote for Leave"
+  ) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 11))
+at <- function(d) {
+  round(
+    100 *
+      c(
+        predict(fit_phi, data.frame(deg10 = (d - 27) / 10, old10 = 0, abr10 = 0)),
+        sapply(c(0.05, 0.95), function(q) {
+          predict(
+            fit_phi,
+            data.frame(deg10 = (d - 27) / 10, old10 = 0, abr10 = 0),
+            type = "quantile",
+            at = q
+          )
+        })
+      ),
+    1
+  )
+}
 rbind(`20% with a degree` = at(20), `40% with a degree` = at(40))
 ```
 
@@ -292,10 +408,16 @@ A report (APA 7th edition) needs the outcome and its range, the links of the mea
 sm  <- summary(fit_phi)$coefficients$mean; cim <- confint(fit_phi)
 ame2 <- sm[-1, 1] * mean(fitted(fit_phi) * (1 - fitted(fit_phi)))
 apa_table <- data.frame(
-  Predictor = c("Intercept", "Degree (10 points)", "Aged 65+ (10 points)", "Born abroad (10 points)"),
-  b  = f3(sm[, 1]), SE = f3(sm[, 2]), z = f2(sm[, 3]), p = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))),
+  Predictor = c(
+    "Intercept", "Degree (10 points)", "Aged 65+ (10 points)", "Born abroad (10 points)"
+  ),
+  b = f3(sm[, 1]),
+  SE = f3(sm[, 2]),
+  z = f2(sm[, 3]),
+  p = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))),
   OR = paste0(f2(exp(sm[, 1])), " [", f2(exp(cim[1:4, 1])), ", ", f2(exp(cim[1:4, 2])), "]"),
-  ame = c("—", f1(100 * ame2)))
+  ame = c("—", f1(100 * ame2))
+)
 ```
 
 **Method** (data analysis):

@@ -41,7 +41,12 @@ rmse <- function(a, b) sqrt(mean((a - b)^2))
 
 ```{r download}
 zip_file <- tempfile(fileext = ".zip")
-download.file("https://archive.ics.uci.edu/static/public/294/combined+cycle+power+plant.zip", zip_file, mode = "wb", quiet = TRUE)
+download.file(
+  "https://archive.ics.uci.edu/static/public/294/combined+cycle+power+plant.zip",
+  zip_file,
+  mode = "wb",
+  quiet = TRUE
+)
 files <- unzip(zip_file, exdir = tempfile("ccpp"))
 raw   <- as.data.frame(readxl::read_excel(grep("xlsx$", files, value = TRUE), sheet = 1))
 names(raw) <- c("temperature", "vacuum", "pressure", "humidity", "power")
@@ -60,9 +65,22 @@ Two details of this file will matter later. The file has been **shuffled**, and 
 
 ```{r scatter, fig.height = 5}
 set.seed(201); some <- plant[sample(nrow(plant), 2000), ]
-long <- do.call(rbind, lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) data.frame(predictor = v, x = some[[v]], power = some$power)))
-ggplot(long, aes(x, power)) + geom_point(alpha = 0.2, size = 0.7, colour = "#2a78d6") + facet_wrap(~ predictor, scales = "free_x") +
-  labs(title = "Power against each predictor", subtitle = "2,000 of the hours", x = NULL, y = "power (MW)") + theme_bw()
+long <- do.call(
+  rbind,
+  lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) {
+    data.frame(predictor = v, x = some[[v]], power = some$power)
+  })
+)
+ggplot(long, aes(x, power)) +
+  geom_point(alpha = 0.2, size = 0.7, colour = "#2a78d6") +
+  facet_wrap(~predictor, scales = "free_x") +
+  labs(
+    title = "Power against each predictor",
+    subtitle = "2,000 of the hours",
+    x = NULL,
+    y = "power (MW)"
+  ) +
+  theme_bw()
 round(cor(plant), 2)
 ```
 
@@ -100,10 +118,17 @@ That makes $J(K + 1) + J + 1$ weights: with 4 predictors and 10 neurons, `r 10 *
 
 ```{r neurons, fig.height = 4}
 x1 <- seq(-3, 3, length.out = 200)
-parts <- data.frame(x = rep(x1, 3), h = c(1.6 * plogis(-4 + 6 * x1), -2.2 * plogis(1 + 3 * x1), 1.5 * plogis(5 + 4 * x1)), neuron = rep(paste("neuron", 1:3), each = 200))
-ggplot(parts, aes(x, h)) + geom_line(aes(colour = neuron), linewidth = 0.8, linetype = "dashed") +
-  geom_line(data = data.frame(x = x1, h = tapply(parts$h, rep(1:200, 3), sum)), linewidth = 1.2) + scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a"), name = NULL) +
-  labs(title = "Three neurons (dashed) and their sum (black)", x = "x", y = NULL) + theme_bw()
+parts <- data.frame(
+  x = rep(x1, 3),
+  h = c(1.6 * plogis(-4 + 6 * x1), -2.2 * plogis(1 + 3 * x1), 1.5 * plogis(5 + 4 * x1)),
+  neuron = rep(paste("neuron", 1:3), each = 200)
+)
+ggplot(parts, aes(x, h)) +
+  geom_line(aes(colour = neuron), linewidth = 0.8, linetype = "dashed") +
+  geom_line(data = data.frame(x = x1, h = tapply(parts$h, rep(1:200, 3), sum)), linewidth = 1.2) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a"), name = NULL) +
+  labs(title = "Three neurons (dashed) and their sum (black)", x = "x", y = NULL) +
+  theme_bw()
 ```
 
 With enough neurons such a sum can come as close as you like to any continuous function (Hornik et al., 1989). That is a statement about what is **possible**. It does not say how many neurons or how much data you need, nor that the search will find it.
@@ -122,8 +147,11 @@ $$\frac{\partial E}{\partial b_j} = \sum_i r_i\, h_{ij} + 2\lambda b_j, \qquad
 \frac{\partial E}{\partial a_{kj}} = \sum_i \underbrace{r_i\, b_j\, h_{ij}(1 - h_{ij})}_{\text{the error of neuron } j}\, x_{ik} + 2\lambda a_{kj}$$
 
 ```{r backprop}
-forward <- function(w, X, J) {                                             # weights in the order that nnet uses
-  K <- ncol(X); A <- matrix(w[1:(J * (K + 1))], K + 1); b <- w[-(1:(J * (K + 1)))]
+forward <- function(w, X, J) {
+  # weights in the order that nnet uses
+  K <- ncol(X)
+  A <- matrix(w[1:(J * (K + 1))], K + 1)
+  b <- w[-(1:(J * (K + 1)))]
   h <- plogis(cbind(1, X) %*% A)
   list(h = h, b = b, yhat = drop(cbind(1, h) %*% b))
 }
@@ -133,8 +161,12 @@ gradient <- function(w, X, y, J, decay) {
   neuron_error <- (r %o% f$b[-1]) * f$h * (1 - f$h)
   c(crossprod(cbind(1, X), neuron_error), crossprod(cbind(1, f$h), r)) + 2 * decay * w
 }
-set.seed(202); w0 <- runif(2 * 5 + 3, -0.7, 0.7)                            # 2 neurons, 13 weights, a random start
-numeric_slope <- sapply(seq_along(w0), function(i) { d <- replace(numeric(13), i, 1e-5); (loss(w0 + d, X, y, 2, 0.1) - loss(w0 - d, X, y, 2, 0.1)) / 2e-5 })
+set.seed(202)
+w0 <- runif(2 * 5 + 3, -0.7, 0.7) # 2 neurons, 13 weights, a random start
+numeric_slope <- sapply(seq_along(w0), function(i) {
+  d <- replace(numeric(13), i, 1e-5)
+  (loss(w0 + d, X, y, 2, 0.1) - loss(w0 - d, X, y, 2, 0.1)) / 2e-5
+})
 max(abs(numeric_slope / gradient(w0, X, y, 2, 0.1) - 1))                    # relative difference
 ```
 
@@ -145,9 +177,24 @@ The formula and the numerical slopes agree. (Always do this check when you write
 R's optimiser `optim()` does the walking. `nnet()` gets the same start, so that we can compare:
 
 ```{r same_as_nnet}
-by_hand <- optim(w0, loss, gradient, X = X, y = y, J = 2, decay = 0.1, method = "BFGS", control = list(maxit = 1000, abstol = 1e-4, reltol = 1e-8))
+by_hand <- optim(
+  w0,
+  loss,
+  gradient,
+  X = X,
+  y = y,
+  J = 2,
+  decay = 0.1,
+  method = "BFGS",
+  control = list(maxit = 1000, abstol = 1e-4, reltol = 1e-8)
+)
 package <- nnet(X, y, size = 2, decay = 0.1, linout = TRUE, Wts = w0, maxit = 1000, trace = FALSE)
-c(loss_at_the_start = loss(w0, X, y, 2, 0.1), loss_by_hand = by_hand$value, loss_nnet = package$value, largest_difference_in_the_weights = max(abs(by_hand$par - package$wts)))
+c(
+  loss_at_the_start = loss(w0, X, y, 2, 0.1),
+  loss_by_hand = by_hand$value,
+  loss_nnet = package$value,
+  largest_difference_in_the_weights = max(abs(by_hand$par - package$wts))
+)
 ```
 
 The two arrive at the same place.
@@ -158,8 +205,15 @@ The two arrive at the same place.
 set.seed(203)
 forgot_scaling <- nnet(power ~ ., plant, size = 10, linout = TRUE, trace = FALSE, maxit = 400)
 forgot_linout  <- nnet(power ~ ., z, size = 10, trace = FALSE, maxit = 400)
-c(SD_of_power = sd(plant$power), RMSE_without_scaling = rmse(predict(forgot_scaling, plant), plant$power), RMSE_without_linout = sd(plant$power) * rmse(predict(forgot_linout, z), z$power))
-rbind(predictions_without_linout = range(predict(forgot_linout, z)), outcome_standardised = range(z$power))
+c(
+  SD_of_power = sd(plant$power),
+  RMSE_without_scaling = rmse(predict(forgot_scaling, plant), plant$power),
+  RMSE_without_linout = sd(plant$power) * rmse(predict(forgot_linout, z), z$power)
+)
+rbind(
+  predictions_without_linout = range(predict(forgot_linout, z)),
+  outcome_standardised = range(z$power)
+)
 ```
 
 Without standardising, the weighted sums are in the thousands, every neuron is stuck on its flat part, and the network predicts the mean (RMSE `r f1(rmse(predict(forgot_scaling, plant), plant$power))` MW, the SD of power). Without `linout = TRUE` the output itself goes through the S-function and cannot leave the interval from 0 to 1`r if (diff(range(predict(forgot_linout, z))) < 1e-3) paste0("; here every prediction is ", round(mean(predict(forgot_linout, z)), 2)) else ""`. No error message in either case.
@@ -171,23 +225,77 @@ Without standardising, the weighted sums are in the thousands, every neuron is s
 A network has **many** minima. First on forty rows, with temperature as the only predictor, so that we can see the curves:
 
 ```{r overfit_chart, fig.height = 4.5}
-set.seed(204); forty <- z[sample(nrow(z), 40), ]; grid <- data.frame(temperature = seq(-2.6, 2.9, length.out = 300))
-curves <- do.call(rbind, lapply(c(0, 0.1), function(dc) do.call(rbind, lapply(1:4, function(s) { set.seed(s); m <- nnet(power ~ temperature, forty, size = 15, decay = dc, linout = TRUE, trace = FALSE, maxit = 2000)
-  data.frame(temperature = grid$temperature, power = drop(predict(m, grid)), start = s, train_rmse = rmse(predict(m, forty), forty$power), setting = ifelse(dc == 0, "no decay", "decay 0.1")) }))))
+set.seed(204)
+forty <- z[sample(nrow(z), 40), ]
+grid <- data.frame(temperature = seq(-2.6, 2.9, length.out = 300))
+curves <- do.call(
+  rbind,
+  lapply(c(0, 0.1), function(dc) {
+    do.call(
+      rbind,
+      lapply(1:4, function(s) {
+        set.seed(s)
+        m <- nnet(
+          power ~ temperature,
+          forty,
+          size = 15,
+          decay = dc,
+          linout = TRUE,
+          trace = FALSE,
+          maxit = 2000
+        )
+        data.frame(
+          temperature = grid$temperature,
+          power = drop(predict(m, grid)),
+          start = s,
+          train_rmse = rmse(predict(m, forty), forty$power),
+          setting = ifelse(dc == 0, "no decay", "decay 0.1")
+        )
+      })
+    )
+  })
+)
 back <- function(v, name) v * sd(plant[[name]]) + mean(plant[[name]])
-ggplot(curves, aes(back(temperature, "temperature"), back(power, "power"), group = start, colour = factor(start))) + geom_line(linewidth = 0.7) +
-  geom_point(data = forty, aes(back(temperature, "temperature"), back(power, "power")), inherit.aes = FALSE, size = 1.4) + facet_wrap(~ setting) + coord_cartesian(ylim = c(415, 505)) + guides(colour = "none") +
-  labs(title = "15 neurons on 40 hours, four random starts each", x = "temperature (°C)", y = "power (MW)") + theme_bw()
+ggplot(
+  curves,
+  aes(back(temperature, "temperature"), back(power, "power"), group = start, colour = factor(start))
+) +
+  geom_line(linewidth = 0.7) +
+  geom_point(
+    data = forty,
+    aes(back(temperature, "temperature"), back(power, "power")),
+    inherit.aes = FALSE,
+    size = 1.4
+  ) +
+  facet_wrap(~setting) +
+  coord_cartesian(ylim = c(415, 505)) +
+  guides(colour = "none") +
+  labs(
+    title = "15 neurons on 40 hours, four random starts each",
+    x = "temperature (°C)",
+    y = "power (MW)"
+  ) +
+  theme_bw()
 aggregate(train_rmse ~ setting, curves, function(v) round(range(v) * sd(plant$power), 2))
 ```
 
 With 46 weights and 40 points the network without decay runs through the gaps as it likes: four starts, four curves, and the differences are largest where there are few data. A little decay makes the four curves the same. Now with all rows and all predictors:
 
 ```{r starts}
-fits <- lapply(1:6, function(s) { set.seed(s); nnet(power ~ ., z, size = 10, decay = 0.1, linout = TRUE, trace = FALSE, maxit = 600) })
-loss_values <- sapply(fits, function(m) m$value); preds <- sapply(fits, function(m) back(drop(predict(m, z)), "power"))
+fits <- lapply(1:6, function(s) {
+  set.seed(s)
+  nnet(power ~ ., z, size = 10, decay = 0.1, linout = TRUE, trace = FALSE, maxit = 600)
+})
+loss_values <- sapply(fits, function(m) m$value)
+preds <- sapply(fits, function(m) back(drop(predict(m, z)), "power"))
 round(loss_values, 1)
-c(largest_difference_in_a_weight = max(apply(sapply(fits, function(m) m$wts), 1, function(v) diff(range(v)))), typical_SD_between_the_predictions = mean(apply(preds, 1, sd)), RMSE_of_the_first = rmse(preds[, 1], plant$power))
+c(
+  largest_difference_in_a_weight = max(apply(sapply(fits, function(m) m$wts), 1, function(v) {
+    diff(range(v))
+  })),
+  typical_SD_between_the_predictions = mean(apply(preds, 1, sd)),
+  RMSE_of_the_first = rmse(preds[, 1], plant$power)
+)
 ```
 
 Six starts end at different places (loss between `r f1(min(loss_values))` and `r f1(max(loss_values))`), with quite different weights. But the predictions differ by only `r f2(mean(apply(preds, 1, sd)))` MW on average. So **single weights mean nothing**, and nobody should interpret them. The predictions are what one can use. Averaging the predictions of several networks (an *ensemble*) makes them more stable; section 6 shows by how much.
@@ -203,25 +311,74 @@ So we use two kinds of folds: **random** rows, and whole **groups** of rows with
 ```{r folds}
 set.seed(205)
 group   <- as.integer(factor(plant$vacuum)); n_group <- max(group)
-folds3  <- list(random = sample(rep(1:3, length.out = nrow(plant))), `new conditions` = sample(rep(1:3, length.out = n_group))[group])
+folds3 <- list(
+  random = sample(rep(1:3, length.out = nrow(plant))),
+  `new conditions` = sample(rep(1:3, length.out = n_group))[group]
+)
 net_predict <- function(train, test, size, decay, starts = 1, maxit = 400) {
-  a <- standardise(train, train); b <- standardise(train, test)
-  p <- sapply(starts, function(s) { set.seed(s); drop(predict(nnet(power ~ ., a, size = size, decay = decay, linout = TRUE, trace = FALSE, maxit = maxit, MaxNWts = 5000), b)) })
+  a <- standardise(train, train)
+  b <- standardise(train, test)
+  p <- sapply(starts, function(s) {
+    set.seed(s)
+    drop(predict(
+      nnet(
+        power ~ .,
+        a,
+        size = size,
+        decay = decay,
+        linout = TRUE,
+        trace = FALSE,
+        maxit = maxit,
+        MaxNWts = 5000
+      ),
+      b
+    ))
+  })
   mean(train$power) + sd(train$power) * p
 }
 grid <- expand.grid(size = c(2, 5, 10, 20), decay = c(0.01, 0.1, 1))
-cv <- do.call(cbind, lapply(folds3, function(f) sapply(seq_len(nrow(grid)), function(i) {
-  e <- numeric(nrow(plant)); for (k in 1:3) e[f == k] <- net_predict(plant[f != k, ], plant[f == k, ], grid$size[i], grid$decay[i])[, 1] - plant$power[f == k]
-  sqrt(mean(e^2)) })))
+cv <- do.call(
+  cbind,
+  lapply(folds3, function(f) {
+    sapply(seq_len(nrow(grid)), function(i) {
+      e <- numeric(nrow(plant))
+      for (k in 1:3) {
+        e[f == k] <- net_predict(plant[f != k, ], plant[f == k, ], grid$size[i], grid$decay[i])[,
+          1
+        ] -
+          plant$power[f == k]
+      }
+      sqrt(mean(e^2))
+    })
+  })
+)
 print(round(cbind(grid, cv), 3), row.names = FALSE)
 ```
 
 ```{r cv_chart, fig.height = 4}
-cv_long <- data.frame(size = rep(grid$size, 2), decay = factor(rep(grid$decay, 2)), rmse = as.vector(cv), folds = rep(colnames(cv), each = nrow(grid)))
-ggplot(cv_long, aes(size, rmse, colour = decay)) + geom_line() + geom_point() + facet_wrap(~ folds) + scale_x_log10(breaks = c(2, 5, 10, 20)) + scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a")) +
-  labs(title = "Error of the network against its size, for two kinds of folds", x = "neurons", y = "RMSE (MW)") + theme_bw()
+cv_long <- data.frame(
+  size = rep(grid$size, 2),
+  decay = factor(rep(grid$decay, 2)),
+  rmse = as.vector(cv),
+  folds = rep(colnames(cv), each = nrow(grid))
+)
+ggplot(cv_long, aes(size, rmse, colour = decay)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~folds) +
+  scale_x_log10(breaks = c(2, 5, 10, 20)) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a")) +
+  labs(
+    title = "Error of the network against its size, for two kinds of folds",
+    x = "neurons",
+    y = "RMSE (MW)"
+  ) +
+  theme_bw()
 best_r <- grid[which.min(cv[, "random"]), ]; best_g <- grid[which.min(cv[, "new conditions"]), ]
-rbind(random = cbind(best_r, rmse = min(cv[, "random"])), `new conditions` = cbind(best_g, rmse = min(cv[, "new conditions"])))
+rbind(
+  random = cbind(best_r, rmse = min(cv[, "random"])),
+  `new conditions` = cbind(best_g, rmse = min(cv[, "new conditions"]))
+)
 ```
 
 With random folds the larger networks keep getting better, and the best has `r best_r$size` neurons and a decay of `r best_r$decay`. With new conditions they get **worse**, unless a strong decay holds them back, and the best has `r best_g$size` neurons. All settings lie between `r f2(min(cv[, "new conditions"]))` and `r f2(max(cv[, "new conditions"]))` MW. What the larger networks gained with random folds was mostly **memory** of the vacuum values in the data.
@@ -234,32 +391,99 @@ Both kinds of folds again, with new folds, for seven methods: a straight line, a
 
 ```{r compare}
 set.seed(206)
-folds5 <- list(`random folds` = sample(rep(1:5, length.out = nrow(plant))), `new conditions` = sample(rep(1:5, length.out = n_group))[group])
+folds5 <- list(
+  `random folds` = sample(rep(1:5, length.out = nrow(plant))),
+  `new conditions` = sample(rep(1:5, length.out = n_group))[group]
+)
 methods <- function(train, test) {
-  zt <- standardise(train, train); zn <- standardise(train, test); large <- net_predict(train, test, best_r$size, best_r$decay, starts = 1:3)
-  cbind(`straight line` = predict(lm(power ~ ., train), test),
-        GAM = as.numeric(predict(bam(power ~ s(temperature) + s(vacuum) + s(pressure) + s(humidity), data = train), test)),
-        `nearest neighbours` = FNN::knn.reg(zt[, 1:4], zn[, 1:4], train$power, k = 5)$pred,
-        `random forest` = predict(ranger::ranger(power ~ ., train, num.trees = 300, seed = 1), test)$predictions,
-        `small network` = net_predict(train, test, best_g$size, best_g$decay)[, 1], `large network` = large[, 1], `3 large networks, averaged` = rowMeans(large))
+  zt <- standardise(train, train)
+  zn <- standardise(train, test)
+  large <- net_predict(train, test, best_r$size, best_r$decay, starts = 1:3)
+  cbind(
+    `straight line` = predict(lm(power ~ ., train), test),
+    GAM = as.numeric(predict(
+      bam(power ~ s(temperature) + s(vacuum) + s(pressure) + s(humidity), data = train),
+      test
+    )),
+    `nearest neighbours` = FNN::knn.reg(zt[, 1:4], zn[, 1:4], train$power, k = 5)$pred,
+    `random forest` = predict(
+      ranger::ranger(power ~ ., train, num.trees = 300, seed = 1),
+      test
+    )$predictions,
+    `small network` = net_predict(train, test, best_g$size, best_g$decay)[, 1],
+    `large network` = large[, 1],
+    `3 large networks, averaged` = rowMeans(large)
+  )
 }
-results <- do.call(rbind, lapply(names(folds5), function(kind) { f <- folds5[[kind]]
-  do.call(rbind, lapply(1:5, function(k) { p <- methods(plant[f != k, ], plant[f == k, ]); data.frame(folds = kind, fold = k, method = colnames(p), rmse = apply(p, 2, rmse, plant$power[f == k]), mse = apply(p, 2, function(v) sum((v - plant$power[f == k])^2))) })) }))
+results <- do.call(
+  rbind,
+  lapply(names(folds5), function(kind) {
+    f <- folds5[[kind]]
+    do.call(
+      rbind,
+      lapply(1:5, function(k) {
+        p <- methods(plant[f != k, ], plant[f == k, ])
+        data.frame(
+          folds = kind,
+          fold = k,
+          method = colnames(p),
+          rmse = apply(p, 2, rmse, plant$power[f == k]),
+          mse = apply(p, 2, function(v) sum((v - plant$power[f == k])^2))
+        )
+      })
+    )
+  })
+)
 total <- aggregate(mse ~ method + folds, results, sum); total$rmse <- sqrt(total$mse / nrow(plant))
-wide  <- reshape(total[, c("method", "folds", "rmse")], idvar = "method", timevar = "folds", direction = "wide"); names(wide) <- c("method", "new", "random")
-wide  <- wide[order(wide$new), ]; print(data.frame(method = wide$method, random_folds = round(wide$random, 2), new_conditions = round(wide$new, 2)), row.names = FALSE)
+wide <- reshape(
+  total[, c("method", "folds", "rmse")],
+  idvar = "method",
+  timevar = "folds",
+  direction = "wide"
+)
+names(wide) <- c("method", "new", "random")
+wide <- wide[order(wide$new), ]
+print(
+  data.frame(
+    method = wide$method,
+    random_folds = round(wide$random, 2),
+    new_conditions = round(wide$new, 2)
+  ),
+  row.names = FALSE
+)
 ```
 
 ```{r compare_chart, fig.height = 4.5}
 results$method <- factor(results$method, levels = rev(wide$method[order(wide$random)]))
-ggplot(results, aes(rmse, method)) + geom_point(colour = "#2a78d6", alpha = 0.35, size = 1.8) + geom_point(data = transform(total, method = factor(method, levels = levels(results$method))), colour = "#eb6834", size = 3) + facet_wrap(~ folds) +
-  labs(title = "Error of seven methods, two kinds of folds", subtitle = "Orange: all rows. Blue: single folds", x = "RMSE (MW)", y = NULL) + theme_bw() + theme(plot.title.position = "plot")
+ggplot(results, aes(rmse, method)) +
+  geom_point(colour = "#2a78d6", alpha = 0.35, size = 1.8) +
+  geom_point(
+    data = transform(total, method = factor(method, levels = levels(results$method))),
+    colour = "#eb6834",
+    size = 3
+  ) +
+  facet_wrap(~folds) +
+  labs(
+    title = "Error of seven methods, two kinds of folds",
+    subtitle = "Orange: all rows. Blue: single folds",
+    x = "RMSE (MW)",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(plot.title.position = "plot")
 w  <- function(m, v) wide[[v]][wide$method == m]
 by_fold <- function(m) subset(results, folds == "new conditions" & method == m)$rmse
-c(folds_in_which_the_small_network_beats_the_forest = sum(by_fold("small network") < by_fold("random forest")), folds_in_which_the_average_beats_one_large_network = sum(by_fold("3 large networks, averaged") < by_fold("large network")))
+c(
+  folds_in_which_the_small_network_beats_the_forest = sum(
+    by_fold("small network") < by_fold("random forest")
+  ),
+  folds_in_which_the_average_beats_one_large_network = sum(
+    by_fold("3 large networks, averaged") < by_fold("large network")
+  )
+)
 ```
 
-- With **random folds** the random forest wins by far: `r f2(w("random forest", "random"))` MW, against `r f2(w("3 large networks, averaged", "random"))` for the averaged large networks, `r f2(w("GAM", "random"))` for the GAM and `r f2(w("straight line", "random"))` for the straight line. (In the paper that introduced the data, bagged trees came first among many methods, with folds of shuffled rows; Tüfekci, 2014.)
+- With **random folds** the random forest wins by far: `r f2(w("random forest", "random"))` MW, against `r f2(w("3 large networks, averaged", "random"))` for the averaged large networks, `r f2(w("GAM", "random"))` for the GAM and `r f2(w("straight line", "random"))` for the straight line. (In the paper that introduced the data, bagged trees came first among many methods, with an RMSE of 3.79 MW and folds of shuffled rows; Tüfekci, 2014.)
 - With **new conditions** the order is another one. The averaged large networks (`r f2(w("3 large networks, averaged", "new"))`), the small network (`r f2(w("small network", "new"))`) and the GAM (`r f2(w("GAM", "new"))`) are practically tied; the forest has `r f2(w("random forest", "new"))`, the straight line `r f2(w("straight line", "new"))`. The small network beats the forest in `r sum(by_fold("small network") < by_fold("random forest"))` of the 5 folds. The nearest neighbours, which were well ahead of the straight line before, are the last with `r f2(w("nearest neighbours", "new"))`.
 - The **stiff** methods (straight line, GAM, small network) have nearly the same error in both tests, for example `r f2(w("GAM", "random"))` and `r f2(w("GAM", "new"))` for the GAM. They cannot remember single periods. The flexible ones lose a lot: the forest goes from `r f2(w("random forest", "random"))` to `r f2(w("random forest", "new"))`, the large network from `r f2(w("large network", "random"))` to `r f2(w("large network", "new"))`.
 - **Averaging** three large networks changed the error from `r f2(w("large network", "new"))` to `r f2(w("3 large networks, averaged", "new"))` (new conditions) and from `r f2(w("large network", "random"))` to `r f2(w("3 large networks, averaged", "random"))` (random folds): it helped, at three times the cost.
@@ -276,18 +500,58 @@ The **partial dependence** of a predictor: set it to a value in every row, predi
 
 ```{r partial, fig.height = 5}
 set.seed(207); bg <- plant[sample(nrow(plant), 400), ]; zbg <- standardise(plant, bg)
-one_net <- function(size, decay, s) { set.seed(s); nnet(power ~ ., z, size = size, decay = decay, linout = TRUE, trace = FALSE, maxit = 400) }
-nets <- c(lapply(1:3, function(s) one_net(best_r$size, best_r$decay, s)), list(one_net(best_g$size, best_g$decay, 1)))
+one_net <- function(size, decay, s) {
+  set.seed(s)
+  nnet(power ~ ., z, size = size, decay = decay, linout = TRUE, trace = FALSE, maxit = 400)
+}
+nets <- c(
+  lapply(1:3, function(s) one_net(best_r$size, best_r$decay, s)),
+  list(one_net(best_g$size, best_g$decay, 1))
+)
 gam_all <- bam(power ~ s(temperature) + s(vacuum) + s(pressure) + s(humidity), data = plant)
-pd <- do.call(rbind, lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) { q <- seq(quantile(plant[[v]], 0.01), quantile(plant[[v]], 0.99), length.out = 25)
-  do.call(rbind, lapply(q, function(x0) { b2 <- bg; b2[[v]] <- x0; zb <- standardise(plant, b2)
-    data.frame(predictor = v, x = x0, model = c(paste("large", 1:3), "small", "GAM"), power = c(sapply(nets, function(m) mean(back(drop(predict(m, zb)), "power"))), mean(predict(gam_all, b2)))) })) }))
-pd$kind <- factor(ifelse(grepl("large", pd$model), "three large networks", ifelse(pd$model == "small", "small network", "GAM")), levels = c("three large networks", "small network", "GAM"))
-ggplot(pd, aes(x, power, group = model, colour = kind, linewidth = kind)) + geom_line() + facet_wrap(~ predictor, scales = "free_x") +
-  scale_colour_manual(values = c("grey60", "#2a78d6", "#eb6834"), name = NULL) + scale_linewidth_manual(values = c(0.5, 1, 1), guide = "none") +
-  labs(title = "Partial dependence of power on each predictor", x = NULL, y = "power (MW)") + theme_bw() + theme(legend.position = "bottom")
+pd <- do.call(
+  rbind,
+  lapply(c("temperature", "vacuum", "pressure", "humidity"), function(v) {
+    q <- seq(quantile(plant[[v]], 0.01), quantile(plant[[v]], 0.99), length.out = 25)
+    do.call(
+      rbind,
+      lapply(q, function(x0) {
+        b2 <- bg
+        b2[[v]] <- x0
+        zb <- standardise(plant, b2)
+        data.frame(
+          predictor = v,
+          x = x0,
+          model = c(paste("large", 1:3), "small", "GAM"),
+          power = c(
+            sapply(nets, function(m) mean(back(drop(predict(m, zb)), "power"))),
+            mean(predict(gam_all, b2))
+          )
+        )
+      })
+    )
+  })
+)
+pd$kind <- factor(
+  ifelse(
+    grepl("large", pd$model),
+    "three large networks",
+    ifelse(pd$model == "small", "small network", "GAM")
+  ),
+  levels = c("three large networks", "small network", "GAM")
+)
+ggplot(pd, aes(x, power, group = model, colour = kind, linewidth = kind)) +
+  geom_line() +
+  facet_wrap(~predictor, scales = "free_x") +
+  scale_colour_manual(values = c("grey60", "#2a78d6", "#eb6834"), name = NULL) +
+  scale_linewidth_manual(values = c(0.5, 1, 1), guide = "none") +
+  labs(title = "Partial dependence of power on each predictor", x = NULL, y = "power (MW)") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 span <- function(v, m) { p <- subset(pd, predictor == v & model == m); diff(range(p$power)) }
-spans <- sapply(c("temperature", "vacuum", "humidity", "pressure"), function(v) sapply(c("small", "GAM", "large 1"), function(m) span(v, m)))
+spans <- sapply(c("temperature", "vacuum", "humidity", "pressure"), function(v) {
+  sapply(c("small", "GAM", "large 1"), function(m) span(v, m))
+})
 round(spans, 1)
 ```
 

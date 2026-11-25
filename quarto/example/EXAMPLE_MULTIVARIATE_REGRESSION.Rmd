@@ -35,7 +35,8 @@ library(car)       # Anova(), linearHypothesis() for models with several outcome
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -50,25 +51,41 @@ NHANES, the US health survey, measures blood pressure three times with an automa
 ```{r download}
 nhanes <- function(file) {
   path <- tempfile(fileext = ".xpt")
-  download.file(paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/", file, ".xpt"),
-                path, mode = "wb", quiet = TRUE)
+  download.file(
+    paste0("https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/2021/DataFiles/", file, ".xpt"),
+    path,
+    mode = "wb",
+    quiet = TRUE
+  )
   read.xport(path)
 }
 raw <- merge(nhanes("BPXO_L"), nhanes("DEMO_L")[, c("SEQN", "RIDAGEYR", "RIAGENDR", "RIDEXPRG")])
 raw <- merge(raw, nhanes("BMX_L")[, c("SEQN", "BMXBMI")])
 raw <- merge(raw, nhanes("BPQ_L")[, c("SEQN", "BPQ150")], all.x = TRUE)
 
-raw$sys <- rowMeans(raw[, paste0("BPXOSY", 1:3)], na.rm = TRUE)    # systolic: mean of the readings (mmHg)
+# systolic: mean of the readings (mmHg)
+raw$sys <- rowMeans(raw[, paste0("BPXOSY", 1:3)], na.rm = TRUE)
 raw$dia <- rowMeans(raw[, paste0("BPXODI", 1:3)], na.rm = TRUE)    # diastolic
-adults <- subset(raw, RIDAGEYR >= 20 & RIDAGEYR < 80 & is.finite(sys) & is.finite(dia) & !is.na(BMXBMI) & !(RIDEXPRG %in% 1))
-people <- subset(adults, !(BPQ150 %in% 1))                          # not taking blood pressure medicine
+adults <- subset(
+  raw,
+  RIDAGEYR >= 20 &
+    RIDAGEYR < 80 &
+    is.finite(sys) &
+    is.finite(dia) &
+    !is.na(BMXBMI) &
+    !(RIDEXPRG %in% 1)
+)
+people <- subset(adults, !(BPQ150 %in% 1)) # not taking blood pressure medicine
 c(adults = nrow(adults), without_medicine = nrow(people))
 
-people <- data.frame(sys = people$sys, dia = people$dia,
-                     age    = (people$RIDAGEYR - 45) / 10,          # in decades, centred at 45 years
-                     male   = as.integer(people$RIAGENDR == 1),
-                     bmi    = (people$BMXBMI - 27) / 5,             # in steps of 5 kg/m², centred at 27
-                     years  = people$RIDAGEYR)
+people <- data.frame(
+  sys = people$sys,
+  dia = people$dia,
+  age = (people$RIDAGEYR - 45) / 10, # in decades, centred at 45 years
+  male = as.integer(people$RIAGENDR == 1),
+  bmi = (people$BMXBMI - 27) / 5, # in steps of 5 kg/m², centred at 27
+  years = people$RIDAGEYR
+)
 round(sapply(people[, c("sys", "dia")], function(v) c(mean = mean(v), sd = sd(v))), 1)
 cor(people$sys, people$dia)
 ```
@@ -245,7 +262,11 @@ The slope of BMI is `r f2(abs(contrasts["bmi", "difference"]))` mmHg **smaller**
 
 ```{r naive_se}
 naive <- sqrt(s[["Response sys"]]["bmi", 2]^2 + s[["Response dia"]]["bmi", 2]^2)
-c(correct = contrasts["bmi", "SE"], as_if_independent = naive, ratio = naive / contrasts["bmi", "SE"])
+c(
+  correct = contrasts["bmi", "SE"],
+  as_if_independent = naive,
+  ratio = naive / contrasts["bmi", "SE"]
+)
 ```
 
 Treating the two regressions as independent gives a standard error `r f1(naive / contrasts["bmi", "SE"])` times too large.
@@ -270,21 +291,34 @@ ellipse <- function(centre, V, radius) {          # points on an ellipse around 
   angle <- seq(0, 2 * pi, length.out = 200)
   t(centre + radius * t(chol(V)) %*% rbind(cos(angle), sin(angle)))
 }
-V_bmi  <- Sigma * XtX_inv["bmi", "bmi"]                                  # 2 x 2 covariance matrix of the two slopes
+V_bmi <- Sigma * XtX_inv["bmi", "bmi"] # 2 x 2 covariance matrix of the two slopes
 radius <- sqrt(2 * (n - q) / (n - q - 1) * qf(0.95, 2, n - q - 1))
 region <- as.data.frame(ellipse(B["bmi", ], V_bmi, radius)); names(region) <- c("sys", "dia")
-ci     <- t(sapply(c("sys", "dia"), function(o) B["bmi", o] + c(-1, 1) * qt(0.975, n - q) * sqrt(V_bmi[o, o])))
+ci <- t(sapply(c("sys", "dia"), function(o) {
+  B["bmi", o] + c(-1, 1) * qt(0.975, n - q) * sqrt(V_bmi[o, o])
+}))
 
 ggplot(region, aes(sys, dia)) +
-  annotate("rect", xmin = ci["sys", 1], xmax = ci["sys", 2], ymin = ci["dia", 1], ymax = ci["dia", 2], fill = "grey80", alpha = 0.6) +
+  annotate(
+    "rect",
+    xmin = ci["sys", 1],
+    xmax = ci["sys", 2],
+    ymin = ci["dia", 1],
+    ymax = ci["dia", 2],
+    fill = "grey80",
+    alpha = 0.6
+  ) +
   geom_polygon(fill = "#2a78d6", alpha = 0.35) +
   geom_abline(linetype = "dashed", colour = "#eb6834", linewidth = 0.8) +
   annotate("point", x = B["bmi", "sys"], y = B["bmi", "dia"], size = 2.5) +
   annotate("point", x = 0, y = 0, shape = 4, size = 3, stroke = 1.2) +
   coord_cartesian(xlim = c(-0.1, 2.2), ylim = c(-0.1, 2.4)) +
-  labs(title = "The two slopes of BMI",
-       subtitle = "Blue: joint 95% region. Grey: the two separate 95% intervals.\nDashed: equal slopes. Cross: no effect",
-       x = "systolic: mmHg per 5 kg/m²", y = "diastolic: mmHg per 5 kg/m²") +
+  labs(
+    title = "The two slopes of BMI",
+    subtitle = "Blue: joint 95% region. Grey: the two separate 95% intervals.\nDashed: equal slopes. Cross: no effect",
+    x = "systolic: mmHg per 5 kg/m²",
+    y = "diastolic: mmHg per 5 kg/m²"
+  ) +
   theme_bw()
 ```
 
@@ -305,24 +339,49 @@ pred  <- as.data.frame(ellipse(y0, V0, radius)); names(pred) <- c("sys", "dia")
 sides <- sapply(c("sys", "dia"), function(o) y0[[o]] + c(-1, 1) * qt(0.975, n - q) * sqrt(V0[o, o]))
 
 # how many people are inside their own ellipse, and inside their own rectangle?
-d2     <- rowSums((E %*% solve(Sigma)) * E)                               # squared distance from the prediction
-inside <- c(ellipse = mean(d2 <= radius^2),
-            rectangle = mean(abs(E[, 1]) <= 1.96 * sqrt(Sigma[1, 1]) & abs(E[, 2]) <= 1.96 * sqrt(Sigma[2, 2])))
+d2 <- rowSums((E %*% solve(Sigma)) * E) # squared distance from the prediction
+inside <- c(
+  ellipse = mean(d2 <= radius^2),
+  rectangle = mean(
+    abs(E[, 1]) <= 1.96 * sqrt(Sigma[1, 1]) & abs(E[, 2]) <= 1.96 * sqrt(Sigma[2, 2])
+  )
+)
 inside
-odd <- c(y0[["sys"]] + 1.5 * sqrt(V0[1, 1]), y0[["dia"]] - 1.5 * sqrt(V0[2, 2]))      # high above, low below
+# high above, low below
+odd <- c(y0[["sys"]] + 1.5 * sqrt(V0[1, 1]), y0[["dia"]] - 1.5 * sqrt(V0[2, 2]))
 d2_odd <- drop(t(odd - y0) %*% solve(V0) %*% (odd - y0))
 c(d2 = d2_odd, limit = radius^2)
 ```
 
 ```{r prediction_chart}
 ggplot(pred, aes(sys, dia)) +
-  annotate("rect", xmin = sides[1, "sys"], xmax = sides[2, "sys"], ymin = sides[1, "dia"], ymax = sides[2, "dia"], fill = "grey80", alpha = 0.5) +
+  annotate(
+    "rect",
+    xmin = sides[1, "sys"],
+    xmax = sides[2, "sys"],
+    ymin = sides[1, "dia"],
+    ymax = sides[2, "dia"],
+    fill = "grey80",
+    alpha = 0.5
+  ) +
   geom_polygon(fill = "#2a78d6", alpha = 0.3) +
   annotate("point", x = y0[["sys"]], y = y0[["dia"]], size = 2.5) +
   annotate("point", x = odd[1], y = odd[2], colour = "#eb6834", size = 3) +
-  annotate("text", x = odd[1] + 1, y = odd[2] - 2.5, label = sprintf("%.0f / %.0f", odd[1], odd[2]), colour = "#eb6834", hjust = 0, size = 3.5) +
-  labs(title = "95% prediction region for a man of 50 with a BMI of 32",
-       subtitle = "Grey: each number by itself. Blue: the pair", x = "systolic (mmHg)", y = "diastolic (mmHg)") +
+  annotate(
+    "text",
+    x = odd[1] + 1,
+    y = odd[2] - 2.5,
+    label = sprintf("%.0f / %.0f", odd[1], odd[2]),
+    colour = "#eb6834",
+    hjust = 0,
+    size = 3.5
+  ) +
+  labs(
+    title = "95% prediction region for a man of 50 with a BMI of 32",
+    subtitle = "Grey: each number by itself. Blue: the pair",
+    x = "systolic (mmHg)",
+    y = "diastolic (mmHg)"
+  ) +
   theme_bw()
 ```
 
@@ -337,17 +396,27 @@ With `r num(n)` people everything is significant. The choice of the test matters
 ```{r small_studies}
 set.seed(4)
 one_study <- function(shuffle) {
-  i  <- sample(n, 100)
-  Xs <- X[i, ]; Ys <- Y[i, ]
-  if (shuffle) Xs[, "bmi"] <- sample(Xs[, "bmi"])                        # BMI without any relation
-  XtXi <- solve(crossprod(Xs)); Bs <- XtXi %*% crossprod(Xs, Ys); Es <- Ys - Xs %*% Bs
-  S    <- crossprod(Es) / (100 - q)
+  i <- sample(n, 100)
+  Xs <- X[i, ]
+  Ys <- Y[i, ]
+  if (shuffle) {
+    Xs[, "bmi"] <- sample(Xs[, "bmi"])
+  } # BMI without any relation
+  XtXi <- solve(crossprod(Xs))
+  Bs <- XtXi %*% crossprod(Xs, Ys)
+  Es <- Ys - Xs %*% Bs
+  S <- crossprod(Es) / (100 - q)
   p_each <- 2 * pt(-abs(Bs[5, ] / sqrt(diag(S) * XtXi[5, 5])), 100 - q)
-  T2   <- drop(t(Bs[5, ]) %*% solve(S * XtXi[5, 5]) %*% Bs[5, ])          # Hotelling's T², the same as Pillai here
-  df2  <- 100 - q - 1
-  c(joint = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05,
-    either = any(p_each < .05), bonferroni = any(p_each < .025),
-    joint_only = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05 & !any(p_each < .05))
+  # Hotelling's T², the same as Pillai here
+  T2 <- drop(t(Bs[5, ]) %*% solve(S * XtXi[5, 5]) %*% Bs[5, ])
+  df2 <- 100 - q - 1
+  c(
+    joint = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05,
+    either = any(p_each < .05),
+    bonferroni = any(p_each < .025),
+    joint_only = pf(T2 * df2 / (2 * (100 - q)), 2, df2, lower.tail = FALSE) < .05 &
+      !any(p_each < .05)
+  )
 }
 power <- rowMeans(replicate(5000, one_study(FALSE)))
 null  <- rowMeans(replicate(5000, one_study(TRUE)))
@@ -375,7 +444,9 @@ ggplot(qq, aes(expected, observed)) +
        x = "expected squared distance (χ², 2 df)", y = "observed squared distance") +
   theme_bw()
 
-spread <- sapply(c("sys", "dia"), function(o) tapply(E[, o], cut(people$years, c(19, 39, 59, 79)), sd))
+spread <- sapply(c("sys", "dia"), function(o) {
+  tapply(E[, o], cut(people$years, c(19, 39, 59, 79)), sd)
+})
 round(spread, 1)
 ```
 
@@ -427,8 +498,17 @@ apa_table <- data.frame(
   Predictor = c("Age (10 years, from 45)", "Age squared", "Male", "BMI (5 kg/m², from 27)"),
   sys = paste0(f2(B[-1, "sys"]), " [", f2(ci_sys[-1, 1]), ", ", f2(ci_sys[-1, 2]), "]"),
   dia = paste0(f2(B[-1, "dia"]), " [", f2(ci_dia[-1, 1]), ", ", f2(ci_dia[-1, 2]), "]"),
-  diff = paste0(f2(contrasts[, "difference"]), " [", f2(contrasts[, "lower"]), ", ", f2(contrasts[, "upper"]), "]"),
-  V = nz(joint_table[, "pillai"], 3), F = f1(joint_table[, "F"]))
+  diff = paste0(
+    f2(contrasts[, "difference"]),
+    " [",
+    f2(contrasts[, "lower"]),
+    ", ",
+    f2(contrasts[, "upper"]),
+    "]"
+  ),
+  V = nz(joint_table[, "pillai"], 3),
+  F = f1(joint_table[, "F"])
+)
 df2 <- n - q - 1
 ```
 

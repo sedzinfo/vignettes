@@ -30,7 +30,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -44,7 +45,12 @@ The results are in the R package `MPDiR`, the companion of the book by Knoblauch
 
 ```{r download}
 path <- tempfile(fileext = ".rda")
-download.file("https://raw.githubusercontent.com/cran/MPDiR/master/data/HSP.rda", path, mode = "wb", quiet = TRUE)
+download.file(
+  "https://raw.githubusercontent.com/cran/MPDiR/master/data/HSP.rda",
+  path,
+  mode = "wb",
+  quiet = TRUE
+)
 load(path)
 light <- data.frame(observer = HSP$Obs, run = HSP$Run, quanta = HSP$Q, N = HSP$N,
                     seen = round(HSP$p * HSP$N / 100))      # the paper gives percentages
@@ -143,7 +149,10 @@ c(threshold_quanta = 10^mu_sh, sigma_log10 = sigma_sh)
 The same estimates come from a file with one row for each of the flashes and an outcome of 0 or 1. The likelihood differs only by a constant:
 
 ```{r single_trials}
-single <- data.frame(log_q = rep(sh$log_q, sh$N), yes = unlist(Map(function(s, n) rep(c(1, 0), c(s, n - s)), sh$seen, sh$N)))
+single <- data.frame(
+  log_q = rep(sh$log_q, sh$N),
+  yes = unlist(Map(function(s, n) rep(c(1, 0), c(s, n - s)), sh$seen, sh$N))
+)
 fit_single <- glm(yes ~ log_q, family = binomial("probit"), data = single)
 rbind(grouped = coef(fit_sh), single = coef(fit_single))
 c(deviance_grouped = deviance(fit_sh), deviance_single = deviance(fit_single))
@@ -156,9 +165,11 @@ The deviance is different. For single trials it is **not** a test of fit.
 ## 5. Three observers
 
 ```{r observers}
-m0 <- glm(cbind(seen, N - seen) ~ log_q,            family = binomial("probit"), data = light)   # one curve
-m1 <- glm(cbind(seen, N - seen) ~ log_q + observer, family = binomial("probit"), data = light)   # same slope
-m2 <- glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial("probit"), data = light)   # own curves
+m0 <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = light) # one curve
+# same slope
+m1 <- glm(cbind(seen, N - seen) ~ log_q + observer, family = binomial("probit"), data = light)
+# own curves
+m2 <- glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial("probit"), data = light)
 tests <- anova(m0, m1, m2, test = "Chisq")
 tests
 ```
@@ -176,20 +187,40 @@ A threshold is a **ratio** of two estimates, and its interval is not in the outp
 ```{r thresholds}
 threshold_table <- function(d) {
   m <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
-  b <- coef(m); V <- vcov(m); mu <- -b[[1]] / b[[2]]
-  g     <- c(-1 / b[[2]], b[[1]] / b[[2]]^2)                            # derivatives of -b0/b1
-  se    <- sqrt(drop(t(g) %*% V %*% g))
-  z2    <- qnorm(0.975)^2                                               # Fieller: a quadratic in x
-  A <- b[[2]]^2 - z2 * V[2, 2]; B <- 2 * (b[[1]] * b[[2]] - z2 * V[1, 2]); C <- b[[1]]^2 - z2 * V[1, 1]
+  b <- coef(m)
+  V <- vcov(m)
+  mu <- -b[[1]] / b[[2]]
+  g <- c(-1 / b[[2]], b[[1]] / b[[2]]^2) # derivatives of -b0/b1
+  se <- sqrt(drop(t(g) %*% V %*% g))
+  z2 <- qnorm(0.975)^2 # Fieller: a quadratic in x
+  A <- b[[2]]^2 - z2 * V[2, 2]
+  B <- 2 * (b[[1]] * b[[2]] - z2 * V[1, 2])
+  C <- b[[1]]^2 - z2 * V[1, 1]
   fieller <- sort((-B + c(-1, 1) * sqrt(B^2 - 4 * A * C)) / (2 * A))
   set.seed(71)
-  boot <- replicate(1000, { d$seen <- rbinom(nrow(d), d$N, fitted(m))
-    bb <- coef(suppressWarnings(glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))); -bb[[1]] / bb[[2]] })
-  10^c(threshold = mu, delta_low = mu - 1.96 * se, delta_high = mu + 1.96 * se, fieller_low = fieller[1], fieller_high = fieller[2],
-       boot_low = unname(quantile(boot, 0.025)), boot_high = unname(quantile(boot, 0.975)))
+  boot <- replicate(1000, {
+    d$seen <- rbinom(nrow(d), d$N, fitted(m))
+    bb <- coef(suppressWarnings(glm(
+      cbind(seen, N - seen) ~ log_q,
+      family = binomial("probit"),
+      data = d
+    )))
+    -bb[[1]] / bb[[2]]
+  })
+  10^c(
+    threshold = mu,
+    delta_low = mu - 1.96 * se,
+    delta_high = mu + 1.96 * se,
+    fieller_low = fieller[1],
+    fieller_high = fieller[2],
+    boot_low = unname(quantile(boot, 0.025)),
+    boot_high = unname(quantile(boot, 0.975))
+  )
 }
 thresholds <- t(sapply(split(light, light$observer), threshold_table))
-noise      <- sapply(split(light, light$observer), function(d) 1 / coef(glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))[[2]])
+noise <- sapply(split(light, light$observer), function(d) {
+  1 / coef(glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))[[2]]
+})
 round(thresholds, 1)
 round(10^noise, 2)                                # the noise as a factor of light
 ```
@@ -199,18 +230,31 @@ The thresholds are `r f0(thresholds["SH", 1])`, `r f0(thresholds["SS", 1])` and 
 ```{r curves}
 grid <- expand.grid(log_q = seq(1.2, 2.75, by = 0.01), observer = levels(light$observer))
 pr   <- predict(m2, grid, se.fit = TRUE)                       # on the probit scale, then back
-grid$p <- pnorm(pr$fit); grid$low <- pnorm(pr$fit - 1.96 * pr$se.fit); grid$high <- pnorm(pr$fit + 1.96 * pr$se.fit)
+grid$p <- pnorm(pr$fit)
+grid$low <- pnorm(pr$fit - 1.96 * pr$se.fit)
+grid$high <- pnorm(pr$fit + 1.96 * pr$se.fit)
 
 ggplot(grid, aes(10^log_q, p, colour = observer, fill = observer)) +
   geom_ribbon(aes(ymin = low, ymax = high), alpha = 0.2, colour = NA) +
   geom_line(linewidth = 0.9) +
-  geom_point(data = light, aes(quanta, seen / N, colour = observer), size = 2, inherit.aes = FALSE) +
+  geom_point(
+    data = light,
+    aes(quanta, seen / N, colour = observer),
+    size = 2,
+    inherit.aes = FALSE
+  ) +
   geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey50") +
   scale_x_log10(breaks = c(25, 50, 100, 200, 400)) +
-  scale_colour_manual(values = obs_colours) + scale_fill_manual(values = obs_colours) +
+  scale_colour_manual(values = obs_colours) +
+  scale_fill_manual(values = obs_colours) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
-  labs(title = "Fitted probabilities of seeing, with 95% bands", x = "quanta at the eye (log scale)", y = NULL) +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Fitted probabilities of seeing, with 95% bands",
+    x = "quanta at the eye (log scale)",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The bands are computed on the probit scale and then transformed, so they never leave the range from 0 to 1.
@@ -222,8 +266,11 @@ The bands are computed on the probit scale and then transformed, so they never l
 With several flashes at each intensity, the **residual deviance** compares the model with one that has its own probability for each row. If the model is right it is about as large as its degrees of freedom.
 
 ```{r fit_test}
-fit_table <- data.frame(model = c("one curve", "same slope", "own curves"),
-                        deviance = c(deviance(m0), deviance(m1), deviance(m2)), df = c(df.residual(m0), df.residual(m1), df.residual(m2)))
+fit_table <- data.frame(
+  model = c("one curve", "same slope", "own curves"),
+  deviance = c(deviance(m0), deviance(m1), deviance(m2)),
+  df = c(df.residual(m0), df.residual(m1), df.residual(m2))
+)
 fit_table$p <- pchisq(fit_table$deviance, fit_table$df, lower.tail = FALSE)
 fit_table
 res <- residuals(m2, type = "deviance")
@@ -235,8 +282,15 @@ With own curves the deviance is `r f1(fit_table$deviance[3])` on `r fit_table$df
 
 ```{r simulated_fit}
 set.seed(72)
-sim_dev <- replicate(1000, { z <- light; z$seen <- rbinom(nrow(z), z$N, fitted(m2))
-  suppressWarnings(deviance(glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial("probit"), data = z))) })
+sim_dev <- replicate(1000, {
+  z <- light
+  z$seen <- rbinom(nrow(z), z$N, fitted(m2))
+  suppressWarnings(deviance(glm(
+    cbind(seen, N - seen) ~ log_q * observer,
+    family = binomial("probit"),
+    data = z
+  )))
+})
 c(mean_of_simulated_deviances = mean(sim_dev), p = mean(sim_dev >= deviance(m2)))
 ```
 
@@ -250,15 +304,29 @@ Other S-curves could replace the normal one. The **logit** uses the logistic dis
 
 ```{r links}
 links <- c("probit", "logit", "cloglog")
-fits  <- lapply(links, function(l) glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial(l), data = light))
+fits <- lapply(links, function(l) {
+  glm(cbind(seen, N - seen) ~ log_q * observer, family = binomial(l), data = light)
+})
 names(fits) <- links
-data.frame(link = links, deviance = sapply(fits, deviance), AIC = sapply(fits, AIC), slope_SH = sapply(fits, function(m) coef(m)[["log_q"]]), row.names = NULL)
+data.frame(
+  link = links,
+  deviance = sapply(fits, deviance),
+  AIC = sapply(fits, AIC),
+  slope_SH = sapply(fits, function(m) coef(m)[["log_q"]]),
+  row.names = NULL
+)
 ratio <- coef(fits$logit)[["log_q"]] / coef(fits$probit)[["log_q"]]
 ratio
 
 # the light for SH to see 50% and 99%, by each link
-at_p <- function(m, p, link) 10^((switch(link, probit = qnorm(p), logit = qlogis(p), cloglog = log(-log(1 - p))) - coef(m)[[1]]) / coef(m)[["log_q"]])
-extremes <- t(sapply(links, function(l) sapply(c(0.01, 0.5, 0.99), function(p) at_p(fits[[l]], p, l))))
+at_p <- function(m, p, link) {
+  10^((switch(link, probit = qnorm(p), logit = qlogis(p), cloglog = log(-log(1 - p))) -
+    coef(m)[[1]]) /
+    coef(m)[["log_q"]])
+}
+extremes <- t(sapply(links, function(l) {
+  sapply(c(0.01, 0.5, 0.99), function(p) at_p(fits[[l]], p, l))
+}))
 colnames(extremes) <- c("1%", "50%", "99%")
 round(extremes, 0)
 ```
@@ -281,9 +349,14 @@ It is largest at the threshold and goes to 0 at both ends. So one number needs a
 
 ```{r marginal}
 eta    <- predict(m2, type = "link")
-slopes <- coef(m2)[["log_q"]] + c(SH = 0, SS = coef(m2)[["log_q:observerSS"]], MHP = coef(m2)[["log_q:observerMHP"]])[as.character(light$observer)]
+slopes <- coef(m2)[["log_q"]] +
+  c(
+    SH = 0,
+    SS = coef(m2)[["log_q:observerSS"]],
+    MHP = coef(m2)[["log_q:observerMHP"]]
+  )[as.character(light$observer)]
 step   <- log10(1.1)                                                     # 10% more light
-ame    <- sum(light$N * slopes * dnorm(eta)) / sum(light$N)              # average marginal effect, over the flashes
+ame <- sum(light$N * slopes * dnorm(eta)) / sum(light$N) # average marginal effect, over the flashes
 exact  <- sum(light$N * (pnorm(eta + slopes * step) - pnorm(eta))) / sum(light$N)
 max_effect <- tapply(slopes, light$observer, function(v) v[1]) * dnorm(0) * step
 c(average_effect_of_10pct_more_light = ame * step, exact = exact)
@@ -304,17 +377,30 @@ There is **no noise** in this observer. All the variability is in the light. The
 
 ```{r poisson_threshold}
 k_fit <- function(d, k) {
-  nll <- function(la) { p <- ppois(k - 1, exp(la) * d$quanta, lower.tail = FALSE); p <- pmin(pmax(p, 1e-12), 1 - 1e-12)
-    -sum(dbinom(d$seen, d$N, p, log = TRUE)) }
-  o <- optimize(nll, c(-6, 0)); c(k = k, alpha = exp(o$minimum), logLik = -o$objective)
+  nll <- function(la) {
+    p <- ppois(k - 1, exp(la) * d$quanta, lower.tail = FALSE)
+    p <- pmin(pmax(p, 1e-12), 1 - 1e-12)
+    -sum(dbinom(d$seen, d$N, p, log = TRUE))
+  }
+  o <- optimize(nll, c(-6, 0))
+  c(k = k, alpha = exp(o$minimum), logLik = -o$objective)
 }
-physics <- do.call(rbind, lapply(levels(light$observer), function(o) {
-  d <- subset(light, observer == o)
-  r <- as.data.frame(t(sapply(1:15, function(k) k_fit(d, k))))
-  best <- r[which.max(r$logLik), ]
-  m <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
-  data.frame(observer = o, k = best$k, alpha = best$alpha, AIC_physics = -2 * best$logLik + 4, AIC_probit = AIC(m))
-}))
+physics <- do.call(
+  rbind,
+  lapply(levels(light$observer), function(o) {
+    d <- subset(light, observer == o)
+    r <- as.data.frame(t(sapply(1:15, function(k) k_fit(d, k))))
+    best <- r[which.max(r$logLik), ]
+    m <- glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
+    data.frame(
+      observer = o,
+      k = best$k,
+      alpha = best$alpha,
+      AIC_physics = -2 * best$logLik + 4,
+      AIC_probit = AIC(m)
+    )
+  })
+)
 physics
 ```
 
@@ -338,15 +424,25 @@ The best values of $k$ are `r paste(physics$k, collapse = ", ")`: **a handful of
 A report (APA 7th edition) needs the outcome and its coding, the link, the predictor's scale, the estimates and tests, and quantities that readers can understand. The numbers come from the R objects:
 
 ```{r apa_numbers}
-per_obs <- lapply(split(light, light$observer), function(d) glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d))
+per_obs <- lapply(split(light, light$observer), function(d) {
+  glm(cbind(seen, N - seen) ~ log_q, family = binomial("probit"), data = d)
+})
 apa_table <- data.frame(
   Observer = names(per_obs),
-  flashes  = sapply(split(light$N, light$observer), sum),
-  b  = f2(sapply(per_obs, function(m) coef(m)[[2]])),
+  flashes = sapply(split(light$N, light$observer), sum),
+  b = f2(sapply(per_obs, function(m) coef(m)[[2]])),
   SE = f2(sapply(per_obs, function(m) sqrt(vcov(m)[2, 2]))),
-  z  = f2(sapply(per_obs, function(m) coef(summary(m))[2, 3])),
-  thr = paste0(f0(thresholds[, 1]), " [", f0(thresholds[, "fieller_low"]), ", ", f0(thresholds[, "fieller_high"]), "]"),
-  noise = f2(10^noise))
+  z = f2(sapply(per_obs, function(m) coef(summary(m))[2, 3])),
+  thr = paste0(
+    f0(thresholds[, 1]),
+    " [",
+    f0(thresholds[, "fieller_low"]),
+    ", ",
+    f0(thresholds[, "fieller_high"]),
+    "]"
+  ),
+  noise = f2(10^noise)
+)
 ```
 
 **Method** (data analysis):

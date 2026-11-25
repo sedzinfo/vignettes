@@ -29,7 +29,8 @@ f0   <- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 ```
@@ -42,14 +43,32 @@ The experiment is in the package `languageR`, the companion of Baayen (2008): 21
 
 ```{r download}
 path <- tempfile(fileext = ".rda")
-download.file("https://raw.githubusercontent.com/cran/languageR/master/data/lexdec.rda", path, mode = "wb", quiet = TRUE)
+download.file(
+  "https://raw.githubusercontent.com/cran/languageR/master/data/lexdec.rda",
+  path,
+  mode = "wb",
+  quiet = TRUE
+)
 load(path)
-words <- with(lexdec, data.frame(subject = Subject, word = Word, rt = exp(RT),        # the file has the log of the milliseconds
-                                 correct = Correct == "correct", foreign = as.integer(NativeLanguage == "Other"),
-                                 freq = Frequency - mean(Frequency), length = Length - mean(Length)))
+words <- with(
+  lexdec,
+  data.frame(
+    subject = Subject,
+    word = Word,
+    rt = exp(RT), # the file has the log of the milliseconds
+    correct = Correct == "correct",
+    foreign = as.integer(NativeLanguage == "Other"),
+    freq = Frequency - mean(Frequency),
+    length = Length - mean(Length)
+  )
+)
 c(trials = nrow(words), wrong = sum(!words$correct))
-words <- subset(words, correct)                                                       # the usual practice: correct answers only
-c(trials = nrow(words), subjects = length(unique(words$subject)), words = length(unique(words$word)))
+words <- subset(words, correct) # the usual practice: correct answers only
+c(
+  trials = nrow(words),
+  subjects = length(unique(words$subject)),
+  words = length(unique(words$word))
+)
 summary(words$rt)
 ```
 
@@ -60,13 +79,27 @@ summary(words$rt)
 ## 2. Look at the data
 
 ```{r look, fig.height = 6}
-pa <- ggplot(words, aes(rt)) + geom_histogram(binwidth = 25, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
-  labs(title = "Reaction times", x = "milliseconds", y = "answers") + theme_bw()
-bysub <- aggregate(rt ~ subject + foreign, data = words, FUN = function(v) c(mean = mean(v), sd = sd(v)))
-bysub <- data.frame(mean = bysub$rt[, "mean"], sd = bysub$rt[, "sd"], native = ifelse(bysub$foreign == 1, "other", "English"))
-pb <- ggplot(bysub, aes(mean, sd, colour = native)) + geom_point(size = 2.6) +
-  scale_colour_manual(values = c(English = "#2a78d6", other = "#eb6834"), name = "native language") +
-  labs(title = "Mean and standard deviation of each person", x = "mean (ms)", y = "SD (ms)") + theme_bw() + theme(legend.position = "bottom")
+pa <- ggplot(words, aes(rt)) +
+  geom_histogram(binwidth = 25, fill = "#2a78d6", colour = "white", linewidth = 0.1) +
+  labs(title = "Reaction times", x = "milliseconds", y = "answers") +
+  theme_bw()
+bysub <- aggregate(rt ~ subject + foreign, data = words, FUN = function(v) {
+  c(mean = mean(v), sd = sd(v))
+})
+bysub <- data.frame(
+  mean = bysub$rt[, "mean"],
+  sd = bysub$rt[, "sd"],
+  native = ifelse(bysub$foreign == 1, "other", "English")
+)
+pb <- ggplot(bysub, aes(mean, sd, colour = native)) +
+  geom_point(size = 2.6) +
+  scale_colour_manual(
+    values = c(English = "#2a78d6", other = "#eb6834"),
+    name = "native language"
+  ) +
+  labs(title = "Mean and standard deviation of each person", x = "mean (ms)", y = "SD (ms)") +
+  theme_bw() +
+  theme(legend.position = "bottom")
 patchwork::wrap_plots(pa, pb, ncol = 1)
 power <- coef(lm(log(sd) ~ log(mean), data = bysub))[[2]]
 power
@@ -88,17 +121,48 @@ A simulation of such random walks:
 
 ```{r walks}
 set.seed(101)
-v <- 0.1; a <- 30; steps <- 1500                                       # drift per millisecond, threshold
-walk <- function() { w <- cumsum(v + rnorm(steps)); hit <- which(w >= a)[1]; list(path = w, time = hit) }
+v <- 0.1
+a <- 30
+steps <- 1500 # drift per millisecond, threshold
+walk <- function() {
+  w <- cumsum(v + rnorm(steps))
+  hit <- which(w >= a)[1]
+  list(path = w, time = hit)
+}
 times <- replicate(4000, walk()$time)
-few   <- do.call(rbind, lapply(1:6, function(i) { w <- walk(); n <- if (is.na(w$time)) steps else w$time; data.frame(walk = i, t = 1:n, x = w$path[1:n]) }))
-pa <- ggplot(few, aes(t, x, group = walk, colour = factor(walk))) + geom_line(linewidth = 0.4) + geom_hline(yintercept = a, linetype = "dashed") +
-  guides(colour = "none") + labs(title = "Six decisions: evidence until the threshold", x = "milliseconds", y = "evidence") + theme_bw()
-dig <- function(x, mu, lambda) sqrt(lambda / (2 * pi * x^3)) * exp(-lambda * (x - mu)^2 / (2 * mu^2 * x))     # the density
+few <- do.call(
+  rbind,
+  lapply(1:6, function(i) {
+    w <- walk()
+    n <- if (is.na(w$time)) steps else w$time
+    data.frame(walk = i, t = 1:n, x = w$path[1:n])
+  })
+)
+pa <- ggplot(few, aes(t, x, group = walk, colour = factor(walk))) +
+  geom_line(linewidth = 0.4) +
+  geom_hline(yintercept = a, linetype = "dashed") +
+  guides(colour = "none") +
+  labs(title = "Six decisions: evidence until the threshold", x = "milliseconds", y = "evidence") +
+  theme_bw()
+dig <- function(x, mu, lambda) {
+  sqrt(lambda / (2 * pi * x^3)) * exp(-lambda * (x - mu)^2 / (2 * mu^2 * x))
+} # the density
 curve_data <- data.frame(t = 10:1200); curve_data$d <- dig(curve_data$t, a / v, a^2)
-pb <- ggplot(data.frame(times), aes(times)) + geom_histogram(aes(y = after_stat(density)), binwidth = 25, fill = "grey80", colour = "white", na.rm = TRUE) +
+pb <- ggplot(data.frame(times), aes(times)) +
+  geom_histogram(
+    aes(y = after_stat(density)),
+    binwidth = 25,
+    fill = "grey80",
+    colour = "white",
+    na.rm = TRUE
+  ) +
   geom_line(data = curve_data, aes(t, d), colour = "#eb6834", linewidth = 1) +
-  labs(title = "4,000 such times, and the inverse Gaussian density", x = "milliseconds", y = "density") + theme_bw()
+  labs(
+    title = "4,000 such times, and the inverse Gaussian density",
+    x = "milliseconds",
+    y = "density"
+  ) +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 c(mean_of_simulation = mean(times, na.rm = TRUE), theory = a / v)
 ```
@@ -123,11 +187,19 @@ The likelihood equations weight each observation by the inverse of its variance,
 X <- model.matrix(~ freq * foreign, data = words); y <- words$rt
 beta <- coef(lm(rt ~ freq * foreign, data = words))                    # start from OLS
 for (it in 1:50) {
-  mu <- drop(X %*% beta); new <- coef(lm.wfit(X, y, w = 1 / mu^3))     # identity link: plain weighted least squares
-  if (max(abs(new - beta)) < 1e-9) break
+  mu <- drop(X %*% beta)
+  new <- coef(lm.wfit(X, y, w = 1 / mu^3)) # identity link: plain weighted least squares
+  if (max(abs(new - beta)) < 1e-9) {
+    break
+  }
   beta <- new
 }
-fit <- glm(rt ~ freq * foreign, family = inverse.gaussian(link = "identity"), data = words, start = coef(lm(rt ~ freq * foreign, data = words)))
+fit <- glm(
+  rt ~ freq * foreign,
+  family = inverse.gaussian(link = "identity"),
+  data = words,
+  start = coef(lm(rt ~ freq * foreign, data = words))
+)
 rbind(by_hand = beta, glm = coef(fit))
 ```
 
@@ -157,12 +229,20 @@ These standard errors treat the `r num(nrow(words))` answers as independent. The
 
 ```{r distributions}
 start_ms <- coef(lm(rt ~ freq * foreign, data = words))
-fams <- list(`normal, identity`           = glm(rt ~ freq * foreign, family = gaussian, data = words),
-             `gamma, identity`            = glm(rt ~ freq * foreign, family = Gamma("identity"), data = words, start = start_ms),
-             `inverse Gaussian, identity` = fit,
-             `inverse Gaussian, log`      = glm(rt ~ freq * foreign, family = inverse.gaussian("log"), data = words))
+fams <- list(
+  `normal, identity` = glm(rt ~ freq * foreign, family = gaussian, data = words),
+  `gamma, identity` = glm(
+    rt ~ freq * foreign,
+    family = Gamma("identity"),
+    data = words,
+    start = start_ms
+  ),
+  `inverse Gaussian, identity` = fit,
+  `inverse Gaussian, log` = glm(rt ~ freq * foreign, family = inverse.gaussian("log"), data = words)
+)
 logs <- lm(log(rt) ~ freq * foreign, data = words)
-aics <- c(sapply(fams, AIC), `log-normal` = AIC(logs) + 2 * sum(log(words$rt)))      # on the scale of milliseconds
+# on the scale of milliseconds
+aics <- c(sapply(fams, AIC), `log-normal` = AIC(logs) + 2 * sum(log(words$rt)))
 sort(round(aics, 1))
 ```
 
@@ -174,10 +254,12 @@ Does frequency help the foreign speakers more? Ask in four ways:
 
 ```{r scales}
 inv <- lm(I(-1000 / rt) ~ freq * foreign, data = words)
-int <- rbind(`milliseconds (inverse Gaussian, identity)` = s["freq:foreign", 1:4],
-             `ratios (inverse Gaussian, log link)`       = coef(summary(fams[[4]]))["freq:foreign", 1:4],
-             `log(RT), least squares`                    = coef(summary(logs))["freq:foreign", 1:4],
-             `-1000/RT, least squares`                   = coef(summary(inv))["freq:foreign", 1:4])
+int <- rbind(
+  `milliseconds (inverse Gaussian, identity)` = s["freq:foreign", 1:4],
+  `ratios (inverse Gaussian, log link)` = coef(summary(fams[[4]]))["freq:foreign", 1:4],
+  `log(RT), least squares` = coef(summary(logs))["freq:foreign", 1:4],
+  `-1000/RT, least squares` = coef(summary(inv))["freq:foreign", 1:4]
+)
 colnames(int) <- c("estimate", "SE", "t", "p")
 round(int, 4)
 ```
@@ -188,13 +270,32 @@ In milliseconds the interaction is clear, *t* = `r f1(int[1, "t"])`. On the log 
 grid <- expand.grid(freq = seq(-2.8, 3, by = 0.1), foreign = 0:1)
 grid$rt <- predict(fit, grid, type = "response")
 grid$native <- ifelse(grid$foreign == 1, "other", "English")
-bins <- aggregate(rt ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign, data = words, FUN = mean)
-bins$freq <- aggregate(freq ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign, data = words, FUN = mean)$freq
+bins <- aggregate(
+  rt ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign,
+  data = words,
+  FUN = mean
+)
+bins$freq <- aggregate(
+  freq ~ cut(freq, quantile(freq, 0:6 / 6), include.lowest = TRUE, labels = FALSE) + foreign,
+  data = words,
+  FUN = mean
+)$freq
 bins$native <- ifelse(bins$foreign == 1, "other", "English")
-ggplot(grid, aes(freq, rt, colour = native)) + geom_line(linewidth = 1) + geom_point(data = bins, size = 2.4) +
-  scale_colour_manual(values = c(English = "#2a78d6", other = "#eb6834"), name = "native language") +
-  labs(title = "Mean reaction time and word frequency", subtitle = "Lines: inverse Gaussian model. Points: means in sixths of the frequency",
-       x = "log frequency (centred)", y = "milliseconds") + theme_bw() + theme(legend.position = "bottom")
+ggplot(grid, aes(freq, rt, colour = native)) +
+  geom_line(linewidth = 1) +
+  geom_point(data = bins, size = 2.4) +
+  scale_colour_manual(
+    values = c(English = "#2a78d6", other = "#eb6834"),
+    name = "native language"
+  ) +
+  labs(
+    title = "Mean reaction time and word frequency",
+    subtitle = "Lines: inverse Gaussian model. Points: means in sixths of the frequency",
+    x = "log frequency (centred)",
+    y = "milliseconds"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 ---
@@ -206,19 +307,34 @@ Each person answered many times, and each word was answered by many people. Fast
 $$\mu_{ij} = x_{ij}^\top\beta + u_i + w_j, \qquad u_i \sim N(0, \sigma_u^2), \quad w_j \sim N(0, \sigma_w^2)$$
 
 ```{r mixed}
-mixed <- glmer(rt ~ freq * foreign + (1 | subject) + (1 | word), data = words,
-               family = inverse.gaussian(link = "identity"), control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5)))
+mixed <- glmer(
+  rt ~ freq * foreign + (1 | subject) + (1 | word),
+  data = words,
+  family = inverse.gaussian(link = "identity"),
+  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+)
 sm <- coef(summary(mixed))
 round(sm, 4)
 VarCorr(mixed)
 ```
 
 ```{r mixed_compare}
-compare <- data.frame(term = names(b), glm = b, SE_glm = s[, 2], mixed = sm[, 1], SE_mixed = sm[, 2], row.names = NULL)
+compare <- data.frame(
+  term = names(b),
+  glm = b,
+  SE_glm = s[, 2],
+  mixed = sm[, 1],
+  SE_mixed = sm[, 2],
+  row.names = NULL
+)
 print(cbind(term = compare$term, round(compare[, -1], 2)), row.names = FALSE)
 linear <- lmer(rt ~ freq * foreign + (1 | subject) + (1 | word), data = words)
 loglin <- lmer(log(rt) ~ freq * foreign + (1 | subject) + (1 | word), data = words)
-t_int <- c(inverse_gaussian = sm["freq:foreign", 3], normal = coef(summary(linear))["freq:foreign", 3], log_normal = coef(summary(loglin))["freq:foreign", 3])
+t_int <- c(
+  inverse_gaussian = sm["freq:foreign", 3],
+  normal = coef(summary(linear))["freq:foreign", 3],
+  log_normal = coef(summary(loglin))["freq:foreign", 3]
+)
 t_int
 t_lang <- c(glm = s["foreign", 3], mixed = sm["foreign", 3])
 t_lang
@@ -236,17 +352,39 @@ The standard errors of `glmer()` with this family are known to be rough, and Lo 
 ## 7. Checking the model
 
 ```{r checks, fig.height = 6}
-pig <- function(x, mu, lambda) pnorm(sqrt(lambda / x) * (x / mu - 1)) + exp(2 * lambda / mu) * pnorm(-sqrt(lambda / x) * (x / mu + 1))    # the distribution function
+pig <- function(x, mu, lambda) {
+  pnorm(sqrt(lambda / x) * (x / mu - 1)) +
+    exp(2 * lambda / mu) * pnorm(-sqrt(lambda / x) * (x / mu + 1))
+} # the distribution function
 quantile_res <- function(y, mu, phi) qnorm(pmin(pmax(pig(y, mu, 1 / phi), 1e-12), 1 - 1e-12))
 phi_m  <- sum(residuals(mixed, type = "pearson")^2) / (nrow(words) - 6)
-chk <- rbind(data.frame(r = quantile_res(words$rt, fitted(fit), phi), model = "inverse Gaussian, no random effects"),
-             data.frame(r = quantile_res(words$rt, fitted(mixed), phi_m), model = "inverse Gaussian, mixed"),
-             data.frame(r = rstandard(lm(rt ~ freq * foreign, data = words)), model = "normal, no random effects"),
-             data.frame(r = as.numeric(scale(resid(linear))), model = "normal, mixed"))
-chk <- do.call(rbind, lapply(split(chk, chk$model), function(d) cbind(d, q = qqnorm(d$r, plot.it = FALSE)$x)))
-ggplot(chk, aes(q, r)) + geom_abline(colour = "grey60") + geom_point(alpha = 0.3, size = 0.8, colour = "#2a78d6") + facet_wrap(~ model) +
+chk <- rbind(
+  data.frame(
+    r = quantile_res(words$rt, fitted(fit), phi),
+    model = "inverse Gaussian, no random effects"
+  ),
+  data.frame(r = quantile_res(words$rt, fitted(mixed), phi_m), model = "inverse Gaussian, mixed"),
+  data.frame(
+    r = rstandard(lm(rt ~ freq * foreign, data = words)),
+    model = "normal, no random effects"
+  ),
+  data.frame(r = as.numeric(scale(resid(linear))), model = "normal, mixed")
+)
+chk <- do.call(
+  rbind,
+  lapply(split(chk, chk$model), function(d) cbind(d, q = qqnorm(d$r, plot.it = FALSE)$x))
+)
+ggplot(chk, aes(q, r)) +
+  geom_abline(colour = "grey60") +
+  geom_point(alpha = 0.3, size = 0.8, colour = "#2a78d6") +
+  facet_wrap(~model) +
   coord_cartesian(ylim = c(-5, 8)) +
-  labs(title = "Quantile residuals against the normal distribution", x = "normal quantile", y = "residual") + theme_bw()
+  labs(
+    title = "Quantile residuals against the normal distribution",
+    x = "normal quantile",
+    y = "residual"
+  ) +
+  theme_bw()
 tail_share <- tapply(chk$r, chk$model, function(v) mean(v > 3))
 round(100 * tail_share, 2)
 ```
@@ -274,9 +412,17 @@ A report (APA 7th edition) needs the distribution and the link with reasons, the
 
 ```{r apa_numbers}
 ci_low <- sm[, 1] - 1.96 * sm[, 2]; ci_high <- sm[, 1] + 1.96 * sm[, 2]
-apa_table <- data.frame(Term = c("Intercept", "Frequency (log, centred)", "Native language other than English", "Frequency × native language"),
-                        b = f1(sm[, 1]), SE = f1(sm[, 2]), CI = paste0("[", f1(ci_low), ", ", f1(ci_high), "]"), z = f2(sm[, 3]),
-                        p = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))))
+apa_table <- data.frame(
+  Term = c(
+    "Intercept", "Frequency (log, centred)", "Native language other than English",
+    "Frequency × native language"
+  ),
+  b = f1(sm[, 1]),
+  SE = f1(sm[, 2]),
+  CI = paste0("[", f1(ci_low), ", ", f1(ci_high), "]"),
+  z = f2(sm[, 3]),
+  p = sapply(sm[, 4], function(p) sub("^= ", "", pval(p)))
+)
 ```
 
 **Method** (data analysis):

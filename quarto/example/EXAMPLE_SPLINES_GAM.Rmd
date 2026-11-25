@@ -33,7 +33,8 @@ library(splines)   # bs(), ns(): spline columns for any regression (comes with R
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 ```
@@ -60,8 +61,9 @@ There are `r num(nrow(chicago))` days. `death` is the number of deaths, `temp` t
 Cold may take days to act, for example through infections. So we also compute the mean temperature of the **seven days before** each day:
 
 ```{r lag}
-running   <- as.numeric(stats::filter(chicago$temp, rep(1/7, 7), sides = 1))   # mean of today and the 6 days before
-chicago$week <- c(NA, running[-length(running)])                                # moved by one day: the 7 days before today
+# mean of today and the 6 days before
+running <- as.numeric(stats::filter(chicago$temp, rep(1 / 7, 7), sides = 1))
+chicago$week <- c(NA, running[-length(running)]) # moved by one day: the 7 days before today
 chicago <- subset(chicago, !is.na(week))
 nrow(chicago)
 ```
@@ -77,8 +79,13 @@ pa <- ggplot(chicago, aes(date, death)) +
 pb <- ggplot(chicago, aes(temp, death)) +
   geom_point(size = 0.5, alpha = 0.3, colour = "grey30") +
   coord_cartesian(ylim = c(60, 240)) +
-  labs(title = "Deaths against the temperature of the day", subtitle = "Two days with more than 240 deaths are outside the chart",
-       x = "temperature (°C)", y = "deaths") + theme_bw()
+  labs(
+    title = "Deaths against the temperature of the day",
+    subtitle = "Two days with more than 240 deaths are outside the chart",
+    x = "temperature (°C)",
+    y = "deaths"
+  ) +
+  theme_bw()
 patchwork::wrap_plots(pa, pb, ncol = 1)
 ```
 
@@ -104,7 +111,11 @@ So once the knots are fixed, a spline is a linear model: each $B_j(x)$ is a colu
 grid  <- seq(min(chicago$temp), max(chicago$temp), length.out = 300)
 knots <- seq(-27, 34, length.out = 9)                                  # 8 pieces, for the drawing
 B     <- splineDesign(c(rep(knots[1], 3), knots, rep(knots[9], 3)), grid, outer.ok = TRUE)
-basis <- data.frame(temp = grid, value = as.vector(B), j = factor(rep(seq_len(ncol(B)), each = length(grid))))
+basis <- data.frame(
+  temp = grid,
+  value = as.vector(B),
+  j = factor(rep(seq_len(ncol(B)), each = length(grid)))
+)
 
 ggplot(basis, aes(temp, value, group = j)) +
   geom_line(aes(colour = j), linewidth = 0.8) +
@@ -131,9 +142,10 @@ For B-splines with equally spaced knots, a simple and good $S$ makes **neighbour
 x <- chicago$temp; y <- chicago$death
 n_basis <- 20
 step  <- (max(x) - min(x)) / (n_basis - 3)
-ts    <- seq(min(x) - 3 * step, max(x) + 3 * step, by = step)        # equally spaced knots, beyond the ends too
+# equally spaced knots, beyond the ends too
+ts <- seq(min(x) - 3 * step, max(x) + 3 * step, by = step)
 B_    <- splineDesign(ts, x, outer.ok = TRUE)
-D     <- diff(diag(ncol(B_)), differences = 2)                       # second differences of the coefficients
+D <- diff(diag(ncol(B_)), differences = 2) # second differences of the coefficients
 S     <- crossprod(D)
 fit_by_hand <- function(lambda) {
   A    <- solve(crossprod(B_) + lambda * S)
@@ -160,9 +172,20 @@ By hand we took the $\lambda$ with the smallest GCV (generalised cross-validatio
 ```{r lambda_chart}
 shown <- c(which(lambdas == 10^-2), best, length(lambdas))
 B_grid <- splineDesign(ts, grid, outer.ok = TRUE)
-curves <- do.call(rbind, lapply(shown, function(k)
-  data.frame(temp = grid, death = drop(B_grid %*% trials[[k]]$beta),
-             label = sprintf("λ = %s, edf = %.1f", format(lambdas[k], big.mark = ",", scientific = FALSE, digits = 2), trials[[k]]$edf))))
+curves <- do.call(
+  rbind,
+  lapply(shown, function(k) {
+    data.frame(
+      temp = grid,
+      death = drop(B_grid %*% trials[[k]]$beta),
+      label = sprintf(
+        "λ = %s, edf = %.1f",
+        format(lambdas[k], big.mark = ",", scientific = FALSE, digits = 2),
+        trials[[k]]$edf
+      )
+    )
+  })
+)
 curves$label <- factor(curves$label, levels = unique(curves$label))
 
 ggplot(chicago, aes(temp, death)) +
@@ -170,8 +193,13 @@ ggplot(chicago, aes(temp, death)) +
   geom_line(data = curves, aes(colour = label), linewidth = 1) +
   scale_colour_manual(values = c("#eda100", "#2a78d6", "#eb6834"), name = NULL) +
   coord_cartesian(ylim = c(80, 200)) +
-  labs(title = "Too little penalty, the GCV choice, and too much", x = "temperature (°C)", y = "deaths") +
-  theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Too little penalty, the GCV choice, and too much",
+    x = "temperature (°C)",
+    y = "deaths"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 
 same <- gam(death ~ s(temp, bs = "ps", k = n_basis), data = chicago, method = "GCV.Cp")
 c(edf_by_hand = trials[[best]]$edf, edf_mgcv = sum(same$edf))
@@ -206,7 +234,12 @@ There is no table of coefficients for the curve. It has coefficients, but nobody
 The smooth of `time` follows the slow changes from 1987 to 2000: winters, summers, a changing population. With 14 years and about 10 degrees of freedom a year it can follow the seasons but not single days: `k = 150` gives it room, and REML decides how much to use.
 
 ```{r model_b}
-model_b <- gam(death ~ s(temp) + s(time, k = 150) + dow, family = nb, data = chicago, method = "REML")
+model_b <- gam(
+  death ~ s(temp) + s(time, k = 150) + dow,
+  family = nb,
+  data = chicago,
+  method = "REML"
+)
 summary(model_b)$s.table
 c(deviance_explained = summary(model_b)$dev.expl)
 ```
@@ -214,7 +247,12 @@ c(deviance_explained = summary(model_b)$dev.expl)
 ### Model C: add the week before
 
 ```{r model_c}
-model_c <- gam(death ~ s(temp) + s(week) + s(time, k = 150) + dow, family = nb, data = chicago, method = "REML")
+model_c <- gam(
+  death ~ s(temp) + s(week) + s(time, k = 150) + dow,
+  family = nb,
+  data = chicago,
+  method = "REML"
+)
 summary(model_c)$s.table
 c(deviance_explained = summary(model_c)$dev.expl)
 AIC(model_a, model_b, model_c)
@@ -223,15 +261,25 @@ AIC(model_a, model_b, model_c)
 The AIC falls by `r f1(AIC(model_a) - AIC(model_b))` when the season enters, and by another `r f1(AIC(model_b) - AIC(model_c))` with the week before. What happens to the temperature curve?
 
 ```{r curve_function}
-# the curve of one or more smooths (in % of deaths, relative to the average of the curve), with its 95% band
+# the curve of one or more smooths (in % of deaths, relative to the average of the curve), with its
+# 95% band
 curve_of <- function(model, terms, newdata) {
-  X <- predict(model, newdata, type = "lpmatrix")                         # the columns of the model at these values
-  X[, !grepl(paste(gsub("([()])", "\\\\\\1", terms), collapse = "|"), colnames(X))] <- 0   # keep only these terms
-  fit <- drop(X %*% coef(model)); se <- sqrt(rowSums((X %*% vcov(model)) * X))
-  data.frame(newdata, fit = 100 * (exp(fit) - 1), low = 100 * (exp(fit - 1.96 * se) - 1), high = 100 * (exp(fit + 1.96 * se) - 1))
+  X <- predict(model, newdata, type = "lpmatrix") # the columns of the model at these values
+  # keep only these terms
+  X[, !grepl(paste(gsub("([()])", "\\\\\\1", terms), collapse = "|"), colnames(X))] <- 0
+  fit <- drop(X %*% coef(model))
+  se <- sqrt(rowSums((X %*% vcov(model)) * X))
+  data.frame(
+    newdata,
+    fit = 100 * (exp(fit) - 1),
+    low = 100 * (exp(fit - 1.96 * se) - 1),
+    high = 100 * (exp(fit + 1.96 * se) - 1)
+  )
 }
 at <- data.frame(temp = seq(-22, 32, by = 0.5))
-at$week <- 10; at$time <- 2500; at$dow <- "Wednesday"                     # the other terms are set to zero anyway
+at$week <- 10
+at$time <- 2500
+at$dow <- "Wednesday" # the other terms are set to zero anyway
 three <- rbind(cbind(curve_of(model_a, "s(temp)", at), model = "A: temperature alone"),
                cbind(curve_of(model_b, "s(temp)", at), model = "B: + season and trend"),
                cbind(curve_of(model_c, "s(temp)", at), model = "C: + the week before"))
@@ -262,8 +310,11 @@ ggplot(week, aes(week, fit)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_ribbon(aes(ymin = low, ymax = high), fill = "#1baf7a", alpha = 0.2) +
   geom_line(colour = "#1baf7a", linewidth = 1) +
-  labs(title = "The week before and deaths: s(week) in model C",
-       x = "mean temperature of the seven days before (°C)", y = "deaths, % above or below the average") +
+  labs(
+    title = "The week before and deaths: s(week) in model C",
+    x = "mean temperature of the seven days before (°C)",
+    y = "deaths, % above or below the average"
+  ) +
   theme_bw()
 ```
 
@@ -279,17 +330,30 @@ $$\log \text{RR}(x) = (X_x - X_{\min})\,\hat\beta, \qquad SE = \sqrt{(X_x - X_{\
 
 ```{r combined}
 lasting <- function(model, from = -20, to = 31) {
-  g <- data.frame(temp = seq(from, to, by = 0.5)); g$week <- g$temp; g$time <- 2500; g$dow <- "Wednesday"
+  g <- data.frame(temp = seq(from, to, by = 0.5))
+  g$week <- g$temp
+  g$time <- 2500
+  g$dow <- "Wednesday"
   X <- predict(model, g, type = "lpmatrix")
   X[, !grepl("s\\(temp\\)|s\\(week\\)", colnames(X))] <- 0
-  f <- drop(X %*% coef(model)); i <- which.min(f)
-  d <- sweep(X, 2, X[i, ])                                        # each row minus the row of the minimum
-  logrr <- drop(d %*% coef(model)); se <- sqrt(rowSums((d %*% vcov(model)) * d))
+  f <- drop(X %*% coef(model))
+  i <- which.min(f)
+  d <- sweep(X, 2, X[i, ]) # each row minus the row of the minimum
+  logrr <- drop(d %*% coef(model))
+  se <- sqrt(rowSums((d %*% vcov(model)) * d))
   set.seed(3)
-  draws <- rmvn(2000, coef(model), vcov(model))                   # 2,000 curves that are compatible with the data
+  draws <- rmvn(2000, coef(model), vcov(model)) # 2,000 curves that are compatible with the data
   minima <- g$temp[apply(X %*% t(draws), 2, which.min)]
-  list(curve = data.frame(temp = g$temp, rr = exp(logrr), low = exp(logrr - 1.96 * se), high = exp(logrr + 1.96 * se)),
-       minimum = g$temp[i], interval = quantile(minima, c(0.025, 0.975)))
+  list(
+    curve = data.frame(
+      temp = g$temp,
+      rr = exp(logrr),
+      low = exp(logrr - 1.96 * se),
+      high = exp(logrr + 1.96 * se)
+    ),
+    minimum = g$temp[i],
+    interval = quantile(minima, c(0.025, 0.975))
+  )
 }
 answer <- lasting(model_c)
 rr <- function(t) answer$curve[answer$curve$temp == t, ]
@@ -328,10 +392,21 @@ k.check(model_c)
 `k'` is the limit and `edf` what was used. The smooths of temperature are near their limit of 9, so we double the limit and see if the answer changes:
 
 ```{r larger_k}
-model_k <- gam(death ~ s(temp, k = 20) + s(week, k = 20) + s(time, k = 150) + dow, family = nb, data = chicago, method = "REML")
+model_k <- gam(
+  death ~ s(temp, k = 20) + s(week, k = 20) + s(time, k = 150) + dow,
+  family = nb,
+  data = chicago,
+  method = "REML"
+)
 answer_k <- lasting(model_k)
-rbind(k10 = c(edf = summary(model_c)$s.table[1:2, "edf"], minimum = answer$minimum, AIC = AIC(model_c)),
-      k20 = c(edf = summary(model_k)$s.table[1:2, "edf"], minimum = answer_k$minimum, AIC = AIC(model_k)))
+rbind(
+  k10 = c(edf = summary(model_c)$s.table[1:2, "edf"], minimum = answer$minimum, AIC = AIC(model_c)),
+  k20 = c(
+    edf = summary(model_k)$s.table[1:2, "edf"],
+    minimum = answer_k$minimum,
+    AIC = AIC(model_k)
+  )
+)
 ```
 
 The minimum moves from `r answer$minimum` to `r answer_k$minimum` °C, and the AIC changes by `r f1(AIC(model_k) - AIC(model_c))`. So the simulated interval of section 5 was too narrow: it takes the basis as given. The smooth of `time` fails the test of `k.check` (its *p* value is small), which brings us to the next point.
@@ -339,19 +414,35 @@ The minimum moves from `r answer$minimum` to `r answer_k$minimum` °C, and the A
 ### Autocorrelation
 
 ```{r acf}
-lag1 <- sapply(list(A = model_a, B = model_b, C = model_c), function(m) acf(resid(m, type = "pearson"), plot = FALSE)$acf[2])
+lag1 <- sapply(list(A = model_a, B = model_b, C = model_c), function(m) {
+  acf(resid(m, type = "pearson"), plot = FALSE)$acf[2]
+})
 lag1
 ```
 
 The residuals of neighbouring days correlate at `r f2(lag1[["A"]])` in model A and `r f2(lag1[["C"]])` in model C. What is left is small, but it makes the bands a little too narrow. If `time` were given many more degrees of freedom, it would take it all, and with it part of the effect of temperature. How smooth the season should be is a **judgement** in this kind of study, and the honest thing is to vary it:
 
 ```{r season_sensitivity}
-season <- do.call(rbind, lapply(c(30, 60, 100, 150, 200), function(k) {
-  m <- gam(death ~ s(temp) + s(week) + s(time, k = k) + dow, family = nb, data = chicago, method = "REML")
-  a <- lasting(m)
-  data.frame(k, edf_time = summary(m)$s.table["s(time)", "edf"], minimum = a$minimum,
-             RR_cold = a$curve$rr[a$curve$temp == -15], RR_hot = a$curve$rr[a$curve$temp == 30], AIC = AIC(m))
-}))
+season <- do.call(
+  rbind,
+  lapply(c(30, 60, 100, 150, 200), function(k) {
+    m <- gam(
+      death ~ s(temp) + s(week) + s(time, k = k) + dow,
+      family = nb,
+      data = chicago,
+      method = "REML"
+    )
+    a <- lasting(m)
+    data.frame(
+      k,
+      edf_time = summary(m)$s.table["s(time)", "edf"],
+      minimum = a$minimum,
+      RR_cold = a$curve$rr[a$curve$temp == -15],
+      RR_hot = a$curve$rr[a$curve$temp == 30],
+      AIC = AIC(m)
+    )
+  })
+)
 round(season, 2)
 ```
 
@@ -373,7 +464,12 @@ One week may decide the hot side of the curve. Without the week of 13 to 19 July
 
 ```{r heat_wave}
 no_wave  <- subset(chicago, date < as.Date("1995-07-13") | date > as.Date("1995-07-19"))
-model_w  <- gam(death ~ s(temp) + s(week) + s(time, k = 150) + dow, family = nb, data = no_wave, method = "REML")
+model_w <- gam(
+  death ~ s(temp) + s(week) + s(time, k = 150) + dow,
+  family = nb,
+  data = no_wave,
+  method = "REML"
+)
 answer_w <- lasting(model_w)
 rr_w <- function(t) answer_w$curve[answer_w$curve$temp == t, ]
 rbind(with_the_week = rr(30), without_it = rr_w(30))
@@ -389,8 +485,15 @@ The relative risk at 30 °C falls from `r f2(rr(30)$rr)` to `r f2(rr_w(30)$rr)`.
 Splines are just columns, so they work in any regression function. `ns(x, df)` makes a **natural** cubic spline, which is a straight line beyond the last knots, and is the usual choice when the number of degrees of freedom is fixed in advance:
 
 ```{r natural_spline}
-glm_ns <- glm(death ~ ns(temp, df = 4) + ns(week, df = 4) + ns(time, df = 7 * 14) + dow, family = quasipoisson, data = chicago)
-g <- data.frame(temp = seq(-20, 31, by = 0.5)); g$week <- g$temp; g$time <- 2500; g$dow <- "Wednesday"
+glm_ns <- glm(
+  death ~ ns(temp, df = 4) + ns(week, df = 4) + ns(time, df = 7 * 14) + dow,
+  family = quasipoisson,
+  data = chicago
+)
+g <- data.frame(temp = seq(-20, 31, by = 0.5))
+g$week <- g$temp
+g$time <- 2500
+g$dow <- "Wednesday"
 p_ns <- predict(glm_ns, g)
 g$temp[which.min(p_ns)]
 ```
@@ -433,7 +536,10 @@ apa_table <- data.frame(
   chi    = f1(st[, "Chi.sq"]),
   p      = sapply(st[, "p-value"], function(p) sub("^= ", "", pval(p))))
 rr_table <- data.frame(t = c(-15, -10, 0, 10, 20, 25, 28, 30))
-rr_table <- cbind(rr_table, answer$curve[match(rr_table$t, answer$curve$temp), c("rr", "low", "high")])
+rr_table <- cbind(
+  rr_table,
+  answer$curve[match(rr_table$t, answer$curve$temp), c("rr", "low", "high")]
+)
 ```
 
 **Method** (data analysis):

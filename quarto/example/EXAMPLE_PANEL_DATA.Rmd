@@ -29,7 +29,8 @@ library(ggplot2)
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -43,8 +44,20 @@ The data were collected by Christopher Ruhm (1996) and became famous through the
 
 ```{r download}
 raw  <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/AER/Fatalities.csv")
-road <- with(raw, data.frame(state, year, rate = fatal / pop * 10000, tax = beertax, unemp, income = log(income), miles = miles / 1000,
-                             drink_age = drinkage, strict = as.integer(jail == "yes" | service == "yes")))
+road <- with(
+  raw,
+  data.frame(
+    state,
+    year,
+    rate = fatal / pop * 10000,
+    tax = beertax,
+    unemp,
+    income = log(income),
+    miles = miles / 1000,
+    drink_age = drinkage,
+    strict = as.integer(jail == "yes" | service == "yes")
+  )
+)
 c(rows = nrow(road), states = length(unique(road$state)), years = length(unique(road$year)))
 summary(road[, c("rate", "tax")])
 ```
@@ -62,12 +75,32 @@ some   <- c("ga", "nd", "sc", "nm", "fl", "nc", "wy", "ut")
 ggplot(road, aes(tax, rate)) +
   geom_point(alpha = 0.25, size = 1, colour = "grey40") +
   geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834", linewidth = 1) +
-  geom_line(data = subset(road, state %in% some), aes(group = state), colour = "#2a78d6", linewidth = 0.9) +
-  geom_text(data = subset(road, state %in% some & year == 1988), aes(label = toupper(state)), size = 3, hjust = -0.3, colour = "#2a78d6") +
-  labs(title = "Beer tax and traffic deaths", subtitle = "Orange: all the points together. Blue: the path of eight states from 1982 to 1988",
-       x = "tax on a case of beer (dollars)", y = "deaths per 10,000 people and year") + theme_bw()
+  geom_line(
+    data = subset(road, state %in% some),
+    aes(group = state),
+    colour = "#2a78d6",
+    linewidth = 0.9
+  ) +
+  geom_text(
+    data = subset(road, state %in% some & year == 1988),
+    aes(label = toupper(state)),
+    size = 3,
+    hjust = -0.3,
+    colour = "#2a78d6"
+  ) +
+  labs(
+    title = "Beer tax and traffic deaths",
+    subtitle = "Orange: all the points together. Blue: the path of eight states from 1982 to 1988",
+    x = "tax on a case of beer (dollars)",
+    y = "deaths per 10,000 people and year"
+  ) +
+  theme_bw()
 
-sd_tax <- c(total = sd(road$tax), between_states = sd(means$tax), within_states = sd(road$tax - ave(road$tax, road$state)))
+sd_tax <- c(
+  total = sd(road$tax),
+  between_states = sd(means$tax),
+  within_states = sd(road$tax - ave(road$tax, road$state))
+)
 round(sd_tax, 3)
 ```
 
@@ -129,25 +162,42 @@ With $\theta = 0$ it is the pooled regression, with $\theta = 1$ fixed effects. 
 ```{r fits}
 panel <- pdata.frame(road, index = c("state", "year"))
 pool  <- plm(rate ~ tax, data = panel, model = "pooling")
-betw  <- plm(rate ~ tax, data = panel, model = "between")               # regression of the state means
+betw <- plm(rate ~ tax, data = panel, model = "between") # regression of the state means
 re    <- plm(rate ~ tax, data = panel, model = "random")
 tw    <- plm(rate ~ tax, data = panel, model = "within", effect = "twoways")
 cl    <- function(m) sqrt(vcovHC(m, type = "HC1", cluster = "group")["tax", "tax"])
-tab <- rbind(`pooled OLS`             = c(coef(pool)[["tax"]], sqrt(vcov(pool)["tax", "tax"]), cl(pool)),
-             `between states`         = c(coef(betw)[["tax"]], sqrt(vcov(betw)["tax", "tax"]), NA),
-             `random effects`         = c(coef(re)[["tax"]], sqrt(vcov(re)["tax", "tax"]), cl(re)),
-             `state fixed effects`    = c(coef(fe)[["tax"]], sqrt(vcov(fe)["tax", "tax"]), cl(fe)),
-             `state and year effects` = c(coef(tw)[["tax"]], sqrt(vcov(tw)["tax", "tax"]), cl(tw)))
+tab <- rbind(
+  `pooled OLS` = c(coef(pool)[["tax"]], sqrt(vcov(pool)["tax", "tax"]), cl(pool)),
+  `between states` = c(coef(betw)[["tax"]], sqrt(vcov(betw)["tax", "tax"]), NA),
+  `random effects` = c(coef(re)[["tax"]], sqrt(vcov(re)["tax", "tax"]), cl(re)),
+  `state fixed effects` = c(coef(fe)[["tax"]], sqrt(vcov(fe)["tax", "tax"]), cl(fe)),
+  `state and year effects` = c(coef(tw)[["tax"]], sqrt(vcov(tw)["tax", "tax"]), cl(tw))
+)
 colnames(tab) <- c("b", "SE (usual)", "SE (clustered)")
 round(tab, 3)
 theta <- re$ercomp$theta[[1]]
 ```
 
 ```{r fits_chart}
-td <- data.frame(model = factor(rownames(tab), levels = rev(rownames(tab))), b = tab[, 1], se = ifelse(is.na(tab[, 3]), tab[, 2], tab[, 3]))
-ggplot(td, aes(b, model)) + geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  geom_pointrange(aes(xmin = b - 1.96 * se, xmax = b + 1.96 * se), colour = "#2a78d6", linewidth = 0.9) +
-  labs(title = "The same data, five models", subtitle = "95% intervals (clustered by state where possible)", x = "deaths per 10,000 people for one dollar more tax", y = NULL) + theme_bw()
+td <- data.frame(
+  model = factor(rownames(tab), levels = rev(rownames(tab))),
+  b = tab[, 1],
+  se = ifelse(is.na(tab[, 3]), tab[, 2], tab[, 3])
+)
+ggplot(td, aes(b, model)) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
+  geom_pointrange(
+    aes(xmin = b - 1.96 * se, xmax = b + 1.96 * se),
+    colour = "#2a78d6",
+    linewidth = 0.9
+  ) +
+  labs(
+    title = "The same data, five models",
+    subtitle = "95% intervals (clustered by state where possible)",
+    x = "deaths per 10,000 people for one dollar more tax",
+    y = NULL
+  ) +
+  theme_bw()
 ```
 
 - **Pooled**: +`r f2(tab[1, 1])`. One dollar more tax goes with `r f2(tab[1, 1])` **more** deaths per 10,000 people. The **between** regression, of the 48 state means, gives the same.
@@ -190,7 +240,11 @@ $$\text{rate}_{it} = \beta_W\,(\text{tax}_{it} - \overline{\text{tax}}_i) + \bet
 ```{r mundlak}
 road$tax_mean   <- ave(road$tax, road$state)
 road$tax_within <- road$tax - road$tax_mean
-mundlak <- plm(rate ~ tax_within + tax_mean, data = pdata.frame(road, index = c("state", "year")), model = "random")
+mundlak <- plm(
+  rate ~ tax_within + tax_mean,
+  data = pdata.frame(road, index = c("state", "year")),
+  model = "random"
+)
 round(coef(summary(mundlak))[, 1:2], 3)
 ```
 
@@ -203,8 +257,17 @@ One model, two coefficients. The **within** effect (`r f2(coef(mundlak)[["tax_wi
 Fixed effects protect against everything that is **constant**. They do not protect against what changes at the same time as the tax. The economy does: in good years people drive and drink more.
 
 ```{r controls}
-road$legal <- cut(road$drink_age, c(0, 20, 21, 30), right = FALSE, labels = c("under 20", "20", "21"))
-full <- feols(rate ~ tax + legal + strict + miles + unemp + income | state + year, data = road, cluster = ~ state)
+road$legal <- cut(
+  road$drink_age,
+  c(0, 20, 21, 30),
+  right = FALSE,
+  labels = c("under 20", "20", "21")
+)
+full <- feols(
+  rate ~ tax + legal + strict + miles + unemp + income | state + year,
+  data = road,
+  cluster = ~state
+)
 sf <- coeftable(full); cif <- confint(full)
 round(sf, 3)
 c(n = full$nobs, within_R2 = fitstat(full, "wr2")[[1]])
@@ -220,7 +283,9 @@ With the drinking age, strict punishment, the miles driven, unemployment and inc
 
 ```{r leave_one_out}
 states <- unique(road$state)
-loo <- sapply(states, function(s) coef(feols(rate ~ tax | state + year, data = subset(road, state != s)))[["tax"]])
+loo <- sapply(states, function(s) {
+  coef(feols(rate ~ tax | state + year, data = subset(road, state != s)))[["tax"]]
+})
 range(loo); loo[order(abs(loo - tab[5, 1]), decreasing = TRUE)[1:4]]
 changes <- sapply(split(road$tax, road$state), function(v) max(v) - min(v))
 sum(changes > 0.15)
@@ -237,7 +302,10 @@ Another way to remove $\alpha_i$: subtract the **year before** instead of the me
 fd <- plm(rate ~ tax, data = panel, model = "fd")
 long_diff <- merge(subset(road, year == 1982), subset(road, year == 1988), by = "state")
 ld <- lm(I(rate.y - rate.x) ~ I(tax.y - tax.x), data = long_diff)
-rbind(first_differences = c(coef(fd)[["tax"]], sqrt(vcovHC(fd)["tax", "tax"])), `1988 minus 1982` = coef(summary(ld))[2, 1:2])
+rbind(
+  first_differences = c(coef(fd)[["tax"]], sqrt(vcovHC(fd)["tax", "tax"])),
+  `1988 minus 1982` = coef(summary(ld))[2, 1:2]
+)
 ```
 
 The first differences give `r f2(coef(fd)[["tax"]])`, and the change from 1982 to 1988 gives `r f2(coef(ld)[[2]])`. If the model were exactly right, they would agree. That the answer changes with the length of the difference suggests that the effect takes time, or that the model misses something. A reader should know this.
@@ -251,7 +319,7 @@ The first differences give `r f2(coef(fd)[["tax"]])`, and the change from 1982 t
 - **Predictors that do not change** (region, religion) drop out. If they are your question, use the between part of a Mundlak model, and do not call it an effect.
 - **Cluster** the standard errors by unit. With fewer than 40 or 50 units use a wild bootstrap or another small-sample method.
 - **Lags.** If last year's outcome belongs in the model, the within estimator is biased in short panels (Nickell bias), and special estimators are needed.
-- **Treatments that start at different times** in different units, analysed with two-way fixed effects, can give misleading averages. See the literature on staggered difference-in-differences.
+- **Treatments that start at different times** in different units, analysed with two-way fixed effects, can give misleading averages. See the last part of [difference-in-differences](EXAMPLE_DIFFERENCE_IN_DIFFERENCES.Rmd).
 - **Random effects are not wrong** in general. In experiments, and for predictions of units, they are the right tool. The test is whether the unit effects are related to the predictor.
 - **Same mathematics, other names**: econometrics says *fixed and random effects*, psychology *within-person and between-person*, statistics *group-mean centring*.
 
@@ -262,9 +330,21 @@ The first differences give `r f2(coef(fd)[["tax"]])`, and the change from 1982 t
 A report (APA 7th edition) needs the units and times, the fixed effects, the kind of standard errors, the within variation of the predictor, and the alternatives. The numbers come from the R objects:
 
 ```{r apa_numbers}
-apa_table <- data.frame(Model = c("Pooled OLS", "Random effects", "State fixed effects", "State and year fixed effects", "… with covariates"),
-  b = f2(c(tab[c(1, 3, 4, 5), 1], sf["tax", 1])), SE = f2(c(tab[c(1, 3, 4, 5), 3], sf["tax", 2])),
-  CI = paste0("[", f2(c(tab[c(1, 3, 4, 5), 1] - 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 1])), ", ", f2(c(tab[c(1, 3, 4, 5), 1] + 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 2])), "]"))
+apa_table <- data.frame(
+  Model = c(
+    "Pooled OLS", "Random effects", "State fixed effects", "State and year fixed effects",
+    "… with covariates"
+  ),
+  b = f2(c(tab[c(1, 3, 4, 5), 1], sf["tax", 1])),
+  SE = f2(c(tab[c(1, 3, 4, 5), 3], sf["tax", 2])),
+  CI = paste0(
+    "[",
+    f2(c(tab[c(1, 3, 4, 5), 1] - 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 1])),
+    ", ",
+    f2(c(tab[c(1, 3, 4, 5), 1] + 1.96 * tab[c(1, 3, 4, 5), 3], cif["tax", 2])),
+    "]"
+  )
+)
 ```
 
 **Method** (data analysis):

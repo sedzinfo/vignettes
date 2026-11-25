@@ -32,7 +32,8 @@ library(ggplot2)
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 rmse <- function(a, b) sqrt(mean((a - b)^2))
 ```
 
@@ -44,11 +45,13 @@ The Tecator company recorded the spectra of 240 samples of finely chopped pure m
 
 ```{r download}
 raw  <- read.csv("https://www.openml.org/data/get_csv/52617/tecator.arff")
-meat <- data.frame(water = raw$moisture, fat = raw$fat, protein = raw$protein)      # percent, by chemical analysis
-meat$nir <- as.matrix(raw[, 1:100])                                                 # absorbance at 100 wavelengths
+# percent, by chemical analysis
+meat <- data.frame(water = raw$moisture, fat = raw$fat, protein = raw$protein)
+meat$nir <- as.matrix(raw[, 1:100]) # absorbance at 100 wavelengths
 colnames(meat$nir) <- NULL
 wavelength <- seq(850, 1050, length.out = 100)                                      # nanometres
-meat$set <- rep(c("train", "test", "more fat", "more protein"), c(172, 43, 8, 17))  # the order of the file
+# the order of the file
+meat$set <- rep(c("train", "test", "more fat", "more protein"), c(172, 43, 8, 17))
 table(meat$set)
 round(sapply(split(meat$fat, meat$set), range), 1)
 ```
@@ -73,8 +76,12 @@ Only `r length(unique(content))` different combinations of water, fat and protei
 
 ```{r look}
 shown <- which(train)[order(meat$fat[train])][round(seq(1, sum(train), length.out = 60))]
-spectra <- data.frame(wavelength = rep(wavelength, each = length(shown)), absorbance = as.vector(meat$nir[shown, ]),
-                      sample = rep(shown, 100), fat = rep(meat$fat[shown], 100))
+spectra <- data.frame(
+  wavelength = rep(wavelength, each = length(shown)),
+  absorbance = as.vector(meat$nir[shown, ]),
+  sample = rep(shown, 100),
+  fat = rep(meat$fat[shown], 100)
+)
 ggplot(spectra, aes(wavelength, absorbance, group = sample, colour = fat)) +
   geom_line(linewidth = 0.4) +
   scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
@@ -83,7 +90,10 @@ ggplot(spectra, aes(wavelength, absorbance, group = sample, colour = fat)) +
 
 r_each <- drop(cor(meat$nir[train, ], meat$fat[train]))
 R <- cor(meat$nir[train, ])
-c(lowest_correlation_between_wavelengths = min(R), best_single_correlation_with_fat = r_each[which.max(abs(r_each))])
+c(
+  lowest_correlation_between_wavelengths = min(R),
+  best_single_correlation_with_fat = r_each[which.max(abs(r_each))]
+)
 ```
 
 The curves differ mostly in their **height**: some samples absorb more of everything. That is a physical effect of the sample, and it has little to do with the colour, the fat content. The **shape** changes with fat, especially around 930 nm, where fat has a bump. All the wavelengths correlate at more than `r f2(min(R))` with each other.
@@ -146,7 +156,7 @@ package <- plsr(fat ~ nir, ncomp = 5, data = meat[train, ], method = "oscorespls
 max(abs(by_hand$beta - drop(coef(package, ncomp = 5)))) / max(abs(by_hand$beta))
 ```
 
-Our 15 lines give the coefficients of `plsr()`.
+Our loop gives the coefficients of `plsr()`.
 
 ### Step 4: how many components?
 
@@ -159,16 +169,18 @@ With few components PLS is stiff; with as many as there are predictors it **is**
 The folds are made of **meats**, not of samples, so that twins are never on both sides. We repeat the random division 20 times and average:
 
 ```{r grouped_cv}
-group <- match(content[train], unique(content[train]))            # one number for each different meat
+group <- match(content[train], unique(content[train])) # one number for each different meat
 grouped_cv <- function(Z, y, ncomp, fitter = plsr, reps = 20) {
   set.seed(31)
   rowMeans(replicate(reps, {
     fold <- sample(rep(1:10, length.out = max(group)))[group]
-    err  <- matrix(NA, length(y), ncomp)
+    err <- matrix(NA, length(y), ncomp)
     for (k in 1:10) {
-      d <- data.frame(y = y[fold != k]); d$Z <- Z[fold != k, ]
+      d <- data.frame(y = y[fold != k])
+      d$Z <- Z[fold != k, ]
       m <- fitter(y ~ Z, ncomp = ncomp, data = d)
-      err[fold == k, ] <- drop(predict(m, newdata = list(Z = Z[fold == k, , drop = FALSE]))) - y[fold == k]
+      err[fold == k, ] <- drop(predict(m, newdata = list(Z = Z[fold == k, , drop = FALSE]))) -
+        y[fold == k]
     }
     sqrt(colMeans(err^2))
   }))
@@ -176,11 +188,21 @@ grouped_cv <- function(Z, y, ncomp, fitter = plsr, reps = 20) {
 fat_train <- meat$fat[train]
 cv_pls <- grouped_cv(meat$nir[train, ], fat_train, 25, plsr)
 cv_pcr <- grouped_cv(meat$nir[train, ], fat_train, 25, pcr)
-c(mean_only = sd(fat_train), PLS_best = min(cv_pls), at = which.min(cv_pls), PCR_best = min(cv_pcr), at = which.min(cv_pcr))
+c(
+  mean_only = sd(fat_train),
+  PLS_best = min(cv_pls),
+  at = which.min(cv_pls),
+  PCR_best = min(cv_pcr),
+  at = which.min(cv_pcr)
+)
 ```
 
 ```{r cv_chart}
-cv_data <- data.frame(a = rep(1:25, 2), rmse = c(cv_pls, cv_pcr), method = rep(c("PLS", "PCR"), each = 25))
+cv_data <- data.frame(
+  a = rep(1:25, 2),
+  rmse = c(cv_pls, cv_pcr),
+  method = rep(c("PLS", "PCR"), each = 25)
+)
 ggplot(cv_data, aes(a, rmse, colour = method)) +
   geom_line(linewidth = 0.8) + geom_point(size = 1.8) +
   scale_colour_manual(values = c(PLS = "#2a78d6", PCR = "#eb6834"), name = NULL) +
@@ -208,7 +230,7 @@ $$x_{ij}^{SNV} = \frac{x_{ij} - \bar x_i}{s_i}$$
 
 ```{r preprocessing}
 snv <- function(Z) t(scale(t(Z)))                                  # each row: mean 0, SD 1
-d2  <- function(Z) t(diff(t(Z), differences = 2))                  # second differences along the spectrum
+d2 <- function(Z) t(diff(t(Z), differences = 2)) # second differences along the spectrum
 versions <- list(raw = meat$nir, SNV = snv(meat$nir), `SNV + 2nd derivative` = d2(snv(meat$nir)))
 cv_all <- sapply(versions, function(Z) grouped_cv(Z[train, ], fat_train, 16, plsr))
 round(t(cv_all[c(1:5, 8, 10, 12, 14, 16), ]), 2)
@@ -217,12 +239,20 @@ rbind(components = best_a, error = apply(cv_all, 2, min))
 ```
 
 ```{r snv_chart}
-snv_long <- data.frame(wavelength = rep(wavelength, each = length(shown)), value = as.vector(versions$SNV[shown, ]),
-                       sample = rep(shown, 100), fat = rep(meat$fat[shown], 100))
+snv_long <- data.frame(
+  wavelength = rep(wavelength, each = length(shown)),
+  value = as.vector(versions$SNV[shown, ]),
+  sample = rep(shown, 100),
+  fat = rep(meat$fat[shown], 100)
+)
 ggplot(snv_long, aes(wavelength, value, group = sample, colour = fat)) +
   geom_line(linewidth = 0.4) +
   scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
-  labs(title = "The same 60 spectra after SNV", x = "wavelength (nm)", y = "standardised absorbance") +
+  labs(
+    title = "The same 60 spectra after SNV",
+    x = "wavelength (nm)",
+    y = "standardised absorbance"
+  ) +
   theme_bw()
 ```
 
@@ -243,10 +273,16 @@ We compare the candidates on the 43 test samples, and on those of them that have
 ```{r test_set}
 no_twin <- test & !(content %in% content[train])
 judge <- function(Z, a, fitter = plsr) {
-  d <- data.frame(y = fat_train); d$Z <- Z[train, ]
+  d <- data.frame(y = fat_train)
+  d$Z <- Z[train, ]
   m <- fitter(y ~ Z, ncomp = a, data = d)
   p <- drop(predict(m, newdata = list(Z = Z), ncomp = a))
-  c(components = a, cv = NA, test = rmse(p[test], meat$fat[test]), test_without_twins = rmse(p[no_twin], meat$fat[no_twin]))
+  c(
+    components = a,
+    cv = NA,
+    test = rmse(p[test], meat$fat[test]),
+    test_without_twins = rmse(p[no_twin], meat$fat[no_twin])
+  )
 }
 results <- rbind(`PCR, raw`                  = judge(meat$nir, which.min(cv_pcr), pcr),
                  `PLS, raw`                  = judge(meat$nir, best_a[["raw"]]),
@@ -254,9 +290,23 @@ results <- rbind(`PCR, raw`                  = judge(meat$nir, which.min(cv_pcr)
                  `PLS, SNV, 3 components`    = judge(versions$SNV, 3),
                  `PLS, SNV + 2nd derivative` = judge(versions[[3]], best_a[[3]]),
                  `PLS, SNV + 2nd derivative, 1 component` = judge(versions[[3]], 1))
-results[, "cv"] <- c(min(cv_pcr), min(cv_all[, "raw"]), min(cv_all[, "SNV"]), cv_all[3, "SNV"], min(cv_all[, 3]), cv_all[1, 3])
-results <- rbind(results, `Least squares, raw` = c(100, NA, rmse(predict(fit_ols, meat[test, ]), meat$fat[test]),
-                                                   rmse(predict(fit_ols, meat[no_twin, ]), meat$fat[no_twin])))
+results[, "cv"] <- c(
+  min(cv_pcr),
+  min(cv_all[, "raw"]),
+  min(cv_all[, "SNV"]),
+  cv_all[3, "SNV"],
+  min(cv_all[, 3]),
+  cv_all[1, 3]
+)
+results <- rbind(
+  results,
+  `Least squares, raw` = c(
+    100,
+    NA,
+    rmse(predict(fit_ols, meat[test, ]), meat$fat[test]),
+    rmse(predict(fit_ols, meat[no_twin, ]), meat$fat[no_twin])
+  )
+)
 round(results, 2)
 c(test_samples = sum(test), without_twins = sum(no_twin))
 ```
@@ -272,13 +322,22 @@ ggplot(subset(meat, set %in% c("train", "test")), aes(predicted, fat, colour = s
   geom_abline(colour = "grey60") +
   geom_point(alpha = 0.7, size = 1.8) +
   scale_colour_manual(values = c(train = "grey60", test = "#eb6834"), name = NULL) +
-  labs(title = "Measured against predicted fat: SNV, 3 components", x = "predicted (%)", y = "measured (%)") +
-  theme_bw() + theme(legend.position = "bottom")
-curvature <- summary(lm(fat - predicted ~ predicted + I(predicted^2), data = meat, subset = train))$coefficients[3, ]
+  labs(
+    title = "Measured against predicted fat: SNV, 3 components",
+    x = "predicted (%)",
+    y = "measured (%)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+curvature <- summary(lm(
+  fat - predicted ~ predicted + I(predicted^2),
+  data = meat,
+  subset = train
+))$coefficients[3, ]
 curvature
 ```
 
-The points follow the line, with a slight **bend**: the model predicts too little in the middle and too much at the ends (the quadratic term of the residuals has *t* = `r f1(curvature[["t value"]])`). The relation between absorbance and concentration is not exactly linear, and a linear method can only approximate it. This is what nonlinear methods, such as neural networks, gain on these data (Borggaard & Thodberg, 1992).
+The points follow the line, with a slight **bend**: the model predicts too little in the middle and too much at the ends (the quadratic term of the residuals has *t* = `r f1(curvature[["t value"]])`). The relation between absorbance and concentration is not exactly linear, and a linear method can only approximate it. This is what nonlinear methods, such as [neural networks](EXAMPLE_NEURAL_NETWORK.Rmd), gain on these data (Borggaard & Thodberg, 1992).
 
 ---
 
@@ -292,10 +351,15 @@ names(scores_data)[1:3] <- c("t1", "t2", "t3")
 ggplot(scores_data, aes(t1, t2, colour = fat)) +
   geom_point(size = 2) +
   scale_colour_viridis_c(option = "C", end = 0.92, name = "fat (%)") +
-  labs(title = "The training samples on the first two components", x = "component 1", y = "component 2") +
+  labs(
+    title = "The training samples on the first two components",
+    x = "component 1",
+    y = "component 2"
+  ) +
   theme_bw()
 round(explvar(model), 1)             # % of the variance of the predictors, by component
-round(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val), 1)     # % of the variance of fat, cumulative
+# % of the variance of fat, cumulative
+round(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val), 1)
 ```
 
 The first component has `r f1(explvar(model)[[1]])`% of the variance of the transformed spectra, and the three together explain `r f1(100 * drop(R2(model, estimate = "train", intercept = FALSE)$val)[3])`% of the variance of fat.
@@ -316,9 +380,13 @@ pattern <- data.frame(wavelength = rep(wavelength, 2),
                       value = c(drop(coef(model, ncomp = 3)), vip(model, 3)),
                       what = rep(c("coefficient", "VIP"), each = 100))
 ggplot(pattern, aes(wavelength, value)) +
-  geom_hline(data = data.frame(what = c("coefficient", "VIP"), y = c(0, 1)), aes(yintercept = y), colour = "grey60") +
+  geom_hline(
+    data = data.frame(what = c("coefficient", "VIP"), y = c(0, 1)),
+    aes(yintercept = y),
+    colour = "grey60"
+  ) +
   geom_line(colour = "#2a78d6", linewidth = 0.9) +
-  facet_wrap(~ what, ncol = 1, scales = "free_y") +
+  facet_wrap(~what, ncol = 1, scales = "free_y") +
   labs(title = "Coefficients and importance of the wavelengths", x = "wavelength (nm)", y = NULL) +
   theme_bw()
 top <- wavelength[which.max(vip(model, 3))]
@@ -339,12 +407,21 @@ boot <- replicate(500, {
   d <- data.frame(y = fat_train[pick]); d$Z <- versions$SNV[train, ][pick, ]
   drop(coef(plsr(y ~ Z, ncomp = 3, data = d), ncomp = 3))
 })
-band <- data.frame(wavelength, est = drop(coef(model, ncomp = 3)), low = apply(boot, 1, quantile, 0.025), high = apply(boot, 1, quantile, 0.975))
+band <- data.frame(
+  wavelength,
+  est = drop(coef(model, ncomp = 3)),
+  low = apply(boot, 1, quantile, 0.025),
+  high = apply(boot, 1, quantile, 0.975)
+)
 ggplot(band, aes(wavelength, est)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_ribbon(aes(ymin = low, ymax = high), fill = "#2a78d6", alpha = 0.25) +
   geom_line(colour = "#2a78d6", linewidth = 0.9) +
-  labs(title = "Coefficients with 95% bootstrap intervals", x = "wavelength (nm)", y = "% fat per unit of standardised absorbance") +
+  labs(
+    title = "Coefficients with 95% bootstrap intervals",
+    x = "wavelength (nm)",
+    y = "% fat per unit of standardised absorbance"
+  ) +
   theme_bw()
 ```
 
@@ -357,12 +434,27 @@ PLS can have several outcomes. The weights are then those that maximise the cova
 ```{r pls2}
 contents <- as.matrix(meat[, c("water", "fat", "protein")])
 round(cor(contents[train, ]), 2)
-many <- data.frame(row.names = seq_len(sum(train))); many$Y <- contents[train, ]; many$Z <- versions$SNV[train, ]
+many <- data.frame(row.names = seq_len(sum(train)))
+many$Y <- contents[train, ]
+many$Z <- versions$SNV[train, ]
 pls2 <- plsr(Y ~ Z, ncomp = 8, data = many)
-one_by_one <- sapply(1:3, function(j) { d <- data.frame(y = contents[train, j]); d$Z <- versions$SNV[train, ]
-  rmse(drop(predict(plsr(y ~ Z, ncomp = 8, data = d), newdata = list(Z = versions$SNV[no_twin, ]), ncomp = 8)), contents[no_twin, j]) })
+one_by_one <- sapply(1:3, function(j) {
+  d <- data.frame(y = contents[train, j])
+  d$Z <- versions$SNV[train, ]
+  rmse(
+    drop(predict(
+      plsr(y ~ Z, ncomp = 8, data = d),
+      newdata = list(Z = versions$SNV[no_twin, ]),
+      ncomp = 8
+    )),
+    contents[no_twin, j]
+  )
+})
 together <- predict(pls2, newdata = list(Z = versions$SNV[no_twin, ]), ncomp = 8)[, , 1]
-compare <- rbind(separate = one_by_one, together = sapply(1:3, function(j) rmse(together[, j], contents[no_twin, j])))
+compare <- rbind(
+  separate = one_by_one,
+  together = sapply(1:3, function(j) rmse(together[, j], contents[no_twin, j]))
+)
 colnames(compare) <- colnames(contents)
 round(compare, 2)
 ```
@@ -382,11 +474,20 @@ ggplot(outside, aes(predicted, fat, colour = set)) +
   geom_point(size = 2.4) +
   geom_vline(xintercept = max(fat_train), linetype = "dashed", colour = "grey50") +
   scale_colour_manual(values = c(`more fat` = "#eb6834", `more protein` = "#2a78d6"), name = NULL) +
-  labs(title = "Samples outside the range of the training set",
-       subtitle = "Dashed line: the largest fat content in the training set", x = "predicted fat (%)", y = "measured fat (%)") +
-  theme_bw() + theme(legend.position = "bottom")
-out_error <- tapply(seq_len(nrow(outside)), outside$set, function(i) c(rmse = rmse(outside$predicted[i], outside$fat[i]),
-                                                                        bias = mean(outside$predicted[i] - outside$fat[i])))
+  labs(
+    title = "Samples outside the range of the training set",
+    subtitle = "Dashed line: the largest fat content in the training set",
+    x = "predicted fat (%)",
+    y = "measured fat (%)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+out_error <- tapply(seq_len(nrow(outside)), outside$set, function(i) {
+  c(
+    rmse = rmse(outside$predicted[i], outside$fat[i]),
+    bias = mean(outside$predicted[i] - outside$fat[i])
+  )
+})
 do.call(rbind, out_error)
 ```
 
@@ -418,7 +519,9 @@ apa_table <- data.frame(
   cv    = ifelse(is.na(results[, "cv"]), "—", f2(results[, "cv"])),
   test  = f2(results[, "test"]),
   twin  = f2(results[, "test_without_twins"]))
-r2_test <- 1 - sum((meat$fat[no_twin] - meat$predicted[no_twin])^2) / sum((meat$fat[no_twin] - mean(fat_train))^2)
+r2_test <- 1 -
+  sum((meat$fat[no_twin] - meat$predicted[no_twin])^2) /
+    sum((meat$fat[no_twin] - mean(fat_train))^2)
 ```
 
 **Method** (data analysis):

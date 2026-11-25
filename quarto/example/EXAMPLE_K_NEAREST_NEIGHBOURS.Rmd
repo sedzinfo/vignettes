@@ -44,10 +44,23 @@ The county around Seattle (King County, Washington) publishes every sale of a ho
 
 ```{r download}
 raw <- read.csv("https://www.openml.org/data/get_csv/21578898/house_sales.arff")
-house <- with(raw, data.frame(
-  price = price, logp = log10(price), date = as.Date(substr(date, 1, 8), "%Y%m%d"),
-  east = (long + 122.2) * 111.32 * cos(47.56 * pi / 180), north = (lat - 47.56) * 111.32,        # kilometres from a point in the middle
-  lsize = log2(sqft_living), grade, built = yr_built, llot = log2(sqft_lot), view, water = as.integer(waterfront), zip = factor(zipcode)))
+house <- with(
+  raw,
+  data.frame(
+    price = price,
+    logp = log10(price),
+    date = as.Date(substr(date, 1, 8), "%Y%m%d"),
+    east = (long + 122.2) * 111.32 * cos(47.56 * pi / 180),
+    north = (lat - 47.56) * 111.32, # kilometres from a point in the middle
+    lsize = log2(sqft_living),
+    grade,
+    built = yr_built,
+    llot = log2(sqft_lot),
+    view,
+    water = as.integer(waterfront),
+    zip = factor(zipcode)
+  )
+)
 nrow(house)
 range(house$date)
 quantile(house$price, c(0.01, 0.25, 0.5, 0.75, 0.99))
@@ -69,9 +82,19 @@ c(train = nrow(train), validation = nrow(valid), test = nrow(test))
 ## 2. Look at the data
 
 ```{r look, fig.height = 6}
-ggplot(train, aes(east, north, colour = logp)) + geom_point(size = 0.5, alpha = 0.7) + coord_fixed() +
-  scale_colour_viridis_c(option = "C", name = "price", breaks = log10(c(1e5, 2.5e5, 5e5, 1e6, 2.5e6)), labels = c("100k", "250k", "500k", "1M", "2.5M"), limits = log10(c(1.5e5, 2.5e6)), oob = scales::squish) +
-  labs(title = "House prices around Seattle", x = "km east", y = "km north") + theme_bw()
+ggplot(train, aes(east, north, colour = logp)) +
+  geom_point(size = 0.5, alpha = 0.7) +
+  coord_fixed() +
+  scale_colour_viridis_c(
+    option = "C",
+    name = "price",
+    breaks = log10(c(1e5, 2.5e5, 5e5, 1e6, 2.5e6)),
+    labels = c("100k", "250k", "500k", "1M", "2.5M"),
+    limits = log10(c(1.5e5, 2.5e6)),
+    oob = scales::squish
+  ) +
+  labs(title = "House prices around Seattle", x = "km east", y = "km north") +
+  theme_bw()
 ```
 
 Place matters, and not in a way that a straight line could follow: there are expensive shores, cheap corridors and sharp borders.
@@ -98,10 +121,16 @@ By hand, for the first house of the validation set, with place and size only:
 
 ```{r by_hand}
 new <- valid[1, ]
-d   <- sqrt((train$east - new$east)^2 + (train$north - new$north)^2 + (2 * (train$lsize - new$lsize))^2)    # a doubling of the size counts as 2 km
+d <- sqrt(
+  (train$east - new$east)^2 + (train$north - new$north)^2 + (2 * (train$lsize - new$lsize))^2
+) # a doubling of the size counts as 2 km
 near <- order(d)[1:5]
-cbind(distance = round(d[near], 2), km = round(sqrt((train$east[near] - new$east)^2 + (train$north[near] - new$north)^2), 2),
-      train[near, c("price", "built", "grade")], size = round(2^train$lsize[near]))
+cbind(
+  distance = round(d[near], 2),
+  km = round(sqrt((train$east[near] - new$east)^2 + (train$north[near] - new$north)^2), 2),
+  train[near, c("price", "built", "grade")],
+  size = round(2^train$lsize[near])
+)
 c(predicted = 10^mean(train$logp[near]), sold_for = new$price)
 ```
 
@@ -122,22 +151,46 @@ Try three definitions, each with several $k$, on the validation sales:
 ```{r scaling}
 vars <- c("east", "north", "lsize", "grade", "built", "llot", "view", "water")
 centre <- colMeans(train[, vars]); spread <- apply(train[, vars], 2, sd)
-Z  <- function(d, w = rep(1, length(vars))) sweep(sweep(sweep(as.matrix(d[, vars]), 2, centre), 2, spread, "/"), 2, w, "*")      # standardise with the training data, then weight
+Z <- function(d, w = rep(1, length(vars))) {
+  sweep(sweep(sweep(as.matrix(d[, vars]), 2, centre), 2, spread, "/"), 2, w, "*")
+} # standardise with the training data, then weight
 knn <- function(Ztr, Zte, k, y = train$logp) knn.reg(Ztr, Zte, y, k = k)$pred
 ks <- c(1, 2, 3, 5, 8, 12, 20, 35, 60, 100)
 place <- c("east", "north")
 curves <- rbind(
-  data.frame(k = ks, rmse = sapply(ks, function(k) rmse(knn(train[, place], valid[, place], k), valid$logp)), what = "place only"),
-  data.frame(k = ks, rmse = sapply(ks, function(k) rmse(knn(train[, vars], valid[, vars], k), valid$logp)), what = "all predictors, raw units"),
-  data.frame(k = ks, rmse = sapply(ks, function(k) rmse(knn(Z(train), Z(valid), k), valid$logp)), what = "all predictors, standardised"))
+  data.frame(
+    k = ks,
+    rmse = sapply(ks, function(k) rmse(knn(train[, place], valid[, place], k), valid$logp)),
+    what = "place only"
+  ),
+  data.frame(
+    k = ks,
+    rmse = sapply(ks, function(k) rmse(knn(train[, vars], valid[, vars], k), valid$logp)),
+    what = "all predictors, raw units"
+  ),
+  data.frame(
+    k = ks,
+    rmse = sapply(ks, function(k) rmse(knn(Z(train), Z(valid), k), valid$logp)),
+    what = "all predictors, standardised"
+  )
+)
 best <- do.call(rbind, lapply(split(curves, curves$what), function(d) d[which.min(d$rmse), ]))
 best
 ```
 
 ```{r k_chart}
-ggplot(curves, aes(k, rmse, colour = what)) + geom_line(linewidth = 0.9) + geom_point(size = 2) + scale_x_log10(breaks = ks) +
+ggplot(curves, aes(k, rmse, colour = what)) +
+  geom_line(linewidth = 0.9) +
+  geom_point(size = 2) +
+  scale_x_log10(breaks = ks) +
   scale_colour_manual(values = c("#eda100", "#2a78d6", "#eb6834"), name = NULL) +
-  labs(title = "Error on later sales, by the number of neighbours", x = "k (log scale)", y = "RMSE of log10(price)") + theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Error on later sales, by the number of neighbours",
+    x = "k (log scale)",
+    y = "RMSE of log10(price)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 - The classic **U-shape**: too few neighbours are noisy, too many are not similar.
@@ -153,8 +206,23 @@ But why the **same** weight? Place matters more than the size of the garden. We 
 w <- setNames(rep(1, length(vars)), vars)
 score <- function(w, k = 8) rmse(knn(Z(train, w), Z(valid, w), k), valid$logp)
 current <- score(w); history <- data.frame(step = 0, changed = "start", rmse = current)
-for (round in 1:4) for (v in vars) for (f in c(2, 0.5)) {
-  repeat { trial <- w; trial[v] <- trial[v] * f; s <- score(trial); if (s < current - 1e-5) { w <- trial; current <- s; history <- rbind(history, data.frame(step = nrow(history), changed = v, rmse = s)) } else break }
+for (round in 1:4) {
+  for (v in vars) {
+    for (f in c(2, 0.5)) {
+      repeat {
+        trial <- w
+        trial[v] <- trial[v] * f
+        s <- score(trial)
+        if (s < current - 1e-5) {
+          w <- trial
+          current <- s
+          history <- rbind(history, data.frame(step = nrow(history), changed = v, rmse = s))
+        } else {
+          break
+        }
+      }
+    }
+  }
 }
 w
 k_w <- ks[which.min(sapply(ks, function(k) score(w, k)))]
@@ -174,9 +242,19 @@ Zt <- Z(train, w); Zn <- Z(test, w)
 one <- 3
 nn <- get.knnx(Zt, Zn[one, , drop = FALSE], k = k_w)
 comp <- train[nn$nn.index[1, ], ]
-show <- rbind(cbind(what = "to be valued", test[one, ]), cbind(what = paste("neighbour", seq_len(k_w)), comp))
-data.frame(what = show$what, price = f0(show$price), sqft = round(2^show$lsize), grade = show$grade, built = show$built,
-           km = round(sqrt((show$east - test$east[one])^2 + (show$north - test$north[one])^2), 1), row.names = NULL)
+show <- rbind(
+  cbind(what = "to be valued", test[one, ]),
+  cbind(what = paste("neighbour", seq_len(k_w)), comp)
+)
+data.frame(
+  what = show$what,
+  price = f0(show$price),
+  sqft = round(2^show$lsize),
+  grade = show$grade,
+  built = show$built,
+  km = round(sqrt((show$east - test$east[one])^2 + (show$north - test$north[one])^2), 1),
+  row.names = NULL
+)
 c(predicted = 10^mean(comp$logp), sold_for = test$price[one])
 ```
 
@@ -187,34 +265,77 @@ A person who doubts the value of `r f0(10^mean(comp$logp))` dollars can look at 
 ## 6. Against other methods
 
 ```{r compare}
-learn <- rbind(train, valid)                                                               # the test may use everything before April
+learn <- rbind(train, valid) # the test may use everything before April
 Zl <- sweep(sweep(sweep(as.matrix(learn[, vars]), 2, centre), 2, spread, "/"), 2, w, "*")
 knn_pred <- knn.reg(Zl, Zn, learn$logp, k = k_w)$pred
 lin  <- lm(logp ~ east + north + lsize + grade + built + llot + view + water, data = learn)
-linz <- lm(logp ~ zip + lsize + grade + built + llot + view + water, data = learn)          # each postal code its own level
-gm   <- bam(logp ~ s(east, north, k = 150) + s(lsize, k = 6) + s(grade, k = 6) + s(built, k = 8) + s(llot, k = 6) + view + water, data = learn)
+# each postal code its own level
+linz <- lm(logp ~ zip + lsize + grade + built + llot + view + water, data = learn)
+gm <- bam(
+  logp ~ s(east, north, k = 150) +
+    s(lsize, k = 6) +
+    s(grade, k = 6) +
+    s(built, k = 8) +
+    s(llot, k = 6) +
+    view +
+    water,
+  data = learn
+)
 set.seed(161)
-rf   <- ranger(logp ~ east + north + lsize + grade + built + llot + view + water, data = learn, num.trees = 500)
+rf <- ranger(
+  logp ~ east + north + lsize + grade + built + llot + view + water,
+  data = learn,
+  num.trees = 500
+)
 # a regression for the house, and kNN for the place: the mean residual of the nearest houses
 res_learn <- resid(lin)
 local <- knn.reg(learn[, place], test[, place], res_learn, k = 15)$pred
-preds <- list(`Linear regression` = predict(lin, test), `Regression + postal codes` = predict(linz, test), `kNN, standardised` = knn.reg(Z(learn), Z(test), learn$logp, k = best["all predictors, standardised", "k"])$pred,
-              `kNN, weighted` = knn_pred, `GAM with a map` = as.numeric(predict(gm, test)), `Random forest` = predict(rf, test)$predictions, `Regression + kNN of its residuals` = predict(lin, test) + local)
-results <- data.frame(model = names(preds), rmse = sapply(preds, rmse, b = test$logp), median_error = sapply(preds, function(p) median(abs(10^(p - test$logp) - 1))), row.names = NULL)
+preds <- list(
+  `Linear regression` = predict(lin, test),
+  `Regression + postal codes` = predict(linz, test),
+  `kNN, standardised` = knn.reg(
+    Z(learn),
+    Z(test),
+    learn$logp,
+    k = best["all predictors, standardised", "k"]
+  )$pred,
+  `kNN, weighted` = knn_pred,
+  `GAM with a map` = as.numeric(predict(gm, test)),
+  `Random forest` = predict(rf, test)$predictions,
+  `Regression + kNN of its residuals` = predict(lin, test) + local
+)
+results <- data.frame(
+  model = names(preds),
+  rmse = sapply(preds, rmse, b = test$logp),
+  median_error = sapply(preds, function(p) median(abs(10^(p - test$logp) - 1))),
+  row.names = NULL
+)
 results <- results[order(results$rmse), ]
-print(transform(results, rmse = round(rmse, 4), median_error = round(median_error, 3)), row.names = FALSE)
+print(
+  transform(results, rmse = round(rmse, 4), median_error = round(median_error, 3)),
+  row.names = FALSE
+)
 get <- function(m, col = "rmse") results[results$model == m, col]
 ```
 
 ```{r compare_chart}
 results$model <- factor(results$model, levels = rev(results$model))
-ggplot(results, aes(median_error, model)) + geom_segment(aes(x = 0, xend = median_error, yend = model), colour = "grey75") + geom_point(size = 3, colour = "#2a78d6") +
-  scale_x_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) + labs(title = "Median error on the sales of April and May 2015", x = "half of the predictions are closer than this", y = NULL) + theme_bw() + theme(plot.title.position = "plot")
+ggplot(results, aes(median_error, model)) +
+  geom_segment(aes(x = 0, xend = median_error, yend = model), colour = "grey75") +
+  geom_point(size = 3, colour = "#2a78d6") +
+  scale_x_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
+  labs(
+    title = "Median error on the sales of April and May 2015",
+    x = "half of the predictions are closer than this",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(plot.title.position = "plot")
 ```
 
 - Plain **linear regression** misses half of the houses by more than `r pct(get("Linear regression", "median_error"))`; the weighted **kNN** by more than `r pct(get("kNN, weighted", "median_error"))`. Knowing the neighbours is worth a lot.
 - A regression with **postal codes** comes close to kNN (RMSE `r f3(get("Regression + postal codes"))` against `r f3(get("kNN, weighted"))`). It uses a simple formula for what is simple (size, grade, age), and the neighbourhood for the rest.
-- The same idea without postal codes: a **regression for the house and kNN for the place**, that is, the linear regression plus the average residual of the 15 nearest houses. Two lines of code take the RMSE of the regression from `r f3(get("Linear regression"))` to `r f3(get("Regression + kNN of its residuals"))`. It does not reach the weighted kNN, because the formula of the regression is too simple for the rest, too.
+- The same idea without postal codes: a **regression for the house and kNN for the place**, that is, the linear regression plus the average residual of the 15 nearest houses. A few lines of code take the RMSE of the regression from `r f3(get("Linear regression"))` to `r f3(get("Regression + kNN of its residuals"))`. It does not reach the weighted kNN, because the formula of the regression is too simple for the rest, too.
 - The **GAM** with a smooth map and smooth curves has the smallest error, `r f3(get("GAM with a map"))`, and the **random forest** has `r f3(get("Random forest"))`.
 
 Where kNN loses, it is because it cannot learn that a doubling of the size adds a certain share of the price **everywhere**. It must find, for every place and grade, houses of the right size. The GAM adds up one map and one curve per predictor, and learns each of them from all the sales.
@@ -228,22 +349,33 @@ In many dimensions nothing is near. Add predictors that mean nothing (random num
 ```{r curse}
 set.seed(162)
 extra <- c(0, 1, 2, 4, 8, 16)
-noise <- matrix(rnorm((nrow(learn) + nrow(test)) * max(extra)), ncol = max(extra), dimnames = list(NULL, paste0("noise", seq_len(max(extra)))))
+noise <- matrix(
+  rnorm((nrow(learn) + nrow(test)) * max(extra)),
+  ncol = max(extra),
+  dimnames = list(NULL, paste0("noise", seq_len(max(extra))))
+)
 in_learn <- seq_len(nrow(learn)); in_test <- nrow(learn) + seq_len(nrow(test))
 curse <- sapply(extra, function(m) {
-  A <- cbind(Z(learn), noise[in_learn, seq_len(m), drop = FALSE]); B <- cbind(Z(test), noise[in_test, seq_len(m), drop = FALSE])
+  A <- cbind(Z(learn), noise[in_learn, seq_len(m), drop = FALSE])
+  B <- cbind(Z(test), noise[in_test, seq_len(m), drop = FALSE])
   rmse(knn.reg(A, B, learn$logp, k = 8)$pred, test$logp)
 })
 lm_noise <- sapply(extra, function(m) {
-  L <- cbind(learn[, c("logp", vars)], noise[in_learn, seq_len(m), drop = FALSE]); Te <- cbind(test[, vars], noise[in_test, seq_len(m), drop = FALSE])
+  L <- cbind(learn[, c("logp", vars)], noise[in_learn, seq_len(m), drop = FALSE])
+  Te <- cbind(test[, vars], noise[in_test, seq_len(m), drop = FALSE])
   rmse(predict(lm(logp ~ ., data = L), Te), test$logp)
 })
 rbind(noise_predictors = extra, kNN = round(curse, 4), linear_regression = round(lm_noise, 4))
-dist_ratio <- sapply(c(2, 8, 24), function(p) { set.seed(163); u <- matrix(runif(2000 * p), ncol = p); d <- sqrt(colSums((t(u[-1, ]) - u[1, ])^2)); min(d) / max(d) })
+dist_ratio <- sapply(c(2, 8, 24), function(p) {
+  set.seed(163)
+  u <- matrix(runif(2000 * p), ncol = p)
+  d <- sqrt(colSums((t(u[-1, ]) - u[1, ])^2))
+  min(d) / max(d)
+})
 setNames(round(dist_ratio, 2), paste(c(2, 8, 24), "dimensions"))
 ```
 
-With 16 useless predictors the error of kNN goes from `r f3(curse[1])` to `r f3(curse[6])`. Linear regression hardly notices (`r f3(lm_noise[1])` and `r f3(lm_noise[6])`): it gives them coefficients near zero. kNN cannot ignore a predictor; each one has its weight in the distance. The second line shows the geometry: among 2,000 random points, the nearest is at `r pct(dist_ratio[1])` of the distance of the farthest in 2 dimensions, and at `r pct(dist_ratio[3])` in 24. "Nearest" loses its meaning (Beyer et al., 1999).
+With 16 useless predictors the error of kNN goes from `r f3(curse[1])` to `r f3(curse[6])`. Linear regression hardly notices (`r f3(lm_noise[1])` and `r f3(lm_noise[6])`): it gives them coefficients near zero. kNN cannot ignore a predictor; each one has its weight in the distance. The second output shows the geometry: among 2,000 random points, the nearest is at `r pct(dist_ratio[1])` of the distance of the farthest in 2 dimensions, and at `r pct(dist_ratio[3])` in 24. "Nearest" loses its meaning (Beyer et al., 1999).
 
 ---
 
@@ -256,7 +388,12 @@ err   <- abs(knn(Z(train, w), Z(valid, w), k_w) - valid$logp)
 q90   <- sort(err)[ceiling(0.9 * (length(err) + 1))]
 inside <- abs(knn_pred - test$logp) <= q90
 c(half_width_log10 = q90, factor = 10^q90, coverage_in_test = mean(inside))
-cheap <- cut(knn_pred, quantile(knn_pred, 0:4 / 4), include.lowest = TRUE, labels = c("cheapest quarter", "2", "3", "most expensive quarter"))
+cheap <- cut(
+  knn_pred,
+  quantile(knn_pred, 0:4 / 4),
+  include.lowest = TRUE,
+  labels = c("cheapest quarter", "2", "3", "most expensive quarter")
+)
 round(tapply(inside, cheap, mean), 3)
 ```
 
@@ -283,7 +420,11 @@ A report (APA 7th edition) needs the predictors and their scaling, the distance 
 
 ```{r apa_numbers}
 r <- results[order(results$rmse), ]
-apa_table <- data.frame(Model = as.character(r$model), rmse = f3(r$rmse), med = pct(r$median_error, 1))
+apa_table <- data.frame(
+  Model = as.character(r$model),
+  rmse = f3(r$rmse),
+  med = pct(r$median_error, 1)
+)
 ```
 
 **Method** (data analysis):

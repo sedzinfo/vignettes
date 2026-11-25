@@ -31,7 +31,8 @@ arm_colours <- c(itraconazole = "#eb6834", terbinafine = "#2a78d6")
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))   # no leading zero
+# no leading zero
+nz <- function(x, d = 2) sub("^(-?)0", "\\1", formatC(x, format = "f", digits = d))
 pval <- function(p) if (p < .001) "< .001" else paste("=", nz(p, 3))
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
@@ -45,11 +46,24 @@ The data are in the R package `HSAUR2`. We read them from its copy on GitHub:
 
 ```{r download}
 path <- tempfile(fileext = ".rda")
-download.file("https://raw.githubusercontent.com/cran/HSAUR2/master/data/toenail.rda", path, mode = "wb", quiet = TRUE)
+download.file(
+  "https://raw.githubusercontent.com/cran/HSAUR2/master/data/toenail.rda",
+  path,
+  mode = "wb",
+  quiet = TRUE
+)
 load(path)
-nail <- with(toenail, data.frame(id = as.integer(patientID), bad = as.integer(outcome == "moderate or severe"),
-                                 terb = as.integer(treatment == "terbinafine"), month = time, visit = visit))
-nail <- nail[order(nail$id, nail$visit), ]                           # geeglm() needs the rows of a cluster together
+nail <- with(
+  toenail,
+  data.frame(
+    id = as.integer(patientID),
+    bad = as.integer(outcome == "moderate or severe"),
+    terb = as.integer(treatment == "terbinafine"),
+    month = time,
+    visit = visit
+  )
+)
+nail <- nail[order(nail$id, nail$visit), ] # geeglm() needs the rows of a cluster together
 c(observations = nrow(nail), patients = length(unique(nail$id)))
 table(visits_per_patient = table(nail$id))
 ```
@@ -63,13 +77,27 @@ table(visits_per_patient = table(nail$id))
 ```{r look}
 prop <- aggregate(cbind(bad, month) ~ visit + terb, data = nail, FUN = mean)
 prop$n <- aggregate(bad ~ visit + terb, data = nail, FUN = length)$bad
-prop$drug <- ifelse(prop$terb == 1, "terbinafine", "itraconazole"); prop$se <- sqrt(prop$bad * (1 - prop$bad) / prop$n)
-ggplot(prop, aes(month, bad, colour = drug)) + geom_line(linewidth = 0.9) +
+prop$drug <- ifelse(prop$terb == 1, "terbinafine", "itraconazole")
+prop$se <- sqrt(prop$bad * (1 - prop$bad) / prop$n)
+ggplot(prop, aes(month, bad, colour = drug)) +
+  geom_line(linewidth = 0.9) +
   geom_pointrange(aes(ymin = pmax(bad - 1.96 * se, 0), ymax = bad + 1.96 * se)) +
-  scale_colour_manual(values = arm_colours, name = NULL) + scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
-  labs(title = "Share of patients with a badly affected nail", x = "months since the start", y = NULL) + theme_bw() + theme(legend.position = "bottom")
+  scale_colour_manual(values = arm_colours, name = NULL) +
+  scale_y_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
+  labs(
+    title = "Share of patients with a badly affected nail",
+    x = "months since the start",
+    y = NULL
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 
-wide <- reshape(nail[, c("id", "visit", "bad")], idvar = "id", timevar = "visit", direction = "wide")
+wide <- reshape(
+  nail[, c("id", "visit", "bad")],
+  idvar = "id",
+  timevar = "visit",
+  direction = "wide"
+)
 R_obs <- cor(wide[, -1], use = "pairwise.complete.obs"); dimnames(R_obs) <- list(1:7, 1:7)
 round(R_obs, 2)
 same <- mean(nail$bad[-1][diff(nail$id) == 0] == nail$bad[-nrow(nail)][diff(nail$id) == 0])
@@ -118,13 +146,25 @@ $$\widehat{\text{Var}}(\hat\beta) = B^{-1} M B^{-1}, \qquad B = \sum_i D_i^\top 
 The meat $M$ contains the products of the residuals of the **same** patient, $e_i e_i^\top$, so any correlation is in it. By hand, with independence:
 
 ```{r by_hand}
-glm_fit <- glm(bad ~ terb * month, family = binomial, data = nail)           # independence: ordinary logistic regression
+# independence: ordinary logistic regression
+glm_fit <- glm(bad ~ terb * month, family = binomial, data = nail)
 X <- model.matrix(glm_fit); mu <- fitted(glm_fit); e <- nail$bad - mu
 B <- crossprod(X, X * mu * (1 - mu))
-scores <- rowsum(X * e, nail$id)                                             # one row per patient: the sum over the visits
+scores <- rowsum(X * e, nail$id) # one row per patient: the sum over the visits
 V_hand <- solve(B) %*% crossprod(scores) %*% solve(B)
-gee_ind <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "independence")
-rbind(by_hand = sqrt(diag(V_hand)), geeglm = sqrt(diag(vcov(gee_ind))), naive_glm = sqrt(diag(vcov(glm_fit))))
+gee_ind <- geeglm(
+  bad ~ terb * month,
+  id = id,
+  waves = visit,
+  data = nail,
+  family = binomial,
+  corstr = "independence"
+)
+rbind(
+  by_hand = sqrt(diag(V_hand)),
+  geeglm = sqrt(diag(vcov(gee_ind))),
+  naive_glm = sqrt(diag(vcov(glm_fit)))
+)
 ```
 
 The estimates of GEE with independence **are** those of logistic regression. The standard errors are not: that of the intercept is `r f1(sqrt(V_hand[1, 1]) / sqrt(vcov(glm_fit)[1, 1]))` times larger.
@@ -134,10 +174,27 @@ The estimates of GEE with independence **are** those of logistic regression. The
 ## 4. Fitting the model and reading the output
 
 ```{r fit}
-gee_ex <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "exchangeable")
-gee_ar <- geeglm(bad ~ terb * month, id = id, waves = visit, data = nail, family = binomial, corstr = "ar1")
+gee_ex <- geeglm(
+  bad ~ terb * month,
+  id = id,
+  waves = visit,
+  data = nail,
+  family = binomial,
+  corstr = "exchangeable"
+)
+gee_ar <- geeglm(
+  bad ~ terb * month,
+  id = id,
+  waves = visit,
+  data = nail,
+  family = binomial,
+  corstr = "ar1"
+)
 summary(gee_ex)
-s <- as.matrix(coef(summary(gee_ex))); or <- exp(s[, 1]); low <- exp(s[, 1] - 1.96 * s[, 2]); high <- exp(s[, 1] + 1.96 * s[, 2])
+s <- as.matrix(coef(summary(gee_ex)))
+or <- exp(s[, 1])
+low <- exp(s[, 1] - 1.96 * s[, 2])
+high <- exp(s[, 1] + 1.96 * s[, 2])
 ```
 
 - **`month`**: odds ratio $e^{`r f3(s["month", 1])`}$ = `r f2(or[["month"]])` per month, 95% CI [`r f2(low[["month"]])`, `r f2(high[["month"]])`]: with itraconazole the odds of a bad nail, **in the population**, fall by `r pct(1 - or[["month"]])` per month.
@@ -150,7 +207,15 @@ s <- as.matrix(coef(summary(gee_ex))); or <- exp(s[, 1]); low <- exp(s[, 1] - 1.
 
 ```{r structures}
 fits <- list(independence = gee_ind, exchangeable = gee_ex, AR1 = gee_ar)
-tab <- t(sapply(fits, function(m) { cs <- coef(summary(m)); c(b = cs["terb:month", 1], SE_robust = cs["terb:month", 2], p = cs["terb:month", 4], QIC = QIC(m)[[1]]) }))
+tab <- t(sapply(fits, function(m) {
+  cs <- coef(summary(m))
+  c(
+    b = cs["terb:month", 1],
+    SE_robust = cs["terb:month", 2],
+    p = cs["terb:month", 4],
+    QIC = QIC(m)[[1]]
+  )
+}))
 round(rbind(tab, `naive logistic` = c(coef(summary(glm_fit))["terb:month", c(1, 2, 4)], NA)), 4)
 ```
 
@@ -179,15 +244,32 @@ The random intercepts have an SD of `r f1(sd_u)` on the logit scale, which is en
 
 ```{r curves_chart}
 m_grid <- seq(0, 14, by = 0.1); set.seed(121); u <- rnorm(40, 0, sd_u)
-single <- do.call(rbind, lapply(seq_along(u), function(k) data.frame(month = m_grid, p = plogis(sm[1, 1] + sm[3, 1] * m_grid + u[k]), patient = k)))
+single <- do.call(
+  rbind,
+  lapply(seq_along(u), function(k) {
+    data.frame(month = m_grid, p = plogis(sm[1, 1] + sm[3, 1] * m_grid + u[k]), patient = k)
+  })
+)
 many <- rnorm(20000, 0, sd_u)
-average <- data.frame(month = m_grid, p = sapply(m_grid, function(m) mean(plogis(sm[1, 1] + sm[3, 1] * m + many))), what = "average of the patients (mixed model)")
+average <- data.frame(
+  month = m_grid,
+  p = sapply(m_grid, function(m) mean(plogis(sm[1, 1] + sm[3, 1] * m + many))),
+  what = "average of the patients (mixed model)"
+)
 gee_line <- data.frame(month = m_grid, p = plogis(s[1, 1] + s[3, 1] * m_grid), what = "GEE")
-ggplot(single, aes(month, p)) + geom_line(aes(group = patient), colour = "grey75", linewidth = 0.3) +
+ggplot(single, aes(month, p)) +
+  geom_line(aes(group = patient), colour = "grey75", linewidth = 0.3) +
   geom_line(data = rbind(average, gee_line), aes(colour = what, linetype = what), linewidth = 1.1) +
-  scale_colour_manual(values = c("#2a78d6", "#eb6834"), name = NULL) + scale_linetype_manual(values = c("solid", "dashed"), name = NULL) +
+  scale_colour_manual(values = c("#2a78d6", "#eb6834"), name = NULL) +
+  scale_linetype_manual(values = c("solid", "dashed"), name = NULL) +
   scale_y_continuous(labels = function(v) paste0(100 * v, "%")) +
-  labs(title = "Forty patients of the mixed model (grey), and the population (itraconazole)", x = "months", y = "probability of a bad nail") + theme_bw() + theme(legend.position = "bottom")
+  labs(
+    title = "Forty patients of the mixed model (grey), and the population (itraconazole)",
+    x = "months",
+    y = "probability of a bad nail"
+  ) +
+  theme_bw() +
+  theme(legend.position = "bottom")
 shrink <- sqrt(1 + 0.346 * sd_u^2)
 c(approximate_factor = shrink, observed_factor = sm["month", 1] / s["month", 1])
 ```
@@ -210,12 +292,22 @@ There is an approximate rule for the factor between the two, $\sqrt{1 + 0.346\,\
 Not all patients came to all visits. GEE needs the missing ones to be **missing completely at random**. Otherwise the patients who remain are a special group, and the average is an average of them. Do patients with a bad nail miss the next visit more often?
 
 ```{r dropout}
-panel <- merge(expand.grid(visit = 1:7, id = unique(nail$id)), nail, all.x = TRUE)     # one row for every planned visit
+# one row for every planned visit
+panel <- merge(expand.grid(visit = 1:7, id = unique(nail$id)), nail, all.x = TRUE)
 panel <- panel[order(panel$id, panel$visit), ]
 panel$seen <- as.integer(!is.na(panel$bad))
 panel$terb <- ave(panel$terb, panel$id, FUN = function(v) v[!is.na(v)][1])
-last_seen  <- function(v) { out <- rep(NA, length(v)); for (k in seq_along(v)[-1]) { past <- v[1:(k - 1)]; past <- past[!is.na(past)]; out[k] <- if (length(past)) tail(past, 1) else NA }; out }
-panel$bad_before <- ave(panel$bad, panel$id, FUN = last_seen)                            # the status when the patient was last seen
+last_seen <- function(v) {
+  out <- rep(NA, length(v))
+  for (k in seq_along(v)[-1]) {
+    past <- v[1:(k - 1)]
+    past <- past[!is.na(past)]
+    out[k] <- if (length(past)) tail(past, 1) else NA
+  }
+  out
+}
+# the status when the patient was last seen
+panel$bad_before <- ave(panel$bad, panel$id, FUN = last_seen)
 later <- subset(panel, visit > 1 & !is.na(bad_before))
 stay  <- glm(seen ~ factor(visit) + terb + bad_before, family = binomial, data = later)
 c(planned = nrow(panel), missing = sum(panel$seen == 0))
@@ -229,10 +321,23 @@ The repair for GEE is **inverse probability weighting** (Robins et al., 1995): e
 ```{r ipw}
 later$w <- 1 / predict(stay, type = "response")
 weighted <- merge(subset(panel, seen == 1), later[, c("id", "visit", "w")], all.x = TRUE)
-weighted$w[is.na(weighted$w)] <- 1                                                       # the first visits
+weighted$w[is.na(weighted$w)] <- 1 # the first visits
 weighted <- weighted[order(weighted$id, weighted$visit), ]
-gee_w <- geeglm(bad ~ terb * month, id = id, data = weighted, weights = w, family = binomial, corstr = "independence")
-round(rbind(unweighted = coef(summary(gee_ind))["terb:month", ], weighted = coef(summary(gee_w))["terb:month", ]), 4)
+gee_w <- geeglm(
+  bad ~ terb * month,
+  id = id,
+  data = weighted,
+  weights = w,
+  family = binomial,
+  corstr = "independence"
+)
+round(
+  rbind(
+    unweighted = coef(summary(gee_ind))["terb:month", ],
+    weighted = coef(summary(gee_w))["terb:month", ]
+  ),
+  4
+)
 range(weighted$w)
 ```
 
@@ -247,12 +352,21 @@ The sandwich is a large-sample method, and the sample size is the number of **cl
 ```{r few_clusters}
 set.seed(122)
 false_positive <- function(n_clusters, reps = 400) {
-  mean(replicate(reps, {
-    d <- data.frame(id = rep(seq_len(n_clusters), each = 6), trt = rep(rep(0:1, length.out = n_clusters), each = 6))
-    d$y <- rbinom(nrow(d), 1, plogis(-0.3 + rep(rnorm(n_clusters, 0, 1.5), each = 6)))
-    m <- try(geeglm(y ~ trt, id = id, data = d, family = binomial, corstr = "exchangeable"), silent = TRUE)
-    if (inherits(m, "try-error")) NA else coef(summary(m))["trt", 4] < .05
-  }), na.rm = TRUE)
+  mean(
+    replicate(reps, {
+      d <- data.frame(
+        id = rep(seq_len(n_clusters), each = 6),
+        trt = rep(rep(0:1, length.out = n_clusters), each = 6)
+      )
+      d$y <- rbinom(nrow(d), 1, plogis(-0.3 + rep(rnorm(n_clusters, 0, 1.5), each = 6)))
+      m <- try(
+        geeglm(y ~ trt, id = id, data = d, family = binomial, corstr = "exchangeable"),
+        silent = TRUE
+      )
+      if (inherits(m, "try-error")) NA else coef(summary(m))["trt", 4] < .05
+    }),
+    na.rm = TRUE
+  )
 }
 sizes <- c(10, 20, 40, 100)
 type1 <- sapply(sizes, false_positive)
@@ -282,8 +396,20 @@ A report (APA 7th edition) needs the marginal model and link, the working correl
 
 ```{r apa_numbers}
 lab <- c("Intercept", "Terbinafine", "Month", "Terbinafine × month")
-apa_table <- data.frame(Term = lab, OR = paste0(f2(or), " [", f2(low), ", ", f2(high), "]"), p = sapply(s[, 4], function(p) sub("^= ", "", pval(p))),
-                        mix = paste0(f2(exp(sm[, 1])), " [", f2(exp(sm[, 1] - 1.96 * sm[, 2])), ", ", f2(exp(sm[, 1] + 1.96 * sm[, 2])), "]"), pm = sapply(sm[, 4], function(p) sub("^= ", "", pval(p))))
+apa_table <- data.frame(
+  Term = lab,
+  OR = paste0(f2(or), " [", f2(low), ", ", f2(high), "]"),
+  p = sapply(s[, 4], function(p) sub("^= ", "", pval(p))),
+  mix = paste0(
+    f2(exp(sm[, 1])),
+    " [",
+    f2(exp(sm[, 1] - 1.96 * sm[, 2])),
+    ", ",
+    f2(exp(sm[, 1] + 1.96 * sm[, 2])),
+    "]"
+  ),
+  pm = sapply(sm[, 4], function(p) sub("^= ", "", pval(p)))
+)
 ```
 
 **Method** (data analysis):

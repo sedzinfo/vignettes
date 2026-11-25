@@ -24,7 +24,7 @@ An **instrumental variable** (an *instrument*) takes another way. Find something
 
 Then compare the wages of those who were pushed and those who were not. Whatever difference there is, must have come through schooling.
 
-David Card (1993) proposed the **distance to a college**. A boy who grew up in a county with a four-year college could live at home while studying. For some boys that decided the matter. This page repeats his analysis, with every step by hand, and then asks how far one can trust it. The second part is the more important one: the conditions above cannot be proved from the data.
+David Card (1993) proposed the **distance to a college**. A boy who grew up near a four-year college could live at home while studying. For some boys that decided the matter. This page repeats his analysis, with every step by hand, and then asks how far one can trust it. The second part is the more important one: the conditions above cannot be proved from the data.
 
 ```{r packages}
 library(ggplot2)
@@ -35,8 +35,11 @@ library(ivreg)       # ivreg(): two-stage least squares with diagnostics
 f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
 f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
 f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-nz   <- function(x, d = 2) sub("^(-?)0\\.", "\\1.", formatC(x, format = "f", digits = d))          # APA: no leading zero
-pval <- function(p) ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+# APA: no leading zero
+nz <- function(x, d = 2) sub("^(-?)0\\.", "\\1.", formatC(x, format = "f", digits = d))
+pval <- function(p) {
+  ifelse(p < .001, "< .001", paste("=", sub("^0", "", formatC(p, format = "f", digits = 3))))
+}
 num  <- function(x) trimws(format(x, big.mark = ","))
 pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
 ```
@@ -48,15 +51,23 @@ pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%
 ```{r download}
 card <- read.csv("https://vincentarelbundock.github.io/Rdatasets/csv/wooldridge/card.csv")
 dim(card)
-head(card[, c("lwage", "wage", "educ", "age", "exper", "black", "south", "smsa", "smsa66", "nearc4", "nearc2")], 4)
-controls <- "exper + expersq + black + south + smsa + smsa66 + reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668 + reg669"
+head(
+  card[, c(
+    "lwage", "wage", "educ", "age", "exper", "black", "south", "smsa", "smsa66", "nearc4", "nearc2"
+  )],
+  4
+)
+controls <- paste(
+  "exper + expersq + black + south + smsa + smsa66",
+  "+ reg662 + reg663 + reg664 + reg665 + reg666 + reg667 + reg668 + reg669"
+)
 ```
 
 `r num(nrow(card))` men of the US National Longitudinal Survey of Young Men, `r min(card$age)` to `r max(card$age)` years old when their wages were asked in 1976. The file comes from the R package *wooldridge*. The variables:
 
 - `lwage`: the logarithm of the hourly **wage** (in cents). A coefficient of 0.10 means about 10% more.
 - `educ`: years of **schooling**.
-- `nearc4`: 1 if there was a **four-year college** in the county where he lived in 1966 (as a boy or very young man), otherwise 0. `nearc2` is the same for two-year colleges.
+- `nearc4`: 1 if there was an accredited **four-year college** in the local labour market, judged by the county where he lived in 1966 (as a boy or very young man), otherwise 0. `nearc2` is the same for two-year colleges.
 - The controls of Card: years of potential work experience (`exper`, which is age − schooling − 6, and its square), `black`, living in the `south`, living in a metropolitan area in 1976 (`smsa`) and in 1966 (`smsa66`), and the region in 1966 (eight indicator variables, `reg662` to `reg669`).
 
 ---
@@ -64,10 +75,29 @@ controls <- "exper + expersq + black + south + smsa + smsa66 + reg662 + reg663 +
 ## 2. Look at the data
 
 ```{r wage_chart, fig.height = 4.5}
-m_ed <- aggregate(lwage ~ educ, card, function(v) c(mean(v), length(v))); m_ed <- data.frame(educ = m_ed$educ, lwage = m_ed$lwage[, 1], n = m_ed$lwage[, 2])
-ggplot(subset(m_ed, n >= 10), aes(educ, lwage)) + geom_point(aes(size = n), colour = "#2a78d6") + geom_smooth(data = card, aes(educ, lwage), method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") + scale_size_area(max_size = 8) +
-  labs(title = "Mean log wage by years of schooling", subtitle = "Size of the points: number of men", x = "years of schooling", y = "mean log wage") + theme_bw()
-by_near <- aggregate(cbind(educ, lwage, black, south, smsa66) ~ nearc4, card, mean); by_near$n <- as.numeric(table(card$nearc4)); print(round(by_near, 3), row.names = FALSE)
+m_ed <- aggregate(lwage ~ educ, card, function(v) c(mean(v), length(v)))
+m_ed <- data.frame(educ = m_ed$educ, lwage = m_ed$lwage[, 1], n = m_ed$lwage[, 2])
+ggplot(subset(m_ed, n >= 10), aes(educ, lwage)) +
+  geom_point(aes(size = n), colour = "#2a78d6") +
+  geom_smooth(
+    data = card,
+    aes(educ, lwage),
+    method = "lm",
+    formula = y ~ x,
+    se = FALSE,
+    colour = "#eb6834"
+  ) +
+  scale_size_area(max_size = 8) +
+  labs(
+    title = "Mean log wage by years of schooling",
+    subtitle = "Size of the points: number of men",
+    x = "years of schooling",
+    y = "mean log wage"
+  ) +
+  theme_bw()
+by_near <- aggregate(cbind(educ, lwage, black, south, smsa66) ~ nearc4, card, mean)
+by_near$n <- as.numeric(table(card$nearc4))
+print(round(by_near, 3), row.names = FALSE)
 ```
 
 The men who grew up near a college (`r num(by_near$n[2])` of them) have `r f2(diff(by_near$educ))` years more schooling and wages that are `r f3(diff(by_near$lwage))` higher in logs. But they are also different in other ways: fewer are black, fewer live in the south, and most come from cities. A college does not stand just anywhere. So the instrument is at best clean **after controlling** for region and city.
@@ -85,14 +115,72 @@ $$\log w = \beta\, s + u, \qquad \text{Cov}(s, u) \ne 0$$
 Least squares attributes to $s$ everything that comes along with it, $\hat\beta_{OLS} \to \beta + \text{Cov}(s, u)/\text{Var}(s)$. The sample size does not help.
 
 ```{r dag, fig.height = 3.4}
-nodes <- data.frame(x = c(0, 2, 4, 3), y = c(0, 0, 0, 1.3), label = c("college nearby\n(instrument)", "schooling", "wage", "ability, family, ...\n(not observed)"))
-arrows <- data.frame(x = c(0.5, 2.4, 2.8, 3.2), y = c(0, 0, 1.05, 1.05), xend = c(1.55, 3.65, 2.15, 3.85), yend = c(0, 0, 0.15, 0.15))
-never  <- data.frame(x = c(0.3, 0.1), y = c(-0.15, 0.2), xend = c(3.8, 2.3), yend = c(-0.15, 1.2), curv = 1)
-ggplot() + geom_segment(data = arrows, aes(x, y, xend = xend, yend = yend), arrow = arrow(length = unit(0.25, "cm")), linewidth = 0.8, colour = "#2a78d6") +
-  geom_curve(data = never[1, ], aes(x, y, xend = xend, yend = yend), curvature = 0.25, arrow = arrow(length = unit(0.25, "cm")), linetype = "dashed", colour = "#eb6834") +
-  geom_segment(data = never[2, ], aes(x, y, xend = xend, yend = yend), linetype = "dashed", colour = "#eb6834") +
-  geom_text(data = nodes, aes(x, y, label = label), size = 4.2, lineheight = 0.9) + annotate("text", x = 2, y = -0.78, label = "no direct way (exclusion)", colour = "#eb6834", size = 3.6) + annotate("text", x = 0.75, y = 0.95, label = "no connection\n(independence)", colour = "#eb6834", size = 3.6) +
-  xlim(-0.6, 4.6) + ylim(-0.95, 1.6) + labs(title = "What an instrument needs: the blue arrows, and not the dashed lines") + theme_void()
+nodes <- data.frame(
+  x = c(0, 2, 4, 3),
+  y = c(0, 0, 0, 1.3),
+  label = c(
+    "college nearby\n(instrument)",
+    "schooling",
+    "wage",
+    "ability, family, ...\n(not observed)"
+  )
+)
+arrows <- data.frame(
+  x = c(0.5, 2.4, 2.8, 3.2),
+  y = c(0, 0, 1.05, 1.05),
+  xend = c(1.55, 3.65, 2.15, 3.85),
+  yend = c(0, 0, 0.15, 0.15)
+)
+never <- data.frame(
+  x = c(0.3, 0.1),
+  y = c(-0.15, 0.2),
+  xend = c(3.8, 2.3),
+  yend = c(-0.15, 1.2),
+  curv = 1
+)
+ggplot() +
+  geom_segment(
+    data = arrows,
+    aes(x, y, xend = xend, yend = yend),
+    arrow = arrow(length = unit(0.25, "cm")),
+    linewidth = 0.8,
+    colour = "#2a78d6"
+  ) +
+  geom_curve(
+    data = never[1, ],
+    aes(x, y, xend = xend, yend = yend),
+    curvature = 0.25,
+    arrow = arrow(length = unit(0.25, "cm")),
+    linetype = "dashed",
+    colour = "#eb6834"
+  ) +
+  geom_segment(
+    data = never[2, ],
+    aes(x, y, xend = xend, yend = yend),
+    linetype = "dashed",
+    colour = "#eb6834"
+  ) +
+  geom_text(data = nodes, aes(x, y, label = label), size = 4.2, lineheight = 0.9) +
+  annotate(
+    "text",
+    x = 2,
+    y = -0.78,
+    label = "no direct way (exclusion)",
+    colour = "#eb6834",
+    size = 3.6
+  ) +
+  annotate(
+    "text",
+    x = 0.75,
+    y = 0.95,
+    label = "no connection\n(independence)",
+    colour = "#eb6834",
+    size = 3.6
+  ) +
+  xlim(-0.6, 4.6) +
+  ylim(-0.95, 1.6) +
+  labs(title = "What an instrument needs: the blue arrows, and not the dashed lines") +
+  theme_void()
 ```
 
 ### Step 2: the conditions
@@ -111,7 +199,11 @@ $$\hat\beta_{IV} = \frac{\bar y_{\text{near}} - \bar y_{\text{far}}}{\bar s_{\te
 The numerator is the effect of the instrument on the outcome (the **reduced form**), the denominator its effect on schooling (the **first stage**).
 
 ```{r wald}
-c(reduced_form = diff(by_near$lwage), first_stage = diff(by_near$educ), Wald = diff(by_near$lwage) / diff(by_near$educ))
+c(
+  reduced_form = diff(by_near$lwage),
+  first_stage = diff(by_near$educ),
+  Wald = diff(by_near$lwage) / diff(by_near$educ)
+)
 ```
 
 Without controls we know that condition 2 fails, so `r f3(diff(by_near$lwage) / diff(by_near$educ))` is not our answer.
@@ -138,7 +230,12 @@ second_stage <- lm(fml("lwage", paste("educ_hat +", controls)), card)
 W <- model.matrix(ols); Z <- model.matrix(first_stage); y <- card$lwage
 PW   <- Z %*% solve(crossprod(Z), crossprod(Z, W))                        # P_Z W
 beta <- drop(solve(crossprod(PW, W), crossprod(PW, y)))
-c(OLS = coef(ols)[["educ"]], reduced_form_over_first_stage = coef(reduced_form)[["nearc4"]] / coef(first_stage)[["nearc4"]], second_stage = coef(second_stage)[["educ_hat"]], matrix_formula = beta[["educ"]])
+c(
+  OLS = coef(ols)[["educ"]],
+  reduced_form_over_first_stage = coef(reduced_form)[["nearc4"]] / coef(first_stage)[["nearc4"]],
+  second_stage = coef(second_stage)[["educ_hat"]],
+  matrix_formula = beta[["educ"]]
+)
 ```
 
 The three ways give the same `r f3(beta[["educ"]])`. Least squares gave `r f3(coef(ols)[["educ"]])`.
@@ -153,7 +250,11 @@ $$e = y - W\hat\beta, \qquad \text{Var}(\hat\beta) = \frac{e^\top e}{n - p}\,(W^
 e  <- drop(y - W %*% beta); s2 <- sum(e^2) / (nrow(W) - ncol(W))
 se <- sqrt(diag(s2 * solve(crossprod(PW))))
 iv <- ivreg(fml("lwage", paste("educ +", controls, "| nearc4 +", controls)), data = card)
-rbind(by_hand = c(estimate = beta[["educ"]], SE = se[["educ"]]), ivreg = coef(summary(iv))["educ", 1:2], second_stage_lm = coef(summary(second_stage))["educ_hat", 1:2])
+rbind(
+  by_hand = c(estimate = beta[["educ"]], SE = se[["educ"]]),
+  ivreg = coef(summary(iv))["educ", 1:2],
+  second_stage_lm = coef(summary(second_stage))["educ_hat", 1:2]
+)
 robust_se <- sqrt(sandwich::vcovHC(iv, type = "HC1")["educ", "educ"]); c(robust_SE = robust_se)
 ```
 
@@ -165,7 +266,13 @@ Here the wrong standard error happens to be close to the right one. It can be fa
 
 ```{r output}
 ci_iv <- confint(iv)["educ", ]; s_iv <- summary(iv)
-round(rbind(OLS = c(coef(summary(ols))["educ", ], confint(ols)["educ", ]), IV = c(coef(s_iv)["educ", ], ci_iv)), 4)
+round(
+  rbind(
+    OLS = c(coef(summary(ols))["educ", ], confint(ols)["educ", ]),
+    IV = c(coef(s_iv)["educ", ], ci_iv)
+  ),
+  4
+)
 s_iv$diagnostics
 ```
 
@@ -173,18 +280,27 @@ s_iv$diagnostics
 - The interval of IV is `r f1(diff(ci_iv) / diff(confint(ols)["educ", ]))` times as wide. That is the price. IV uses only the little variation of schooling that comes from the instrument. With the partial correlation $r$ between instrument and schooling, the SE grows by about $1/|r|$; here $r$ = `r f3(sqrt(s_iv$diagnostics[1, "statistic"] / (s_iv$diagnostics[1, "statistic"] + s_iv$diagnostics[1, "df2"])))`.
 - The IV estimate is **higher** than that of least squares. If able men stay longer in school, we expected the opposite. Section 6 comes back to this.
 
-The three tests of the output, by hand:
+The numbers are those of Card's own Table 3: 0.320 (0.088) for the first stage, 0.042 (0.018) for the reduced form and 0.132 (0.055) for the IV estimate. The three tests of the output, by hand:
 
 ```{r diagnostics_by_hand}
 fs_without <- update(first_stage, . ~ . - nearc4)
-F_first    <- anova(fs_without, first_stage)[2, "F"]                                  # weak instruments: the F of the instrument in the first stage
+# weak instruments: the F of the instrument in the first stage
+F_first <- anova(fs_without, first_stage)[2, "F"]
 card$v_hat <- residuals(first_stage)
-wu <- coef(summary(update(ols, . ~ . + v_hat)))["v_hat", ]                            # Wu-Hausman: the first-stage residual as an extra predictor
-iv2 <- ivreg(fml("lwage", paste("educ +", controls, "| nearc2 + nearc4 +", controls)), data = card)     # two instruments
-aux <- lm(fml("residuals(iv2)", paste("nearc2 + nearc4 +", controls)), card)          # Sargan: n R^2 of the IV residuals on all instruments
-c(F_first_stage = F_first, F_Wu_Hausman = wu[["t value"]]^2, Sargan_two_instruments = nrow(card) * summary(aux)$r.squared)
+# Wu-Hausman: the first-stage residual as an extra predictor
+wu <- coef(summary(update(ols, . ~ . + v_hat)))["v_hat", ]
+# two instruments
+iv2 <- ivreg(fml("lwage", paste("educ +", controls, "| nearc2 + nearc4 +", controls)), data = card)
+# Sargan: n R^2 of the IV residuals on all instruments
+aux <- lm(fml("residuals(iv2)", paste("nearc2 + nearc4 +", controls)), card)
+c(
+  F_first_stage = F_first,
+  F_Wu_Hausman = wu[["t value"]]^2,
+  Sargan_two_instruments = nrow(card) * summary(aux)$r.squared
+)
 summary(iv2)$diagnostics; coef(summary(iv2))["educ", 1:2]
-sargan <- summary(iv2)$diagnostics["Sargan", ]; weak2 <- summary(iv2)$diagnostics["Weak instruments", ]
+sargan <- summary(iv2)$diagnostics["Sargan", ]
+weak2 <- summary(iv2)$diagnostics["Weak instruments", ]
 ```
 
 - **Weak instruments**: the *F* of the instrument in the first stage, here `r f1(F_first)`. More about it in section 5.
@@ -200,16 +316,45 @@ If the instrument hardly moves schooling, the estimator divides by a number near
 ```{r weak_simulation}
 set.seed(211)
 one <- function(pi, rho, n = 1000) {
-  z <- rep(0:1, length.out = n); u <- rnorm(n); s <- 12 + pi * z + 2 * (rho * u + sqrt(1 - rho^2) * rnorm(n)); y <- 0.08 * s + 0.4 * u
-  zc <- z - mean(z); fs <- sum(zc * s) / sum(zc^2); rf <- sum(zc * y) / sum(zc^2); b <- rf / fs
-  e <- (y - mean(y)) - b * (s - mean(s)); se <- sqrt(sum(e^2) / (n - 2) / sum(zc^2)) / abs(fs)
+  z <- rep(0:1, length.out = n)
+  u <- rnorm(n)
+  s <- 12 + pi * z + 2 * (rho * u + sqrt(1 - rho^2) * rnorm(n))
+  y <- 0.08 * s + 0.4 * u
+  zc <- z - mean(z)
+  fs <- sum(zc * s) / sum(zc^2)
+  rf <- sum(zc * y) / sum(zc^2)
+  b <- rf / fs
+  e <- (y - mean(y)) - b * (s - mean(s))
+  se <- sqrt(sum(e^2) / (n - 2) / sum(zc^2)) / abs(fs)
   F <- fs^2 * sum(zc^2) / (sum(((s - mean(s)) - fs * zc)^2) / (n - 2))
-  d <- (y - mean(y)) - 0.08 * (s - mean(s)); g <- sum(zc * d) / sum(zc^2); ar <- g / sqrt(sum((d - g * zc)^2) / (n - 2) / sum(zc^2))     # Anderson-Rubin at the truth
-  c(iv = b, ols = cov(s, y) / var(s), F = F, covered = abs(b - 0.08) < 1.96 * se, ar_covered = abs(ar) < 1.96)
+  d <- (y - mean(y)) - 0.08 * (s - mean(s))
+  g <- sum(zc * d) / sum(zc^2)
+  ar <- g / sqrt(sum((d - g * zc)^2) / (n - 2) / sum(zc^2)) # Anderson-Rubin at the truth
+  c(
+    iv = b,
+    ols = cov(s, y) / var(s),
+    F = F,
+    covered = abs(b - 0.08) < 1.96 * se,
+    ar_covered = abs(ar) < 1.96
+  )
 }
 settings <- expand.grid(pi = c(0.1, 0.25, 0.5, 1), rho = c(0.6, 0.95))
-sim <- do.call(rbind, lapply(seq_len(nrow(settings)), function(i) { r <- t(replicate(2000, one(settings$pi[i], settings$rho[i])))
-  data.frame(settings[i, ], mean_F = mean(r[, "F"]), OLS = mean(r[, "ols"]), IV_median = median(r[, "iv"]), IV_low = quantile(r[, "iv"], 0.05), IV_high = quantile(r[, "iv"], 0.95), coverage = mean(r[, "covered"]), coverage_AR = mean(r[, "ar_covered"])) }))
+sim <- do.call(
+  rbind,
+  lapply(seq_len(nrow(settings)), function(i) {
+    r <- t(replicate(2000, one(settings$pi[i], settings$rho[i])))
+    data.frame(
+      settings[i, ],
+      mean_F = mean(r[, "F"]),
+      OLS = mean(r[, "ols"]),
+      IV_median = median(r[, "iv"]),
+      IV_low = quantile(r[, "iv"], 0.05),
+      IV_high = quantile(r[, "iv"], 0.95),
+      coverage = mean(r[, "covered"]),
+      coverage_AR = mean(r[, "ar_covered"])
+    )
+  })
+)
 print(round(sim, 3), row.names = FALSE)
 si <- function(p, r) sim[sim$pi == p & sim$rho == r, ]
 c(endogeneity_in_the_data_of_Card = cor(residuals(iv), residuals(first_stage)))
@@ -227,14 +372,34 @@ This is why the advice in the literature looks contradictory. An old rule asks f
 A test that works with **any** strength (Anderson & Rubin, 1949): if the true effect were $\beta_0$, then $y - \beta_0 s$ would contain nothing of schooling, and the instrument should not predict it. Test that for many $\beta_0$ and keep those that are not rejected. In the simulation it has the right coverage in all settings (from `r pct(min(sim$coverage_AR), 1)` to `r pct(max(sim$coverage_AR), 1)`).
 
 ```{r anderson_rubin}
-ar_p  <- function(b0) { r <- lm(fml(paste0("I(lwage - ", b0, " * educ)"), paste("nearc4 +", controls)), card); coef(summary(r))["nearc4", 4] }
+ar_p <- function(b0) {
+  r <- lm(fml(paste0("I(lwage - ", b0, " * educ)"), paste("nearc4 +", controls)), card)
+  coef(summary(r))["nearc4", 4]
+}
 grid  <- seq(-0.05, 0.4, by = 0.005); p_grid <- sapply(grid, ar_p)
 edge  <- function(a, b) uniroot(function(v) ar_p(v) - 0.05, c(a, b))$root
 ci_ar <- c(edge(-0.05, beta[["educ"]]), edge(beta[["educ"]], 0.5))
 rbind(Wald = ci_iv, Anderson_Rubin = ci_ar)
-ggplot(data.frame(grid, p_grid), aes(grid, p_grid)) + geom_line(colour = "#2a78d6", linewidth = 0.9) + geom_hline(yintercept = 0.05, linetype = "dashed") + geom_vline(xintercept = coef(ols)[["educ"]], colour = "#eb6834") +
-  annotate("text", x = coef(ols)[["educ"]] - 0.005, y = 0.95, label = "least squares", hjust = 1, colour = "#eb6834", size = 3.6) +
-  labs(title = "Anderson-Rubin: p-value of every possible effect", subtitle = "Values above the dashed line (.05) form the 95% interval", x = "effect of a year of schooling on the log wage", y = "p") + theme_bw()
+ggplot(data.frame(grid, p_grid), aes(grid, p_grid)) +
+  geom_line(colour = "#2a78d6", linewidth = 0.9) +
+  geom_hline(yintercept = 0.05, linetype = "dashed") +
+  geom_vline(xintercept = coef(ols)[["educ"]], colour = "#eb6834") +
+  annotate(
+    "text",
+    x = coef(ols)[["educ"]] - 0.005,
+    y = 0.95,
+    label = "least squares",
+    hjust = 1,
+    colour = "#eb6834",
+    size = 3.6
+  ) +
+  labs(
+    title = "Anderson-Rubin: p-value of every possible effect",
+    subtitle = "Values above the dashed line (.05) form the 95% interval",
+    x = "effect of a year of schooling on the log wage",
+    y = "p"
+  ) +
+  theme_bw()
 ```
 
 The interval goes from `r f3(ci_ar[1])` to `r f3(ci_ar[2])`. It is longer than the usual one on the upper side, and it contains the result of least squares.
@@ -249,10 +414,28 @@ Where on the ladder did the instrument push? Schooling is the sum of steps, $s =
 
 ```{r steps_chart, fig.height = 4.5}
 steps <- data.frame(k = 8:18); steps$effect <- steps$se <- NA
-for (i in seq_along(steps$k)) { co <- coef(summary(lm(fml(paste0("I(educ >= ", steps$k[i], ")"), paste("nearc4 +", controls)), card)))["nearc4", ]; steps$effect[i] <- co[1]; steps$se[i] <- co[2] }
-ggplot(steps, aes(k, effect)) + geom_hline(yintercept = 0, linetype = "dashed") + geom_linerange(aes(ymin = effect - 1.96 * se, ymax = effect + 1.96 * se), colour = "#2a78d6") + geom_point(colour = "#2a78d6", size = 2.4) + scale_x_continuous(breaks = 8:18) +
-  labs(title = "Effect of a college nearby on reaching at least k years", x = "years of schooling, k", y = "change in the share of men") + theme_bw()
-all_steps <- sum(sapply((min(card$educ) + 1):max(card$educ), function(k) coef(lm(fml(paste0("I(educ >= ", k, ")"), paste("nearc4 +", controls)), card))[["nearc4"]]))
+for (i in seq_along(steps$k)) {
+  co <- coef(summary(lm(
+    fml(paste0("I(educ >= ", steps$k[i], ")"), paste("nearc4 +", controls)),
+    card
+  )))["nearc4", ]
+  steps$effect[i] <- co[1]
+  steps$se[i] <- co[2]
+}
+ggplot(steps, aes(k, effect)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_linerange(aes(ymin = effect - 1.96 * se, ymax = effect + 1.96 * se), colour = "#2a78d6") +
+  geom_point(colour = "#2a78d6", size = 2.4) +
+  scale_x_continuous(breaks = 8:18) +
+  labs(
+    title = "Effect of a college nearby on reaching at least k years",
+    x = "years of schooling, k",
+    y = "change in the share of men"
+  ) +
+  theme_bw()
+all_steps <- sum(sapply((min(card$educ) + 1):max(card$educ), function(k) {
+  coef(lm(fml(paste0("I(educ >= ", k, ")"), paste("nearc4 +", controls)), card))[["nearc4"]]
+}))
 c(sum_over_all_steps = all_steps, first_stage = coef(first_stage)[["nearc4"]])
 top <- steps[which.max(steps$effect), ]
 ```
@@ -271,13 +454,94 @@ Independence cannot be tested, since $u$ is not observed. But we can check some 
 
 ```{r balance}
 controls_age <- sub("exper + expersq", "age + I(age^2)", controls, fixed = TRUE)
-check_vars <- c(fatheduc = "father's schooling", motheduc = "mother's schooling", momdad14 = "lived with both parents at 14", libcrd14 = "library card at home at 14", IQ = "IQ (from school records)", KWW = "knowledge of the world of work")
-balance <- do.call(rbind, lapply(names(check_vars), function(v) { m <- lm(fml(v, paste("nearc4 +", controls_age)), card); co <- coef(summary(m))["nearc4", ]
-  data.frame(variable = check_vars[[v]], raw_difference = mean(card[[v]][card$nearc4 == 1], na.rm = TRUE) - mean(card[[v]][card$nearc4 == 0], na.rm = TRUE), with_controls = co[1], SE = co[2], p = co[4], n = nobs(m)) }))
+check_vars <- c(
+  fatheduc = "father's schooling",
+  motheduc = "mother's schooling",
+  momdad14 = "lived with both parents at 14",
+  libcrd14 = "library card at home at 14",
+  IQ = "IQ (from school records)",
+  KWW = "knowledge of the world of work"
+)
+balance <- do.call(
+  rbind,
+  lapply(names(check_vars), function(v) {
+    m <- lm(fml(v, paste("nearc4 +", controls_age)), card)
+    co <- coef(summary(m))["nearc4", ]
+    data.frame(
+      variable = check_vars[[v]],
+      raw_difference = mean(card[[v]][card$nearc4 == 1], na.rm = TRUE) -
+        mean(card[[v]][card$nearc4 == 0], na.rm = TRUE),
+      with_controls = co[1],
+      SE = co[2],
+      p = co[4],
+      n = nobs(m)
+    )
+  })
+)
 print(data.frame(balance[1], round(balance[2:5], 3), n = balance$n), row.names = FALSE)
 ```
 
-The controls remove most of the raw differences. What is left is small, but not nothing: `r sum(balance$p < .05)` of the `r nrow(balance)` have *p* < .05 (`r paste(balance$variable[balance$p < .05], collapse = " and ")`). (The last one was measured when many had finished school, so it may be an effect of schooling.) Boys near a college seem to come from homes with a little more books.
+The controls remove most of the raw differences. What is left is small, but not nothing: `r sum(balance$p < .05)` of the `r nrow(balance)` have *p* < .05 (`r paste(balance$variable[balance$p < .05], collapse = " and ")`). (The last one was measured in 1966, when the men were 14 to 24 years old and a part of them had already left school, so it may partly be an effect of schooling.) Boys near a college seem to come from homes with a few more books.
+
+### Card's own test
+
+Card argued like this. A college nearby should matter most to boys from **poor** families, for whom the cost decides. So the **product** of "college nearby" and "parents without high school" can be the instrument, and then "college nearby" itself may go into the wage equation. If it has a direct effect on wages, it will show there. In his Table 5 the IV estimate is 0.093 (0.065) and the direct effect 0.015 (0.029). His classes of parental education are not in our file, but we can build something like them. As he did in this table, we treat experience as endogenous, with age as its instrument (the last part of this section says why):
+
+```{r card_test}
+card$fa <- ifelse(is.na(card$fatheduc), mean(card$fatheduc, na.rm = TRUE), card$fatheduc)
+card$mo <- ifelse(is.na(card$motheduc), mean(card$motheduc, na.rm = TRUE), card$motheduc)
+card$fa_missing <- as.numeric(is.na(card$fatheduc))
+card$mo_missing <- as.numeric(is.na(card$motheduc))
+family <- "fa * mo + fa_missing + mo_missing + momdad14 + sinmom14 + step14"
+low_defs <- list(
+  `no parent known to have 12 years` = with(
+    card,
+    (is.na(fatheduc) | fatheduc < 12) & (is.na(motheduc) | motheduc < 12)
+  ),
+  `both known, both below 12 years` = with(
+    card,
+    !is.na(fatheduc) & !is.na(motheduc) & fatheduc < 12 & motheduc < 12
+  )
+)
+card_test <- do.call(
+  rbind,
+  lapply(names(low_defs), function(k) {
+    card$low <- as.numeric(low_defs[[k]])
+    rest <- sub("exper + expersq", "low", controls, fixed = TRUE)
+    first <- lm(fml("educ", paste("nearc4 * low + age + I(age^2) +", rest, "+", family)), card)
+    m <- ivreg(
+      fml(
+        "lwage",
+        paste(
+          "educ + nearc4 + exper + expersq +",
+          rest,
+          "+",
+          family,
+          "| nearc4:low + nearc4 + age + I(age^2) +",
+          rest,
+          "+",
+          family
+        )
+      ),
+      data = card
+    )
+    data.frame(
+      parents = k,
+      n_low = sum(card$low),
+      college_effect_others = coef(first)[["nearc4"]],
+      extra_for_low = coef(first)[["nearc4:low"]],
+      SE_extra = coef(summary(first))["nearc4:low", 2],
+      IV = coef(m)[["educ"]],
+      SE_IV = coef(summary(m))["educ", 2],
+      direct_effect = coef(m)[["nearc4"]],
+      SE_direct = coef(summary(m))["nearc4", 2]
+    )
+  })
+)
+print(data.frame(card_test[1:2], round(card_test[3:9], 3)), row.names = FALSE)
+```
+
+With the first definition the picture is the one of Card: the college matters more for the sons of less educated parents (`r f2(card_test$college_effect_others[1])` years for the others, `r f2(card_test$extra_for_low[1])` more for them), the IV estimate is `r f3(card_test$IV[1])` (*SE* `r f3(card_test$SE_IV[1])`), and the direct effect is `r f3(card_test$direct_effect[1])` (*SE* `r f3(card_test$SE_direct[1])`). With the second definition the extra effect has the wrong sign, and nothing can be estimated (*SE* of the IV estimate `r f2(card_test$SE_IV[2])`). The test says what Card wrote himself: "although imprecise", there is no evidence **against** the instrument. That is not the same as evidence for it.
 
 ### How large a violation would change the answer?
 
@@ -291,9 +555,25 @@ $$\hat\beta(\gamma) = \frac{\text{reduced form} - \gamma}{\text{first stage}}$$
 rf <- coef(reduced_form)[["nearc4"]]; fs <- coef(first_stage)[["nearc4"]]
 gamma <- seq(0, 0.06, length.out = 100)
 g_ols <- rf - coef(ols)[["educ"]] * fs
-ggplot(data.frame(gamma, b = (rf - gamma) / fs), aes(gamma, b)) + geom_line(colour = "#2a78d6", linewidth = 1) + geom_hline(yintercept = coef(ols)[["educ"]], colour = "#eb6834") + geom_hline(yintercept = 0, linetype = "dashed") +
-  annotate("text", x = 0.058, y = coef(ols)[["educ"]] + 0.008, label = "least squares", hjust = 1, colour = "#eb6834", size = 3.6) +
-  labs(title = "IV estimate, if the instrument also had a direct effect on wages", x = "direct effect of a college nearby on the log wage", y = "effect of a year of schooling") + theme_bw()
+ggplot(data.frame(gamma, b = (rf - gamma) / fs), aes(gamma, b)) +
+  geom_line(colour = "#2a78d6", linewidth = 1) +
+  geom_hline(yintercept = coef(ols)[["educ"]], colour = "#eb6834") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  annotate(
+    "text",
+    x = 0.058,
+    y = coef(ols)[["educ"]] + 0.008,
+    label = "least squares",
+    hjust = 1,
+    colour = "#eb6834",
+    size = 3.6
+  ) +
+  labs(
+    title = "IV estimate, if the instrument also had a direct effect on wages",
+    x = "direct effect of a college nearby on the log wage",
+    y = "effect of a year of schooling"
+  ) +
+  theme_bw()
 c(reduced_form = rf, first_stage = fs, gamma_for_the_OLS_result = g_ols, gamma_for_zero = rf)
 ```
 
@@ -301,19 +581,27 @@ A direct effect of only `r pct(g_ols, 1)` on wages would bring the estimate down
 
 ### A control that is not innocent
 
-`exper` is age − schooling − 6. It contains schooling, the very variable that we consider endogenous. Two remedies: use age instead of experience, or treat experience as endogenous too and use age as its instrument:
+`exper` is age − schooling − 6. It contains schooling, the very variable that we consider endogenous. Two remedies: use age instead of experience, or treat experience as endogenous too and use age as its instrument. Card did the second in his panel B of Table 3 and found 0.122 (0.046):
 
 ```{r experience}
-iv_age   <- ivreg(fml("lwage", paste("educ +", controls_age, "| nearc4 +", controls_age)), data = card)
+iv_age <- ivreg(
+  fml("lwage", paste("educ +", controls_age, "| nearc4 +", controls_age)),
+  data = card
+)
 iv_exper <- ivreg(fml("lwage", paste("educ +", controls, "| nearc4 +", controls_age)), data = card)
 ols_age  <- lm(fml("lwage", paste("educ +", controls_age)), card)
-alt <- rbind(`OLS, experience` = coef(summary(ols))["educ", 1:2], `IV, experience as in Card` = coef(summary(iv))["educ", 1:2], `OLS, age` = coef(summary(ols_age))["educ", 1:2],
-             `IV, age` = coef(summary(iv_age))["educ", 1:2], `IV, experience instrumented by age` = coef(summary(iv_exper))["educ", 1:2])
+alt <- rbind(
+  `OLS, experience` = coef(summary(ols))["educ", 1:2],
+  `IV, experience as in Card` = coef(summary(iv))["educ", 1:2],
+  `OLS, age` = coef(summary(ols_age))["educ", 1:2],
+  `IV, age` = coef(summary(iv_age))["educ", 1:2],
+  `IV, experience instrumented by age` = coef(summary(iv_exper))["educ", 1:2]
+)
 F_age <- summary(iv_age)$diagnostics["Weak instruments", "statistic"]
 round(alt, 3); c(first_stage_F_with_age = F_age)
 ```
 
-With age, the first stage is `r if (F_age < F_first) "weaker" else "stronger"` (*F* = `r f1(F_age)`), and the IV estimate is `r f3(alt["IV, age", 1])` (*SE* = `r f3(alt["IV, age", 2])`). At a given age, a man with one more year of school has one year **less** experience, so the two versions do not measure the same thing: with experience held constant the coefficient is larger by the value of that year of work. The choice must be made by the question, and reported.
+The last row gives his number. With age, the first stage is `r if (F_age < F_first) "weaker" else "stronger"` (*F* = `r f1(F_age)`), and the IV estimate is `r f3(alt["IV, age", 1])` (*SE* = `r f3(alt["IV, age", 2])`). At a given age, a man with one more year of school has one year **less** experience, so the two versions do not measure the same thing: with experience held constant the coefficient is larger by the value of that year of work. The choice must be made by the question, and reported.
 
 ---
 
@@ -337,15 +625,37 @@ A report (APA 7th edition) needs the instrument and the argument for it, the con
 
 ```{r apa_numbers}
 row <- function(m, term) { co <- coef(summary(m))[term, ]; c(f3(co[1]), f3(co[2])) }
-apa_table <- data.frame(Regression = c("First stage (years of schooling on college nearby)", "Reduced form (log wage on college nearby)", "Log wage on schooling, OLS", "Log wage on schooling, 2SLS", "Log wage on schooling, 2SLS, two instruments"),
-  rbind(row(first_stage, "nearc4"), row(reduced_form, "nearc4"), row(ols, "educ"), row(iv, "educ"), row(iv2, "educ")))
+apa_table <- data.frame(
+  Regression = c(
+    "First stage (years of schooling on college nearby)",
+    "Reduced form (log wage on college nearby)", "Log wage on schooling, OLS",
+    "Log wage on schooling, 2SLS", "Log wage on schooling, 2SLS, two instruments"
+  ),
+  rbind(
+    row(first_stage, "nearc4"),
+    row(reduced_form, "nearc4"),
+    row(ols, "educ"),
+    row(iv, "educ"),
+    row(iv2, "educ")
+  )
+)
 names(apa_table) <- c("Regression", "b", "SE")
-apa_table$CI <- c(apply(rbind(confint(first_stage)["nearc4", ], confint(reduced_form)["nearc4", ], confint(ols)["educ", ], ci_iv, confint(iv2)["educ", ]), 1, function(v) paste0("[", f3(v[1]), ", ", f3(v[2]), "]")))
+apa_table$CI <- c(apply(
+  rbind(
+    confint(first_stage)["nearc4", ],
+    confint(reduced_form)["nearc4", ],
+    confint(ols)["educ", ],
+    ci_iv,
+    confint(iv2)["educ", ]
+  ),
+  1,
+  function(v) paste0("[", f3(v[1]), ", ", f3(v[2]), "]")
+))
 ```
 
 **Method** (data analysis):
 
-> The return to schooling was estimated for `r num(nrow(card))` men of the National Longitudinal Survey of Young Men (log hourly wage in 1976; Card, 1993). Because unobserved ability and family background may influence both schooling and wages, schooling was instrumented with the presence of a four-year college in the county of residence in 1966, which lowered the cost of college for boys who could live at home. All models contained experience, experience squared, and indicators for black, residence in the south, metropolitan residence in 1966 and 1976, and region in 1966. Two-stage least squares was used (R package ivreg); the strength of the instrument was judged with the first-stage *F*, and a 95% Anderson–Rubin interval (Anderson & Rubin, 1949) was computed because it is valid with weak instruments. Endogeneity was tested with the Wu–Hausman test, and the robustness of the result to a direct effect of the instrument was examined (Conley et al., 2012). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+> The return to schooling was estimated for `r num(nrow(card))` men of the National Longitudinal Survey of Young Men (log hourly wage in 1976; Card, 1993). Because unobserved ability and family background may influence both schooling and wages, schooling was instrumented with the presence of a four-year college in the local labour market of residence in 1966, which lowered the cost of college for boys who could live at home. All models contained experience, experience squared, and indicators for black, residence in the south, metropolitan residence in 1966 and 1976, and region in 1966. Two-stage least squares was used (R package ivreg); the strength of the instrument was judged with the first-stage *F*, and a 95% Anderson–Rubin interval (Anderson & Rubin, 1949) was computed because it is valid with weak instruments. Endogeneity was tested with the Wu–Hausman test, and the robustness of the result to a direct effect of the instrument was examined (Conley et al., 2012). Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
 
 **Results:**
 

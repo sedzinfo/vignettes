@@ -270,7 +270,10 @@ ggplot(res, aes(year, r, colour = curve)) +
   labs(title = "Residuals: the logistic misses in long waves", x = NULL, y = "residual (points)") +
   theme_bw()
 
-lag1 <- c(logistic = acf(resid(logistic), plot = FALSE)$acf[2], gompertz = acf(resid(gompertz), plot = FALSE)$acf[2])
+lag1 <- c(
+  logistic = acf(resid(logistic), plot = FALSE)$acf[2],
+  gompertz = acf(resid(gompertz), plot = FALSE)$acf[2]
+)
 lag1
 ```
 
@@ -285,7 +288,8 @@ The residuals of the logistic come in long runs of the same sign, and each corre
 The quick interval is the estimate $\pm$ 2 standard errors (Wald). It trusts the tangent of step 6, and it is symmetric. The **profile** interval does not: it fixes one parameter at a value, fits all the others again, and keeps the values for which the fit does not become significantly worse (with an *F* test). `confint()` does it for `nls` fits:
 
 ```{r intervals}
-wald    <- coef(gompertz) + outer(summary(gompertz)$coefficients[, 2], c(-1, 1) * qt(0.975, df.residual(gompertz)))
+wald <- coef(gompertz) +
+  outer(summary(gompertz)$coefficients[, 2], c(-1, 1) * qt(0.975, df.residual(gompertz)))
 profile_ci <- confint(gompertz)
 cbind(estimate = cG, wald_low = wald[, 1], wald_high = wald[, 2],
       profile_low = profile_ci[, 1], profile_high = profile_ci[, 2])
@@ -311,7 +315,11 @@ delta_se <- function(fun, fit, h = 1e-5) {
 }
 derived <- rbind(t50        = c(estimate = t50(cG),   SE = delta_se(t50, gompertz)),
                  max_growth = c(estimate = slope(cG), SE = delta_se(slope, gompertz)))
-derived <- cbind(derived, lower = derived[, 1] - 2 * derived[, 2], upper = derived[, 1] + 2 * derived[, 2])
+derived <- cbind(
+  derived,
+  lower = derived[, 1] - 2 * derived[, 2],
+  upper = derived[, 1] + 2 * derived[, 2]
+)
 derived
 ```
 
@@ -334,8 +342,16 @@ In 2008 the share was `r f1(greece$share[greece$year == 2008])`%. Fit both curve
 ```{r forecast}
 past   <- subset(greece, year <= 2008)
 future <- subset(greece, year > 2008)
-past_logistic <- nls(share ~ A / (1 + exp(-(t - m) / s)), data = past, start = list(A = 60, m = 5, s = 3))
-past_gompertz <- nls(share ~ A * exp(-exp(-(t - m) / s)), data = past, start = list(A = 90, m = 7, s = 7))
+past_logistic <- nls(
+  share ~ A / (1 + exp(-(t - m) / s)),
+  data = past,
+  start = list(A = 60, m = 5, s = 3)
+)
+past_gompertz <- nls(
+  share ~ A * exp(-exp(-(t - m) / s)),
+  data = past,
+  start = list(A = 90, m = 7, s = 7)
+)
 early <- rbind(Logistic = coef(past_logistic), Gompertz = coef(past_gompertz))
 early
 
@@ -357,11 +373,20 @@ ggplot(greece, aes(year, share)) +
   geom_line(data = early_paths, aes(colour = curve), linewidth = 1) +
   geom_point(size = 1.8, colour = "grey25") +
   annotate("text", x = 2008, y = 97, label = "fitted", hjust = 1, size = 3.3, colour = "grey30") +
-  annotate("text", x = 2009, y = 97, label = "predicted", hjust = 0, size = 3.3, colour = "grey30") +
+  annotate(
+    "text",
+    x = 2009,
+    y = 97,
+    label = "predicted",
+    hjust = 0,
+    size = 3.3,
+    colour = "grey30"
+  ) +
   scale_colour_manual(values = curve_colours, name = NULL) +
   scale_y_continuous(limits = c(0, 100)) +
   labs(title = "Curves fitted to 1990–2008, continued", x = NULL, y = "% of the population") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 The logistic curve, fitted to 2008, announced a ceiling of `r f1(early["Logistic", "A"])`%, with a 95% confidence interval from `r f1(ceiling_ci["Logistic", 1])` to `r f1(ceiling_ci["Logistic", 2])`. In `r max(greece$year)` the share was `r f1(tail(greece$share, 1))`%. The Gompertz said `r f1(early["Gompertz", "A"])`%, and predicted the next `r nrow(future)` years with an error of `r f1(rmse[["Gompertz"]])` points, against `r f1(rmse[["Logistic"]])`.
@@ -403,14 +428,25 @@ country_table
 
 ```{r countries_chart}
 obs  <- do.call(rbind, Map(function(d, n) data.frame(d, country = n), sets, names(sets)))
-pred <- do.call(rbind, Map(function(f, n) data.frame(year = grid$year, share = predict(f, grid), country = n), fits, names(fits)))
+pred <- do.call(
+  rbind,
+  Map(
+    function(f, n) data.frame(year = grid$year, share = predict(f, grid), country = n),
+    fits,
+    names(fits)
+  )
+)
 
 ggplot(obs, aes(year, share, colour = country)) +
   geom_line(data = subset(pred, year <= 2025), linewidth = 1) +
   geom_point(size = 1.6) +
-  scale_colour_manual(values = c(Greece = "#2a78d6", Germany = "#eb6834", `South Korea` = "#1baf7a"), name = NULL) +
+  scale_colour_manual(
+    values = c(Greece = "#2a78d6", Germany = "#eb6834", `South Korea` = "#1baf7a"),
+    name = NULL
+  ) +
   labs(title = "The same curve, three countries", x = NULL, y = "% of the population") +
-  theme_bw() + theme(legend.position = "bottom")
+  theme_bw() +
+  theme(legend.position = "bottom")
 ```
 
 South Korea was fastest around `r round(country_table$fastest[3])` with `r f1(country_table$growth[3])` points a year, Germany around `r round(country_table$fastest[2])` with `r f1(country_table$growth[2])`, Greece around `r round(country_table$fastest[1])` with `r f1(country_table$growth[1])`. The curve fits Greece best: the residual standard error is `r f1(country_table$sigma[1])` points for Greece, `r f1(country_table$sigma[2])` for Germany and `r f1(country_table$sigma[3])` for South Korea, where the points leave the curve visibly. One curve does not fit everybody. (For many countries together, with parameters that vary between them, see `nlme::nlme()`, the nonlinear form of the [multilevel model](EXAMPLE_MULTILEVEL.Rmd).)
@@ -438,9 +474,18 @@ sG <- summary(gompertz)$coefficients
 ciL <- confint(logistic)
 sL <- summary(logistic)$coefficients
 apa_table <- data.frame(
-  Parameter = c("Ceiling *A* (%)", "Time of fastest growth *m* (years since 2000)", "Scale *s* (years)"),
-  gE = f2(sG[, 1]), gS = f2(sG[, 2]), gC = paste0("[", f2(profile_ci[, 1]), ", ", f2(profile_ci[, 2]), "]"),
-  lE = f2(sL[, 1]), lS = f2(sL[, 2]), lC = paste0("[", f2(ciL[, 1]), ", ", f2(ciL[, 2]), "]"))
+  Parameter = c(
+    "Ceiling *A* (%)",
+    "Time of fastest growth *m* (years since 2000)",
+    "Scale *s* (years)"
+  ),
+  gE = f2(sG[, 1]),
+  gS = f2(sG[, 2]),
+  gC = paste0("[", f2(profile_ci[, 1]), ", ", f2(profile_ci[, 2]), "]"),
+  lE = f2(sL[, 1]),
+  lS = f2(sL[, 2]),
+  lC = paste0("[", f2(ciL[, 1]), ", ", f2(ciL[, 2]), "]")
+)
 ```
 
 **Method** (data analysis):
