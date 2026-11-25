@@ -135,7 +135,7 @@ ggplot(d, aes(log_u, lag_u)) +
   theme_bw()
 ```
 
-**Moran's I** is a correlation between a region and its neighbours: the slope of the line in this chart. It is `r f2(moran$estimate[["Moran I statistic"]])`, where 0 would be no pattern. Unemployment is as clustered as it can be.
+**Moran's I** is a correlation between a region and its neighbours: the slope of the line in this chart. It is `r f2(moran$estimate[["Moran I statistic"]])`, where 0 would be no pattern. Unemployment is strongly clustered.
 
 ---
 
@@ -148,7 +148,7 @@ mr <- lm.morantest(ols, W)
 c(Moran_I_of_the_residuals = mr$estimate[[1]], p = mr$p.value[[1]])
 ```
 
-OLS finds that richer regions have less unemployment (`r f2(coef(ols)[["log_gdp"]])`: 10% more income, `r f1(abs(10 * coef(ols)[["log_gdp"]]))`% less unemployment) and, oddly, that regions with **more** graduates have more of it, once income is held constant. Both are "highly significant". But the **residuals** have a Moran's I of `r f2(mr$estimate[[1]])`: the model has explained almost nothing of the map. The `r nrow(d)` regions are not `r nrow(d)` independent pieces of information, and neither result can be trusted.
+OLS finds that richer regions have less unemployment (`r f2(coef(ols)[["log_gdp"]])`: 10% more income, `r f1(100 * (1 - 1.1^coef(ols)[["log_gdp"]]))`% less unemployment) and, oddly, that regions with **more** graduates have more of it, once income is held constant. Both are "highly significant". But the **residuals** have a Moran's I of `r f2(mr$estimate[[1]])`: the model has explained almost nothing of the map. The `r nrow(d)` regions are not `r nrow(d)` independent pieces of information, and neither result can be trusted.
 
 ---
 
@@ -253,7 +253,9 @@ by_hand <- rbind(by_hand, indirect = by_hand["total", ] - by_hand["direct", ])
 round(by_hand, 3)
 set.seed(141)
 imp <- summary(impacts(sar, listw = W, R = 1000), zstats = TRUE, short = TRUE)
-round(cbind(direct = imp$res$direct, indirect = imp$res$indirect, total = imp$res$total), 3)
+by_package <- sapply(imp$res[c("direct", "indirect", "total")], as.numeric)
+rownames(by_package) <- c("deg10", "log_gdp")
+round(by_package, 3)
 imp_ci <- t(sapply(
   c(direct = "direct_sum", indirect = "indirect_sum", total = "total_sum"),
   function(k) imp[[k]]$quantiles[2, c("2.5%", "97.5%")]
@@ -261,7 +263,7 @@ imp_ci <- t(sapply(
 round(imp_ci, 2)
 ```
 
-The coefficient of log income is `r f2(sar$coefficients[["log_gdp"]])`. The **direct** effect is `r f2(by_hand["direct", "log_gdp"])`, and the **total** `r f2(by_hand["total", "log_gdp"])`, 95% CI [`r f2(imp_ci["total", 1])`, `r f2(imp_ci["total", 2])`]: if **all** the regions became 10% richer, unemployment would be `r f1(abs(10 * by_hand["total", "log_gdp"]))`% lower. Most of this, says the model, is spillover. But the split is a **consequence of the formula**: in a lag model the ratio of the indirect to the direct effect is the same for every predictor, whatever the data. It is a strong claim, and it rests on $\rho$ being contagion.
+The coefficient of log income is `r f2(sar$coefficients[["log_gdp"]])`. The **direct** effect is `r f2(by_hand["direct", "log_gdp"])`, and the **total** `r f2(by_hand["total", "log_gdp"])`, 95% CI [`r f2(imp_ci["total", 1])`, `r f2(imp_ci["total", 2])`]: if **all** the regions became 10% richer, unemployment would be `r f1(100 * (1 - 1.1^by_hand["total", "log_gdp"]))`% lower. Most of this, says the model, is spillover. But the split is a **consequence of the formula**: in a lag model the ratio of the indirect to the direct effect is the same for every predictor, whatever the data. It is a strong claim, and it rests on $\rho$ being contagion.
 
 ---
 
@@ -323,7 +325,7 @@ sens <- t(sapply(make_W, function(w) {
 round(sens, 3)
 ```
 
-The definition changes the numbers a little and the story not at all. Report more than one.
+The definition changes the numbers (most of all with every region within 300 km) and not the story. Report more than one.
 
 ---
 

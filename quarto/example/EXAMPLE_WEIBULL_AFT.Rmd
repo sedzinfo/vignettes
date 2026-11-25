@@ -145,7 +145,7 @@ hand <- optim(c(-12, 9, -1), minus_loglik, control = list(maxit = 5000, reltol =
 hand <- optim(hand$par, minus_loglik, control = list(maxit = 5000, reltol = 1e-14))
 fit  <- survreg(Surv(time, status) ~ x, data = motors, dist = "weibull")
 rbind(
-  by_hand = c(hand$par[1:2], sigma = exp(hand$par[3]), logLik = -hand$value),
+  by_hand = c(`(Intercept)` = hand$par[1], x = hand$par[2], sigma = exp(hand$par[3]), logLik = -hand$value),
   survreg = c(coef(fit), fit$scale, logLik(fit))
 )
 ```
@@ -190,7 +190,8 @@ names(fits) <- dists
 at130 <- data.frame(x = 1000 / (130 + 273.16))
 interval <- function(m, p) {
   r <- predict(m, at130, type = "uquantile", p = p, se.fit = TRUE)
-  exp(c(r$fit, r$fit - 1.96 * r$se.fit, r$fit + 1.96 * r$se.fit))
+  est <- r$fit[[1]]; se <- r$se.fit[[1]]
+  exp(c(estimate = est, low = est - 1.96 * se, high = est + 1.96 * se))
 }
 compare <- t(sapply(fits, function(m) {
   c(
@@ -293,7 +294,7 @@ lr_line <- 2 * (as.numeric(logLik(free)) - as.numeric(logLik(one)))
 c(LR = lr_line, df = 1, p = pchisq(lr_line, 1, lower.tail = FALSE))
 ```
 
-Against a model where each of the three temperatures with failures has its own level, the Arrhenius line loses $\chi^2$(1) = `r f2(lr_line)`, *p* `r pval(pchisq(lr_line, 1, lower.tail = FALSE))`. `r if (pchisq(lr_line, 1, lower.tail = FALSE) < .05) "The line is not perfect. The lifetimes at the highest temperature are longer than it says, perhaps because the mechanism of failure is another one there. If so, the points at 220 °C should not help to predict 130 °C." else "The line is compatible with the data."`
+A bend (a squared term) lowers the AIC by only `r f1(AIC(fit) - AIC(curve))`. Against a model where each of the three temperatures with failures has its own level, the Arrhenius line loses $\chi^2$(1) = `r f2(lr_line)`, *p* `r pval(pchisq(lr_line, 1, lower.tail = FALSE))`. `r if (pchisq(lr_line, 1, lower.tail = FALSE) < .05) "The line is not perfect. The lifetimes at the highest temperature are longer than it says, perhaps because the mechanism of failure is another one there. If so, the points at 220 °C should not help to predict 130 °C." else "The line is compatible with the data."`
 
 ```{r without_220}
 no220 <- survreg(Surv(time, status) ~ x, data = subset(motors, temp < 220), dist = "weibull")
@@ -408,7 +409,7 @@ names(pred_table) <- c("temp", "med", "low", "high")
 
 **Method** (data analysis):
 
-> The lifetimes of `r nrow(motors)` motors tested at 150, 170, 190 and 220 °C (Nelson & Hahn, 1972) were analysed with a Weibull accelerated failure time model; `r sum(motors$status == 0)` motors had not failed at the end of the test and were right-censored. The predictor was 1000 divided by the absolute temperature (Arrhenius relation). The Weibull distribution was compared with the exponential, log-normal and log-logistic distributions by the AIC, and the equality of the scale and the linearity of the relation were tested with likelihood-ratio tests. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package survival.
+> The lifetimes of `r nrow(motors)` motors tested at 150, 170, 190 and 220 °C (Nelson & Hahn, 1972) were analysed with a Weibull accelerated failure time model; `r sum(motors$status == 0)` motors had not failed at the end of the test and were right-censored. The predictor was 1000 divided by the absolute temperature (Arrhenius relation). The Weibull distribution was compared with the exponential, log-normal and log-logistic distributions by the AIC, and the equality of the scale and the linearity of the relation were tested with likelihood-ratio tests. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`) with the package survival (Therneau, 2026).
 
 **Results:**
 
