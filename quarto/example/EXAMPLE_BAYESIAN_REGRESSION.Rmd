@@ -1,0 +1,400 @@
+---
+title: "Bayesian Regression: Does the Economy Decide American Elections?"
+description: "Bayesian linear regression in R on 16 presidential elections: prior, likelihood and posterior on a grid, the closed-form posterior by hand, a Metropolis sampler in ten lines, the same answer from rstanarm, R-hat by hand, what the posterior lets you say and what it does not, forecasts with all the uncertainty, posterior predictive checks, leave-one-out by hand and with loo, errors with fat tails by changing one line, how much the prior matters with sixteen rows, why Bayes factors depend on it even more, what calibrated means, and APA reporting."
+author: ""
+---
+
+```{r options, echo=FALSE, warning=FALSE, message=FALSE}
+directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the page downloads its data each time it runs (in about a second),
+# and a cached chunk would quietly keep an old download
+knitr::opts_chunk$set(fig.height = 4.5, cache = FALSE)
+```
+
+## The question: sixteen elections
+
+When the economy grows, the party in the White House is said to win the next election. Douglas Hibbs (2000) made a model of it, "bread and peace": the growth of personal income during the term predicts the vote. How strong is the connection, and what does it say about an election in which growth is 2%?
+
+There is a difficulty: there have been **few** elections. With 16 rows an ordinary regression gives a line and a wide interval, and nothing else. A **Bayesian** regression does two things more.
+
+- It starts with a **prior**: a distribution that says what we consider possible before we see the data. (A growth of 1% does not move the vote by 40 points.) The data then change the prior into the **posterior**.
+- Its answers are probabilities of the things we want to know: the probability that the slope is above 2, or that the party keeps the White House. An ordinary confidence interval does not say that, although everybody reads it that way.
+
+The price is that one has to state the prior, and to say what happens with another. This page writes everything by hand, in a few lines, and gets the same numbers from the package *rstanarm*.
+
+```{r packages}
+library(ggplot2)
+library(rstanarm)    # stan_glm(): Bayesian regression with Stan behind it
+# also used, with package::function: loo (loo, loo_compare), posterior (rhat, ess_bulk)
+
+# number formats for the text
+f1   <- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
+f2   <- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
+f3   <- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
+pct  <- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
+ptop <- function(p) if (p > 0.999) "over 99.9%" else pct(p, 1)                                      # a probability from draws is never exactly 1
+nz   <- function(x, d = 2) sub("^(-?)0\\.", "\\1.", formatC(x, format = "f", digits = d))          # APA: no leading zero
+```
+
+---
+
+## 1. The data
+
+```{r download}
+hibbs <- read.table("https://raw.githubusercontent.com/avehtari/ROS-Examples/master/ElectionsEconomy/data/hibbs.dat", header = TRUE)
+names(hibbs)[1:5] <- c("year", "growth", "vote", "incumbent", "challenger")
+hibbs
+y <- hibbs$vote; xc <- hibbs$growth - mean(hibbs$growth)          # centred growth: the intercept is then the vote at average growth
+n <- length(y)
+```
+
+The `r nrow(hibbs)` presidential elections from `r min(hibbs$year)` to `r max(hibbs$year)`, from the book of Gelman et al. (2020), who updated the data of Hibbs (2000). `vote` is the share of the candidate of the **incumbent party** among the votes for the two large parties (%). `growth` is the growth of real personal income per head during the term (% per year), with more weight for the last quarters.
+
+---
+
+## 2. Look at the data
+
+```{r scatter, fig.height = 4.8}
+ls_fit <- lm(vote ~ growth, hibbs)
+ggplot(hibbs, aes(growth, vote)) + geom_hline(yintercept = 50, linetype = "dashed") + geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = "#eb6834") + geom_point(colour = "#2a78d6", size = 2) +
+  geom_text(aes(label = year), hjust = -0.2, vjust = 0.4, size = 3.4) + xlim(-0.6, 4.7) + labs(title = "Vote share of the party in the White House against growth", subtitle = "Orange: least squares", x = "growth of income during the term (% per year)", y = "vote (%)") + theme_bw()
+summary(ls_fit)$coefficients; c(sigma = sigma(ls_fit), confint(ls_fit)["growth", ])
+```
+
+Each percentage point of growth goes with `r f1(coef(ls_fit)[["growth"]])` points more of the vote, with a 95% confidence interval from `r f1(confint(ls_fit)["growth", 1])` to `r f1(confint(ls_fit)["growth", 2])`. The points that lie far from the line are 1952 and 1968, the elections during the wars in Korea and Vietnam ("bread **and peace**").
+
+---
+
+## 3. The model step by step, with formulas
+
+### Step 1: Bayes' rule
+
+$$\underbrace{p(\theta \mid y)}_{\text{posterior}} \;\propto\; \underbrace{p(y \mid \theta)}_{\text{likelihood}} \times \underbrace{p(\theta)}_{\text{prior}}, \qquad y_i \sim N(\alpha + \beta\,(x_i - \bar x),\ \sigma^2)$$
+
+The likelihood says how well values of the parameters explain the data. Multiplied with the prior, it gives the probability of the values after seeing the data. The sign $\propto$ means "up to a constant that makes the total 1".
+
+### Step 2: one parameter on a grid
+
+To see how it works, pretend that $\alpha$ and $\sigma$ are known (the values of least squares), so that only the slope $\beta$ is unknown. Take a prior that is sceptical: a normal distribution around 0 with SD 1. Compute the three curves at many values of $\beta$:
+
+```{r grid_chart, fig.height = 4.2}
+beta_grid <- seq(-3, 6, length.out = 400); a_hat <- mean(y); s_hat <- sigma(ls_fit)
+prior_d <- dnorm(beta_grid, 0, 1)
+lik     <- exp(sapply(beta_grid, function(b) sum(dnorm(y, a_hat + b * xc, s_hat, log = TRUE)))); lik <- lik / sum(lik) / diff(beta_grid[1:2])
+post_d  <- prior_d * lik; post_d <- post_d / sum(post_d) / diff(beta_grid[1:2])
+gd <- data.frame(beta = rep(beta_grid, 3), density = c(prior_d, lik, post_d), curve = factor(rep(c("prior", "likelihood", "posterior"), each = 400), levels = c("prior", "likelihood", "posterior")))
+ggplot(gd, aes(beta, density, colour = curve)) + geom_line(linewidth = 1) + scale_colour_manual(values = c("#eda100", "#1baf7a", "#2a78d6"), name = NULL) + labs(title = "A sceptical prior, the data, and the result", x = "slope: points of the vote per 1% of growth", y = "density") + theme_bw()
+prec <- c(prior = 1, data = sum(xc^2) / s_hat^2)
+c(mean_of_the_posterior_on_the_grid = sum(beta_grid * post_d) * diff(beta_grid[1:2]), precision_weighted_mean = sum(prec * c(0, coef(ls_fit)[["growth"]])) / sum(prec))
+```
+
+The posterior lies between the prior and the data. For normal distributions its mean is the mean of the two, weighted with their **precision** (1/variance):
+
+$$E(\beta \mid y) = \frac{\text{prec}_{\text{prior}} \cdot \text{prior mean} + \text{prec}_{\text{data}} \cdot \hat\beta}{\text{prec}_{\text{prior}} + \text{prec}_{\text{data}}}$$
+
+The data weigh `r f1(prec[["data"]])` here, the prior 1. So this prior counts as much as `r f1(prec[["prior"]] / prec[["data"]] * n)` further elections would, next to the `r n` that we have.
+
+### Step 3: the whole model in closed form
+
+For the linear model there is a prior with which everything can be computed with a formula: the **normal–inverse-gamma** prior, $\beta \mid \sigma^2 \sim N(m_0, \sigma^2 V_0)$, $\sigma^2 \sim IG(a_0, b_0)$. The posterior is of the same kind, with
+
+$$V_n = (V_0^{-1} + X^\top X)^{-1}, \quad m_n = V_n(V_0^{-1}m_0 + X^\top y), \quad a_n = a_0 + \tfrac n2, \quad b_n = b_0 + \tfrac12\left(y^\top y + m_0^\top V_0^{-1}m_0 - m_n^\top V_n^{-1}m_n\right)$$
+
+and each coefficient has a *t* distribution with $2a_n$ degrees of freedom. With $V_0^{-1} \to 0$, $a_0 = -p/2$ and $b_0 = 0$ (a *flat* prior) one gets the numbers of least squares:
+
+```{r closed_form}
+nig <- function(X, y, m0, V0inv, a0, b0) { Vn <- solve(V0inv + crossprod(X)); mn <- drop(Vn %*% (V0inv %*% m0 + crossprod(X, y))); an <- a0 + length(y) / 2
+  bn <- b0 + (sum(y^2) + drop(t(m0) %*% V0inv %*% m0) - drop(t(mn) %*% solve(Vn, mn))) / 2
+  data.frame(mean = mn, low = mn - qt(0.975, 2 * an) * sqrt(bn / an * diag(Vn)), high = mn + qt(0.975, 2 * an) * sqrt(bn / an * diag(Vn))) }
+X <- cbind(`(Intercept)` = 1, growth = xc)
+rbind(flat_prior_by_hand = nig(X, y, c(0, 0), diag(0, 2), -1, 0)["growth", ], least_squares = c(coef(ls_fit)["growth"], confint(ls_fit)["growth", ]))
+```
+
+With a flat prior the 95% **credible** interval is the 95% confidence interval. The numbers are the same, and what one may say about them is different.
+
+### Step 4: sampling
+
+For most models there is no formula. Then one **draws** from the posterior. The oldest method (Metropolis et al., 1953) is a walk: propose a small random step; if the posterior is higher there, go; if it is lower, go with a probability equal to the ratio. The places visited are draws from the posterior, after a while. The constant in Bayes' rule cancels in the ratio, so nobody needs to know it.
+
+The priors (for the centred predictor):
+
+- $\alpha \sim N(50, 5)$: with average growth the incumbent party gets about half of the votes, very probably between 40 and 60.
+- $\beta \sim N(0, 5)$: 1% of growth changes the vote by less than 10 points, in an unknown direction. That is a weak statement, which is only to keep out absurd values.
+- $\sigma \sim \text{Exponential}(1/5)$: elections deviate from the line by a few points, 5 on average.
+
+```{r metropolis}
+log_posterior <- function(th, yy = y, xx = xc, prior_b = c(0, 5), t_errors = FALSE) {                      # th = (alpha, beta, log sigma)
+  s <- exp(th[3]); mu <- th[1] + th[2] * xx
+  loglik <- if (t_errors) sum(dt((yy - mu) / s, 4, log = TRUE) - log(s)) else sum(dnorm(yy, mu, s, log = TRUE))
+  loglik + dnorm(th[1], 50, 5, log = TRUE) + dnorm(th[2], prior_b[1], prior_b[2], log = TRUE) + dexp(s, 1 / 5, log = TRUE) + th[3]        # + th[3]: because we walk on log sigma
+}
+metropolis <- function(draws, start, step, logp, ...) {
+  out <- matrix(0, draws, 3, dimnames = list(NULL, c("alpha", "beta", "sigma"))); now <- start; lp <- logp(now, ...)
+  for (i in seq_len(draws)) { candidate <- now + step * rnorm(3); lp_new <- logp(candidate, ...); if (log(runif(1)) < lp_new - lp) { now <- candidate; lp <- lp_new }; out[i, ] <- now }
+  out[, 3] <- exp(out[, 3]); out
+}
+set.seed(241); steps <- c(1.3, 1, 0.3); warm <- 2000; keep <- 20000
+chains <- lapply(1:4, function(k) metropolis(warm + keep, c(rnorm(1, 50, 8), rnorm(1, 0, 8), log(4) + rnorm(1)), steps, log_posterior))
+hand <- do.call(rbind, lapply(chains, function(m) m[-(1:warm), ]))
+summ <- function(v) c(mean = mean(v), sd = sd(v), low = quantile(v, 0.025)[[1]], high = quantile(v, 0.975)[[1]])
+t(apply(hand, 2, summ))
+```
+
+Four chains, each from a different, deliberately bad start, and the first `r format(warm, big.mark = ",")` steps of each thrown away (*warm-up*).
+
+```{r trace_chart, fig.height = 4}
+tr <- do.call(rbind, lapply(1:4, function(k) data.frame(i = 1:400, beta = chains[[k]][1:400, "beta"], chain = factor(k))))
+ggplot(tr, aes(i, beta, colour = chain)) + geom_line(linewidth = 0.5) + scale_colour_manual(values = c("#2a78d6", "#eb6834", "#1baf7a", "#eda100"), guide = "none") + labs(title = "The first 400 steps of four chains", subtitle = "They start in different places and meet", x = "step", y = "slope") + theme_bw()
+```
+
+### Step 5: the same with a package
+
+`stan_glm()` uses a much better sampler than ours (Hamiltonian Monte Carlo) and the same model and priors. `prior_intercept` is for the centred predictor, like our $\alpha$.
+
+```{r rstanarm}
+fit <- stan_glm(vote ~ growth, data = hibbs, prior = normal(0, 5), prior_intercept = normal(50, 5), prior_aux = exponential(1 / 5), seed = 242, refresh = 0, iter = 10000)
+stan <- as.matrix(fit)                                                                               # columns: (Intercept) at growth 0, growth, sigma
+stan_tab <- rbind(alpha = summ(stan[, "(Intercept)"] + stan[, "growth"] * mean(hibbs$growth)), beta = summ(stan[, "growth"]), sigma = summ(stan[, "sigma"]))
+round(cbind(hand = t(apply(hand, 2, summ)), stan = stan_tab), 2)
+difference <- max(abs(t(apply(hand, 2, summ))[, c("mean", "sd")] - stan_tab[, c("mean", "sd")]))
+```
+
+(First four columns: our walk; last four: rstanarm.) They agree: the largest difference in a mean or SD is `r f2(difference)`.
+
+### Did the chains arrive?
+
+The check is the **R-hat** of Gelman and Rubin: the variance of all draws together, against the variance within each chain. If the chains are in different places the first is larger. By hand, with every chain cut in two halves, so that a drift within a chain also shows:
+
+$$\hat R = \sqrt{\frac{\frac{m-1}{m}W + \frac 1m B}{W}}, \quad W = \text{mean variance within a half}, \quad B = m \cdot \text{variance of the means of the halves}$$
+
+($m$: length of a half. Values above 1.01 are suspicious; Vehtari et al., 2021, recommend a version based on ranks.)
+
+```{r rhat}
+halves <- function(cs) do.call(cbind, lapply(cs, function(v) { m <- length(v) / 2; cbind(v[1:m], v[(m + 1):(2 * m)]) }))
+rhat_hand <- function(cs) { h <- halves(cs); m <- nrow(h); W <- mean(apply(h, 2, var)); B <- m * var(colMeans(h)); sqrt(((m - 1) / m * W + B / m) / W) }
+get <- function(p) lapply(chains, function(m) m[-(1:warm), p])
+diag_tab <- sapply(c("alpha", "beta", "sigma"), function(p) c(R_hat_by_hand = rhat_hand(get(p)), R_hat_rank = posterior::rhat(do.call(cbind, get(p))), effective_draws = posterior::ess_bulk(do.call(cbind, get(p)))))
+round(diag_tab, 4)
+rhat_first <- rhat_hand(lapply(chains, function(m) m[1:100, "beta"])); c(R_hat_of_the_first_100_steps = rhat_first)
+ess_stan <- posterior::ess_bulk(matrix(stan[, "growth"], ncol = 4))
+```
+
+R-hat is 1.00 for all. (With only the first 100 steps it is `r f2(rhat_first)`.) The **effective** number of draws tells how many independent draws the walk is worth: `r format(round(diag_tab["effective_draws", "beta"]), big.mark = ",")` out of `r format(4 * keep, big.mark = ",")` for the slope. rstanarm gets `r format(round(ess_stan), big.mark = ",")` out of `r format(nrow(stan), big.mark = ",")`.
+
+---
+
+## 4. Reading the output
+
+```{r output}
+print(fit, digits = 2)
+posterior_interval(fit, prob = 0.95)
+b <- hand[, "beta"]
+c(P_slope_above_0 = mean(b > 0), P_slope_above_2 = mean(b > 2), P_slope_above_4 = mean(b > 4))
+```
+
+The *median* is the middle of the posterior, the *MAD_SD* a robust SD. What we may say now:
+
+- The slope is probably between `r f1(quantile(b, 0.025))` and `r f1(quantile(b, 0.975))` (95% credible interval), with a mean of `r f1(mean(b))`.
+- The probability that growth goes with **more** votes is `r ptop(mean(b > 0))`. The probability that the slope is above 2 is `r pct(mean(b > 2))`, above 4 `r pct(mean(b > 4))`.
+- Those are probabilities **given the model and the prior**. They say nothing about whether the line is a good model.
+
+### A forecast
+
+In 2016 income was growing by about 2% (Gelman et al., 2020). The forecast for a new election uses **all** the uncertainty: for every draw of the parameters, draw a new vote.
+
+$$p(y^* \mid y) = \int p(y^* \mid \theta)\, p(\theta \mid y)\, d\theta$$
+
+```{r forecast_chart, fig.height = 4}
+set.seed(243); line_2 <- hand[, "alpha"] + hand[, "beta"] * (2 - mean(hibbs$growth)); vote_2 <- line_2 + rnorm(nrow(hand), 0, hand[, "sigma"])
+c(mean = mean(vote_2), low = quantile(vote_2, 0.025)[[1]], high = quantile(vote_2, 0.975)[[1]], P_incumbent_party_above_50 = mean(vote_2 > 50), P_line_above_50 = mean(line_2 > 50))
+ggplot(rbind(data.frame(v = line_2, what = "where the line is"), data.frame(v = vote_2, what = "a new election")), aes(v, fill = what)) + geom_density(alpha = 0.5, colour = NA) + geom_vline(xintercept = 50, linetype = "dashed") + geom_vline(xintercept = 51.1, colour = "#eb6834") +
+  annotate("text", x = 55.5, y = 0.36, label = "result of 2016: 51.1", hjust = 0, colour = "#eb6834", size = 3.6) + scale_fill_manual(values = c("#2a78d6", "#1baf7a"), name = NULL) + coord_cartesian(xlim = c(38, 66)) +
+  labs(title = "Forecast for an election with 2% growth", x = "vote of the party in the White House (%)", y = "density") + theme_bw() + theme(legend.position = "bottom")
+```
+
+The expected vote is `r f1(mean(vote_2))`%. The **line** is above 50 at this growth with a probability of `r pct(mean(line_2 > 50))`, but a single election is much less certain: the probability of more than half is `r pct(mean(vote_2 > 50))`. The result of 2016 was 51.1% for the candidate of the party in the White House, close to the middle of the distribution. (Hillary Clinton had more votes and lost the election. The model is about votes.)
+
+---
+
+## 5. Is the model any good?
+
+### Simulate the data that the model expects
+
+If the model is right, data simulated from it should look like the real ones. For every tenth draw of the parameters make 16 new elections, and compare the **largest deviation from the line**:
+
+```{r ppc_chart, fig.height = 4}
+pick <- seq(1, nrow(hand), by = 10); set.seed(244)
+biggest <- function(v) max(abs(residuals(lm.fit(X, v))))
+rep_stat <- apply(hand[pick, ], 1, function(p) biggest(p[1] + p[2] * xc + rnorm(n, 0, p[3])))
+obs_stat <- biggest(y); c(observed = obs_stat, P_simulated_at_least_as_large = mean(rep_stat >= obs_stat))
+ggplot(data.frame(rep_stat), aes(rep_stat)) + geom_histogram(bins = 40, fill = "#2a78d6", colour = "white") + geom_vline(xintercept = obs_stat, colour = "#eb6834", linewidth = 1) +
+  labs(title = "Largest deviation from the line in simulated elections", subtitle = "Orange: in the real data", x = "points of the vote", y = "simulations") + theme_bw()
+```
+
+The real data have one election (`r hibbs$year[which.max(abs(residuals(ls_fit)))]`) that is `r f1(obs_stat)` points from the line. The model makes one at least as far in `r pct(mean(rep_stat >= obs_stat))` of the simulations, so this alone is no reason to doubt the normal errors.
+
+### Leave one out
+
+How well does the model predict an election that it has **not** seen? For every election, take it out, sample again, and compute the log density of the real result. Then the sum, called *elpd*. One can also get it without sampling again, from the draws (by reweighting them), which is what `loo()` does, in a refined version:
+
+```{r loo_by_hand}
+set.seed(245)
+exact <- sapply(1:n, function(i) { d <- metropolis(7000, c(52, 3, log(4)), steps, log_posterior, yy = y[-i], xx = xc[-i])[-(1:1000), ]; log(mean(dnorm(y[i], d[, 1] + d[, 2] * xc[i], d[, 3]))) })
+weighted <- sapply(1:n, function(i) -log(mean(1 / dnorm(y[i], hand[, 1] + hand[, 2] * xc[i], hand[, 3]))))
+loo_growth <- suppressWarnings(loo(fit)); fit0 <- stan_glm(vote ~ 1, data = hibbs, prior_intercept = normal(50, 5), prior_aux = exponential(1 / 5), seed = 246, refresh = 0, iter = 10000); loo_none <- suppressWarnings(loo(fit0))
+c(exact_by_hand = sum(exact), reweighting_by_hand = sum(weighted), loo_package = loo_growth$estimates["elpd_loo", "Estimate"], without_growth = loo_none$estimates["elpd_loo", "Estimate"])
+point_diff <- loo_growth$pointwise[, "elpd_loo"] - loo_none$pointwise[, "elpd_loo"]
+elpd_diff <- sum(point_diff); elpd_se <- sqrt(n) * sd(point_diff); k_bad <- which(loo::pareto_k_values(loo_growth) > 0.7)
+c(difference = elpd_diff, se = elpd_se); c(influential_elections = hibbs$year[k_bad])
+```
+
+The three ways of computing the elpd of the model with growth agree within `r f2(max(sum(exact), sum(weighted), loo_growth$estimates["elpd_loo", "Estimate"]) - min(sum(exact), sum(weighted), loo_growth$estimates["elpd_loo", "Estimate"]))`. Growth improves the prediction by `r f1(elpd_diff)` (*SE* `r f1(elpd_se)`): `r if (elpd_diff > 2 * elpd_se) "clearly more than its standard error" else "more than its standard error, but less than two of them. With 16 elections, even a strong connection is hard to prove in new data"`. `r if (length(k_bad) > 0) paste0("The package warns that the weights are unreliable for ", paste(hibbs$year[k_bad], collapse = ", "), ", an election with a large influence (Vehtari et al., 2017). That is what the exact version is for.") else ""`
+
+### Fat tails: change one line
+
+Two elections were decided by wars. A model that expects an outlier now and then has errors with a *t* distribution (4 degrees of freedom). In our sampler that is a switch:
+
+```{r t_errors}
+set.seed(247); robust <- do.call(rbind, lapply(1:4, function(k) metropolis(warm + keep, c(52, 3, log(3)), steps, log_posterior, t_errors = TRUE)[-(1:warm), ]))
+rbind(`normal errors` = summ(hand[, "beta"]), `t errors, 4 df` = summ(robust[, "beta"]))
+```
+
+The slope is `r f2(mean(robust[, "beta"]))` instead of `r f2(mean(hand[, "beta"]))`, and its SD is `r f2(sd(robust[, "beta"]))` instead of `r f2(sd(hand[, "beta"]))`. The two elections of the wars do not make the result; they pull it down a little. (See [robust regression](EXAMPLE_ROBUST_REGRESSION.Rmd).)
+
+---
+
+## 6. How much does the prior matter?
+
+Six persons, six priors for the slope, the same sixteen elections:
+
+```{r prior_sensitivity, fig.height = 4.8}
+priors <- list(`no opinion: N(0, 50)` = c(0, 50), `ours: N(0, 5)` = c(0, 5), `careful: N(0, 2)` = c(0, 2), `sceptic: N(0, 0.5)` = c(0, 0.5), `believer: N(4, 0.5)` = c(4, 0.5), `contrarian: N(-2, 0.5)` = c(-2, 0.5))
+set.seed(248); sens <- do.call(rbind, lapply(names(priors), function(p) { d <- metropolis(22000, c(52, 1, log(4)), steps, log_posterior, prior_b = priors[[p]])[-(1:2000), "beta"]
+  data.frame(prior = p, prior_mean = priors[[p]][1], prior_sd = priors[[p]][2], mean = mean(d), low = quantile(d, 0.025)[[1]], high = quantile(d, 0.975)[[1]], P_above_0 = mean(d > 0)) }))
+print(data.frame(prior = sens$prior, round(sens[, 4:7], 2)), row.names = FALSE)
+sens$prior <- factor(sens$prior, levels = rev(sens$prior))
+ggplot(sens, aes(y = prior)) + geom_linerange(aes(xmin = pmax(-4, prior_mean - 1.96 * prior_sd), xmax = pmin(7, prior_mean + 1.96 * prior_sd)), colour = "#eda100", linewidth = 2.4, alpha = 0.5) + geom_linerange(aes(xmin = low, xmax = high), colour = "#2a78d6", linewidth = 1) + geom_point(aes(x = mean), colour = "#2a78d6", size = 2.6) + geom_vline(xintercept = coef(ls_fit)[["growth"]], linetype = "dashed") +
+  labs(title = "Prior (yellow) and posterior (blue) of the slope", subtitle = "95% ranges, cut at -4 and 7. Dashed: least squares", x = "points of the vote per 1% of growth", y = NULL) + theme_bw() + theme(plot.title.position = "plot")
+se_ <- function(p, w) sens[[w]][sens$prior == p]
+```
+
+- With the three weak priors the result is nearly the same (mean between `r f1(min(sens$mean[1:3]))` and `r f1(max(sens$mean[1:3]))`).
+- The **strong** opinions stay: the sceptic moves only to `r f1(se_("sceptic: N(0, 0.5)", "mean"))`, the believer ends at `r f1(se_("believer: N(4, 0.5)", "mean"))` and the contrarian at `r f1(se_("contrarian: N(-2, 0.5)", "mean"))`. A prior with an SD of 0.5 counts as much as `r formatC(4 / prec[["data"]] * n, format = "f", digits = 0)` elections, twice as many as there have been in the data.
+- So sixteen elections are not enough to convince a person with a strong opinion in the other direction.
+
+So the prior is a part of the result, and it is reported. A prior that comes from outside (other countries, other elections) is knowledge. A prior that is made to get a result is a cheat, and it can be seen in this plot.
+
+### Bayes factors depend on it even more
+
+A *Bayes factor* compares two hypotheses, here "the slope is 0" with "the slope is something, distributed like the prior". It asks how well each **predicted** the data, so a very wide prior (a slope of 80 is possible) predicts badly. With flat priors for $\alpha$ and $\log\sigma$, the likelihood of the slope alone has a formula, $L(\beta) \propto \left(S + S_{xx}(\beta - \hat\beta)^2\right)^{-(n-1)/2}$, and one integral does the rest:
+
+```{r bayes_factor}
+S <- sum(residuals(ls_fit)^2); Sxx <- sum(xc^2); b_hat <- coef(ls_fit)[["growth"]]
+L  <- function(b) (1 + Sxx * (b - b_hat)^2 / S)^(-(n - 1) / 2)
+bf <- data.frame(prior_sd = c(0.5, 1, 2, 5, 20, 100, 1000)); bf$bayes_factor_for_an_effect <- sapply(bf$prior_sd, function(s) integrate(function(b) L(b) * dnorm(b, 0, s), b_hat - 8, b_hat + 8, rel.tol = 1e-9)$value / L(0))
+bf$posterior_mean <- sapply(bf$prior_sd, function(s) { den <- integrate(function(b) L(b) * dnorm(b, 0, s), b_hat - 8, b_hat + 8)$value; integrate(function(b) b * L(b) * dnorm(b, 0, s), b_hat - 8, b_hat + 8)$value / den })
+print(round(bf, 2), row.names = FALSE)
+```
+
+From an SD of 5 to one of 1,000 the **posterior** of the slope hardly changes (mean `r f2(bf$posterior_mean[bf$prior_sd == 5])` and `r f2(bf$posterior_mean[bf$prior_sd == 1000])`). The **Bayes factor** goes from `r f1(bf$bayes_factor_for_an_effect[bf$prior_sd == 5])` in favour of an effect to `r f2(bf$bayes_factor_for_an_effect[bf$prior_sd == 1000])`, which is against one. A default, very wide prior makes the "no effect" win in the end, whatever the data say (the Lindley paradox). Use Bayes factors only with priors that you would defend.
+
+---
+
+## 7. What "calibrated" means
+
+A credible interval is right **on average over the prior**: if the true values really came from the prior, 95% of the 95% intervals contain them. It is not right for every single true value. We can check both, with the formula of step 3 (here with a narrow prior for the slope, $\beta \mid \sigma^2 \sim N(0, (\sigma/2)^2)$ and $\sigma^2 \sim IG(5, 60)$):
+
+```{r calibration}
+set.seed(249); V0inv <- diag(c(1 / 4, 4)); m0 <- c(50, 0); a0 <- 5; b0 <- 60
+sim_once <- function(beta_fixed = NULL) { s2 <- 1 / rgamma(1, a0, b0); a <- rnorm(1, 50, sqrt(4 * s2)); bt <- if (is.null(beta_fixed)) rnorm(1, 0, sqrt(s2 / 4)) else beta_fixed * sqrt(s2 / 4); r <- nig(X, a + bt * xc + rnorm(n, 0, sqrt(s2)), m0, V0inv, a0, b0)["growth", ]; r$low < bt && bt < r$high }
+cal <- c(`true slope drawn from the prior` = mean(replicate(3000, sim_once())), `true slope 1 prior SD from 0` = mean(replicate(3000, sim_once(1))), `true slope 3 prior SDs from 0` = mean(replicate(3000, sim_once(3))))
+round(cal, 3)
+```
+
+Drawn from the prior: `r pct(cal[[1]], 1)`. For a true slope that the prior considers very unlikely (3 SDs away) it is `r pct(cal[[3]], 1)`. A frequentist confidence interval has its 95% for **every** value, and does not use any knowledge. Choose what you need, and say which.
+
+---
+
+## 8. Things to keep in mind
+
+- **Write down the prior** before you look, in units that a reader understands. Simulate from it (a *prior predictive check*) and see if it expects absurd data.
+- **Centre the predictors**: then the prior of the intercept is about the outcome at average values.
+- **Report what the result looks like with other priors**, at least a wider and a narrower one.
+- **Check R-hat and the effective draws** for every parameter, and look at the trace plots. rstanarm gives warnings about *divergent transitions*: do not ignore them.
+- **The posterior is conditional on the model.** Check it as you would any regression: simulated data, residuals, leave-one-out.
+- **Probabilities of hypotheses** ("99% that the slope is positive") need the prior. Do not present them as a *p* value.
+- **With many rows** the prior hardly matters. With few, it does, and that is exactly when it helps.
+- **Multilevel models** are where Bayesian methods shine, because they estimate variances of small groups without trouble: `stan_glmer()` or `brms::brm()`. See [multilevel models](EXAMPLE_MULTILEVEL.Rmd).
+- **Relatives**: the normal prior is [ridge regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd) as a probability, and a prior on functions is a [Gaussian process](EXAMPLE_GAUSSIAN_PROCESS.Rmd).
+
+---
+
+## 9. Reporting the results in APA style
+
+A report (APA 7th edition) needs the model with the distribution of the errors, every prior, the software with the number of chains and draws, the diagnostics, the posterior (mean or median, interval), checks of the model, and how the result changes with the prior (see the guidelines of Kruschke, 2021). The numbers come from the R objects:
+
+```{r apa_numbers}
+row_of <- function(label, m, se, lo, hi) data.frame(Parameter = label, mean = f2(m), sd = f2(se), ci = paste0("[", f2(lo), ", ", f2(hi), "]"))
+apa_table <- rbind(row_of("Vote at average growth (%)", stan_tab["alpha", "mean"], stan_tab["alpha", "sd"], stan_tab["alpha", "low"], stan_tab["alpha", "high"]),
+                   row_of("Growth (points of the vote per 1%)", stan_tab["beta", "mean"], stan_tab["beta", "sd"], stan_tab["beta", "low"], stan_tab["beta", "high"]),
+                   row_of("Residual SD (points)", stan_tab["sigma", "mean"], stan_tab["sigma", "sd"], stan_tab["sigma", "low"], stan_tab["sigma", "high"]))
+p_pos_stan <- mean(stan[, "growth"] > 0); max_rhat <- max(apply(stan, 2, function(v) posterior::rhat(matrix(v, ncol = 4))))
+```
+
+**Method** (data analysis):
+
+> The vote share of the party holding the White House in the `r n` presidential elections from `r min(hibbs$year)` to `r max(hibbs$year)` was regressed on the growth of real personal income per head during the term (Gelman et al., 2020; Hibbs, 2000), centred at its mean, with a Bayesian linear model with normal errors. The priors were N(50, 5) for the vote share at average growth, N(0, 5) for the slope (points per 1% of growth), and Exponential(1/5) for the residual standard deviation. The posterior was sampled with Hamiltonian Monte Carlo (R package rstanarm; four chains of 10,000 iterations, half of them warm-up); convergence was judged with R-hat and the effective number of draws. We report posterior means, standard deviations and 95% credible intervals, the model was checked with posterior predictive simulations and leave-one-out cross-validation (Vehtari et al., 2017), and the sensitivity to the prior of the slope was examined with six priors and with *t*-distributed errors. Analyses were conducted in R (Version `r paste(R.version$major, R.version$minor, sep = ".")`; R Core Team, `r R.version$year`).
+
+**Results:**
+
+> All chains converged (R-hat ≤ `r f3(max_rhat)`; at least `r format(round(ess_stan, -2), big.mark = ",")` effective draws for the slope). One percentage point of growth was associated with `r f1(stan_tab["beta", "mean"])` points more of the vote (posterior *SD* = `r f2(stan_tab["beta", "sd"])`, 95% credible interval [`r f1(stan_tab["beta", "low"])`, `r f1(stan_tab["beta", "high"])`]; posterior probability of a positive slope `r ptop(p_pos_stan)`; Table 1). The residual standard deviation was `r f1(stan_tab["sigma", "mean"])` points. Growth improved the expected log predictive density by `r f1(elpd_diff)` (*SE* = `r f1(elpd_se)`). For a growth of 2% the predicted share was `r f1(mean(vote_2))`% (95% prediction interval [`r f1(quantile(vote_2, 0.025))`, `r f1(quantile(vote_2, 0.975))`]), with a probability of `r pct(mean(vote_2 > 50))` of exceeding one half. The posterior mean of the slope was between `r f1(min(sens$mean[1:3]))` and `r f1(max(sens$mean[1:3]))` for weak priors and between `r f1(min(sens$mean[4:6]))` and `r f1(max(sens$mean[4:6]))` for strong ones; with *t*-distributed errors it was `r f1(mean(robust[, "beta"]))`.
+
+**Table 1**
+
+*Posterior of the Regression of the Incumbent Party's Vote on Economic Growth*
+
+```{r apa_table, echo=FALSE}
+knitr::kable(apa_table, col.names = c("Parameter", "Mean", "*SD*", "95% credible interval"), align = "lrrl", format = "pipe", row.names = FALSE)
+```
+
+*Note.* *N* = `r n` elections. Priors: see text.
+
+**Points to remember:**
+
+- Give every prior and the reason for it.
+- Report R-hat and the effective draws.
+- Say "credible interval", and say that probabilities are given the model and the prior.
+- Show what other priors would give.
+
+---
+
+## 10. Summary
+
+| | |
+|---|---|
+| **When** | Few data, knowledge from outside, probabilities of the parameters and forecasts wanted, hierarchical models |
+| **The rule** | Posterior $\propto$ likelihood × prior |
+| **Linear model** | Closed form (normal–inverse-gamma), or sampling |
+| **Sampling** | Metropolis (by hand), Hamiltonian Monte Carlo (Stan) |
+| **How (R)** | `stan_glm(y ~ x, prior = normal(0, 5), prior_intercept = normal(50, 5), prior_aux = exponential(0.2))` |
+| **Read** | Mean or median, credible interval, probabilities, forecasts |
+| **Check** | R-hat, effective draws, simulated data, leave-one-out, other priors |
+| **Danger** | Strong priors with few data, Bayes factors with default priors |
+| **Related pages** | [Simple regression](EXAMPLE_SIMPLE_LINEAR_REGRESSION.Rmd), [regularized regression](EXAMPLE_REGULARIZED_REGRESSION.Rmd), [multilevel models](EXAMPLE_MULTILEVEL.Rmd), [Gaussian processes](EXAMPLE_GAUSSIAN_PROCESS.Rmd) |
+
+---
+
+## References
+
+Gelman, A., Hill, J., & Vehtari, A. (2020). *Regression and other stories*. Cambridge University Press. https://doi.org/10.1017/9781139161879
+
+Hibbs, D. A. (2000). Bread and peace voting in U.S. presidential elections. *Public Choice*, *104*(1–2), 149–180. https://doi.org/10.1023/A:1005292312412
+
+Kruschke, J. K. (2021). Bayesian analysis reporting guidelines. *Nature Human Behaviour*, *5*(10), 1282–1291. https://doi.org/10.1038/s41562-021-01177-7
+
+Metropolis, N., Rosenbluth, A. W., Rosenbluth, M. N., Teller, A. H., & Teller, E. (1953). Equation of state calculations by fast computing machines. *The Journal of Chemical Physics*, *21*(6), 1087–1092. https://doi.org/10.1063/1.1699114
+
+Vehtari, A., Gelman, A., & Gabry, J. (2017). Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC. *Statistics and Computing*, *27*(5), 1413–1432. https://doi.org/10.1007/s11222-016-9696-4
+
+Vehtari, A., Gelman, A., Simpson, D., Carpenter, B., & Bürkner, P.-C. (2021). Rank-normalization, folding, and localization: An improved R̂ for assessing convergence of MCMC. *Bayesian Analysis*, *16*(2), 667–718. https://doi.org/10.1214/20-BA1221
