@@ -73,7 +73,12 @@ ggplot(sons, aes(father, son)) +
     linewidth = 0.8,
     linetype = "dashed"
   ) +
-  geom_jitter(width = 0.1, height = 0.1, alpha = 0.4, colour = "grey30", size = 1.5) +
+  geom_point(
+    position = position_jitter(width = 0.1, height = 0.1, seed = 1),
+    alpha = 0.4,
+    colour = "grey30",
+    size = 1.5
+  ) +
   geom_smooth(aes(colour = "regression line"), method = "lm", se = FALSE, linewidth = 1) +
   scale_colour_manual(values = line_colours, name = NULL) +
   coord_fixed(xlim = c(61, 79), ylim = c(59, 80)) +
@@ -242,7 +247,12 @@ two <- rbind(
 )
 
 ggplot(sons, aes(father, son)) +
-  geom_jitter(width = 0.1, height = 0.1, alpha = 0.25, colour = "grey40", size = 1.2) +
+  geom_point(
+    position = position_jitter(width = 0.1, height = 0.1, seed = 1),
+    alpha = 0.25,
+    colour = "grey40",
+    size = 1.2
+  ) +
   geom_abline(data = two, aes(intercept = intercept, slope = slope, colour = line), linewidth = 1) +
   annotate("point", x = mean(x), y = mean(y), size = 3) +
   scale_colour_manual(
@@ -304,7 +314,12 @@ bands$band <- factor(bands$band, levels = unique(bands$band))
 
 ggplot(sons, aes(father, son)) +
   geom_ribbon(data = bands, aes(y = fit, ymin = lwr, ymax = upr, fill = band), alpha = 0.45) +
-  geom_jitter(width = 0.1, height = 0.1, alpha = 0.35, colour = "grey30", size = 1.2) +
+  geom_point(
+    position = position_jitter(width = 0.1, height = 0.1, seed = 1),
+    alpha = 0.35,
+    colour = "grey30",
+    size = 1.2
+  ) +
   geom_line(data = cbind(grid, son = predict(fit, grid)), colour = "#2a78d6", linewidth = 1) +
   scale_fill_manual(values = c("#f3d19c", "#2a78d6"), name = NULL) +
   labs(title = "The line is known well; one son is not",
@@ -329,7 +344,11 @@ check$q <- qqnorm(check$std, plot.it = FALSE)$x
 
 pa <- ggplot(check, aes(fitted, resid)) +
   geom_hline(yintercept = 0, colour = "grey60") +
-  geom_jitter(width = 0.05, height = 0.05, alpha = 0.4, colour = "grey30") +
+  geom_point(
+    position = position_jitter(width = 0.05, height = 0.05, seed = 1),
+    alpha = 0.4,
+    colour = "grey30"
+  ) +
   geom_smooth(method = "loess", formula = y ~ x, se = FALSE, colour = "#eb6834", linewidth = 0.9) +
   labs(
     title = "Residuals against fitted values",
