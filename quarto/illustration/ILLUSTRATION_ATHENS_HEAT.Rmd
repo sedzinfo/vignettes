@@ -1,0 +1,941 @@
+---
+title: "Athens Is Getting Hotter: Hot Days, Tropical Nights and Heatwaves Since 1955"
+description: "Daily temperatures at Athens Hellinikon since 1955 in NOAA's GHCN-Daily: warming stripes, days of 35 °C, nights above 20 °C, a longer hot season and the worst heatwaves."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+Summers in Athens feel hotter than they used to. This data story checks that feeling against the measurements of one weather station, which has measured the highest and the lowest temperature of the day since 1955, with some gaps, and asks five questions:
+
+1. **Is Athens hotter than it used to be?**
+2. **How many hot days does a summer have?**
+3. **Do the nights still cool down?**
+4. **Is the hot season longer?**
+5. **Which were the worst heatwaves?**
+
+The station is at Hellinikon, on the coast south of the city centre, where Athens had its airport until 2001. Its record comes from NOAA, the US agency for weather and climate data, which publishes it in the [Global Historical Climatology Network Daily](https://doi.org/10.7289/V5D21VHZ) (GHCN-Daily), an archive of daily measurements from weather stations around the world ([Menne et al. 2012](https://doi.org/10.1175/JTECH-D-11-00103.1)). It is downloaded when the page is knitted, so the charts show the latest days in NOAA's archive.
+
+**The words of this page:**
+
+- a **hot day** reaches 35 °C or more, and a **very hot day** 40 °C or more;
+- on a **tropical night** the temperature stays above 20 °C, as in the [climate change indices of the ETCCDI](https://etccdi.pacificclimate.org/list_27_indices.shtml), an international team of experts; on a **very warm night** it stays above 25 °C;
+- a **heatwave** is three days or more in a row above 37 °C (section 5 says why 37);
+- **summer** is June, July and August.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "ggplot2", "RColorBrewer"))
+library(dplyr)
+library(ggplot2)
+```
+
+---
+
+## The data
+
+### One station since 1955
+
+GHCN-Daily lists [its stations](https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt) with where they are, and in the Athens area it has only one: Hellinikon, station `GR000016716`. It is also what this story needs, a long record from one place. The new airport, Eleftherios Venizelos, replaced Hellinikon in 2001 ([Wikipedia](https://en.wikipedia.org/wiki/Ellinikon_International_Airport)), so its own record is much shorter, and joining the two would join two different places. The station at Hellinikon kept measuring after the airport moved.
+
+NOAA keeps [one file per station](https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/GR000016716.csv), with a row for each day:
+
+```{r download}
+station <- "GR000016716" # Athens Hellinikon
+ghcnd_url <- paste0(
+  "https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/",
+  station,
+  ".csv"
+)
+raw <- read.csv(ghcnd_url)
+head(raw[, c("DATE", "TMAX", "TMAX_ATTRIBUTES", "TMIN", "TMIN_ATTRIBUTES")])
+```
+
+`TMAX` and `TMIN` are the highest and the lowest temperature of the day, in tenths of a degree. Each comes with three flags, separated by commas ([NOAA's description of the flags](https://www.ncei.noaa.gov/pub/data/ghcn/daily/readme.txt)): how it was measured, whether it failed one of NOAA's quality checks, and where NOAA got it. The values that failed a check are left out, and the days missing from the file are added as empty rows:
+
+```{r days}
+# the three flags of a value are "measurement,quality,source": a quality flag means that the value
+# failed one of NOAA's checks, and the source flag says where NOAA got it
+quality_flag <- function(attributes) sub("^[^,]*,([^,]*),.*$", "\\1", attributes)
+source_flag <- function(attributes) sub("^.*,", "", attributes)
+
+days <- data.frame(
+  date = as.Date(raw$DATE),
+  tmax = raw$TMAX / 10,
+  tmin = raw$TMIN / 10,
+  tmax_source = source_flag(raw$TMAX_ATTRIBUTES),
+  tmin_source = source_flag(raw$TMIN_ATTRIBUTES)
+)
+failed_max <- !is.na(days$tmax) & quality_flag(raw$TMAX_ATTRIBUTES) != ""
+failed_min <- !is.na(days$tmin) & quality_flag(raw$TMIN_ATTRIBUTES) != ""
+days$tmax[failed_max] <- NA
+days$tmin[failed_min] <- NA
+cbind(left_out = c(maximum = sum(failed_max), minimum = sum(failed_min)))
+
+# every day from the first to the last day with a temperature, the missing ones as empty rows
+measured <- days$date[!is.na(days$tmax) | !is.na(days$tmin)]
+first_day <- min(measured)
+last_day <- max(measured)
+days <- merge(data.frame(date = seq(first_day, last_day, by = "day")), days, all.x = TRUE)
+days$year <- as.integer(format(days$date, "%Y"))
+days$month <- as.integer(format(days$date, "%m"))
+
+# for the text: "1 January 1955" in English, whatever the language of the computer, numbers with
+# one or two decimals, and lists such as "2021, 2024 and 2025"
+date_text <- function(d) {
+  paste(as.integer(format(d, "%d")), month.name[as.integer(format(d, "%m"))], format(d, "%Y"))
+}
+one <- function(x) format(round(x, 1), nsmall = 1)
+two <- function(x) format(round(x, 2), nsmall = 2)
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+```
+
+So the record runs from `r date_text(first_day)` to `r date_text(last_day)`, the latest day that NOAA has for this station. NOAA checks the values but does not correct them for new instruments or new ways of measuring ([NOAA](https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily)): the record is what the station measured.
+
+### Three sources, one record
+
+NOAA put the record together from three sources:
+
+```{r sources}
+source_names <- c(
+  I = "NOAA's International collection",
+  E = "European Climate Assessment & Dataset",
+  S = "Global Summary of the Day"
+)
+# from when to when each source gives a measure, and for how many days
+from_source <- function(value, source, measure) {
+  data.frame(date = days$date, value = value, source = source) |>
+    filter(!is.na(value)) |>
+    group_by(source) |>
+    summarise(from = min(date), to = max(date), days = n()) |>
+    arrange(from) |>
+    mutate(measure = measure, source = source_names[source])
+}
+sources <- rbind(
+  from_source(days$tmax, days$tmax_source, "Maximum"),
+  from_source(days$tmin, days$tmin_source, "Minimum")
+)
+knitr::kable(
+  sources[, c("measure", "source", "from", "to", "days")],
+  col.names = c("Measure", "Source", "From", "To", "Days")
+)
+```
+
+```{r switches}
+# the first day of each measure from the Global Summary of the Day, and the year before it
+gsod_from <- c(
+  maximum = min(days$date[days$tmax_source %in% "S" & !is.na(days$tmax)]),
+  minimum = min(days$date[days$tmin_source %in% "S" & !is.na(days$tmin)])
+)
+year_before <- as.integer(format(gsod_from, "%Y")) - 1
+names(year_before) <- names(gsod_from)
+```
+
+Until `r year_before[["maximum"]]` the maximum comes from NOAA's International collection, data that weather services sent to NOAA, and until `r year_before[["minimum"]]` the minimum from the European Climate Assessment & Dataset ([Klein Tank et al. 2002](https://doi.org/10.1002/joc.773)). After that, both come from the reports that the station sends every hour or every few hours to the weather services of the world, as NOAA's [Global Summary of the Day](https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/) (GSOD) collects them.
+
+A change of source can put a step into a record, the same as moving a station. But GSOD also has the station's reports for the years before, so in the last year before each change the two can be compared, day by day:
+
+```{r gsod}
+# GSOD of the same station (167160 99999) for a year: degrees Fahrenheit, 9999.9 when missing. A
+# "*" flag marks a value worked out from the readings of the day instead of reported: left out
+gsod <- function(year) {
+  x <- read.csv(paste0(
+    "https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/",
+    year,
+    "/16716099999.csv"
+  ))
+  reported <- function(value, flag) ifelse(value > 9000 | trimws(flag) == "*", NA, value)
+  data.frame(
+    date = as.Date(x$DATE),
+    gsod_max = (reported(x$MAX, x$MAX_ATTRIBUTES) - 32) * 5 / 9,
+    gsod_min = (reported(x$MIN, x$MIN_ATTRIBUTES) - 32) * 5 / 9
+  )
+}
+gsod_years <- lapply(setNames(unique(year_before), unique(year_before)), gsod)
+
+# the two sources on the days that both have: the average gap between them, and the days on
+# which they are more than 1 °C apart
+compare <- function(measure) {
+  year <- year_before[[measure]]
+  both <- merge(days, gsod_years[[as.character(year)]], by = "date")
+  gap <- if (measure == "maximum") both$gsod_max - both$tmax else both$gsod_min - both$tmin
+  data.frame(
+    measure = measure,
+    year = year,
+    days = sum(!is.na(gap)),
+    average_gap = mean(abs(gap), na.rm = TRUE),
+    apart = sum(abs(gap) > 1, na.rm = TRUE)
+  )
+}
+overlap <- rbind(compare("maximum"), compare("minimum"))
+knitr::kable(
+  overlap,
+  digits = 2,
+  col.names = c("Measure", "Year", "Days in both", "Average gap (°C)", "Days over 1 °C apart")
+)
+```
+
+They are the same measurements: on the days that both have, they differ by `r two(max(overlap$average_gap))` °C or less on average, and by more than 1 °C on `r sum(overlap$apart)` days out of `r sum(overlap$days)`. The change of source is not a step in the record.
+
+### A check without gaps: ERA5-Land
+
+One station can mislead: the place around it changes, and it misses days. So this story also downloads ERA5-Land, a reconstruction of the weather of every day since 1950 by the European Centre for Medium-Range Weather Forecasts ([Muñoz-Sabater et al. 2021](https://doi.org/10.5194/essd-13-4349-2021); data: [Muñoz Sabater 2019](https://doi.org/10.24381/cds.e2161bac)). It is a model of the land surface, driven by the weather of ERA5, the Centre's reconstruction of the weather of the whole world, and it does not use the measurements of any station directly. It describes squares of land 9 km across, so it cannot see what happens around one station: it is a check on the station, not a replacement for it. It comes through the [historical weather API of Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) ([Zippenfenig 2023](https://doi.org/10.5281/zenodo.7970649)), for the nearest point of its grid that Open-Meteo counts as land:
+
+```{r era5}
+# ERA5-Land through Open-Meteo, from the station's first day to yesterday, as one CSV file: two
+# lines about the point of the grid, an empty line, then the days
+era5_url <- paste0(
+  "https://archive-api.open-meteo.com/v1/archive",
+  "?latitude=",
+  raw$LATITUDE[1],
+  "&longitude=",
+  raw$LONGITUDE[1],
+  "&start_date=",
+  first_day,
+  "&end_date=",
+  Sys.Date() - 1,
+  "&daily=temperature_2m_max,temperature_2m_min",
+  "&timezone=Europe%2FAthens&models=era5_land&format=csv"
+)
+era5_lines <- readLines(era5_url)
+era5_point <- read.csv(text = era5_lines[1:2])
+era5 <- read.csv(text = era5_lines[-(1:3)], col.names = c("date", "tmax", "tmin"))
+era5 <- era5[!is.na(era5$tmax) & !is.na(era5$tmin), ] # the last few days are not ready yet
+era5$date <- as.Date(era5$date)
+era5$year <- as.integer(format(era5$date, "%Y"))
+era5$month <- as.integer(format(era5$date, "%m"))
+era5_point[, c("latitude", "longitude", "elevation")]
+
+# the average temperature of each whole summer, day and night together
+era5_summers <- era5 |>
+  filter(month %in% 6:8) |>
+  group_by(year) |>
+  summarise(summer = mean((tmax + tmin) / 2), days = n()) |>
+  filter(days == 92)
+```
+
+### Missing days
+
+```{r completeness}
+enough <- 0.8 # the share of a season's days that must have a measurement
+
+# for each year: the share of its summer days with a maximum, with both a maximum and a minimum,
+# and of its days from May to October with a minimum; the average temperature of its summer, and
+# its hot days, very hot days, tropical nights and very warm nights
+years <- days |>
+  group_by(year) |>
+  summarise(
+    summer_max = sum(!is.na(tmax[month %in% 6:8])) / 92,
+    summer_both = sum(!is.na(tmax[month %in% 6:8] + tmin[month %in% 6:8])) / 92,
+    warm_season_min = sum(!is.na(tmin[month %in% 5:10])) / 184,
+    summer = mean((tmax[month %in% 6:8] + tmin[month %in% 6:8]) / 2, na.rm = TRUE),
+    hot = sum(tmax >= 35, na.rm = TRUE),
+    very_hot = sum(tmax >= 40, na.rm = TRUE),
+    tropical = sum(tmin > 20, na.rm = TRUE),
+    very_warm = sum(tmin > 25, na.rm = TRUE)
+  ) |>
+  mutate(
+    summer = ifelse(summer_both >= enough, summer, NA),
+    hot = ifelse(summer_max >= enough, hot, NA),
+    very_hot = ifelse(summer_max >= enough, very_hot, NA),
+    tropical = ifelse(warm_season_min >= enough, tropical, NA),
+    very_warm = ifelse(warm_season_min >= enough, very_warm, NA)
+  )
+
+# the year with the fewest days with a maximum
+max_days <- days |>
+  group_by(year) |>
+  summarise(days = sum(!is.na(tmax)))
+fewest <- max_days[which.min(max_days$days), ]
+
+left_out <- function(x) and_list(years$year[is.na(x)])
+dropped <- data.frame(
+  measure = c("Summer average", "Hot days", "Tropical nights"),
+  needs = c(
+    "June to August, maximum and minimum",
+    "June to August, maximum",
+    "May to October, minimum"
+  ),
+  kept = c(sum(!is.na(years$summer)), sum(!is.na(years$hot)), sum(!is.na(years$tropical))),
+  left_out = c(left_out(years$summer), left_out(years$hot), left_out(years$tropical))
+)
+```
+
+The weak point of the record is its gaps. The station's reports often leave out the maximum of the day: in `r fewest$year`, only `r fewest$days` days have one. A year with many missing days would seem to have fewer hot days than it had, so a year counts only if at least `r 100 * enough`% of its days in the season that matters have a measurement: June to August for the summer average and the hot days, May to October for the warm nights, when almost all of them come. Of the `r nrow(years)` years from `r min(years$year)` to `r max(years$year)`, this leaves out `r nrow(years) - dropped$kept[1]` for the summer average, `r nrow(years) - dropped$kept[2]` for the hot days and `r nrow(years) - dropped$kept[3]` for the tropical nights:
+
+```{r dropped}
+knitr::kable(
+  dropped,
+  col.names = c("Measure", "Days that must have a measurement", "Years kept", "Years left out")
+)
+```
+
+```{r missing_check}
+# ERA5-Land has every day: for each summer kept, its average over the days that the station has,
+# against its average over all the days of the summer
+measured_summer <- days$date[days$month %in% 6:8 & !is.na(days$tmax + days$tmin)]
+shift <- era5 |>
+  filter(month %in% 6:8, year %in% years$year[!is.na(years$summer)]) |>
+  group_by(year) |>
+  summarise(
+    all_days = mean((tmax + tmin) / 2),
+    station_days = mean(((tmax + tmin) / 2)[date %in% measured_summer])
+  )
+largest_shift <- max(abs(shift$station_days - shift$all_days))
+```
+
+How much can the missing days change the average of a summer? ERA5-Land has every day, so it can tell: for each summer kept, its average over the days that the station has is at most `r one(largest_shift)` °C away from its average over all the days of that summer. Counts are another matter: a missing day may hide a hot day or a tropical night, so the counts of the years with missing days are, if anything, too low.
+
+---
+
+## 1. Is Athens hotter than it used to be?
+
+```{r periods}
+# three periods: 1961-1990, the usual reference for the climate of a place, and the two after it
+last_year <- max(years$year)
+recent <- paste0("2011–", last_year)
+period_of <- function(year) {
+  cut(year, c(1960, 1990, 2010, last_year), labels = c("1961–1990", "1991–2010", recent))
+}
+years$period <- period_of(years$year)
+by_period <- years |>
+  filter(!is.na(period)) |>
+  group_by(period) |>
+  summarise(
+    summers = sum(!is.na(summer)),
+    summer_average = mean(summer, na.rm = TRUE),
+    hot_years = sum(!is.na(hot)),
+    hot_days = mean(hot, na.rm = TRUE),
+    very_hot_days = sum(very_hot, na.rm = TRUE),
+    night_years = sum(!is.na(tropical)),
+    tropical_nights = mean(tropical, na.rm = TRUE),
+    very_warm_nights = mean(very_warm, na.rm = TRUE)
+  )
+base <- by_period$summer_average[1]
+now <- by_period$summer_average[3]
+```
+
+**Yes. The summers of `r recent` were `r one(now - base)` °C warmer than those of 1961–1990.**
+
+Each stripe below is one summer, from `r min(years$year)` on the left to `r last_year` on the right, coloured by its average temperature, day and night together: blue for the cooler summers, red for the warmer ones. They follow Ed Hawkins' [warming stripes](https://showyourstripes.info/) (#ShowYourStripes), which show in the same way how the world, a country or a city has warmed. As there, the colours change from blue to red at the average of 1961–2010, and reach their darkest three standard deviations away from it, a measure of how much summers differ from one another (theirs is that of 1901–2000, here it is that of 1961–2010): here `r one(3 * sd(years$summer[years$year %in% 1961:2010], na.rm = TRUE))` °C below and above `r one(mean(years$summer[years$year %in% 1961:2010], na.rm = TRUE))` °C. Grey stripes are the summers with too many missing days.
+
+```{r stripes, fig.height = 4.4}
+#| fig-alt: "Warming stripes of summer temperature at Athens Hellinikon since 1955"
+reference <- years$summer[years$year %in% 1961:2010]
+centre <- mean(reference, na.rm = TRUE)
+spread <- sd(reference, na.rm = TRUE)
+# 8 blues and 8 reds of ColorBrewer, from the coolest to the warmest
+stripe_colours <- c(
+  rev(RColorBrewer::brewer.pal(9, "Blues")[-1]),
+  RColorBrewer::brewer.pal(9, "Reds")[-1]
+)
+# from 3 standard deviations below the centre to 3 above, in 16 steps
+z <- pmin(pmax((years$summer - centre) / spread, -3), 3)
+step <- as.integer(cut(z, seq(-3, 3, length.out = 17), include.lowest = TRUE))
+years$stripe <- ifelse(is.na(step), "grey75", stripe_colours[step])
+
+ggplot(years, aes(x = year, y = 1, fill = stripe)) +
+  geom_tile(width = 1) +
+  scale_fill_identity() +
+  scale_x_continuous(breaks = seq(1960, 2020, 20), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  labs(
+    title = paste0("Summers at Athens Hellinikon, ", min(years$year), "–", last_year),
+    subtitle = "One stripe for each summer: blue cooler, red warmer\nGrey: too many days missing",
+    x = NULL,
+    y = NULL,
+    caption = paste(
+      "Data: NOAA GHCN-Daily, station GR000016716",
+      "Graphic: after Ed Hawkins' #ShowYourStripes",
+      sep = "\n"
+    )
+  ) +
+  theme_void(base_size = 15) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.margin = margin(12, 12, 12, 12),
+    plot.title = element_text(face = "bold", margin = margin(b = 4)),
+    plot.subtitle = element_text(colour = "grey25", margin = margin(b = 10)),
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    plot.title.position = "plot",
+    axis.text.x = element_text(colour = "grey30", margin = margin(t = 4))
+  )
+```
+
+```{r warmest}
+kept <- years |>
+  filter(!is.na(summer)) |>
+  arrange(desc(summer))
+warmest <- kept[1, ]
+top_five <- sort(kept$year[1:5])
+# the last summer of the record is counted only up to its last day, if that is before September
+partial <- last_day < as.Date(paste0(last_year, "-08-31"))
+```
+
+In 1961–1990, a summer at Hellinikon averaged `r one(base)` °C, day and night together. The `r by_period$summers[3]` summers of `r recent` that can be counted averaged `r one(now)` °C. The five warmest summers since `r min(years$year)` were those of `r and_list(top_five)`, and the warmest of all, `r warmest$year`, averaged `r one(warmest$summer)` °C, `r one(warmest$summer - base)` °C more than the summers of 1961–1990.`r if (partial && last_year %in% top_five) paste0(" (The summer of ", last_year, " is counted up to ", date_text(last_day), ", the last day of the record.)") else ""`
+
+### A check: the station and ERA5-Land
+
+```{r anomalies, fig.height = 5}
+#| fig-alt: "Summer temperature against 1961-1990 at Hellinikon and in ERA5-Land, by year"
+station_base <- mean(years$summer[years$year %in% 1961:1990], na.rm = TRUE)
+era5_base <- mean(era5_summers$summer[era5_summers$year %in% 1961:1990])
+anomalies <- rbind(
+  data.frame(
+    year = years$year,
+    series = "Hellinikon station",
+    anomaly = years$summer - station_base
+  ),
+  data.frame(
+    year = era5_summers$year,
+    series = "ERA5-Land",
+    anomaly = era5_summers$summer - era5_base
+  )
+)
+anomalies$series <- factor(anomalies$series, levels = c("Hellinikon station", "ERA5-Land"))
+ends <- anomalies |>
+  filter(!is.na(anomaly)) |>
+  group_by(series) |>
+  slice_max(year, n = 1)
+
+ggplot(anomalies, aes(x = year, y = anomaly, colour = series)) +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.4) +
+  geom_line(linewidth = 0.7, na.rm = TRUE) +
+  geom_point(size = 1.6, na.rm = TRUE) +
+  geom_text(data = ends, aes(label = year), hjust = -0.3, size = 3.8, show.legend = FALSE) +
+  scale_colour_manual(values = c("Hellinikon station" = "#eb6834", "ERA5-Land" = "#2a78d6")) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10), expand = expansion(mult = c(0.02, 0.1))) +
+  labs(
+    title = "Summers against those of 1961–1990",
+    subtitle = "Average temperature of June to August, difference in °C",
+    x = NULL,
+    y = "°C",
+    colour = NULL,
+    caption = "Data: NOAA GHCN-Daily, station GR000016716; ERA5-Land via Open-Meteo"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    legend.justification = "left"
+  )
+```
+
+```{r check_numbers}
+# the station and ERA5-Land in the summers of the last period that the station can count
+recent_kept <- years$year[years$period %in% recent & !is.na(years$summer)]
+station_warming <- mean(years$summer[years$year %in% recent_kept]) - station_base
+era5_warming <- mean(era5_summers$summer[era5_summers$year %in% recent_kept]) - era5_base
+# and ERA5-Land in all the summers of the last period
+era5_recent <- mean(era5_summers$summer[era5_summers$year %in% 2011:last_year]) - era5_base
+# the place of a summer among all the summers of ERA5-Land, the warmest first
+era5_place_of <- function(year) {
+  sum(era5_summers$summer >= era5_summers$summer[era5_summers$year == year])
+}
+both_kept <- merge(
+  data.frame(year = years$year, station = years$summer - station_base),
+  data.frame(year = era5_summers$year, era5 = era5_summers$summer - era5_base)
+)
+together <- cor(both_kept$station, both_kept$era5, use = "complete.obs")
+# ERA5-Land's latest summer, which the station's record may not reach
+era5_latest <- era5_summers[era5_summers$year == max(era5_summers$year), ]
+era5_place <- era5_place_of(era5_latest$year)
+place_text <- function(k) {
+  if (k == 1) {
+    return("the warmest")
+  }
+  words <- c("second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+  if (k <= 10) paste("the", words[k - 1], "warmest") else paste0("the ", k, "th warmest")
+}
+```
+
+**The station and ERA5-Land agree.** The warm and the cool summers are the same in both (their correlation is `r two(together)`, where 1 would be a perfect match), and both have warmed: compared with 1961–1990, the summers of `r recent` that the station can count were `r one(station_warming)` °C warmer at the station and `r one(era5_warming)` °C warmer in ERA5-Land. The summers that the station cannot count do not change the picture: over all the summers of `r recent`, ERA5-Land was `r one(era5_recent)` °C warmer.
+
+**The station warmed by `r one(station_warming - era5_warming)` °C more.** Part of the difference may come from the place around it. Cities cool more slowly than the countryside at night ([Founda and Santamouris 2017](https://doi.org/10.1038/s41598-017-11407-6)), and the station's own surroundings have changed: the airport around it closed in 2001, and since 2020 the old airfield has been a building site ([Wikipedia](https://en.wikipedia.org/wiki/Ellinikon_International_Airport)). NOAA's file gives the station the same place for the whole record, so it does not say whether the station itself moved within the old airport. ERA5-Land cannot see any of this, and it warmed too: the warming is not only the station's.
+
+ERA5-Land also has the summer of `r era5_latest$year`, which NOAA's record of the station does not reach `r if (era5_latest$year > last_year) "yet" else "in full"`: it was `r one(era5_latest$summer - era5_base)` °C warmer than its summers of 1961–1990, `r place_text(era5_place)` of its `r nrow(era5_summers)` summers since `r min(era5_summers$year)`.
+
+---
+
+## 2. How many hot days does a summer have?
+
+```{r hot_days, fig.height = 5}
+#| fig-alt: "Days of 35 °C or more at Athens Hellinikon each year since 1955, as bars"
+hot_days <- rbind(
+  data.frame(year = years$year, days = years$hot - years$very_hot, kind = "35 to 39.9 °C"),
+  data.frame(year = years$year, days = years$very_hot, kind = "40 °C or more")
+)
+hot_days$kind <- factor(hot_days$kind, levels = c("35 to 39.9 °C", "40 °C or more"))
+gaps <- data.frame(year = years$year[is.na(years$hot)], days = 0, what = "Too many days missing")
+most <- years[which.max(years$hot), ]
+
+ggplot(hot_days, aes(x = year, y = days)) +
+  geom_col(aes(fill = kind), width = 0.75, na.rm = TRUE) +
+  geom_point(data = gaps, aes(shape = what), colour = "grey45", size = 2.4, stroke = 0.9) +
+  geom_text(
+    data = most,
+    aes(x = year, y = hot, label = paste(hot, "days")),
+    vjust = -0.6,
+    hjust = 0.8,
+    size = 3.8,
+    colour = "grey20"
+  ) +
+  scale_fill_manual(values = c("35 to 39.9 °C" = "#fd8d3c", "40 °C or more" = "#a63603")) +
+  scale_shape_manual(values = c("Too many days missing" = 4)) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10)) +
+  scale_y_continuous(expand = expansion(mult = c(0.02, 0.12))) +
+  guides(fill = guide_legend(order = 1), shape = guide_legend(order = 2)) +
+  labs(
+    title = "Hot days at Athens Hellinikon",
+    subtitle = "Days with a maximum of 35 °C or more, each year",
+    x = NULL,
+    y = "Days",
+    fill = NULL,
+    shape = NULL,
+    caption = "Data: NOAA GHCN-Daily, station GR000016716"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "top",
+    legend.justification = "left"
+  )
+```
+
+```{r hot_numbers}
+hottest <- days[which.max(days$tmax), ]
+summer_2024 <- days[days$year == 2024 & days$month %in% 6:8, ]
+above_37_2024 <- sum(summer_2024$tmax > 37, na.rm = TRUE)
+missing_2024 <- sum(is.na(summer_2024$tmax))
+```
+
+**Many more.** In 1961–1990 Hellinikon had `r round(by_period$hot_days[1])` hot days a year on average, in 1991–2010 `r round(by_period$hot_days[2])`, and in the `r by_period$hot_years[3]` years of `r recent` that can be counted `r round(by_period$hot_days[3])`. The most were in `r most$year`: `r most$hot` days of 35 °C or more.
+
+Very hot days, of 40 °C or more, were rare and still are, but less so: `r by_period$very_hot_days[1]` in the 30 years of 1961–1990, `r by_period$very_hot_days[3]` in the `r by_period$hot_years[3]` years of `r recent` that can be counted. The hottest day of the record was `r date_text(hottest$date)`, at `r one(hottest$tmax)` °C.
+
+Can the station be trusted for a summer like that of 2024? The National Observatory of Athens has its own stations, and counted the days of that summer above 37 °C: 45 at Harokopio University in Kallithea and 30 in Piraeus ([meteo.gr, 3 September 2024](https://meteo.gr/article_view.cfm?entryID=3381)). Hellinikon had `r above_37_2024`, with `r missing_2024` days of the summer missing: in the same range.
+
+---
+
+## 3. Do the nights still cool down?
+
+```{r nights, fig.height = 5}
+#| fig-alt: "Nights above 20 °C at Athens Hellinikon each year since 1955, as bars"
+nights <- rbind(
+  data.frame(year = years$year, nights = years$tropical - years$very_warm, kind = "20 to 25 °C"),
+  data.frame(year = years$year, nights = years$very_warm, kind = "Above 25 °C")
+)
+nights$kind <- factor(nights$kind, levels = c("20 to 25 °C", "Above 25 °C"))
+night_gaps <- data.frame(
+  year = years$year[is.na(years$tropical)],
+  nights = 0,
+  what = "Too many days missing"
+)
+
+ggplot(nights, aes(x = year, y = nights)) +
+  geom_col(aes(fill = kind), width = 0.75, na.rm = TRUE) +
+  geom_point(data = night_gaps, aes(shape = what), colour = "grey45", size = 2.4, stroke = 0.9) +
+  scale_fill_manual(values = c("20 to 25 °C" = "#9e9ac8", "Above 25 °C" = "#54278f")) +
+  scale_shape_manual(values = c("Too many days missing" = 4)) +
+  scale_x_continuous(breaks = seq(1960, 2020, 10)) +
+  guides(fill = guide_legend(order = 1), shape = guide_legend(order = 2)) +
+  labs(
+    title = "Tropical nights at Athens Hellinikon",
+    subtitle = "Nights when the temperature stayed above 20 °C, each year",
+    x = NULL,
+    y = "Nights",
+    fill = NULL,
+    shape = NULL,
+    caption = "Data: NOAA GHCN-Daily, station GR000016716"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    legend.position = "top",
+    legend.justification = "left"
+  )
+```
+
+```{r night_numbers}
+most_nights <- years[which.max(years$tropical), ]
+most_very_warm <- years[which.max(years$very_warm), ]
+warmest_night <- days[which.max(days$tmin), ]
+```
+
+**Less and less.** At Hellinikon, by the sea, a summer night often stays above 20 °C anyway: in 1961–1990 there were `r round(by_period$tropical_nights[1])` tropical nights a year on average. In the `r by_period$night_years[3]` years of `r recent` that can be counted there were `r round(by_period$tropical_nights[3])`, and the most were in `r most_nights$year`: `r most_nights$tropical`. The change is larger for the very warm nights, above 25 °C: from `r round(by_period$very_warm_nights[1])` a year in 1961–1990 to `r round(by_period$very_warm_nights[3])` in `r recent`, with `r most_very_warm$very_warm` in `r most_very_warm$year`. The warmest night of the record was that of `r date_text(warmest_night$date)`, when the temperature did not fall below `r one(warmest_night$tmin)` °C.
+
+---
+
+## 4. Is the hot season longer?
+
+Each row of the chart below is one year, from `r min(years$year)` at the bottom to `r last_year` at the top, and each small square one day from May to October, coloured by the maximum of that day. A season that starts earlier or ends later shows as colour spreading to the left or to the right; grey squares are the days with no measurement.
+
+```{r calendar, fig.height = 7.5}
+#| fig-alt: "Calendar heatmap of the daily maximum at Hellinikon, May to October, every year"
+season_days <- days |>
+  filter(month %in% 5:10) |>
+  mutate(day = as.Date(paste0("2001-", format(date, "%m-%d")))) # one calendar for every year
+band <- cut(
+  season_days$tmax,
+  c(-Inf, 30, 35, 40, Inf),
+  right = FALSE,
+  labels = c("Below 30 °C", "30 to 34.9 °C", "35 to 39.9 °C", "40 °C or more")
+)
+levels(band) <- c(levels(band), "No measurement")
+band[is.na(band)] <- "No measurement"
+season_days$band <- band
+month_starts <- as.Date(paste0("2001-", 5:10, "-01"))
+
+ggplot(season_days, aes(x = day, y = year, fill = band)) +
+  geom_tile() +
+  scale_fill_manual(
+    values = c(
+      "Below 30 °C" = "#fff3e2",
+      "30 to 34.9 °C" = "#fdd0a2",
+      "35 to 39.9 °C" = "#fd8d3c",
+      "40 °C or more" = "#a63603",
+      "No measurement" = "grey70"
+    )
+  ) +
+  scale_x_date(
+    breaks = month_starts + 14,
+    labels = month.abb[5:10],
+    expand = c(0, 0)
+  ) +
+  scale_y_continuous(breaks = seq(1960, 2020, 10), expand = c(0, 0)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(
+    title = "Every day from May to October",
+    subtitle = "Daily maximum at Athens Hellinikon",
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    caption = "Data: NOAA GHCN-Daily, station GR000016716"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid = element_blank(),
+    legend.position = "top",
+    legend.justification = "left"
+  )
+```
+
+The orange spreads both ways. To put numbers on it, the next chart pools the years of each period that can be counted, and shows for every date how often it was a hot day: a share of 50% means that the date reached 35 °C in half of those years.
+
+```{r season, fig.height = 5}
+#| fig-alt: "How often each date from May to October was a hot day, in three periods"
+chance <- days |>
+  filter(month %in% 5:10, year %in% years$year[!is.na(years$hot)], !is.na(tmax)) |>
+  mutate(period = period_of(year), day = as.Date(paste0("2001-", format(date, "%m-%d")))) |>
+  filter(!is.na(period)) |>
+  group_by(period, day) |>
+  summarise(share = 100 * mean(tmax >= 35), .groups = "drop") |>
+  group_by(period) |>
+  mutate(smooth = as.numeric(stats::filter(share, rep(1 / 15, 15), sides = 2))) |>
+  ungroup()
+
+ggplot(chance, aes(x = day, y = smooth, colour = period)) +
+  geom_line(linewidth = 0.9, na.rm = TRUE) +
+  scale_colour_manual(values = c("#fd8d3c", "#e6550d", "#a63603")) +
+  scale_x_date(breaks = month_starts + 14, labels = month.abb[5:10]) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "How often each date was a hot day",
+    subtitle = "Share of the years with 35 °C or more on that date, average of 15 days",
+    x = NULL,
+    y = NULL,
+    colour = NULL,
+    caption = "Data: NOAA GHCN-Daily, station GR000016716"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    legend.justification = "left"
+  )
+```
+
+```{r season_numbers}
+# the share of hot days in two parts of the season, in each period
+share_between <- function(from, to) {
+  days |>
+    filter(year %in% years$year[!is.na(years$hot)], !is.na(tmax)) |>
+    mutate(period = period_of(year), md = format(date, "%m-%d")) |>
+    filter(!is.na(period), md >= from, md <= to) |>
+    group_by(period) |>
+    summarise(share = 100 * mean(tmax >= 35)) |>
+    pull(share)
+}
+late_june <- share_between("06-16", "06-30")
+late_august <- share_between("08-16", "08-31")
+
+# the first and the last tropical night of each year that can be counted, as days of the year,
+# and their average in each period, as a date
+warm_nights <- days |>
+  filter(year %in% years$year[!is.na(years$tropical)], tmin > 20) |>
+  group_by(year) |>
+  summarise(
+    first = as.integer(format(min(date), "%j")),
+    last = as.integer(format(max(date), "%j"))
+  ) |>
+  mutate(period = period_of(year)) |>
+  filter(!is.na(period)) |>
+  group_by(period) |>
+  summarise(first = mean(first), last = mean(last))
+day_text <- function(d) {
+  x <- as.Date(round(d) - 1, origin = "2001-01-01")
+  paste(as.integer(format(x, "%d")), month.name[as.integer(format(x, "%m"))])
+}
+season_length <- warm_nights$last - warm_nights$first
+longer <- season_length[3] - season_length[1]
+```
+
+**Yes: it starts earlier and ends later.** In 1961–1990 a day in the second half of June reached 35 °C in `r round(late_june[1])`% of the years; in `r recent`, in `r round(late_june[3])`%. In the second half of August the share went from `r round(late_august[1])`% to `r round(late_august[3])`%.
+
+The nights tell the same story. In 1961–1990 the first tropical night of the year came, on average, on `r day_text(warm_nights$first[1])`, and the last on `r day_text(warm_nights$last[1])`. In `r recent` the first came on `r day_text(warm_nights$first[3])` and the last on `r day_text(warm_nights$last[3])`: the season of warm nights is `r round(longer)` days longer.
+
+---
+
+## 5. Which were the worst heatwaves?
+
+```{r heatwaves}
+# runs of days above 37 °C. A single missing day between two such days does not end a run, and a
+# run counts as a heatwave if at least three of its days were measured above 37 °C
+above <- days$tmax > 37
+bridge <- is.na(above) &
+  c(FALSE, head(above, -1) %in% TRUE) &
+  c(tail(above, -1) %in% TRUE, FALSE)
+in_run <- above %in% TRUE | bridge
+run <- cumsum(in_run & !c(FALSE, head(in_run, -1)))
+heatwaves <- days |>
+  mutate(run = run) |>
+  filter(in_run) |>
+  group_by(run) |>
+  summarise(
+    start = min(date),
+    end = max(date),
+    days = n(),
+    measured = sum(!is.na(tmax)),
+    hottest = max(tmax, na.rm = TRUE),
+    warmest_night = if (all(is.na(tmin))) NA else max(tmin, na.rm = TRUE)
+  ) |>
+  filter(measured >= 3) |>
+  mutate(year = as.integer(format(start, "%Y")), period = period_of(year))
+
+# how rare a day above 37 °C was in the summers of 1961-1990
+summers_1961_1990 <- days$tmax[days$year %in% 1961:1990 & days$month %in% 6:8]
+share_above_37 <- 100 * mean(summers_1961_1990 > 37, na.rm = TRUE)
+```
+
+**Why 37 °C?** At Hellinikon, in the summers of 1961–1990, only `r one(share_above_37)`% of the days were warmer than 37 °C, about one in `r round(100 / share_above_37)`; the National Observatory of Athens, too, counts the days above 37 °C in its reviews of the summer ([meteo.gr, 3 September 2024](https://meteo.gr/article_view.cfm?entryID=3381)). Three such days in a row are a heatwave here. Each dot below is one heatwave, as high as it was long:
+
+```{r heatwave_chart, fig.height = 5}
+#| fig-alt: "Every heatwave at Athens Hellinikon since 1955, by date and length in days"
+longest <- heatwaves |>
+  arrange(desc(days), desc(hottest)) |>
+  head(3)
+longest$label <- paste(month.abb[as.integer(format(longest$start, "%m"))], longest$year)
+# the label is to the left of the dot, or to its right for the latest of the three
+longest$side <- ifelse(longest$start == max(longest$start), -0.2, 1.2)
+# the years with too many days missing, as grey bands
+no_data <- data.frame(year = years$year[is.na(years$hot)])
+no_data$from <- as.Date(paste0(no_data$year, "-01-01"))
+no_data$to <- as.Date(paste0(no_data$year + 1, "-01-01"))
+
+ggplot(heatwaves, aes(x = start, y = days)) +
+  geom_rect(
+    data = no_data,
+    aes(xmin = from, xmax = to, ymin = 0, ymax = Inf),
+    inherit.aes = FALSE,
+    fill = "grey87"
+  ) +
+  geom_segment(aes(xend = start, y = 0, yend = days), colour = "#a63603", linewidth = 0.6) +
+  geom_point(colour = "#a63603", size = 2.6) +
+  geom_text(data = longest, aes(label = label, hjust = side), size = 3.8, colour = "grey20") +
+  scale_x_date(
+    limits = c(first_day, last_day),
+    breaks = as.Date(paste0(seq(1960, 2020, 10), "-01-01")),
+    date_labels = "%Y",
+    expand = expansion(mult = c(0.02, 0.15))
+  ) +
+  scale_y_continuous(
+    limits = c(0, max(heatwaves$days) * 1.15),
+    breaks = seq(0, 30, 3),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = "Every heatwave at Athens Hellinikon",
+    subtitle = paste(
+      "Three days or more in a row above 37 °C; the height is the length in days",
+      "Grey: years with too many days missing",
+      sep = "\n"
+    ),
+    x = NULL,
+    y = "Days",
+    caption = "Data: NOAA GHCN-Daily, station GR000016716"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.background = element_rect(fill = "white", colour = NA),
+    plot.title = element_text(face = "bold"),
+    plot.title.position = "plot",
+    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+    plot.caption.position = "plot",
+    panel.grid.minor = element_blank()
+  )
+```
+
+The ten longest:
+
+```{r heatwave_table}
+# "8–24 July 2024", or "27 July – 5 August 2021" when a heatwave runs into the next month
+when <- function(start, end) {
+  day <- function(d) as.integer(format(d, "%d"))
+  month <- function(d) month.name[as.integer(format(d, "%m"))]
+  ifelse(
+    month(start) == month(end),
+    paste0(day(start), "–", day(end), " ", month(end), " ", format(end, "%Y")),
+    paste0(day(start), " ", month(start), " – ", day(end), " ", month(end), " ", format(end, "%Y"))
+  )
+}
+ten <- heatwaves |>
+  arrange(desc(days), desc(hottest)) |>
+  head(10)
+knitr::kable(
+  data.frame(
+    when = when(ten$start, ten$end),
+    days = ten$days,
+    missing = ten$days - ten$measured,
+    hottest = ten$hottest,
+    night = ten$warmest_night
+  ),
+  digits = 1,
+  col.names = c(
+    "When",
+    "Days",
+    "Days missing",
+    "Hottest day (°C)",
+    "Warmest night (°C)"
+  )
+)
+```
+
+```{r heatwave_numbers}
+per_period <- heatwaves |>
+  filter(!is.na(period), year %in% years$year[!is.na(years$hot)]) |>
+  count(period, .drop = FALSE)
+first_long <- heatwaves$year[heatwaves$days >= 7][1]
+july_2023 <- sum(!is.na(days$tmax[days$year == 2023 & days$month == 7]))
+summer_2012 <- sum(!is.na(days$tmax[days$year == 2012 & days$month %in% 6:8]))
+heatwave_1987 <- heatwaves[heatwaves$year == 1987, ]
+```
+
+**More of them, and longer.** In the 30 years of 1961–1990 Hellinikon had `r per_period$n[1]` heatwaves; in the `r by_period$hot_years[3]` years of `r recent` that can be counted, `r per_period$n[3]`. Before `r first_long` no heatwave that the station measured lasted a week. The longest, of `r ten$days[1]` days, was that of `r when(ten$start[1], ten$end[1])`, with `r ten$days[1] - ten$measured[1]` days missing in it; the hottest day of a heatwave was `r one(max(heatwaves$hottest))` °C, in that of `r when(heatwaves$start[which.max(heatwaves$hottest)], heatwaves$end[which.max(heatwaves$hottest)])`.
+
+What these numbers mean for people is clearest in July `r heatwave_1987$year[1]`: in that month, when a major heatwave hit Greece, almost twice as many people died in Athens (97% more) as in July of the six years before ([Katsouyanni et al. 1993](https://doi.org/10.1080/00039896.1993.9940365)). At Hellinikon, by the sea, the heatwave lasted `r heatwave_1987$days[1]` days, `r when(heatwave_1987$start[1], heatwave_1987$end[1])`, and reached `r one(heatwave_1987$hottest[1])` °C.
+
+**Some heatwaves are missing.** The station has a maximum for only `r july_2023` days of July 2023, when the National Observatory of Athens counted, in Greece as a whole, a heatwave of 15 days, the longest until then; that of July 2024 beat it, with 16 ([meteo.gr, 25 July 2024](https://meteo.gr/article_view.cfm?entryID=3328)). And it has a maximum for only `r summer_2012` of the 92 days of the summer of 2012, `r place_text(era5_place_of(2012))` of the `r nrow(era5_summers)` in ERA5-Land.
+
+---
+
+## So, what does it mean?
+
+**Athens is getting hotter, by day and by night.** At Hellinikon, comparing 1961–1990 with the years of `r recent` that can be counted:
+
+```{r summary_table}
+measures <- rbind(
+  "Summer average (°C)" = by_period$summer_average,
+  "Hot days a year" = by_period$hot_days,
+  "Very hot days a year" = by_period$very_hot_days / by_period$hot_years,
+  "Tropical nights a year" = by_period$tropical_nights,
+  "Very warm nights a year" = by_period$very_warm_nights,
+  "Heatwaves a year" = per_period$n / by_period$hot_years
+)
+knitr::kable(
+  data.frame(rownames(measures), measures),
+  row.names = FALSE,
+  digits = 1,
+  col.names = c("Measure", as.character(by_period$period))
+)
+```
+
+1. **Summers are warmer**: `r one(now - base)` °C warmer than in 1961–1990, and ERA5-Land, which cannot see the city, warmed too.
+2. **Hot days are much more common**: `r round(by_period$hot_days[3])` a year instead of `r round(by_period$hot_days[1])`.
+3. **The nights cool down less**: `r round(by_period$very_warm_nights[3])` very warm nights a year instead of `r round(by_period$very_warm_nights[1])`.
+4. **The hot season is longer**: its warm nights start earlier and end later, `r round(longer)` days longer in all.
+5. **Heatwaves come more often and last longer**: the longest at Hellinikon lasted `r ten$days[1]` days, in `r format(ten$start[1], "%Y")`.
+
+**What this does not show.** It is one station, at the edge of the city and by the sea; the centre of Athens and the plains inland are hotter by day, and some of the station's warming may come from the city around it, which this record cannot separate from the climate. NOAA's record of the station has gaps, worst in the 2010s, and ends on `r date_text(last_day)`; ERA5-Land, which goes on to the present, is a model, not a measurement.
+
+For the world as a whole, see the [NASA GISS Global Temperature Anomaly](ILLUSTRATION_CLIMATE_HIGHCHARTER.html); for more of what a weather station measures, hour by hour, the [Airport Weather Analysis](ILLUSTRATION_AIRPORT_WEATHER.html) of the new Athens airport; and for the fires that burn in Greek summers, [Greece Burning](ILLUSTRATION_GREEK_WILDFIRES.html).
+
+---
+
+## Sources
+
+- NOAA, Global Historical Climatology Network Daily (GHCN-Daily): Menne, M.J., I. Durre, B. Korzeniewski, S. McNeill, K. Thomas, X. Yin, S. Anthony, R. Ray, R.S. Vose, B.E. Gleason and T.G. Houston (2012), [Global Historical Climatology Network - Daily (GHCN-Daily), Version 3](https://doi.org/10.7289/V5D21VHZ), NOAA National Climatic Data Center, accessed `r date_text(Sys.Date())`; the file of the station, [GR000016716.csv](https://www.ncei.noaa.gov/data/global-historical-climatology-network-daily/access/GR000016716.csv); the [list of stations](https://www.ncei.noaa.gov/pub/data/ghcn/daily/ghcnd-stations.txt); the [description of the files and flags](https://www.ncei.noaa.gov/pub/data/ghcn/daily/readme.txt); and the [page of the dataset](https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily), on what it corrects and what not.
+- Menne, M.J., I. Durre, R.S. Vose, B.E. Gleason and T.G. Houston (2012), [An overview of the Global Historical Climatology Network-Daily database](https://doi.org/10.1175/JTECH-D-11-00103.1), *Journal of Atmospheric and Oceanic Technology* 29, 897–910.
+- NOAA, [Global Summary of the Day](https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/) (GSOD): the files of station 16716099999 for `r and_list(unique(year_before))`.
+- Klein Tank, A.M.G. and others (2002), [Daily dataset of 20th-century surface air temperature and precipitation series for the European Climate Assessment](https://doi.org/10.1002/joc.773), *International Journal of Climatology* 22, 1441–1453.
+- Muñoz-Sabater, J. and others (2021), [ERA5-Land: a state-of-the-art global reanalysis dataset for land applications](https://doi.org/10.5194/essd-13-4349-2021), *Earth System Science Data* 13, 4349–4383; and Muñoz Sabater, J. (2019), [ERA5-Land hourly data from 1950 to present](https://doi.org/10.24381/cds.e2161bac), Copernicus Climate Change Service, ECMWF.
+- Zippenfenig, P. (2023), [Open-Meteo.com Weather API](https://doi.org/10.5281/zenodo.7970649), Zenodo; the [historical weather API](https://open-meteo.com/en/docs/historical-weather-api).
+- ETCCDI, [Climate change indices: definitions of the 27 core indices](https://etccdi.pacificclimate.org/list_27_indices.shtml) (tropical nights, TR).
+- Hawkins, E., [#ShowYourStripes](https://showyourstripes.info/), University of Reading (the warming stripes, CC BY 4.0).
+- Kyros, G., S. Dafis and K. Lagouvardos (3 September 2024), [Καλοκαίρι 2024: Ανάλυση των ημερήσιων τιμών θερμοκρασίας του φετινού καλοκαιριού](https://meteo.gr/article_view.cfm?entryID=3381) (Summer 2024: the daily temperatures of this summer), meteo.gr, National Observatory of Athens.
+- Lagouvardos, K., S. Dafis and G. Kyros (25 July 2024), [2023 & 2024: Συγκρίνοντας τους δύο πρόσφατους καύσωνες](https://meteo.gr/article_view.cfm?entryID=3328) (2023 and 2024: comparing the two recent heatwaves), meteo.gr, National Observatory of Athens.
+- Founda, D. and M. Santamouris (2017), [Synergies between Urban Heat Island and Heat Waves in Athens (Greece), during an extremely hot summer (2012)](https://doi.org/10.1038/s41598-017-11407-6), *Scientific Reports* 7, 10973.
+- Katsouyanni, K. and others (1993), [Evidence for interaction between air pollution and high temperature in the causation of excess mortality](https://doi.org/10.1080/00039896.1993.9940365), *Archives of Environmental Health* 48, 235–242.
+- Wikipedia, [Ellinikon International Airport](https://en.wikipedia.org/wiki/Ellinikon_International_Airport) (its closing in 2001, and the works on the site since 2020).
+
+---
+
+*Rendered with R `r getRversion()` · dplyr · ggplot2*

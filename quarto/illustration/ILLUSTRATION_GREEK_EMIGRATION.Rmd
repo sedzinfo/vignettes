@@ -1,0 +1,827 @@
+---
+title: "The Greeks Who Left: How Many, Where To, and Who Came Back"
+description: "Emigration from Greece since the debt crisis, in Eurostat data: how many left, who they were, where they went, who came back, and whether it was a brain drain."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+From 2010 until August 2018, Greece lived on rescue loans, through three programmes ([ESM](https://www.esm.europa.eu/assistance/greece/greece-successfully-concludes-esm-programme)). In those years many people left the country. This story asks five questions about them:
+
+1. **How many people left Greece, and when?**
+2. **Who left?** Their age and sex, and whether they were Greek citizens or foreigners.
+3. **Where did they go?**
+4. **Did they come back?**
+5. **Was it a brain drain?** Did those who left have more education than those who stayed?
+
+[Fewer and Older](ILLUSTRATION_GREEK_POPULATION.Rmd) shows how births, deaths and migration change the size and the age of Greece's population. This story follows the people who left.
+
+The data come from **Eurostat**, the statistical office of the EU, and are downloaded when the page is rendered:
+
+- **Greece's figures** on the people who leave the country and those who arrive, each year, from ELSTAT, the Hellenic Statistical Authority: by age and sex (migr_emi2), by citizenship (migr_emi1ctz, migr_imm1ctz), by country of birth (migr_imm3ctb) and by where they went (migr_emi5nxt); with the population (demo_pjan) and unemployment (une_rt_a).
+- **The figures of the countries they moved to**: the Greek citizens who arrive in each European country and those who leave it (migr_imm1ctz, migr_emi1ctz), and those who live there (migr_pop1ctz).
+- **The Labour Force Survey**, a survey of households in the countries of the EU and EFTA, which asks people where they were born and what education they have (lfst_lmbpcobed, edat_lfs_9912).
+
+**Most of these figures are estimates.** In the statistics of the EU, an emigrant is someone who moves abroad for at least 12 months ([Eurostat](https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm)). Greece does not count them: nobody has to tell the authorities that they are leaving, so ELSTAT calls its data on emigration "essentially non-existent" and estimates it instead. For 2011 to 2021, emigration is the number of people who must have left for the population, as revised after the census of 2021, to add up with the births, the deaths and the people who arrived. Since 2022, it is worked out from the number of people that Germany counts arriving from Greece ([ELSTAT](https://www.statistics.gr/en/statistics/-/publication/SPO15/-)). The countries the emigrants go to count the people who arrive, but not all in the same way: Norway, for example, counts as migrants the people who move for six months ([Eurostat](https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm)).
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat", "plotly", "jsonlite"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values, in the order of the years
+eurostat_values <- function(id, filters) {
+  x <- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
+  x <- as.data.frame(x[!is.na(x$values), ])
+  x[order(x$time), ]
+}
+# the years that Eurostat flags as a break in one series (flag b); the eurostat package leaves the
+# flags out when it filters, so they come from Eurostat's own API, in JSON-stat
+breaks_in <- function(id, filters) {
+  api <- "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
+  query <- paste(paste0(names(filters), "=", unlist(filters)), collapse = "&")
+  x <- jsonlite::fromJSON(paste0(api, id, "?", query))
+  years <- names(sort(unlist(x$dimension$time$category$index)))
+  flags <- unlist(x$status)
+  as.numeric(years[as.integer(names(flags)[flags == "b"]) + 1])
+}
+# all ages, both sexes, age in completed years, numbers of people
+everyone <- list(age = "TOTAL", sex = "T", agedef = "COMPLET", unit = "NR")
+
+# Greece: the people who left each year, by sex and single year of age, and the breaks in the series
+emigration <- eurostat_values("migr_emi2", list(geo = "EL", agedef = "COMPLET", unit = "NR"))
+breaks <- breaks_in("migr_emi2", c(list(geo = "EL"), everyone))
+# Greece: everyone (TOTAL) and the Greek citizens (NAT) among the people who left and among those
+# who arrived; the people who arrived who were born in Greece (NAT); and the people who left, by
+# group of country of next residence: another EU country, or a country outside the EU
+left <- eurostat_values("migr_emi1ctz", c(list(geo = "EL", citizen = c("NAT", "TOTAL")), everyone))
+came <- eurostat_values("migr_imm1ctz", c(list(geo = "EL", citizen = c("NAT", "TOTAL")), everyone))
+came_born <- eurostat_values("migr_imm3ctb", c(list(geo = "EL", c_birth = "NAT"), everyone))
+next_residence <- eurostat_values("migr_emi5nxt", list(geo = "EL", unit = "NR"))
+
+# every country that reports them, but not Greece itself or the EU as a whole: the Greek citizens
+# (EL) who arrived there each year, those who left, and those who lived there on 1 January
+abroad <- function(x) x[!x$geo %in% c("EL", "EU27_2020"), ]
+greeks_came <- abroad(eurostat_values("migr_imm1ctz", c(list(citizen = "EL"), everyone)))
+greeks_left <- abroad(eurostat_values("migr_emi1ctz", c(list(citizen = "EL"), everyone)))
+greeks_living <- abroad(eurostat_values(
+  "migr_pop1ctz",
+  list(citizen = "EL", age = "TOTAL", sex = "T", unit = "NR")
+))
+
+# Greece: the population on 1 January, by sex and single year of age, and unemployment, % of the
+# labour force aged 15 to 74
+population <- eurostat_values("demo_pjan", list(geo = "EL", sex = c("T", "M", "F"), unit = "NR"))
+unemployment <- eurostat_values(
+  "une_rt_a",
+  list(geo = "EL", age = "Y15-74", sex = "T", unit = "PC_ACT")
+)
+
+# Labour Force Survey: the people born in Greece who live in another EU or EFTA country, by age
+# group and education, thousands; and those who live in Greece, aged 15 to 64, by education, %
+born_abroad <- eurostat_values("lfst_lmbpcobed", list(c_birth = "EL", c_resid = "EU27_2020_EFTA"))
+born_home <- eurostat_values(
+  "edat_lfs_9912",
+  list(geo = "EL", c_birth = "NAT", sex = "T", age = "Y15-64")
+)
+
+# the names of the countries of the EU and EFTA, and of the United Kingdom
+country_name <- c(
+  setNames(eu_countries$name, eu_countries$code),
+  setNames(efta_countries$name, efta_countries$code),
+  UK = "United Kingdom"
+)
+```
+
+```{r flows}
+# one series of a dataset, in the order of the years
+by_year <- function(x, years) x$values[match(years, x$time)]
+
+# Greece, year by year: the people who left, all of them and the Greek citizens; the people who
+# arrived, all of them, the Greek citizens and those born in Greece; and the population
+total_left <- emigration[emigration$age == "TOTAL" & emigration$sex == "T", ]
+flows <- data.frame(year = total_left$time, left = total_left$values)
+flows$left_greek <- by_year(left[left$citizen == "NAT", ], flows$year)
+flows$came <- by_year(came[came$citizen == "TOTAL", ], flows$year)
+flows$came_greek <- by_year(came[came$citizen == "NAT", ], flows$year)
+flows$came_born <- by_year(came_born, flows$year)
+flows$net_greek <- flows$came_greek - flows$left_greek
+everyone_living <- population[population$age == "TOTAL" & population$sex == "T", ]
+flows$population <- by_year(everyone_living, flows$year)
+latest <- max(flows$year)
+flow <- function(column, year) flows[[column]][match(year, flows$year)]
+
+# the years of the rescue loans: the first programme started in 2010, and the third and last ended
+# in August 2018 (ESM)
+rescue <- c(2010, 2018)
+rescue_years <- rescue[1]:rescue[2]
+```
+
+```{r chart_style}
+greek_red <- "#d62728"
+blue <- "#1f77b4"
+orange <- "#ff7f0e"
+gray <- "#9e9e9e"
+light_gray <- "#ebebeb"
+dark_gray <- "#6b6b6b" # also the color of the notes
+
+# the source of a chart, as a note under it, and the common layout
+chart <- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note <- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) %>%
+    config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the years of the rescue loans, shaded behind the data
+rescue_band <- list(
+  type = "rect",
+  xref = "x",
+  yref = "paper",
+  x0 = rescue[1] - 0.5,
+  x1 = rescue[2] + 0.5,
+  y0 = 0,
+  y1 = 1,
+  fillcolor = light_gray,
+  line = list(width = 0),
+  layer = "below"
+)
+shaded <- paste0("Shaded: the rescue loans, ", rescue[1], "–", rescue[2], ".")
+
+# numbers in the text
+number <- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
+thousands <- function(x) format(round(x, -3), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
+one <- function(x) format(round(x, 1), nsmall = 1)
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# years as ranges: 2014, 2015, 2016 and 2019 give "2014–2016, 2019"
+years_text <- function(years) {
+  years <- sort(unique(years))
+  starts <- years[c(TRUE, diff(years) > 1)]
+  ends <- years[c(diff(years) > 1, TRUE)]
+  paste(ifelse(starts == ends, starts, paste0(starts, "–", ends)), collapse = ", ")
+}
+```
+
+---
+
+## 1. How many people left Greece, and when?
+
+```{r how_many_numbers}
+in_2000s <- flows$left[flows$year %in% 2000:2009]
+peak_year <- flows$year[which.max(flows$left)]
+per_1000 <- function(year) 1000 * flow("left", year) / flow("population", year)
+left_rescue <- sum(flows$left[flows$year %in% rescue_years])
+left_greek_rescue <- sum(flows$left_greek[flows$year %in% rescue_years])
+over_100k <- flows$year[flows$left > 1e5]
+# the last year in which more people left than the year before: the fall since goes on to the
+# latest year
+rose <- flows$year[c(FALSE, diff(flows$left) >= 0)]
+falling_since <- max(rose)
+jobless <- function(year) unemployment$values[unemployment$time == year]
+jobless_peak <- unemployment$time[which.max(unemployment$values)]
+jobless_latest <- max(unemployment$time)
+```
+
+**About `r thousands(mean(in_2000s))` a year in the 2000s; more than 100,000 a year in `r years_text(over_100k)`.**
+
+From 2000 to 2009, between `r number(min(in_2000s))` and `r number(max(in_2000s))` people left Greece each year. Then came the crisis: `r number(flow("left", 2010))` left in 2010, `r number(flow("left", 2011))` in 2011 and `r number(flow("left", peak_year))` in `r peak_year`, the most since the figures start in `r min(flows$year)`: `r one(per_1000(peak_year))` of every 1,000 people who lived in Greece. In the years of the rescue loans, from `r rescue[1]` to `r rescue[2]`, `r thousands(left_rescue)` people left, `r thousands(left_greek_rescue)` of them Greek citizens.
+
+The number `r if (falling_since < latest) paste0("has fallen every year since ", falling_since, ", to ", number(flow("left", latest)), " in ", latest) else paste0("was ", number(flow("left", latest)), " in ", latest)`, `r one(flow("left", latest) / mean(in_2000s))` times the average of the 2000s. It rose with unemployment, which went from `r percent(jobless(min(unemployment$time)), 1)` of the labour force in `r min(unemployment$time)` to `r percent(jobless(jobless_peak), 1)` in `r jobless_peak`; both have fallen since, unemployment to `r percent(jobless(jobless_latest), 1)` in `r jobless_latest` (Eurostat, une_rt_a).
+
+```{r how_many}
+bars <- flows[!is.na(flows$left), ]
+rescue_label <- list(
+  x = mean(rescue),
+  y = 1,
+  xref = "x",
+  yref = "paper",
+  yanchor = "bottom",
+  text = paste0("Rescue loans, ", rescue[1], "–", rescue[2]),
+  showarrow = FALSE,
+  font = list(size = 12, color = dark_gray)
+)
+plot_ly(
+  bars,
+  x = ~year,
+  y = ~ left / 1000,
+  type = "bar",
+  name = "People who left",
+  marker = list(
+    color = greek_red,
+    pattern = list(
+      shape = ifelse(bars$year %in% breaks, "/", ""),
+      fillmode = "overlay",
+      fgcolor = "white"
+    )
+  ),
+  hovertemplate = "%{x}: %{y:.1f} thousand<extra></extra>"
+) %>%
+  chart(
+    "People who left Greece each year, thousands",
+    "Eurostat, migr_emi2 (estimates of ELSTAT). Striped: a break in the series.",
+    "Thousands",
+    annotations = list(rescue_label),
+    shapes = list(rescue_band),
+    showlegend = FALSE
+  )
+```
+
+Eurostat marks a break in the series in `r and_list(breaks)` (the striped bars): the method changed, so the years before and after a break cannot be compared closely.
+
+---
+
+## 2. Who left?
+
+```{r who_numbers}
+# the age of a Eurostat age code: Y_LT1 is under one, Y_OPEN and Y_GE100 are the oldest, and the
+# codes of totals, such as TOTAL, give NA
+age_of <- function(code) {
+  age <- suppressWarnings(as.numeric(sub("^Y", "", code)))
+  age[code == "Y_LT1"] <- 0
+  age[code %in% c("Y_OPEN", "Y_GE100")] <- 100
+  age
+}
+group_names <- c(
+  "0–14",
+  "15–19",
+  "20–24",
+  "25–29",
+  "30–34",
+  "35–39",
+  "40–44",
+  "45–49",
+  "50–54",
+  "55–59",
+  "60–64",
+  "65+"
+)
+age_group <- function(code) {
+  cut(age_of(code), c(-1, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, Inf), labels = group_names)
+}
+# the people who left out of every 1,000 of the same sex and age group who lived in Greece on
+# 1 January
+rates <- function(year, sex) {
+  out <- emigration[emigration$time == year & emigration$sex == sex, ]
+  living <- population[population$time == year & population$sex == sex, ]
+  1000 *
+    tapply(out$values, age_group(out$age), sum) /
+    tapply(living$values, age_group(living$age), sum)
+}
+rate <- function(year, sex, group) rates(year, sex)[[group]]
+# the age that half of the people are younger than or as old as
+median_age <- function(x) {
+  x <- x[!is.na(age_of(x$age)), ]
+  x <- x[order(age_of(x$age)), ]
+  age_of(x$age)[which(cumsum(x$values) >= sum(x$values) / 2)[1]]
+}
+men_left <- emigration[emigration$age == "TOTAL" & emigration$sex == "M", ]
+men_share <- data.frame(
+  year = men_left$time,
+  share = round(100 * men_left$values / flow("left", men_left$time), 1)
+)
+# the longest run of years in which the share of men is the same
+runs <- rle(men_share$share)
+run_end <- cumsum(runs$lengths)[which.max(runs$lengths)]
+same_years <- men_share$year[(run_end - max(runs$lengths) + 1):run_end]
+middle_aged <- c("35–39", "40–44", "45–49", "50–54")
+men_to_women <- rates(peak_year, "M")[middle_aged] / rates(peak_year, "F")[middle_aged]
+```
+
+**Mostly people in their twenties and thirties, and in the worst years, mostly men.**
+
+In `r peak_year`, `r percent(men_share$share[men_share$year == peak_year])` of the people who left Greece were men. Half of them were `r median_age(emigration[emigration$time == peak_year & emigration$sex == "T", ])` or younger, while half of the people who lived in Greece were `r median_age(population[population$time == peak_year & population$sex == "T", ])` or older.
+
+The chart counts the people who left out of every 1,000 of the same sex and age who lived in Greece at the start of the year. In `r peak_year`, `r round(rate(peak_year, "M", "25–29"))` of every 1,000 men aged 25 to 29 left, and `r round(rate(peak_year, "F", "25–29"))` of every 1,000 women. From 35 to 54, men left at `r one(min(men_to_women))` to `r one(max(men_to_women))` times the rate of women. In `r latest`, fewer left: `r round(rate(latest, "M", "25–29"))` of every 1,000 men aged 25 to 29, and `r round(rate(latest, "F", "25–29"))` of every 1,000 women.
+
+```{r who}
+profile <- data.frame(group = factor(group_names, levels = group_names))
+lines <- data.frame(
+  year = c(peak_year, peak_year, latest, latest),
+  sex = c("M", "F", "M", "F"),
+  name = paste(c("Men,", "Women,", "Men,", "Women,"), c(peak_year, peak_year, latest, latest)),
+  color = c(blue, orange, blue, orange),
+  dash = c("solid", "solid", "dot", "dot")
+)
+p <- plot_ly(profile, x = ~group)
+for (k in seq_len(nrow(lines))) {
+  p <- add_trace(
+    p,
+    y = as.numeric(rates(lines$year[k], lines$sex[k])),
+    type = "scatter",
+    mode = "lines+markers",
+    name = lines$name[k],
+    line = list(color = lines$color[k], width = 3, dash = lines$dash[k]),
+    marker = list(color = lines$color[k]),
+    hovertemplate = paste0("Aged %{x}: %{y:.1f} per 1,000<extra>", lines$name[k], "</extra>")
+  )
+}
+p %>%
+  chart(
+    "People who left Greece, per 1,000 of their sex and age",
+    "Eurostat, migr_emi2 and demo_pjan (estimates of ELSTAT).",
+    "Per 1,000",
+    y_axis = list(rangemode = "tozero"),
+    legend = legend_top,
+    margin = list(t = 100, b = 90)
+  )
+```
+
+These shares are estimates too. ELSTAT does not measure the age and sex of the people who leave: it spreads its estimate of the total with fixed proportions ([ELSTAT](https://www.statistics.gr/en/statistics/-/publication/SPO15/-)). In every year from `r min(same_years)` to `r max(same_years)`, for example, `r percent(runs$values[which.max(runs$lengths)], 1)` of those who left were men. So the chart shows the broad picture, not the changes from one year to the next.
+
+### Greek citizens and foreigners
+
+```{r citizenship_numbers}
+citizens <- flows[!is.na(flows$left_greek), ]
+citizens$left_foreign <- citizens$left - citizens$left_greek
+greek_share <- function(year) 100 * flow("left_greek", year) / flow("left", year)
+mostly_greek <- citizens$year[citizens$left_greek > citizens$left_foreign]
+most_greek <- citizens$year[which.max(citizens$left_greek / citizens$left)]
+foreign <- function(year) citizens$left_foreign[citizens$year == year]
+```
+
+In `r min(citizens$year)`, `r percent(greek_share(min(citizens$year)))` of the people who left Greece were Greek citizens; the rest were foreigners who had lived in Greece. In `r years_text(mostly_greek)`, most of those who left were Greek citizens: `r percent(greek_share(most_greek))` in `r most_greek`, and `r number(flow("left_greek", peak_year))` people in `r peak_year`. Foreigners left in larger numbers too, `r number(foreign(peak_year))` in `r peak_year` against `r number(foreign(min(citizens$year)))` in `r min(citizens$year)`. In `r latest`, `r number(flow("left_greek", latest))` Greek citizens left, `r percent(greek_share(latest))` of all who left.
+
+```{r citizenship}
+plot_ly(
+  citizens,
+  x = ~year,
+  y = ~ left_greek / 1000,
+  type = "bar",
+  name = "Greek citizens",
+  marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f} thousand<extra>Greek citizens</extra>"
+) %>%
+  add_trace(
+    y = ~ left_foreign / 1000,
+    name = "Foreign citizens",
+    marker = list(color = gray),
+    hovertemplate = "%{x}: %{y:.1f} thousand<extra>Foreign citizens</extra>"
+  ) %>%
+  chart(
+    "People who left Greece, by citizenship, thousands",
+    paste("Eurostat, migr_emi1ctz (estimates of ELSTAT).", shaded),
+    "Thousands",
+    shapes = list(rescue_band),
+    barmode = "stack",
+    legend = legend_top
+  )
+```
+
+---
+
+## 3. Where did they go?
+
+```{r where_numbers}
+next_year <- max(next_residence$time)
+went <- function(partner) {
+  next_residence$values[next_residence$partner == partner & next_residence$time == next_year]
+}
+to_eu <- went("EU27_2020_FOR")
+outside <- went("NEU27_2020_FOR")
+# the years with figures for Germany, the main destination, after the gap of the crisis years
+since <- min(greeks_came$time[greeks_came$geo == "DE" & greeks_came$time > 2008])
+window <- since:latest
+counted <- greeks_came[greeks_came$time %in% window, ]
+destinations <- aggregate(values ~ geo, counted, sum)
+destinations <- destinations[order(-destinations$values), ]
+left_window <- sum(flows$left_greek[flows$year %in% window])
+counted_total <- sum(destinations$values)
+not_counted <- left_window - counted_total
+shown <- head(destinations, 10)
+other <- counted_total - sum(shown$values)
+# a country's name, with the years it has figures for when they are not all the years
+label <- function(geo) {
+  name <- if (geo %in% names(country_name)) country_name[[geo]] else geo
+  years <- counted$time[counted$geo == geo]
+  if (length(years) == length(window)) name else paste0(name, " (", years_text(years), ")")
+}
+shown$label <- sapply(shown$geo, label)
+share_of_counted <- function(geo) 100 * shown$values[shown$geo == geo] / counted_total
+# the countries of the EU and EFTA without figures on Greek citizens arriving in these years
+silent <- setdiff(names(country_name), c(unique(counted$geo), "EL", "UK"))
+uk_years <- counted$time[counted$geo == "UK"]
+uk_rank <- function(year) {
+  in_year <- counted[counted$time == year, ]
+  sum(in_year$values > in_year$values[in_year$geo == "UK"]) + 1
+}
+```
+
+**Above all to Germany. But the countries they went to counted only `r percent(100 * counted_total / left_window)` of them arriving.**
+
+Greece's figures say only whether the people who left went to another EU country or outside the EU, not to which country: in `r next_year`, `r number(to_eu)` went to another EU country and `r number(outside)` outside the EU, foreigners leaving Greece included (migr_emi5nxt).
+
+So the chart looks from the other end, at the countries that count the people who arrive, by citizenship. It follows the `r thousands(left_window)` Greek citizens who left Greece from `r since` to `r latest`, the years with figures for Germany, to the countries that counted them arriving.
+
+```{r where, fig.height = 8}
+# where they went, from top to bottom: not counted, the countries from the most, the others
+went_to <- data.frame(
+  label = c(
+    paste0("Not counted arriving in Europe: ", thousands(not_counted)),
+    paste0(shown$label, ": ", thousands(shown$values)),
+    paste0("Other European countries: ", thousands(other))
+  ),
+  value = c(not_counted, shown$values, other),
+  color = c(gray, rep(blue, nrow(shown) + 1)),
+  link = c("rgba(158, 158, 158, 0.35)", rep("rgba(31, 119, 180, 0.3)", nrow(shown) + 1))
+)
+# the place of each node, as a share of the width and of the height (its middle), fixed so that
+# plotly keeps this order: the nodes share the height of the plot, less a gap of `pad` pixels
+# between two
+pad <- 10
+margin <- list(t = 60, b = 80, l = 10, r = 10)
+# opts_chunk has the dots per inch that set the height of a plotly chart; opts_current has them
+# multiplied by fig.retina
+dpi <- knitr::opts_chunk$get("dpi")
+plot_height <- knitr::opts_current$get("fig.height") * dpi - margin$t - margin$b
+gap <- pad / plot_height
+node_height <- went_to$value / sum(went_to$value) * (1 - gap * (nrow(went_to) - 1))
+middle <- cumsum(node_height + gap) - gap - node_height / 2
+plot_ly(
+  type = "sankey",
+  orientation = "h",
+  arrangement = "fixed",
+  valueformat = ",.0f",
+  textfont = list(size = 12),
+  node = list(
+    label = c(paste0("Left Greece: ", thousands(left_window)), went_to$label),
+    color = c(dark_gray, went_to$color),
+    x = c(0.001, rep(0.999, nrow(went_to))),
+    y = c(0.5, middle),
+    pad = pad,
+    thickness = 16,
+    line = list(width = 0),
+    hovertemplate = "%{label}<extra></extra>"
+  ),
+  link = list(
+    source = rep(0, nrow(went_to)),
+    target = seq_len(nrow(went_to)),
+    value = went_to$value,
+    color = went_to$link,
+    hovertemplate = "%{target.label}<extra></extra>"
+  )
+) %>%
+  chart(
+    paste0("Where the Greek citizens who left went, ", since, "–", latest),
+    paste0(
+      "Eurostat, migr_emi1ctz (Greece's estimate) and migr_imm1ctz (the countries' counts). ",
+      "In brackets: the years with figures."
+    ),
+    margin = margin,
+    note_y = -0.04
+  )
+```
+
+Germany counted `r thousands(shown$values[shown$geo == "DE"])` Greek citizens arriving, `r percent(share_of_counted("DE"))` of all those counted in Europe, and the Netherlands `r thousands(shown$values[shown$geo == "NL"])`, `r percent(share_of_counted("NL"))`. The United Kingdom has figures only for `r years_text(uk_years)`, when `r number(sum(counted$values[counted$geo == "UK"]))` Greek citizens arrived there, `r if (all(sapply(uk_years, uk_rank) == 2)) "the most after Germany" else "one of the most"`; Eurostat's figures for the United Kingdom stop with its withdrawal from the EU ([Eurostat](https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm)).
+
+The other `r thousands(not_counted)`, `r percent(100 * not_counted / left_window)` of those who left, were not counted arriving in any European country. They may have gone to countries outside Europe; to European countries that have no figures on Greek citizens arriving, `r and_list(sort(country_name[silent]))`; or to countries in years without figures, such as the United Kingdom after `r max(uk_years)`. And part of the gap is the difference between Greece's estimate and the counts of the other countries. The figures cannot tell how much of each.
+
+```{r where_table}
+knitr::kable(
+  data.frame(
+    c(shown$label, "Other European countries"),
+    number(c(shown$values, other))
+  ),
+  col.names = c(
+    "Country (years with figures)",
+    paste0("Greek citizens who arrived, ", since, "–", latest)
+  ),
+  align = "lr"
+)
+```
+
+### Where they live now
+
+```{r living_numbers}
+living <- greeks_living[greeks_living$geo %in% names(country_name), ]
+newest <- do.call(rbind, lapply(split(living, living$geo), function(x) x[which.max(x$time), ]))
+newest <- head(newest[order(-newest$values), ], 15)
+living_year <- max(newest$time)
+newest$label <- ifelse(
+  newest$time == living_year,
+  country_name[newest$geo],
+  paste0(country_name[newest$geo], " (", newest$time, ")")
+)
+newest <- newest[order(newest$values), ]
+newest$label <- factor(newest$label, levels = newest$label)
+lived <- function(geo, year) living$values[living$geo == geo & living$time == year]
+uk_last <- max(living$time[living$geo == "UK"])
+uk_place <- sum(living$values[living$time == uk_last] > lived("UK", uk_last)) + 1
+```
+
+The countries also count the people who live there, by citizenship. Germany had by far the most Greek citizens: `r number(lived("DE", living_year))` on 1 January `r living_year`. Its Greek community was as large before the crisis, `r number(lived("DE", 2010))` in 2010: the number of people living in a country does not grow by all who arrive, as people also leave, die, or take the citizenship of the country. In the Netherlands, the number of Greek citizens grew from `r number(lived("NL", 2010))` in 2010 to `r number(lived("NL", living_year))` in `r living_year`. The United Kingdom had `r number(lived("UK", uk_last))` in `r uk_last`, its last year in the figures, `r if (uk_place == 2) "the most after Germany" else "among the most"`.
+
+```{r living, fig.height = 7}
+plot_ly(
+  newest,
+  x = ~values,
+  y = ~label,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = blue),
+  text = number(newest$values),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:,.0f}<extra></extra>"
+) %>%
+  chart(
+    paste0("Greek citizens living elsewhere in Europe, 1 January ", living_year),
+    "Eurostat, migr_pop1ctz. In brackets: the last year with figures.",
+    x_axis = list(range = c(0, 1.2 * max(newest$values)), tickformat = ","),
+    margin = list(l = 150, t = 70, b = 70, r = 30),
+    note_y = -0.08
+  )
+```
+
+---
+
+## 4. Did they come back?
+
+```{r back_numbers}
+turn <- min(flows$year[flows$year > rescue[1] & !is.na(flows$net_greek) & flows$net_greek > 0])
+after_turn <- flows$year[flows$year >= turn]
+before_turn <- max(flows$year[
+  flows$year < rescue[1] & !is.na(flows$net_greek) & flows$net_greek > 0
+])
+lost <- -sum(flows$net_greek[flows$year %in% rescue[1]:(turn - 1)])
+gained <- sum(flows$net_greek[flows$year %in% after_turn])
+born_elsewhere <- flow("came_greek", latest) - flow("came_born", latest)
+
+germany <- data.frame(year = min(greeks_came$time[greeks_came$geo == "DE"]):latest)
+germany$came <- by_year(greeks_came[greeks_came$geo == "DE", ], germany$year)
+germany$left <- by_year(greeks_left[greeks_left$geo == "DE", ], germany$year)
+both <- germany[!is.na(germany$came) & !is.na(germany$left), ]
+before <- both[both$year < rescue[1], ]
+restart <- min(both$year[both$year > rescue[1]])
+since_restart <- both[both$year >= restart, ]
+peak_in <- since_restart$year[which.max(since_restart$came - since_restart$left)]
+more_left <- since_restart$year[since_restart$left > since_restart$came]
+# the years without figures between the last year before the crisis and the restart
+gap_years <- (max(before$year) + 1):(restart - 1)
+in_germany <- function(column, year) germany[[column]][germany$year == year]
+left_germany_first <- length(more_left) == 1 && more_left == latest
+```
+
+**Some have. Since `r turn`, more Greek citizens move to Greece each year than leave it, by ELSTAT's estimates, but they have made up only a small part of what the crisis took.**
+
+From `r rescue[1]` to `r turn - 1`, `r thousands(lost)` more Greek citizens left Greece than moved to it. In `r and_list(after_turn)`, for the first time since `r before_turn`, more moved to Greece than left: `r and_list(number(flow("net_greek", after_turn)))` more. Together, that is `r percent(100 * gained / lost)` of what was lost from `r rescue[1]` to `r turn - 1`.
+
+Not all the Greek citizens who move to Greece were born there: in `r latest`, `r number(flow("came_greek", latest))` Greek citizens moved to Greece, but only `r number(flow("came_born", latest))` people born in Greece, of any citizenship, so at least `r number(born_elsewhere)` of the Greek citizens were born abroad. The people born in Greece who move to Greece are coming back to the country of their birth: `r number(flow("came_born", latest))` in `r latest`, against `r number(flow("came_born", turn - 1))` in `r turn - 1` and `r number(flow("came_born", min(flows$year[!is.na(flows$came_born)])))` in `r min(flows$year[!is.na(flows$came_born)])`.
+
+```{r back}
+greek_flows <- flows[!is.na(flows$left_greek), ]
+plot_ly(
+  greek_flows,
+  x = ~year,
+  y = ~ left_greek / 1000,
+  type = "scatter",
+  mode = "lines+markers",
+  name = "Greek citizens who left Greece",
+  line = list(color = greek_red, width = 3),
+  marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f} thousand<extra>Greek citizens who left</extra>"
+) %>%
+  add_trace(
+    y = ~ came_greek / 1000,
+    name = "Greek citizens who moved to Greece",
+    line = list(color = blue, width = 3),
+    marker = list(color = blue),
+    hovertemplate = "%{x}: %{y:.1f} thousand<extra>Greek citizens who came</extra>"
+  ) %>%
+  add_trace(
+    y = ~ came_born / 1000,
+    name = "People born in Greece who moved to Greece",
+    line = list(color = blue, width = 2, dash = "dot"),
+    marker = list(color = blue, symbol = "circle-open"),
+    hovertemplate = "%{x}: %{y:.1f} thousand<extra>Born in Greece, came</extra>"
+  ) %>%
+  chart(
+    "Leaving Greece and moving to Greece, thousands a year",
+    paste("Eurostat, migr_emi1ctz, migr_imm1ctz and migr_imm3ctb (estimates of ELSTAT).", shaded),
+    "Thousands",
+    y_axis = list(rangemode = "tozero"),
+    shapes = list(rescue_band),
+    legend = legend_top,
+    margin = list(t = 110, b = 90)
+  )
+```
+
+These figures are ELSTAT's estimates as well. Since 2022, it estimates the people who arrive, apart from those granted protection, such as refugees, with a model: from the number of the year before and the growth of the economy. It splits them by citizenship and country of birth as in the census of 2021 ([ELSTAT](https://www.statistics.gr/en/statistics/-/publication/SPO15/-)).
+
+### A check from Germany
+
+Germany counts the Greek citizens who move there and those who leave, and its figures point the same way. `r if (all(before$left > before$came)) paste0("Before the crisis, more Greek citizens left Germany than moved there, in every year with figures from ", min(before$year), " to ", max(before$year), ": in ", max(before$year), ", ", number(in_germany("left", max(before$year))), " left and ", number(in_germany("came", max(before$year))), " arrived.") else ""` There are no figures for `r years_text(gap_years)`. In `r peak_in`, `r number(in_germany("came", peak_in))` Greek citizens moved to Germany and `r number(in_germany("left", peak_in))` left it. In `r latest`, `r number(in_germany("came", latest))` moved there and `r number(in_germany("left", latest))` left`r if (left_germany_first) paste0(": for the first time since the figures restart in ", restart, ", more left than came") else ""`.
+
+```{r back_germany}
+plot_ly(
+  germany,
+  x = ~year,
+  y = ~ came / 1000,
+  type = "scatter",
+  mode = "lines+markers",
+  name = "Greek citizens who moved to Germany",
+  line = list(color = greek_red, width = 3),
+  marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f} thousand<extra>Moved to Germany</extra>"
+) %>%
+  add_trace(
+    y = ~ left / 1000,
+    name = "Greek citizens who left Germany",
+    line = list(color = blue, width = 3),
+    marker = list(color = blue),
+    hovertemplate = "%{x}: %{y:.1f} thousand<extra>Left Germany</extra>"
+  ) %>%
+  chart(
+    "Greek citizens arriving in and leaving Germany, thousands",
+    paste0(
+      "Eurostat, migr_imm1ctz and migr_emi1ctz (figures of Germany; none for ",
+      years_text(gap_years),
+      "). ",
+      shaded
+    ),
+    "Thousands",
+    y_axis = list(rangemode = "tozero"),
+    shapes = list(rescue_band),
+    legend = legend_top
+  )
+```
+
+---
+
+## 5. Was it a brain drain?
+
+```{r brain_numbers}
+education_names <- c(
+  "ED5-8" = "Higher education",
+  "ED3_4" = "Upper secondary",
+  "ED0-2" = "At most lower secondary"
+)
+education_colors <- c("ED5-8" = greek_red, "ED3_4" = gray, "ED0-2" = dark_gray)
+adults_abroad <- born_abroad[born_abroad$age == "Y20-64" & born_abroad$time >= 2005, ]
+level <- function(isced, year) {
+  adults_abroad$values[adults_abroad$isced11 == isced & adults_abroad$time == year]
+}
+edu_latest <- max(adults_abroad$time)
+# the share with higher education: abroad, of those whose education is known; in Greece, as Eurostat
+# publishes it
+working_age <- born_abroad[born_abroad$age == "Y15-64" & born_abroad$time >= 2005, ]
+known <- working_age[working_age$isced11 %in% names(education_names), ]
+share <- aggregate(values ~ time, known, sum)
+names(share) <- c("year", "known")
+share$abroad <- 100 * by_year(known[known$isced11 == "ED5-8", ], share$year) / share$known
+share$home <- by_year(born_home[born_home$isced11 == "ED5-8", ], share$year)
+share <- share[!is.na(share$home), ]
+behind <- share$year[share$abroad <= share$home]
+ahead_since <- max(behind) + 1
+first_share <- min(share$year)
+last_share <- max(share$year)
+higher <- function(where, year) share[[where]][share$year == year]
+```
+
+**Partly. The people born in Greece who live elsewhere in Europe used to have less education than those at home; now they have more, and many more of them have a degree.**
+
+No statistic follows the people who left, so none can say exactly how much education they had. The nearest is Eurostat's Labour Force Survey, which counts the people born in Greece, aged 20 to 64, who live in another EU or EFTA country, by the highest level of education they finished.
+
+From `r rescue[1]` to `r edu_latest`, the number of them with higher education, a university degree or similar, rose from about `r thousands(1000 * level("ED5-8", rescue[1]))` to `r thousands(1000 * level("ED5-8", edu_latest))`: `r one(level("ED5-8", edu_latest) / level("ED5-8", rescue[1]))` times as many. The number with at most lower secondary schooling hardly changed: about `r thousands(1000 * level("ED0-2", rescue[1]))` in `r rescue[1]` and `r thousands(1000 * level("ED0-2", edu_latest))` in `r edu_latest`.
+
+```{r brain}
+p <- plot_ly()
+for (k in names(education_names)) {
+  p <- add_trace(
+    p,
+    data = adults_abroad[adults_abroad$isced11 == k, ],
+    x = ~time,
+    y = ~values,
+    type = "scatter",
+    mode = "lines+markers",
+    name = education_names[[k]],
+    line = list(color = education_colors[[k]], width = if (k == "ED5-8") 3 else 2),
+    marker = list(color = education_colors[[k]]),
+    hovertemplate = paste0("%{x}: %{y:.1f} thousand<extra>", education_names[[k]], "</extra>")
+  )
+}
+p %>%
+  chart(
+    "Greek-born aged 20 to 64 in other EU and EFTA countries",
+    paste("Eurostat, lfst_lmbpcobed (Labour Force Survey), by education.", shaded),
+    "Thousands",
+    y_axis = list(rangemode = "tozero"),
+    shapes = list(rescue_band),
+    legend = legend_top
+  )
+```
+
+So the Greeks abroad have changed. In `r first_share`, `r percent(higher("abroad", first_share))` of the people born in Greece aged 15 to 64 who lived in another EU or EFTA country had higher education, against `r percent(higher("home", first_share))` of those who lived in Greece. In `r last_share`, it was `r percent(higher("abroad", last_share))` against `r percent(higher("home", last_share))`, and those abroad have had more education than those at home in every year since `r ahead_since`. To change the Greeks abroad so much, those who left in the crisis must have had much more education than those who had left before them. That they also had more than those who stayed is likely, but the survey cannot prove it: it counts the people who live abroad, not those who left. The share with higher education rose in Greece too, from `r percent(higher("home", first_share))` to `r percent(higher("home", last_share))`.
+
+```{r brain_share}
+plot_ly(
+  share,
+  x = ~year,
+  y = ~abroad,
+  type = "scatter",
+  mode = "lines+markers",
+  name = "Living in another EU or EFTA country",
+  line = list(color = greek_red, width = 3),
+  marker = list(color = greek_red),
+  hovertemplate = "%{x}: %{y:.1f}%<extra>Living abroad</extra>"
+) %>%
+  add_trace(
+    y = ~home,
+    name = "Living in Greece",
+    line = list(color = blue, width = 3),
+    marker = list(color = blue),
+    hovertemplate = "%{x}: %{y:.1f}%<extra>Living in Greece</extra>"
+  ) %>%
+  chart(
+    "Born in Greece, aged 15 to 64: share with higher education",
+    paste("Eurostat, lfst_lmbpcobed and edat_lfs_9912 (Labour Force Survey).", shaded),
+    "% of the age group",
+    y_axis = list(rangemode = "tozero", ticksuffix = "%"),
+    shapes = list(rescue_band),
+    legend = legend_top
+  )
+```
+
+**What the data cannot tell:**
+
+- **Who left when.** The survey counts the people who live abroad, whenever they left, not those who left in a given year.
+- **Where they studied.** It does not say whether the degree was earned in Greece or abroad.
+- **All the countries.** It covers the EU and EFTA countries: not the United Kingdom, which is left out of this series, nor the countries outside Europe.
+- **Exact numbers.** The survey asks a sample of households, so its figures move from year to year more than the people do.
+- **What it cost.** No statistic here says whether those who left would have found work in Greece, or what their education cost the country.
+
+---
+
+## So, what does it mean?
+
+1. **The crisis drove a wave of emigration.** By ELSTAT's estimates, `r thousands(left_rescue)` people left Greece in the years of the rescue loans, `r thousands(left_greek_rescue)` of them Greek citizens. In `r peak_year`, `r one(per_1000(peak_year))` of every 1,000 people who lived in Greece left.
+2. **They were young, and many were men.** In `r peak_year`, `r round(rate(peak_year, "M", "25–29"))` of every 1,000 men aged 25 to 29 left.
+3. **Germany took the most**: `r percent(share_of_counted("DE"))` of the Greek citizens counted arriving in Europe from `r since` to `r latest`. For `r percent(100 * not_counted / left_window)` of those who left, the figures do not say where they went.
+4. **The flow has turned, a little.** Since `r turn`, more Greek citizens come to Greece than leave it`r if (left_germany_first) paste0(", and in ", latest, " more Greek citizens left Germany than moved there") else ""`. But `r number(gained)` more Greek citizens in `r and_list(after_turn)` make up only `r percent(100 * gained / lost)` of the `r thousands(lost)` lost from `r rescue[1]` to `r turn - 1`.
+5. **It was partly a brain drain.** The people born in Greece with higher education who live elsewhere in the EU and EFTA are `r one(level("ED5-8", edu_latest) / level("ED5-8", rescue[1]))` times as many as in `r rescue[1]`, and those abroad now have more education than those at home.
+
+Most of these numbers are estimates: Greece does not count the people who leave, and the countries they go to count them in their own ways. The direction is clear; the exact numbers are not.
+
+---
+
+## Sources
+
+- Eurostat, migration: [migr_emi2](https://ec.europa.eu/eurostat/databrowser/view/migr_emi2/default/table?lang=en) (emigration by age and sex), [migr_emi1ctz](https://ec.europa.eu/eurostat/databrowser/view/migr_emi1ctz/default/table?lang=en) (emigration by citizenship), [migr_emi5nxt](https://ec.europa.eu/eurostat/databrowser/view/migr_emi5nxt/default/table?lang=en) (emigration by group of country of next residence), [migr_imm1ctz](https://ec.europa.eu/eurostat/databrowser/view/migr_imm1ctz/default/table?lang=en) (immigration by citizenship), [migr_imm3ctb](https://ec.europa.eu/eurostat/databrowser/view/migr_imm3ctb/default/table?lang=en) (immigration by country of birth), [migr_pop1ctz](https://ec.europa.eu/eurostat/databrowser/view/migr_pop1ctz/default/table?lang=en) (population by citizenship), and the [metadata of the migration statistics](https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm) (definitions, breaks in the series, countries' methods).
+- Eurostat, population and work: [demo_pjan](https://ec.europa.eu/eurostat/databrowser/view/demo_pjan/default/table?lang=en) (population by age and sex), [une_rt_a](https://ec.europa.eu/eurostat/databrowser/view/une_rt_a/default/table?lang=en) (unemployment).
+- Eurostat, Labour Force Survey: [lfst_lmbpcobed](https://ec.europa.eu/eurostat/databrowser/view/lfst_lmbpcobed/default/table?lang=en) (people born in an EU or EFTA country who live in another one, by education), [edat_lfs_9912](https://ec.europa.eu/eurostat/databrowser/view/edat_lfs_9912/default/table?lang=en) (education by country of birth).
+- ELSTAT, [Migration flows](https://www.statistics.gr/en/statistics/-/publication/SPO15/-): *Methodological note for the estimation of migration flows for the years 2022, 2023 and 2024 and population on 1st January of 2023, 2024 and 2025*, and *Short Methodological Note on Population Revision for the Intercensal years 2012 – 2021 and Estimation of Post-census Migration Models*, both of 18 December 2025.
+- ESM: [Greece successfully concludes ESM programme](https://www.esm.europa.eu/assistance/greece/greece-successfully-concludes-esm-programme).
