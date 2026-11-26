@@ -7,7 +7,1063 @@
     <atom:link href="https://sedzinfo.github.io/vignettes/feed.xml" rel="self" type="application/rss+xml"/>
     <description>Tutorials in R with the code on every page: psychometrics, adaptive testing, scale validation, statistics, machine learning and data visualisation with real data.</description>
     <language>en</language>
-    <lastBuildDate>Thu, 26 Nov 2026 07:30:27 +0200</lastBuildDate>
+    <lastBuildDate>Thu, 26 Nov 2026 14:25:33 +0200</lastBuildDate>
+    <item>
+      <title>Where the World Burns: Wildfires on Every Continent Since 2002</title>
+      <link>https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html</link>
+      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html</guid>
+      <pubDate>Thu, 26 Nov 2026 14:25:33 +0200</pubDate>
+      <category>R</category>
+      <category>Illustrations in R</category>
+      <description>Wildfires on every continent in satellite data: how much of Africa, Europe and the rest of the world burns each year, whether the world burns more than it used to, what burns, when each continent burns, and the worst years.</description>
+      <content:encoded><![CDATA[<p><em>Wildfires on every continent in satellite data: how much of Africa, Europe and the rest of the world burns each year, whether the world burns more than it used to, what burns, when each continent burns, and the worst years.</em></p>
+<section id="what-is-this" class="level2">
+<h2 class="anchored" data-anchor-id="what-is-this">What is this?</h2>
+<p>Every summer the fires of California, Canada, Australia or Greece make the news. They are a small part of the land that burns in the world: most of it burns in Africa, every year, in dry seasons that seldom make the news at all. This story compares the continents and asks five questions:</p>
+<ol type="1">
+<li><strong>Where in the world does land burn?</strong></li>
+<li><strong>Is the world burning more than it used to?</strong></li>
+<li><strong>What burns: forest, savanna, grassland or fields?</strong></li>
+<li><strong>When does each continent burn?</strong></li>
+<li><strong>Which were the worst years?</strong></li>
+</ol>
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Greece Burning</a> looks at one country close up; this page looks at the whole world.</p>
+<p>The data come from the <strong>Global Wildfire Information System</strong> (GWIS), a joint initiative of the Group on Earth Observations and the EU’s Copernicus programme, funded mainly by the European Commission (<a href="https://gwis.jrc.ec.europa.eu/">GWIS</a>). Our World in Data adds up its figures by continent (<a href="https://ourworldindata.org/wildfires">Wildfires</a>), and they are downloaded from there when the page is rendered:</p>
+<ul>
+<li><strong>The land burnt each year since 2002 in every country</strong>, mapped by NASA’s MODIS sensors on the Terra and Aqua satellites, which find land that has just burnt in their images (the product MCD64A1, <a href="https://doi.org/10.1016/j.rse.2018.08.005">Giglio et al.&nbsp;2018</a>), with the kind of land that burnt: forest, savanna, shrubland and grassland, cropland or other land (<a href="https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads">GWIS country profiles</a>).</li>
+<li><strong>The land burnt each week since 2012</strong>, from MODIS and the finer VIIRS sensors, and the <strong>carbon dioxide</strong> that the fires released each year since 2003 (<a href="https://gwis.jrc.ec.europa.eu/apps/gwis.statistics/seasonaltrend">GWIS seasonal trends</a>).</li>
+<li><strong>The land area of each country</strong>, from the World Bank (<a href="https://ourworldindata.org/grapher/land-area-km">land area</a>), and the continent it is in (<a href="https://ourworldindata.org/grapher/continents-according-to-our-world-in-data">continents</a>).</li>
+</ul>
+<p>A <strong>hectare</strong> is a square of 100 metres by 100, so a million hectares are 10,000 square kilometres.</p>
+<p><strong>The satellites count every fire.</strong> They map the land that burnt, whatever started the fire: a wildfire, a farmer burning the stubble of a field, or a fire set on purpose to clear dry grass. And they miss some: small fires, and fires hidden by cloud or by the trees above them (<a href="https://ourworldindata.org/grapher/annual-area-burnt-by-wildfires-gwis">Our World in Data</a>).</p>
+<hr>
+</section>
+<section id="packages" class="level2">
+<h2 class="anchored" data-anchor-id="packages">Packages</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("dplyr", "ggplot2", "plotly"))
+library(dplyr)
+library(ggplot2)
+library(plotly)</code></pre></div></div>
+</details>
+</div>
+</section>
+<section id="the-data" class="level2">
+<h2 class="anchored" data-anchor-id="the-data">The data</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r"># a chart of Our World in Data as a table: one row for each country or region and each year (or week)
+owid &lt;- function(chart) {
+  read.csv(paste0(
+    "https://ourworldindata.org/grapher/",
+    chart,
+    ".csv?v=1&amp;csvType=full&amp;useColumnShortNames=true"
+  ))
+}
+# the land burnt each year, in hectares, by the kind of land (MODIS)
+cover &lt;- owid("annual-burned-area-by-landcover")
+# the land burnt each week, in hectares (MODIS and VIIRS); the weeks are written as "2012-W01"
+weekly &lt;- owid("weekly-area-burnt-by-wildfires")
+# the carbon dioxide that the fires released each year, in tonnes (MODIS and VIIRS)
+co2 &lt;- owid("annual-carbon-dioxide-emissions")
+# the land area of each country, in square kilometres (World Bank), and the continent it is in
+land &lt;- owid("land-area-km")
+continents &lt;- owid("continents-according-to-our-world-in-data")</code></pre></div></div>
+</details>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre><code class="language-r"># the kinds of land: the columns of the data and their names on this page
+covers &lt;- c(
+  forest = "Forest",
+  savannas = "Savanna",
+  shrublands_grasslands = "Shrubland and grassland",
+  croplands = "Cropland",
+  other = "Other land"
+)
+cover$all &lt;- rowSums(cover[names(covers)])
+first_year &lt;- min(cover$year)
+last_year &lt;- max(cover$year)
+first_five &lt;- first_year:(first_year + 4)
+last_five &lt;- (last_year - 4):last_year
+# the continents of Our World in Data, which counts all of Russia in Europe, with Russia on its own
+by_group &lt;- function(x, time = "year") {
+  values &lt;- setdiff(names(x), c("entity", "code", time))
+  europe &lt;- x[x$entity == "Europe", ]
+  russia &lt;- x[x$entity == "Russia", ]
+  russia &lt;- russia[match(europe[[time]], russia[[time]]), ]
+  rest &lt;- europe
+  rest[values] &lt;- europe[values] - russia[values]
+  rest$entity &lt;- "Europe without Russia"
+  others &lt;- c("Africa", "Asia", "North America", "Oceania", "South America", "Russia")
+  y &lt;- rbind(x[x$entity %in% others, ], rest)
+  names(y)[names(y) == "entity"] &lt;- "group"
+  y
+}
+yearly &lt;- by_group(cover)
+world &lt;- cover[cover$entity == "World", ]
+# the groups, from the one that burns the most land to the one that burns the least
+groups &lt;- names(sort(tapply(yearly$all, yearly$group, mean), decreasing = TRUE))
+# the groups and the world in one table, the world first
+with_world &lt;- rbind(
+  yearly[, c("group", "year", "all", names(covers))],
+  data.frame(group = "World", world[, c("year", "all", names(covers))])
+)
+with_world$group &lt;- factor(with_world$group, levels = c("World", groups))
+# the countries: rows with a country code that Our World in Data puts on a continent (its regions,
+# such as "Europe (excl. Russia)", have no code or one that starts with OWID_, like Kosovo's)
+country_codes &lt;- continents$code[nzchar(continents$code)]
+group_of &lt;- function(code) {
+  continent &lt;- continents$owid_region[match(code, continents$code)]
+  ifelse(code == "RUS", "Russia", ifelse(continent == "Europe", "Europe without Russia", continent))
+}
+# each country: the land burnt in an average year, its land area (the latest year that the World Bank
+# has) and its group
+countries &lt;- cover[cover$code %in% country_codes, ] |&gt;
+  group_by(code, entity) |&gt;
+  summarise(burnt = mean(all), crops = mean(croplands), .groups = "drop")
+land_now &lt;- land[land$code %in% country_codes &amp; !is.na(land$ag_lnd_totl_k2), ] |&gt;
+  group_by(code) |&gt;
+  slice_max(year, n = 1)
+countries$km2 &lt;- land_now$ag_lnd_totl_k2[match(countries$code, land_now$code)]
+countries$group &lt;- group_of(countries$code)
+# a hectare is 1% of a square kilometre, so hectares per square kilometre are a percentage
+countries$share &lt;- countries$burnt / countries$km2</code></pre></div></div>
+</details>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">red &lt;- "#d62728"
+gray &lt;- "#bdbdbd"
+dark_gray &lt;- "#6b6b6b" # also the colour of the notes
+# the kinds of land, in the order of the stacked bars, whose neighbours were checked for colour
+# blindness; the other land, a sliver, is grey
+cover_colors &lt;- c(
+  forest = "#008300",
+  savannas = "#eda100",
+  shrublands_grasslands = "#1baf7a",
+  croplands = "#eb6834",
+  other = "#d9d9d9"
+)
+# one hue, from light to dark, for amounts: the map and the calendar
+oranges &lt;- c("#feedde", "#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#8c2d04")
+# the source of a plotly chart, as a note under it, and the common layout
+chart &lt;- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note &lt;- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) |&gt;
+    config(displaylogo = FALSE)
+}
+legend_top &lt;- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the look of the ggplot charts
+theme_page &lt;- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      plot.title = element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+      plot.caption.position = "plot",
+      legend.position = "top",
+      legend.justification = "left"
+    )
+}
+# numbers in the text
+number &lt;- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent &lt;- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+one &lt;- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+two &lt;- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
+# millions (of hectares or tonnes): whole numbers from 10 million, one decimal below
+million &lt;- function(x) ifelse(abs(x) &gt;= 1e7, number(x / 1e6), one(x / 1e6))
+# a change in per cent, with its sign (the bold font of the charts has no minus sign: a dash there)
+change_text &lt;- function(x, minus = "−") paste0(ifelse(x &gt;= 0, "+", minus), round(abs(x)), "%")
+and_list &lt;- function(x) {
+  if (length(x) &lt; 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# country names that take "the" in a sentence
+with_the &lt;- function(x) {
+  ifelse(
+    x %in% c("Central African Republic", "Democratic Republic of Congo", "United States", "Gambia"),
+    paste("the", x),
+    x
+  )
+}
+# a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
+# without a trend
+chance &lt;- function(x, years) {
+  p &lt;- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p &lt; 0.01) "less than 1" else as.character(round(100 * p))
+}</code></pre></div></div>
+</details>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r"># the weekly figures: the year, and the week (the 53rd week of the years that have one counts as the
+# 52nd, so that every year has the same weeks)
+week_parts &lt;- function(x) {
+  x$year &lt;- as.integer(substr(x$week, 1, 4))
+  x$w &lt;- pmin(as.integer(substr(x$week, 7, 8)), 52)
+  x
+}
+weekly &lt;- week_parts(weekly)
+# the month of a week: that of its middle day, near enough
+month_of &lt;- function(w) as.integer(format(as.Date("2001-01-01") + 7 * (w - 1) + 3, "%m"))
+first_week_year &lt;- min(weekly$year)
+last_season &lt;- 2024 # the last year of the weekly figures and the carbon dioxide used here (below)
+# for the world, the weekly figures of each year added up, against the yearly MODIS figures
+weekly_world &lt;- weekly[weekly$entity == "World", ]
+agree &lt;- weekly_world |&gt;
+  group_by(year) |&gt;
+  summarise(weekly = sum(area_ha)) |&gt;
+  inner_join(world[, c("year", "all")], by = "year") |&gt;
+  mutate(ratio = 100 * weekly / all)
+before &lt;- agree[agree$year &lt;= last_season, ]
+# April to September: weeks 14 to 39
+mid_year &lt;- weekly_world[weekly_world$w %in% 14:39, ] |&gt;
+  group_by(year) |&gt;
+  summarise(area = sum(area_ha))
+mid_before &lt;- mid_year$area[mid_year$year &lt;= last_season]
+modis_before &lt;- world$all[world$year %in% before$year]</code></pre></div></div>
+</details>
+</div>
+<p><strong>The continents are those of Our World in Data, with Russia on its own.</strong> Our World in Data counts all of Russia in Europe. But most of Russia is in Asia, and Russia burns 5 times as much land as the rest of Europe put together: as part of Europe, it would hide everything else.</p>
+<p><strong>The weekly figures, and the carbon dioxide, stop at 2024.</strong> From 2012 to 2024, the weekly figures of a year added up to between 93% and 120% of the yearly MODIS figure for the world; in 2025, to 81%. From April to September 2025 they add up to 141 million hectares, against 200 to 261 in the same months of the years before, while the yearly MODIS figure for 2025, 333 million hectares, is within the range of the years before it (331 to 454). The weekly figures may have changed the way they are made; until the two series agree again, this page uses them, and the carbon dioxide that comes with them, only up to 2024.</p>
+<hr>
+</section>
+<section id="where-in-the-world-does-land-burn" class="level2">
+<h2 class="anchored" data-anchor-id="where-in-the-world-does-land-burn">1. Where in the world does land burn?</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">mean_by_group &lt;- yearly |&gt;
+  group_by(group) |&gt;
+  summarise(burnt = mean(all)) |&gt;
+  mutate(world_share = 100 * burnt / mean(world$all))
+# the share of its land, from the countries whose land area the World Bank has
+group_land &lt;- countries |&gt;
+  filter(!is.na(km2)) |&gt;
+  group_by(group) |&gt;
+  summarise(land_share = sum(burnt) / sum(km2))
+mean_by_group$land_share &lt;- group_land$land_share[match(mean_by_group$group, group_land$group)]
+in_group &lt;- function(g, column) mean_by_group[[column]][mean_by_group$group == g]
+world_burnt &lt;- mean(world$all)
+with_land &lt;- countries[!is.na(countries$km2), ]
+world_land_share &lt;- sum(with_land$burnt) / sum(with_land$km2)
+eu &lt;- land[land$entity == "European Union (27)", ]
+eu_hectares &lt;- 100 * eu$ag_lnd_totl_k2[which.max(eu$year)]
+in_country &lt;- function(name, column) countries[[column]][countries$entity == name]
+most_burnt &lt;- countries |&gt;
+  filter(!is.na(km2)) |&gt;
+  arrange(desc(share)) |&gt;
+  head(4)
+n_years &lt;- last_year - first_year + 1
+europe_rest &lt;- countries[countries$group == "Europe without Russia", ]
+ukraine_part &lt;- 100 * in_country("Ukraine", "burnt") / sum(europe_rest$burnt)</code></pre></div></div>
+</details>
+</div>
+<p><strong>Africa: two thirds of all the land that burns.</strong> From 2002 to 2025, fires burnt 397 million hectares of the world’s land in an average year, about as much as all the land of the European Union (399 million hectares), and 3.1% of the land of the world. 67% of it was in Africa: 267 million hectares a year, as much as 9% of the continent. Oceania, almost all of it Australia, had 11% of the world’s burnt land, South America 8% and Asia 7%. Russia had 3.1%, North America 2.2% and the rest of Europe 0.6%.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r">bars &lt;- mean_by_group[order(mean_by_group$burnt), ] # the largest at the top
+bars$group &lt;- factor(bars$group, levels = bars$group)
+bar_colors &lt;- ifelse(bars$group == "Africa", red, gray)
+left &lt;- plot_ly(
+  bars,
+  x = ~ burnt / 1e6,
+  y = ~group,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = bar_colors),
+  text = ~ paste0(million(burnt), " (", percent(world_share), ")"),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f} million hectares a year&lt;extra&gt;&lt;/extra&gt;",
+  showlegend = FALSE
+)
+right &lt;- plot_ly(
+  bars,
+  x = ~land_share,
+  y = ~group,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = bar_colors),
+  text = ~ percent(land_share, 1),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f}% of its land a year&lt;extra&gt;&lt;/extra&gt;",
+  showlegend = FALSE
+)
+hidden_axis &lt;- list(title = "", showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE)
+panel_title &lt;- function(text, axis) {
+  list(
+    text = text,
+    xref = paste(axis, "domain"),
+    yref = "paper",
+    x = 0,
+    y = 1,
+    xanchor = "left",
+    yanchor = "bottom",
+    showarrow = FALSE,
+    font = list(size = 13)
+  )
+}
+# the left panel wider: its labels are longer
+subplot(left, right, shareY = TRUE, margin = 0.04, widths = c(0.6, 0.4)) |&gt;
+  chart(
+    paste0("Land burnt in an average year, ", first_year, "–", last_year),
+    "GWIS (MODIS), via Our World in Data; land areas: World Bank.",
+    x_axis = c(hidden_axis, list(range = c(0, 1.75 * max(bars$burnt) / 1e6))),
+    xaxis2 = c(hidden_axis, list(range = c(0, 1.45 * max(bars$land_share)))),
+    annotations = list(
+      panel_title("Million hectares (and share of the world)", "x"),
+      panel_title("Share of its own land", "x2")
+    ),
+    margin = list(l = 150, t = 90, b = 50, r = 10),
+    note_y = -0.06
+  )</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html">Interactive chart: Land burnt in an average year, 2002–2025</a></p>
+</div>
+</div>
+<p><strong>Some countries burn a large part of their land every year.</strong> In South Sudan, the land burnt in an average year adds up to 47% of the country: over the 24 years, 11 times the whole country, so the same land burns again and again. Zambia (31%), the Central African Republic (30%) and Angola (30%) come next, all in the belts of grassland and scattered trees north and south of Africa’s rainforest.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">on_map &lt;- countries[!is.na(countries$share), ]
+classes &lt;- c(0, 0.1, 0.5, 1, 5, 10, 20, Inf)
+class_names &lt;- c("Under 0.1%", "0.1–0.5%", "0.5–1%", "1–5%", "5–10%", "10–20%", "20% or more")
+on_map$class &lt;- as.integer(cut(on_map$share, classes, right = FALSE))
+# a colour scale of seven steps, one colour for each class
+steps &lt;- do.call(c, lapply(seq_along(oranges), function(i) {
+  list(list((i - 1) / 7, oranges[i]), list(i / 7, oranges[i]))
+}))
+plot_ly(
+  on_map,
+  type = "choropleth",
+  locations = ~code,
+  z = ~class,
+  zmin = 0.5,
+  zmax = 7.5,
+  colorscale = steps,
+  marker = list(line = list(color = "white", width = 0.3)),
+  text = ~ paste0(
+    entity,
+    ": ",
+    ifelse(share &lt; 1, two(share), one(share)),
+    "% of its land a year&lt;br&gt;",
+    number(burnt),
+    " hectares a year"
+  ),
+  hoverinfo = "text",
+  colorbar = list(
+    title = list(text = "Land burnt&lt;br&gt;each year"),
+    tickvals = 1:7,
+    ticktext = class_names,
+    len = 0.8,
+    thickness = 14
+  )
+) |&gt;
+  chart(
+    paste0("Land burnt in an average year, % of each country, ", first_year, "–", last_year),
+    "GWIS (MODIS), via Our World in Data; land areas: World Bank. Grey: no land area in the World Bank's data.",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = FALSE,
+      showland = TRUE,
+      landcolor = "#e8e8e8",
+      projection = list(type = "natural earth"),
+      lataxis = list(range = c(-57, 85))
+    ),
+    margin = list(t = 50, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html">Interactive chart: Land burnt in an average year, % of each country, 2002–2025</a></p>
+</div>
+</div>
+<p><strong>In Europe, most of it is Ukraine’s.</strong> Without Russia, Europe burnt 2.5 million hectares a year, 0.4% of its land, and 66% of that was in Ukraine, which burnt 2.9% of its own land every year, mostly fields (section 3). The countries of Europe’s south burn far less of their land: Portugal 1.39% a year, Greece 0.50%, Spain 0.23% and Italy 0.29%.</p>
+<hr>
+</section>
+<section id="is-the-world-burning-more-than-it-used-to" class="level2">
+<h2 class="anchored" data-anchor-id="is-the-world-burning-more-than-it-used-to">2. Is the world burning more than it used to?</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">changes &lt;- with_world |&gt;
+  group_by(group) |&gt;
+  summarise(
+    start = mean(all[year %in% first_five]),
+    end = mean(all[year %in% last_five]),
+    chance = chance(all, year)
+  ) |&gt;
+  mutate(change = 100 * (end / start - 1))
+of_change &lt;- function(g, column) changes[[column]][changes$group == g]
+world_fall &lt;- of_change("World", "start") - of_change("World", "end")
+africa_part &lt;- 100 * (of_change("Africa", "start") - of_change("Africa", "end")) / world_fall
+north_america &lt;- yearly[yearly$group == "North America", ]
+without_2023 &lt;- mean(north_america$all[north_america$year %in% setdiff(last_five, 2023)])
+falls &lt;- changes[changes$group != "World" &amp; changes$change &lt;= -30, ]</code></pre></div></div>
+</details>
+</div>
+<p><strong>Less, by about a fifth.</strong> In 2002–2006 fires burnt 450 million hectares a year, in 2021–2025 353: 22% less. And the fall is not just a matter of a few good years at the end: a rank test of all the years finds it too (the chance of a pattern as strong as this one without a trend is less than 1 in 100).</p>
+<p>The table compares the first and the last five years, million hectares a year. The last column is the chance, in 100, of a pattern as strong as that of all the years without a trend.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">knitr::kable(
+  data.frame(
+    group = changes$group,
+    start = million(changes$start),
+    end = million(changes$end),
+    change = change_text(changes$change),
+    chance = changes$chance
+  ),
+  col.names = c(
+    "",
+    paste0(min(first_five), "–", max(first_five)),
+    paste0(min(last_five), "–", max(last_five)),
+    "Change",
+    "By chance, in 100"
+  ),
+  align = "lrrrr"
+)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 32%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 10%">
+<col style="width: 26%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">2002–2006</th>
+<th style="text-align: right;">2021–2025</th>
+<th style="text-align: right;">Change</th>
+<th style="text-align: right;">By chance, in 100</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">World</td>
+<td style="text-align: right;">450</td>
+<td style="text-align: right;">353</td>
+<td style="text-align: right;">−22%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Africa</td>
+<td style="text-align: right;">299</td>
+<td style="text-align: right;">238</td>
+<td style="text-align: right;">−20%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Oceania</td>
+<td style="text-align: right;">52</td>
+<td style="text-align: right;">43</td>
+<td style="text-align: right;">−18%</td>
+<td style="text-align: right;">35</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">South America</td>
+<td style="text-align: right;">37</td>
+<td style="text-align: right;">31</td>
+<td style="text-align: right;">−17%</td>
+<td style="text-align: right;">20</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Asia</td>
+<td style="text-align: right;">36</td>
+<td style="text-align: right;">20</td>
+<td style="text-align: right;">−43%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Russia</td>
+<td style="text-align: right;">15</td>
+<td style="text-align: right;">8.7</td>
+<td style="text-align: right;">−43%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">North America</td>
+<td style="text-align: right;">8.7</td>
+<td style="text-align: right;">11</td>
+<td style="text-align: right;">+28%</td>
+<td style="text-align: right;">55</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Europe without Russia</td>
+<td style="text-align: right;">2.8</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">−42%</td>
+<td style="text-align: right;">4</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p><strong>Most of the fall is Africa’s.</strong> 63% of the land that the world stopped burning was in Africa, which burnt 20% less. Asia, Russia and Europe without Russia burnt 42% to 43% less, but they burn far less land than Africa to begin with. Only North America burnt more, by 28%, and mostly because of 2023: the other four of its last five years burnt 6% more than its first five.</p>
+<p>This is not new. Satellites found the same from 1998 to 2015: the land burnt in the world fell by about a quarter, most of all in the savannas, and mainly because farming spread and grew more intensive (<a href="https://doi.org/10.1126/science.aal4108">Andela et al.&nbsp;2017</a>).</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">index &lt;- with_world |&gt;
+  group_by(group) |&gt;
+  mutate(index = 100 * all / mean(all[year %in% first_five])) |&gt;
+  ungroup()
+late_lines &lt;- changes |&gt;
+  mutate(level = 100 * end / start)
+# the title of each panel: the group and its change
+panel_names &lt;- setNames(
+  paste0(gsub("without ", "without\n", changes$group), "\n", change_text(changes$change, minus = "–")),
+  changes$group
+)
+ggplot(index, aes(x = year, y = index)) +
+  geom_hline(yintercept = 100, colour = "grey75", linewidth = 0.4) +
+  geom_line(colour = dark_gray, linewidth = 0.5) +
+  geom_point(colour = dark_gray, size = 0.9) +
+  geom_segment(
+    data = late_lines,
+    aes(x = min(last_five) - 0.4, xend = max(last_five) + 0.4, y = level, yend = level),
+    colour = red,
+    linewidth = 1.2
+  ) +
+  facet_wrap(~group, ncol = 4, labeller = as_labeller(panel_names)) +
+  scale_x_continuous(breaks = c(2005, 2015, 2025)) +
+  scale_y_continuous(breaks = seq(50, 250, 50)) +
+  labs(
+    title = "Burning more or less?",
+    subtitle = paste0(
+      "Land burnt each year, the average of ",
+      min(first_five),
+      "–",
+      max(first_five),
+      " = 100\nRed: the average of ",
+      min(last_five),
+      "–",
+      max(last_five),
+      ", and the change, under each name"
+    ),
+    x = NULL,
+    y = NULL,
+    caption = "Data: GWIS (MODIS), via Our World in Data"
+  ) +
+  theme_page(13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", hjust = 0)
+  )</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES_files/figure-html/trend_chart-1.png" class="img-fluid figure-img" style="width:100.0%" alt="Land burnt each year in the world and in each continent, against its average of the first five years"></p>
+</figure>
+</div>
+</div>
+</div>
+<hr>
+</section>
+<section id="what-burns-forest-savanna-grassland-or-fields" class="level2">
+<h2 class="anchored" data-anchor-id="what-burns-forest-savanna-grassland-or-fields">3. What burns: forest, savanna, grassland or fields?</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">cover_totals &lt;- with_world |&gt;
+  group_by(group) |&gt;
+  summarise(across(all_of(names(covers)), sum))
+cover_shares &lt;- cover_totals
+cover_shares[names(covers)] &lt;- 100 * cover_totals[names(covers)] / rowSums(cover_totals[names(covers)])
+of_cover &lt;- function(g, k) cover_shares[[k]][cover_shares$group == g]
+# the world, by kind of land: the first and the last five years, and the trend over all the years
+world_covers &lt;- do.call(rbind, lapply(names(covers)[1:4], function(k) {
+  data.frame(
+    cover = covers[[k]],
+    start = mean(world[[k]][world$year %in% first_five]),
+    end = mean(world[[k]][world$year %in% last_five]),
+    chance = chance(world[[k]], world$year)
+  )
+}))
+world_covers$change &lt;- 100 * (world_covers$end / world_covers$start - 1)
+of_world_cover &lt;- function(name, column) world_covers[[column]][world_covers$cover == name]
+# the forest burnt in a group: the first and the last five years, and the trend
+forest_in &lt;- function(g, column) {
+  x &lt;- yearly[yearly$group == g, ]
+  list(
+    start = mean(x$forest[x$year %in% first_five]),
+    end = mean(x$forest[x$year %in% last_five]),
+    chance = chance(x$forest, x$year)
+  )[[column]]
+}
+ukraine_crops &lt;- 100 *
+  in_country("Ukraine", "crops") /
+  sum(countries$crops[countries$group == "Europe without Russia"])</code></pre></div></div>
+</details>
+</div>
+<p><strong>Mostly savanna, shrubs and grass; forest is a small part.</strong> Of all the land that burnt in the world from 2002 to 2025, 44% was savanna, 40% shrubland and grassland, 8% cropland and 8% forest.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">rows &lt;- factor(cover_shares$group, levels = rev(c("World", groups)))
+p &lt;- plot_ly()
+for (k in names(covers)) {
+  p &lt;- add_bars(
+    p,
+    x = cover_shares[[k]],
+    y = rows,
+    name = covers[[k]],
+    orientation = "h",
+    marker = list(color = cover_colors[[k]], line = list(color = "white", width = 1.5)),
+    # a label only on the larger parts
+    text = ifelse(cover_shares[[k]] &gt;= 12, percent(cover_shares[[k]]), ""),
+    textposition = "inside",
+    insidetextanchor = "middle",
+    textfont = list(color = if (k == "forest") "white" else "#1a1a1a"),
+    hovertemplate = paste0("%{y}: %{x:.1f}% ", tolower(covers[[k]]), "&lt;extra&gt;&lt;/extra&gt;")
+  )
+}
+p |&gt;
+  chart(
+    paste0("What burnt, % of the land burnt, ", first_year, "–", last_year),
+    "GWIS (MODIS burned area and land cover), via Our World in Data.",
+    x_axis = list(range = c(0, 100), ticksuffix = "%", showgrid = FALSE),
+    barmode = "stack",
+    legend = c(legend_top, list(traceorder = "normal")),
+    uniformtext = list(minsize = 10, mode = "hide"),
+    margin = list(l = 150, t = 100, b = 70, r = 10),
+    note_y = -0.1
+  )</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html">Interactive chart: What burnt, % of the land burnt, 2002–2025</a></p>
+</div>
+</div>
+<p><strong>What the satellites call savanna.</strong> GWIS lays the burnt land on NASA’s map of land cover, made from the same MODIS images (<a href="https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads">GWIS country profiles</a>), and that map sorts land by how much of it trees cover, not by climate: forest is land where trees cover more than 60% of the ground, savanna land where they cover between 10% and 60% (<a href="https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf">MODIS land cover user guide</a>). In Africa, South America and Australia that is the savanna of the word, grass under scattered trees. In Russia and Canada, where there is no tropical savanna, it takes in northern forest with gaps between the trees, which is why 49% of Russia’s burnt land and 49% of North America’s counts as savanna.</p>
+<p><strong>Europe burns fields.</strong> Without Russia, 76% of the land that burnt in Europe was cropland, 77% of it in Ukraine; forest, as the satellites define it, was 2.7%.</p>
+<p><strong>Savanna, grassland and fields burn less; forest, not clearly.</strong> In the world, by kind of land, million hectares a year:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">knitr::kable(
+  data.frame(
+    cover = world_covers$cover,
+    start = million(world_covers$start),
+    end = million(world_covers$end),
+    change = change_text(world_covers$change),
+    chance = world_covers$chance
+  ),
+  col.names = c(
+    "",
+    paste0(min(first_five), "–", max(first_five)),
+    paste0(min(last_five), "–", max(last_five)),
+    "Change",
+    "By chance, in 100"
+  ),
+  align = "lrrrr"
+)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 34%">
+<col style="width: 14%">
+<col style="width: 14%">
+<col style="width: 10%">
+<col style="width: 26%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">2002–2006</th>
+<th style="text-align: right;">2021–2025</th>
+<th style="text-align: right;">Change</th>
+<th style="text-align: right;">By chance, in 100</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">Forest</td>
+<td style="text-align: right;">33</td>
+<td style="text-align: right;">28</td>
+<td style="text-align: right;">−14%</td>
+<td style="text-align: right;">11</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Savanna</td>
+<td style="text-align: right;">193</td>
+<td style="text-align: right;">155</td>
+<td style="text-align: right;">−20%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Shrubland and grassland</td>
+<td style="text-align: right;">183</td>
+<td style="text-align: right;">144</td>
+<td style="text-align: right;">−21%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Cropland</td>
+<td style="text-align: right;">40</td>
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">−37%</td>
+<td style="text-align: right;">less than 1</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<p>The burnt cropland fell the most, 37%, and savanna, shrubland and grassland by about a fifth, all with clear trends. The burnt forest fell by 14%, but a pattern like that would come up by chance 11 times in 100 without a trend. In North America the forest that burnt rose from 1.0 million hectares a year in 2002–2006 to 1.7 in 2021–2025 (by chance less than 1 in 100); in Russia it fell, from 1.1 to 0.5.</p>
+<hr>
+</section>
+<section id="when-does-each-continent-burn" class="level2">
+<h2 class="anchored" data-anchor-id="when-does-each-continent-burn">4. When does each continent burn?</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">seasons_of &lt;- weekly[weekly$year &lt;= last_season, ]
+# each group: the share of the year's burnt land in each week, the average of the years
+season &lt;- by_group(seasons_of[, c("entity", "code", "week", "area_ha")], time = "week") |&gt;
+  week_parts() |&gt;
+  group_by(group, year, w) |&gt;
+  summarise(area = sum(area_ha), .groups = "drop_last") |&gt;
+  mutate(share = 100 * area / sum(area)) |&gt;
+  group_by(group, w) |&gt;
+  summarise(share = mean(share), .groups = "drop")
+by_month &lt;- season |&gt;
+  mutate(month = month_of(w)) |&gt;
+  group_by(group, month) |&gt;
+  summarise(share = sum(share), .groups = "drop") |&gt;
+  arrange(group, month)
+# the three months in a row in which each group burns the most (December to February included)
+three &lt;- function(shares) sapply(1:12, function(m) sum(shares[(m - 1 + 0:2) %% 12 + 1]))
+best &lt;- by_month |&gt;
+  group_by(group) |&gt;
+  summarise(start = which.max(three(share)), share = max(three(share)))
+months_of &lt;- function(g) {
+  s &lt;- best$start[best$group == g]
+  (s - 1 + 0:2) %% 12 + 1
+}
+season_text &lt;- function(g) {
+  m &lt;- months_of(g)
+  paste(month.name[m[1]], "to", month.name[m[3]])
+}
+season_share &lt;- function(g) percent(best$share[best$group == g])
+# the countries that burn the most of a group's land in its three months
+countries_weekly &lt;- seasons_of[seasons_of$code %in% country_codes, ]
+countries_weekly$group &lt;- group_of(countries_weekly$code)
+leaders &lt;- function(g, n = 2) {
+  x &lt;- countries_weekly[countries_weekly$group == g &amp; month_of(countries_weekly$w) %in% months_of(g), ]
+  s &lt;- sort(tapply(x$area_ha, x$entity, sum), decreasing = TRUE)
+  and_list(paste0(with_the(names(s)[1:n]), " (", percent(100 * s[1:n] / sum(s)), ")"))
+}
+# the share of a country's burnt land in some months
+in_months &lt;- function(name, months) {
+  x &lt;- countries_weekly[countries_weekly$entity == name, ]
+  percent(100 * sum(x$area_ha[month_of(x$w) %in% months]) / sum(x$area_ha))
+}</code></pre></div></div>
+</details>
+</div>
+<p><strong>Each in its own dry season, and Africa in two.</strong> The chart shows, for each group, how the land it burns is spread over the year: the share of a year’s burnt land in each week, on average from 2012 to 2024.</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">season$class &lt;- cut(
+  season$share,
+  c(-Inf, 0.5, 1, 2, 3, 4, Inf),
+  labels = c("Under 0.5%", "0.5–1%", "1–2%", "2–3%", "3–4%", "4% or more")
+)
+middle_of_month &lt;- (as.integer(format(as.Date(paste0("2001-", 1:12, "-15")), "%j")) - 1) / 7 + 1
+ggplot(season, aes(x = w, y = factor(group, levels = rev(groups)), fill = class)) +
+  geom_tile(colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = oranges[2:7], drop = FALSE) +
+  scale_x_continuous(breaks = middle_of_month, labels = month.abb, expand = c(0, 0)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(
+    title = "When each continent burns",
+    subtitle = paste0(
+      "Share of the year's burnt land in each week, ",
+      first_week_year,
+      "–",
+      last_season
+    ),
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    caption = "Data: GWIS (MODIS and VIIRS), via Our World in Data"
+  ) +
+  theme_page(13) +
+  theme(panel.grid = element_blank(), legend.text = element_text(size = rel(0.8)))</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES_files/figure-html/season-1.png" class="img-fluid figure-img" style="width:100.0%" alt="Share of the year's burnt land in each week, for each continent, as a calendar"></p>
+</figure>
+</div>
+</div>
+</div>
+<p><strong>Africa</strong> burns the most from July to September, 40% of the land it burns in a year, but it has two seasons, one on each side of the equator, each in its own dry months: 88% of South Sudan’s burnt land burns from November to February, and 88% of Angola’s from June to September. <strong>South America</strong> burns from August to October (61%), most of it in Brazil (71%) and Bolivia (13%), and <strong>Oceania</strong> from September to November (41%), almost all of it in Australia.</p>
+<p><strong>Asia</strong> burns from February to April (65%), mostly in Myanmar (27%), India (20%) and Laos (15%). <strong>North America</strong> burns most in spring too, from March to May (49%), mostly in Mexico (44%), the United States (20%) and Honduras (10%); Canada’s fires come later, 58% of its burnt land in July and August. <strong>Russia</strong> has a spring season and a summer one: 37% of its burnt land in April and May, 37% in July and August. So has Ukraine, which burns most of the rest of Europe: 26% of its burnt land in March and April, 67% from July to October.</p>
+<hr>
+</section>
+<section id="which-were-the-worst-years" class="level2">
+<h2 class="anchored" data-anchor-id="which-were-the-worst-years">5. Which were the worst years?</h2>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">co2_groups &lt;- by_group(co2)
+co2_groups &lt;- co2_groups[co2_groups$year &lt;= last_season, ]
+first_co2 &lt;- min(co2_groups$year)
+worst &lt;- co2_groups |&gt;
+  group_by(group) |&gt;
+  summarise(average = mean(co2), worst_year = year[which.max(co2)], worst = max(co2)) |&gt;
+  mutate(times = worst / average) |&gt;
+  arrange(desc(times))
+of_worst &lt;- function(g, column) worst[[column]][worst$group == g]
+co2_in &lt;- function(g, year) co2_groups$co2[co2_groups$group == g &amp; co2_groups$year == year]
+canada &lt;- cover[cover$entity == "Canada", ]
+oceania &lt;- yearly[yearly$group == "Oceania", ]
+asia &lt;- yearly[yearly$group == "Asia", ]
+in_year &lt;- function(x, year, column = "all") x[[column]][x$year == year]</code></pre></div></div>
+</details>
+</div>
+<p><strong>Where fire is rare, the worst years stand out the most.</strong> Burnt land is one measure of a bad year; the carbon dioxide that the fires released is another, which counts the fires that burn forest and peat for more than those of grass. For each group, from 2003 to 2024, million tonnes of carbon dioxide:</p>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">knitr::kable(
+  data.frame(
+    group = worst$group,
+    average = number(worst$average / 1e6),
+    year = worst$worst_year,
+    worst = number(worst$worst / 1e6),
+    times = one(worst$times)
+  ),
+  col.names = c("", "A year on average", "Worst year", "That year", "Times the average"),
+  align = "lrrrr"
+)</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<table class="caption-top table table-sm table-striped small">
+<colgroup>
+<col style="width: 27%">
+<col style="width: 22%">
+<col style="width: 13%">
+<col style="width: 12%">
+<col style="width: 22%">
+</colgroup>
+<thead>
+<tr class="header">
+<th style="text-align: left;"></th>
+<th style="text-align: right;">A year on average</th>
+<th style="text-align: right;">Worst year</th>
+<th style="text-align: right;">That year</th>
+<th style="text-align: right;">Times the average</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: left;">North America</td>
+<td style="text-align: right;">560</td>
+<td style="text-align: right;">2023</td>
+<td style="text-align: right;">1,548</td>
+<td style="text-align: right;">2.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Russia</td>
+<td style="text-align: right;">570</td>
+<td style="text-align: right;">2003</td>
+<td style="text-align: right;">1,304</td>
+<td style="text-align: right;">2.3</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Oceania</td>
+<td style="text-align: right;">495</td>
+<td style="text-align: right;">2012</td>
+<td style="text-align: right;">1,009</td>
+<td style="text-align: right;">2.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">Asia</td>
+<td style="text-align: right;">811</td>
+<td style="text-align: right;">2015</td>
+<td style="text-align: right;">1,508</td>
+<td style="text-align: right;">1.9</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Europe without Russia</td>
+<td style="text-align: right;">33</td>
+<td style="text-align: right;">2007</td>
+<td style="text-align: right;">54</td>
+<td style="text-align: right;">1.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: left;">South America</td>
+<td style="text-align: right;">1,053</td>
+<td style="text-align: right;">2007</td>
+<td style="text-align: right;">1,679</td>
+<td style="text-align: right;">1.6</td>
+</tr>
+<tr class="odd">
+<td style="text-align: left;">Africa</td>
+<td style="text-align: right;">2,907</td>
+<td style="text-align: right;">2007</td>
+<td style="text-align: right;">3,365</td>
+<td style="text-align: right;">1.2</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="cell">
+<details open="" class="code-fold">
+<summary>Code</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">set.seed(2026)
+strip &lt;- co2_groups |&gt;
+  group_by(group) |&gt;
+  mutate(of_average = 100 * co2 / mean(co2), is_worst = co2 == max(co2)) |&gt;
+  ungroup()
+order &lt;- rev(worst$group) # the most extreme worst year at the top
+strip$position &lt;- match(strip$group, order) + runif(nrow(strip), -0.17, 0.17)
+dots &lt;- function(p, x, color) {
+  add_markers(
+    p,
+    data = x,
+    x = ~of_average,
+    y = ~position,
+    marker = list(color = color, size = 9, line = list(color = "white", width = 1)),
+    text = ~ paste0(group, " ", year, ": ", number(co2 / 1e6), " million tonnes, ", round(of_average), "% of its average"),
+    hovertemplate = "%{text}&lt;extra&gt;&lt;/extra&gt;",
+    showlegend = FALSE
+  )
+}
+plot_ly() |&gt;
+  dots(strip[!strip$is_worst, ], gray) |&gt;
+  dots(strip[strip$is_worst, ], red) |&gt;
+  chart(
+    paste0("CO₂ from fires, % of each group's average, ", first_co2, "–", last_season),
+    "GWIS (MODIS and VIIRS), via Our World in Data. Dots: years; red: the worst year.",
+    x_axis = list(rangemode = "tozero", ticksuffix = "%"),
+    y_axis = list(
+      tickvals = seq_along(order),
+      ticktext = order,
+      range = c(0.4, length(order) + 0.6),
+      zeroline = FALSE
+    ),
+    annotations = lapply(seq_along(order), function(i) {
+      list(
+        x = 100 * of_worst(order[i], "times"),
+        y = i,
+        text = of_worst(order[i], "worst_year"),
+        showarrow = FALSE,
+        xanchor = "left",
+        xshift = 8,
+        font = list(size = 12, color = dark_gray)
+      )
+    }),
+    shapes = list(list(
+      type = "line",
+      x0 = 100,
+      x1 = 100,
+      yref = "paper",
+      y0 = 0,
+      y1 = 1,
+      line = list(color = dark_gray, width = 1)
+    )),
+    margin = list(l = 150, t = 70, b = 90, r = 40),
+    note_y = -0.14
+  )</code></pre></div></div>
+</details>
+<div class="cell-output-display">
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html">Interactive chart: CO₂ from fires, % of each group&#x27;s average, 2003–2024</a></p>
+</div>
+</div>
+<ul>
+<li><strong>North America, 2023</strong>: 1,548 million tonnes, 2.8 times its average. Canada had the worst fire season in its records, about 15 million hectares by its own count, from mid-April to late October, after an early snowmelt and a drought, in a season 2.2 °C warmer than the average of 1991–2020 (<a href="https://doi.org/10.1038/s41467-024-51154-7">Jain et al.&nbsp;2024</a>). MODIS mapped 13 million hectares in Canada that year, 5 times its average: the satellites miss part of what burns.</li>
+<li><strong>Russia, 2003</strong>: 1,304 million tonnes, 2.3 times its average.</li>
+<li><strong>Asia, 2015</strong>: 1,508 million tonnes, 1.9 times its average, though the land it burnt that year, 33 million hectares, was only 18% above its average. In September and October forests and peat burnt across the islands of South-East Asia, above all in Indonesia, after a long drought, and for those two months the fires released 11.3 million tonnes of carbon dioxide a day, more than the fossil fuels of the EU, 8.9 million tonnes a day (<a href="https://doi.org/10.1038/srep26886">Huijnen et al.&nbsp;2016</a>). Peat is soil made of dead plants, full of carbon.</li>
+<li><strong>Oceania, 2012</strong>: its worst year for burnt land too, 90 million hectares, 90% of it shrubland and grassland. The fires that most people remember came later: between September 2019 and early January 2020, about 5.8 million hectares of mainly temperate broadleaf forest burnt in New South Wales and Victoria (<a href="https://doi.org/10.1038/s41558-020-0716-1">Boer et al.&nbsp;2020</a>). In MODIS, 3.3 million hectares of forest burnt in Oceania in 2019, 6 times its average, but that is a small part of the 36 million hectares it burnt that year.</li>
+<li><strong>Africa</strong>, which burns the most, is the steadiest: its worst year, 2007, released only 1.2 times its average. And for the rest of Europe the worst year was 2007, the year of Greece’s worst fires (<a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Greece Burning</a>).</li>
+</ul>
+<hr>
+</section>
+<section id="so-what-does-it-mean" class="level2">
+<h2 class="anchored" data-anchor-id="so-what-does-it-mean">So, what does it mean?</h2>
+<ol type="1">
+<li><strong>Most of the world’s fire is African.</strong> Africa has 67% of the land that burns; the land it burns in a year is as large as 9% of the continent. Europe without Russia burns 0.4% of its land a year.</li>
+<li><strong>The world burns less than it did</strong>: 22% less in 2021–2025 than in 2002–2006, 63% of the fall in Africa.</li>
+<li><strong>Forest is a small part of what burns, and it is not clearly burning less.</strong> In North America more of it burns.</li>
+<li><strong>Every continent burns in its own dry months</strong>, and Africa has two seasons, one on each side of the equator.</li>
+<li><strong>The worst years come where fire is rarer.</strong> North America released 2.8 times its average carbon dioxide in 2023; Africa’s worst year, only 1.2 times.</li>
+</ol>
+<p><strong>What this does not show.</strong> The satellites map the land that burnt, not what started the fire, and they miss small fires and fires under cloud or trees; the fires here include those that people set on purpose. A continent is large, and its average hides countries that burn far more or far less. The carbon dioxide is an estimate, from GWIS’s figures up to 2024. And hectares do not count the people, the homes and the animals lost in the fires, or the smoke that people breathe far from them.</p>
+<p>For one country close up, see <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Greece Burning</a>; for the heat that dries out the land, <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_ATHENS_HEAT.html">Athens Is Getting Hotter</a>; for the temperature of the world, the <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_CLIMATE_HIGHCHARTER.html">NASA GISS Global Temperature Anomaly</a>.</p>
+<hr>
+</section>
+<section id="sources" class="level2">
+<h2 class="anchored" data-anchor-id="sources">Sources</h2>
+<ul>
+<li>GWIS, the <a href="https://gwis.jrc.ec.europa.eu/">Global Wildfire Information System</a>: the <a href="https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads">country profiles</a>, with the land burnt each year by kind of land since 2002, from MODIS (MCD64A1 burned area, MCD12 land cover); the <a href="https://gwis.jrc.ec.europa.eu/apps/gwis.statistics/seasonaltrend">seasonal trends</a>, with the land burnt each week and the carbon dioxide, from MODIS and VIIRS; <a href="https://gwis.jrc.ec.europa.eu/about-gwis/data-license">data licence</a>, CC BY 4.0.</li>
+<li>Our World in Data, <a href="https://ourworldindata.org/wildfires">Wildfires</a>: the GWIS figures by country and continent, from its charts <a href="https://ourworldindata.org/grapher/annual-burned-area-by-landcover">annual-burned-area-by-landcover</a>, <a href="https://ourworldindata.org/grapher/weekly-area-burnt-by-wildfires">weekly-area-burnt-by-wildfires</a> and <a href="https://ourworldindata.org/grapher/annual-carbon-dioxide-emissions">annual-carbon-dioxide-emissions</a>; the <a href="https://ourworldindata.org/grapher/land-area-km">land area</a> of each country, from the World Bank; its <a href="https://ourworldindata.org/grapher/continents-according-to-our-world-in-data">continents</a> (CC BY 4.0).</li>
+<li>Giglio, L. et al.&nbsp;(2018), <a href="https://doi.org/10.1016/j.rse.2018.08.005">The Collection 6 MODIS burned area mapping algorithm and product</a>, <em>Remote Sensing of Environment</em> 217, 72–85.</li>
+<li>NASA LP DAAC, <a href="https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf">MODIS Collection 6.1 Land Cover Type Product User Guide</a> (MCD12Q1: forest and savanna by tree cover).</li>
+<li>Andela, N. et al.&nbsp;(2017), <a href="https://doi.org/10.1126/science.aal4108">A human-driven decline in global burned area</a>, <em>Science</em> 356, 1356–1362.</li>
+<li>Jain, P. et al.&nbsp;(2024), <a href="https://doi.org/10.1038/s41467-024-51154-7">Drivers and impacts of the record-breaking 2023 wildfire season in Canada</a>, <em>Nature Communications</em> 15, 6764.</li>
+<li>Huijnen, V. et al.&nbsp;(2016), <a href="https://doi.org/10.1038/srep26886">Fire carbon emissions over maritime southeast Asia in 2015 largest since 1997</a>, <em>Scientific Reports</em> 6, 26886.</li>
+<li>Boer, M. M. et al.&nbsp;(2020), <a href="https://doi.org/10.1038/s41558-020-0716-1">Unprecedented burn area of Australian mega forest fires</a>, <em>Nature Climate Change</em> 10, 171–172.</li>
+</ul>
+<hr>
+<p><em>Rendered with R 4.6.2 · dplyr · ggplot2 · plotly</em></p>
+<!-- -->
+</section>
+<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_WORLD_WILDFIRES.html">Illustrations in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
+    </item>
     <item>
       <title>Greece Burning: How Much, When and Where Wildfires Burn</title>
       <link>https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html</link>
@@ -8468,693 +9524,6 @@ in_year                      1988.791700</code></pre>
 <!-- -->
 </section>
 <p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_GAUSSIAN_PROCESS.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
-    </item>
-    <item>
-      <title>k-Nearest Neighbours Regression: What Is This House Worth? Ask the Neighbours</title>
-      <link>https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS.html</link>
-      <guid isPermaLink="true">https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS.html</guid>
-      <pubDate>Wed, 25 Nov 2026 01:27:03 +0200</pubDate>
-      <category>R</category>
-      <category>Worked Examples in R</category>
-      <description>k-nearest neighbours regression in R, by hand and with FNN, on 21,600 house sales around Seattle: distances, scaling and weighting the predictors, choosing k by validation on later sales, the bias-variance trade-off, comparable houses for one sale, the curse of dimensionality with noise predictors, kNN against regression, GAM and random forest, a local correction of a regression, prediction intervals by conformal prediction, and APA reporting.</description>
-      <content:encoded><![CDATA[<p><em>k-nearest neighbours regression in R, by hand and with FNN, on 21,600 house sales around Seattle: distances, scaling and weighting the predictors, choosing k by validation on later sales, the bias-variance trade-off, comparable houses for one sale, the curse of dimensionality with noise predictors, kNN against regression, GAM and random forest, a local correction of a regression, prediction intervals by conformal prediction, and APA reporting.</em></p>
-<section id="the-question-what-an-estate-agent-does" class="level2">
-<h2 class="anchored" data-anchor-id="the-question-what-an-estate-agent-does">The question: what an estate agent does</h2>
-<p>How do you find out what a house is worth? You look at what <strong>similar houses nearby</strong> were sold for, and take something like the average. Estate agents call these houses <em>comparables</em>. No formula, no coefficients.</p>
-<p><strong>k-nearest neighbours</strong> (kNN) is this, done by a computer. To predict a case, find the <span class="math inline">\(k\)</span> most similar cases in the data and average their outcomes. It is the simplest method of machine learning, more than 70 years old (Fix and Hodges described it in 1951; Cover &amp; Hart, 1967, worked out how good it can be), and it has no training at all. The whole model is the data.</p>
-<p>All the difficulty is in two words: how many (<strong>k</strong>), and what is <strong>similar</strong>. Is a house of the same size at a distance of 3 km more similar than a house twice as large next door?</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r">library(FNN)        # knn.reg(), get.knnx(): fast neighbours
-library(mgcv)       # bam(), for comparison (comes with R)
-library(ranger)     # random forest, for comparison
-library(ggplot2)
-# number formats for the text
-f0   &lt;- function(x) formatC(x, format = "f", digits = 0, big.mark = ",")
-f1   &lt;- function(x) formatC(x, format = "f", digits = 1, big.mark = ",")
-f2   &lt;- function(x) formatC(x, format = "f", digits = 2, big.mark = ",")
-f3   &lt;- function(x) formatC(x, format = "f", digits = 3, big.mark = ",")
-num  &lt;- function(x) trimws(format(x, big.mark = ","))
-pct  &lt;- function(x, d = 0) paste0(formatC(100 * x, format = "f", digits = d), "%")
-rmse &lt;- function(a, b) sqrt(mean((a - b)^2))</code></pre></div></div>
-</details>
-</div>
-<hr>
-</section>
-<section id="the-data" class="level2">
-<h2 class="anchored" data-anchor-id="the-data">1. The data</h2>
-<p>The county around Seattle (King County, Washington) publishes every sale of a house. This file has the sales from May 2014 to May 2015, and OpenML (2019) serves it as CSV:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r">raw &lt;- read.csv("https://www.openml.org/data/get_csv/21578898/house_sales.arff")
-house &lt;- with(
-  raw,
-  data.frame(
-    price = price,
-    logp = log10(price),
-    date = as.Date(substr(date, 1, 8), "%Y%m%d"),
-    east = (long + 122.2) * 111.32 * cos(47.56 * pi / 180),
-    north = (lat - 47.56) * 111.32, # kilometres from a point in the middle
-    lsize = log2(sqft_living),
-    grade,
-    built = yr_built,
-    llot = log2(sqft_lot),
-    view,
-    water = as.integer(waterfront),
-    zip = factor(zipcode)
-  )
-)
-nrow(house)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] 21613</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">range(house$date)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>[1] "2014-05-02" "2015-05-27"</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">quantile(house$price, c(0.01, 0.25, 0.5, 0.75, 0.99))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>       1%       25%       50%       75%       99% 
- 153500.4  321950.0  450000.0  645000.0 1964400.0 </code></pre>
-</div>
-</div>
-<p>There are 21,613 sales. <code>east</code> and <code>north</code> are the position in kilometres, <code>lsize</code> the living space (log base 2, so one unit is a doubling), <code>grade</code> the county’s grade of the building (1 to 13), <code>built</code> the year, <code>llot</code> the land (log), <code>view</code> (0 to 4) and <code>water</code> (on the waterfront). Prices are skewed, so we predict <span class="math inline">\(\log_{10}\)</span> of the price; an error of 0.04 is about 10%.</p>
-<p>The use of such a model is to value houses that are sold <strong>later</strong>. So we learn from the sales until January 2015, choose the settings with those of February and March, and test with April and May:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">train &lt;- subset(house, date &lt; as.Date("2015-02-01"))
-valid &lt;- subset(house, date &gt;= as.Date("2015-02-01") &amp; date &lt; as.Date("2015-04-01"))
-test  &lt;- subset(house, date &gt;= as.Date("2015-04-01"))
-c(train = nrow(train), validation = nrow(valid), test = nrow(test))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>     train validation       test 
-     15611       3125       2877 </code></pre>
-</div>
-</div>
-<hr>
-</section>
-<section id="look-at-the-data" class="level2">
-<h2 class="anchored" data-anchor-id="look-at-the-data">2. Look at the data</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">ggplot(train, aes(east, north, colour = logp)) +
-  geom_point(size = 0.5, alpha = 0.7) +
-  coord_fixed() +
-  scale_colour_viridis_c(
-    option = "C",
-    name = "price",
-    breaks = log10(c(1e5, 2.5e5, 5e5, 1e6, 2.5e6)),
-    labels = c("100k", "250k", "500k", "1M", "2.5M"),
-    limits = log10(c(1.5e5, 2.5e6)),
-    oob = scales::squish
-  ) +
-  labs(title = "House prices around Seattle", x = "km east", y = "km north") +
-  theme_bw()</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Plot: 2. Look at the data" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS_files/figure-html/look-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>Place matters, and not in a way that a straight line could follow: there are expensive shores, cheap corridors and sharp borders.</p>
-<hr>
-</section>
-<section id="the-method-step-by-step-with-formulas" class="level2">
-<h2 class="anchored" data-anchor-id="the-method-step-by-step-with-formulas">3. The method step by step, with formulas</h2>
-<section id="step-1-a-distance" class="level3">
-<h3 class="anchored" data-anchor-id="step-1-a-distance">Step 1: a distance</h3>
-<p>The usual one is Euclidean. With the predictors <span class="math inline">\(x_1, \dots, x_p\)</span>,</p>
-<p><span class="math display">\[d(x, x') = \sqrt{\sum_{j=1}^{p} w_j^2\, (x_j - x'_j)^2}\]</span></p>
-<p>The <strong>weights</strong> <span class="math inline">\(w_j\)</span> are part of the method, whether one chooses them or not. If a predictor is measured in other units, its weight changes.</p>
-</section>
-<section id="step-2-the-neighbours-and-their-mean" class="level3">
-<h3 class="anchored" data-anchor-id="step-2-the-neighbours-and-their-mean">Step 2: the neighbours, and their mean</h3>
-<p>Let <span class="math inline">\(N_k(x)\)</span> be the <span class="math inline">\(k\)</span> training cases with the smallest distance to <span class="math inline">\(x\)</span>. The prediction is</p>
-<p><span class="math display">\[\hat f(x) = \frac{1}{k}\sum_{i \in N_k(x)} y_i\]</span></p>
-<p>By hand, for the first house of the validation set, with place and size only:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">new &lt;- valid[1, ]
-d &lt;- sqrt(
-  (train$east - new$east)^2 + (train$north - new$north)^2 + (2 * (train$lsize - new$lsize))^2
-) # a doubling of the size counts as 2 km
-near &lt;- order(d)[1:5]
-cbind(
-  distance = round(d[near], 2),
-  km = round(sqrt((train$east[near] - new$east)^2 + (train$north[near] - new$north)^2), 2),
-  train[near, c("price", "built", "grade")],
-  size = round(2^train$lsize[near])
-)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>      distance   km  price built grade size
-16518     0.90 0.78 304000  1972     7  900
-6006      0.94 0.67 300000  1982     7  970
-16644     0.97 0.31 335000  1967     7 1060
-6767      1.03 0.67 350000  1967     7 1010
-17242     1.04 0.93 300000  1971     7  910</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">c(predicted = 10^mean(train$logp[near]), sold_for = new$price)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>predicted  sold_for 
- 317136.2  180000.0 </code></pre>
-</div>
-</div>
-</section>
-<section id="step-3-the-choice-of-k" class="level3">
-<h3 class="anchored" data-anchor-id="step-3-the-choice-of-k">Step 3: the choice of <span class="math inline">\(k\)</span></h3>
-<p>With <span class="math inline">\(k = 1\)</span> the prediction jumps from house to house and copies every accident of a single sale: no bias, much variance. With <span class="math inline">\(k = n\)</span> it is the mean of all houses: no variance, much bias. In between is the best value, and it must be found by trying.</p>
-</section>
-<section id="step-4-no-training-slow-prediction" class="level3">
-<h3 class="anchored" data-anchor-id="step-4-no-training-slow-prediction">Step 4: no training, slow prediction</h3>
-<p>There is nothing to estimate. But for each new case all the distances must be computed. Programs use search trees (<code>FNN</code> does) that avoid most of the work in few dimensions.</p>
-<hr>
-</section>
-</section>
-<section id="what-is-similar-scaling" class="level2">
-<h2 class="anchored" data-anchor-id="what-is-similar-scaling">4. What is similar? Scaling</h2>
-<p>Try three definitions, each with several <span class="math inline">\(k\)</span>, on the validation sales:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">vars &lt;- c("east", "north", "lsize", "grade", "built", "llot", "view", "water")
-centre &lt;- colMeans(train[, vars]); spread &lt;- apply(train[, vars], 2, sd)
-Z &lt;- function(d, w = rep(1, length(vars))) {
-  sweep(sweep(sweep(as.matrix(d[, vars]), 2, centre), 2, spread, "/"), 2, w, "*")
-} # standardise with the training data, then weight
-knn &lt;- function(Ztr, Zte, k, y = train$logp) knn.reg(Ztr, Zte, y, k = k)$pred
-ks &lt;- c(1, 2, 3, 5, 8, 12, 20, 35, 60, 100)
-place &lt;- c("east", "north")
-curves &lt;- rbind(
-  data.frame(
-    k = ks,
-    rmse = sapply(ks, function(k) rmse(knn(train[, place], valid[, place], k), valid$logp)),
-    what = "place only"
-  ),
-  data.frame(
-    k = ks,
-    rmse = sapply(ks, function(k) rmse(knn(train[, vars], valid[, vars], k), valid$logp)),
-    what = "all predictors, raw units"
-  ),
-  data.frame(
-    k = ks,
-    rmse = sapply(ks, function(k) rmse(knn(Z(train), Z(valid), k), valid$logp)),
-    what = "all predictors, standardised"
-  )
-)
-best &lt;- do.call(rbind, lapply(split(curves, curves$what), function(d) d[which.min(d$rmse), ]))
-best</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                              k       rmse                         what
-all predictors, raw units     5 0.10989469    all predictors, raw units
-all predictors, standardised 12 0.09012174 all predictors, standardised
-place only                    8 0.12973096                   place only</code></pre>
-</div>
-</div>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">ggplot(curves, aes(k, rmse, colour = what)) +
-  geom_line(linewidth = 0.9) +
-  geom_point(size = 2) +
-  scale_x_log10(breaks = ks) +
-  scale_colour_manual(values = c("#eda100", "#2a78d6", "#eb6834"), name = NULL) +
-  labs(
-    title = "Error on later sales, by the number of neighbours",
-    x = "k (log scale)",
-    y = "RMSE of log10(price)"
-  ) +
-  theme_bw() +
-  theme(legend.position = "bottom")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="K chart – 4. What is similar? Scaling" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS_files/figure-html/k_chart-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<ul>
-<li>The classic <strong>U-shape</strong>: too few neighbours are noisy, too many are not similar.</li>
-<li>With <strong>place only</strong>, 0.130 at best.</li>
-<li>With all the predictors in <strong>raw units</strong>, 0.110. The year of construction runs over a hundred units and the waterfront over one, so the years decide who is a neighbour.</li>
-<li><strong>Standardised</strong>, 0.090. Each predictor has the same weight now.</li>
-</ul>
-<section id="weights-for-the-predictors" class="level3">
-<h3 class="anchored" data-anchor-id="weights-for-the-predictors">Weights for the predictors</h3>
-<p>But why the <strong>same</strong> weight? Place matters more than the size of the garden. We can search for better weights on the validation set, one predictor at a time, doubling or halving its weight as long as it helps:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">w &lt;- setNames(rep(1, length(vars)), vars)
-score &lt;- function(w, k = 8) rmse(knn(Z(train, w), Z(valid, w), k), valid$logp)
-current &lt;- score(w); history &lt;- data.frame(step = 0, changed = "start", rmse = current)
-for (round in 1:4) {
-  for (v in vars) {
-    for (f in c(2, 0.5)) {
-      repeat {
-        trial &lt;- w
-        trial[v] &lt;- trial[v] * f
-        s &lt;- score(trial)
-        if (s &lt; current - 1e-5) {
-          w &lt;- trial
-          current &lt;- s
-          history &lt;- rbind(history, data.frame(step = nrow(history), changed = v, rmse = s))
-        } else {
-          break
-        }
-      }
-    }
-  }
-}
-w</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code> east north lsize grade built  llot  view water 
- 8.00  4.00  2.00  1.00  0.25  1.00  0.25  1.00 </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">k_w &lt;- ks[which.min(sapply(ks, function(k) score(w, k)))]
-c(standardised = best["all predictors, standardised", "rmse"], weighted = score(w, k_w), k = k_w)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>standardised     weighted            k 
-  0.09012174   0.08359334   8.00000000 </code></pre>
-</div>
-</div>
-<p>The search gives the most weight to east, north, lsize, and the error falls to 0.084. <strong>The weights are the model.</strong> They were tuned on the validation sales, so that error is too good; the test set will tell. (Weighting the neighbours themselves by their distance is another refinement, which helps a little.)</p>
-<hr>
-</section>
-</section>
-<section id="the-comparables-of-one-house" class="level2">
-<h2 class="anchored" data-anchor-id="the-comparables-of-one-house">5. The comparables of one house</h2>
-<p>An advantage that few other methods of machine learning have: the prediction can be <strong>shown</strong>.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb22"><pre><code class="language-r">Zt &lt;- Z(train, w); Zn &lt;- Z(test, w)
-one &lt;- 3
-nn &lt;- get.knnx(Zt, Zn[one, , drop = FALSE], k = k_w)
-comp &lt;- train[nn$nn.index[1, ], ]
-show &lt;- rbind(
-  cbind(what = "to be valued", test[one, ]),
-  cbind(what = paste("neighbour", seq_len(k_w)), comp)
-)
-data.frame(
-  what = show$what,
-  price = f0(show$price),
-  sqft = round(2^show$lsize),
-  grade = show$grade,
-  built = show$built,
-  km = round(sqrt((show$east - test$east[one])^2 + (show$north - test$north[one])^2), 1),
-  row.names = NULL
-)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>          what   price sqft grade built  km
-1 to be valued 230,000 1250     7  1969 0.0
-2  neighbour 1 236,000 1300     7  1967 0.2
-3  neighbour 2 169,575 1300     7  1968 0.2
-4  neighbour 3 216,000 1280     7  1956 0.8
-5  neighbour 4 170,000 1300     7  1961 1.4
-6  neighbour 5 190,000 1090     7  1967 0.2
-7  neighbour 6 235,500 1380     7  1971 1.6
-8  neighbour 7 215,000 1130     7  1969 1.3
-9  neighbour 8 225,000 1460     7  1968 1.4</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb24"><pre><code class="language-r">c(predicted = 10^mean(comp$logp), sold_for = test$price[one])</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>predicted  sold_for 
- 205502.8  230000.0 </code></pre>
-</div>
-</div>
-<p>A person who doubts the value of 205,503 dollars can look at the 8 houses and say which of them is not comparable.</p>
-<hr>
-</section>
-<section id="against-other-methods" class="level2">
-<h2 class="anchored" data-anchor-id="against-other-methods">6. Against other methods</h2>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb26"><pre><code class="language-r">learn &lt;- rbind(train, valid) # the test may use everything before April
-Zl &lt;- sweep(sweep(sweep(as.matrix(learn[, vars]), 2, centre), 2, spread, "/"), 2, w, "*")
-knn_pred &lt;- knn.reg(Zl, Zn, learn$logp, k = k_w)$pred
-lin  &lt;- lm(logp ~ east + north + lsize + grade + built + llot + view + water, data = learn)
-# each postal code its own level
-linz &lt;- lm(logp ~ zip + lsize + grade + built + llot + view + water, data = learn)
-gm &lt;- bam(
-  logp ~ s(east, north, k = 150) +
-    s(lsize, k = 6) +
-    s(grade, k = 6) +
-    s(built, k = 8) +
-    s(llot, k = 6) +
-    view +
-    water,
-  data = learn
-)
-set.seed(161)
-rf &lt;- ranger(
-  logp ~ east + north + lsize + grade + built + llot + view + water,
-  data = learn,
-  num.trees = 500
-)
-# a regression for the house, and kNN for the place: the mean residual of the nearest houses
-res_learn &lt;- resid(lin)
-local &lt;- knn.reg(learn[, place], test[, place], res_learn, k = 15)$pred
-preds &lt;- list(
-  `Linear regression` = predict(lin, test),
-  `Regression + postal codes` = predict(linz, test),
-  `kNN, standardised` = knn.reg(
-    Z(learn),
-    Z(test),
-    learn$logp,
-    k = best["all predictors, standardised", "k"]
-  )$pred,
-  `kNN, weighted` = knn_pred,
-  `GAM with a map` = as.numeric(predict(gm, test)),
-  `Random forest` = predict(rf, test)$predictions,
-  `Regression + kNN of its residuals` = predict(lin, test) + local
-)
-results &lt;- data.frame(
-  model = names(preds),
-  rmse = sapply(preds, rmse, b = test$logp),
-  median_error = sapply(preds, function(p) median(abs(10^(p - test$logp) - 1))),
-  row.names = NULL
-)
-results &lt;- results[order(results$rmse), ]
-print(
-  transform(results, rmse = round(rmse, 4), median_error = round(median_error, 3)),
-  row.names = FALSE
-)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                             model   rmse median_error
-                    GAM with a map 0.0813        0.109
-                     kNN, weighted 0.0857        0.112
-                     Random forest 0.0858        0.106
-         Regression + postal codes 0.0894        0.118
-                 kNN, standardised 0.0903        0.115
- Regression + kNN of its residuals 0.0922        0.125
-                 Linear regression 0.1195        0.168</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb28"><pre><code class="language-r">get &lt;- function(m, col = "rmse") results[results$model == m, col]</code></pre></div></div>
-</details>
-</div>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb29"><pre><code class="language-r">results$model &lt;- factor(results$model, levels = rev(results$model))
-ggplot(results, aes(median_error, model)) +
-  geom_segment(aes(x = 0, xend = median_error, yend = model), colour = "grey75") +
-  geom_point(size = 3, colour = "#2a78d6") +
-  scale_x_continuous(labels = function(v) paste0(100 * v, "%"), limits = c(0, NA)) +
-  labs(
-    title = "Median error on the sales of April and May 2015",
-    x = "half of the predictions are closer than this",
-    y = NULL
-  ) +
-  theme_bw() +
-  theme(plot.title.position = "plot")</code></pre></div></div>
-</details>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img alt="Compare chart – 6. Against other methods" src="https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS_files/figure-html/compare_chart-1.png" class="img-fluid figure-img" style="width:100.0%"></p>
-</figure>
-</div>
-</div>
-</div>
-<ul>
-<li>Plain <strong>linear regression</strong> misses half of the houses by more than 17%; the weighted <strong>kNN</strong> by more than 11%. Knowing the neighbours is worth a lot.</li>
-<li>A regression with <strong>postal codes</strong> comes close to kNN (RMSE 0.089 against 0.086). It uses a simple formula for what is simple (size, grade, age), and the neighbourhood for the rest.</li>
-<li>The same idea without postal codes: a <strong>regression for the house and kNN for the place</strong>, that is, the linear regression plus the average residual of the 15 nearest houses. A few lines of code take the RMSE of the regression from 0.120 to 0.092. It does not reach the weighted kNN, because the formula of the regression is too simple for the rest, too.</li>
-<li>The <strong>GAM</strong> with a smooth map and smooth curves has the smallest error, 0.081, and the <strong>random forest</strong> has 0.086.</li>
-</ul>
-<p>Where kNN loses, it is because it cannot learn that a doubling of the size adds a certain share of the price <strong>everywhere</strong>. It must find, for every place and grade, houses of the right size. The GAM adds up one map and one curve per predictor, and learns each of them from all the sales.</p>
-<hr>
-</section>
-<section id="the-curse-of-dimensionality" class="level2">
-<h2 class="anchored" data-anchor-id="the-curse-of-dimensionality">7. The curse of dimensionality</h2>
-<p>In many dimensions nothing is near. Add predictors that mean nothing (random numbers), and watch:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb30"><pre><code class="language-r">set.seed(162)
-extra &lt;- c(0, 1, 2, 4, 8, 16)
-noise &lt;- matrix(
-  rnorm((nrow(learn) + nrow(test)) * max(extra)),
-  ncol = max(extra),
-  dimnames = list(NULL, paste0("noise", seq_len(max(extra))))
-)
-in_learn &lt;- seq_len(nrow(learn)); in_test &lt;- nrow(learn) + seq_len(nrow(test))
-curse &lt;- sapply(extra, function(m) {
-  A &lt;- cbind(Z(learn), noise[in_learn, seq_len(m), drop = FALSE])
-  B &lt;- cbind(Z(test), noise[in_test, seq_len(m), drop = FALSE])
-  rmse(knn.reg(A, B, learn$logp, k = 8)$pred, test$logp)
-})
-lm_noise &lt;- sapply(extra, function(m) {
-  L &lt;- cbind(learn[, c("logp", vars)], noise[in_learn, seq_len(m), drop = FALSE])
-  Te &lt;- cbind(test[, vars], noise[in_test, seq_len(m), drop = FALSE])
-  rmse(predict(lm(logp ~ ., data = L), Te), test$logp)
-})
-rbind(noise_predictors = extra, kNN = round(curse, 4), linear_regression = round(lm_noise, 4))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>                    [,1]   [,2]   [,3]   [,4]   [,5]    [,6]
-noise_predictors  0.0000 1.0000 2.0000 4.0000 8.0000 16.0000
-kNN               0.0902 0.0959 0.0995 0.1047 0.1150  0.1288
-linear_regression 0.1195 0.1195 0.1195 0.1195 0.1196  0.1196</code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb32"><pre><code class="language-r">dist_ratio &lt;- sapply(c(2, 8, 24), function(p) {
-  set.seed(163)
-  u &lt;- matrix(runif(2000 * p), ncol = p)
-  d &lt;- sqrt(colSums((t(u[-1, ]) - u[1, ])^2))
-  min(d) / max(d)
-})
-setNames(round(dist_ratio, 2), paste(c(2, 8, 24), "dimensions"))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code> 2 dimensions  8 dimensions 24 dimensions 
-         0.02          0.21          0.35 </code></pre>
-</div>
-</div>
-<p>With 16 useless predictors the error of kNN goes from 0.090 to 0.129. Linear regression hardly notices (0.120 and 0.120): it gives them coefficients near zero. kNN cannot ignore a predictor; each one has its weight in the distance. The second output shows the geometry: among 2,000 random points, the nearest is at 2% of the distance of the farthest in 2 dimensions, and at 35% in 24. “Nearest” loses its meaning (Beyer et al., 1999).</p>
-<hr>
-</section>
-<section id="how-sure-is-the-prediction-conformal-intervals" class="level2">
-<h2 class="anchored" data-anchor-id="how-sure-is-the-prediction-conformal-intervals">8. How sure is the prediction? Conformal intervals</h2>
-<p>kNN has no standard errors. <strong>Conformal prediction</strong> gives intervals for any method, with one simple idea: look at the errors on sales that were not used, and take their 90% quantile (Lei et al., 2018). Here: predict the validation sales from the training sales, and use those errors for the test.</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb34"><pre><code class="language-r">err   &lt;- abs(knn(Z(train, w), Z(valid, w), k_w) - valid$logp)
-q90   &lt;- sort(err)[ceiling(0.9 * (length(err) + 1))]
-inside &lt;- abs(knn_pred - test$logp) &lt;= q90
-c(half_width_log10 = q90, factor = 10^q90, coverage_in_test = mean(inside))</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>half_width_log10           factor coverage_in_test 
-       0.1338998        1.3611305        0.8953771 </code></pre>
-</div>
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb36"><pre><code class="language-r">cheap &lt;- cut(
-  knn_pred,
-  quantile(knn_pred, 0:4 / 4),
-  include.lowest = TRUE,
-  labels = c("cheapest quarter", "2", "3", "most expensive quarter")
-)
-round(tapply(inside, cheap, mean), 3)</code></pre></div></div>
-</details>
-<div class="cell-output cell-output-stdout">
-<pre><code>      cheapest quarter                      2                      3 most expensive quarter 
-                 0.863                  0.910                  0.928                  0.882 </code></pre>
-</div>
-</div>
-<p>The 90% interval goes from the prediction divided by 1.36 to the prediction times 1.36. In the test 89.5% of the houses were inside. The coverage is right <strong>on average</strong>, and not in every group: it ranges from 86% to 93% across the quarters of the predicted price, because the interval has the same width everywhere.</p>
-<hr>
-</section>
-<section id="things-to-keep-in-mind" class="level2">
-<h2 class="anchored" data-anchor-id="things-to-keep-in-mind">9. Things to keep in mind</h2>
-<ul>
-<li><strong>Scale, then weight.</strong> Both decide the result. Use the training data for the centre and the spread.</li>
-<li><strong>Choose <span class="math inline">\(k\)</span> by validation</strong>, on cases that resemble the future. An odd <span class="math inline">\(k\)</span> has no meaning in regression.</li>
-<li><strong>At the edges</strong> kNN is biased: the neighbours of the largest house are all smaller. The prediction can never leave the range of the data.</li>
-<li><strong>Few, strong predictors.</strong> With many weak ones use other methods, or reduce them first.</li>
-<li><strong>Categories</strong> need a distance of their own (0 if equal, 1 if not, times a weight).</li>
-<li><strong>Dependence</strong>: the same house sold twice, flats of the same building. Keep them on the same side of the split.</li>
-<li><strong>Distance in space is not distance in life.</strong> Two houses on the opposite shores of a lake are near on the map.</li>
-<li><strong>It is a smoother.</strong> kNN with one predictor is a rough cousin of <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_LOESS.html">LOESS</a>, which fits a line instead of a mean and has less bias at the ends.</li>
-</ul>
-<hr>
-</section>
-<section id="reporting-the-results-in-apa-style" class="level2">
-<h2 class="anchored" data-anchor-id="reporting-the-results-in-apa-style">10. Reporting the results in APA style</h2>
-<p>A report (APA 7th edition) needs the predictors and their scaling, the distance and the weights, <span class="math inline">\(k\)</span> and how it was chosen, the split, the errors in understandable units, and simpler alternatives. The numbers come from the R objects:</p>
-<div class="cell">
-<details open="" class="code-fold">
-<summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb38"><pre><code class="language-r">r &lt;- results[order(results$rmse), ]
-apa_table &lt;- data.frame(
-  Model = as.character(r$model),
-  rmse = f3(r$rmse),
-  med = pct(r$median_error, 1)
-)</code></pre></div></div>
-</details>
-</div>
-<p><strong>Method</strong> (data analysis):</p>
-<blockquote class="blockquote">
-<p>We predicted the log price of 2,877 houses sold in King County, Washington, in April and May 2015 from 18,736 earlier sales (May 2014–March 2015) with k-nearest neighbours regression. Predictors were the position (km), log living space, grade, year of construction, log lot size, view and waterfront, standardised with the training data. The number of neighbours and the weights of the predictors in the Euclidean distance were chosen with the sales of February and March 2015. Linear regression with and without postal codes, a generalized additive model with a smooth of the position, a random forest, and a regression corrected by the residuals of neighbouring houses served for comparison. Prediction intervals are split-conformal (Lei et al., 2018). Analyses were conducted in R (Version 4.6.2; R Core Team, 2026) with the package FNN.</p>
-</blockquote>
-<p><strong>Results:</strong></p>
-<blockquote class="blockquote">
-<p>With <em>k</em> = 8 and weighted predictors, half of the predictions were within 11.2% of the price (RMSE of log<sub>10</sub> price = 0.086), compared with 16.8% for linear regression (Table 1). A linear regression corrected by the mean residual of the 15 nearest houses had a median error of 12.5%. The 90% conformal intervals (predicted price divided or multiplied by 1.36) contained 89.5% of the prices.</p>
-</blockquote>
-<p><strong>Table 1</strong></p>
-<p><em>Prediction of House Prices in April and May 2015</em></p>
-<div class="cell">
-<div class="cell-output-display">
-<table class="caption-top table table-sm table-striped small">
-<thead>
-<tr class="header">
-<th style="text-align: left;">Model</th>
-<th style="text-align: right;">RMSE (log<sub>10</sub> price)</th>
-<th style="text-align: right;">Median error</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td style="text-align: left;">GAM with a map</td>
-<td style="text-align: right;">0.081</td>
-<td style="text-align: right;">10.9%</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">kNN, weighted</td>
-<td style="text-align: right;">0.086</td>
-<td style="text-align: right;">11.2%</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Random forest</td>
-<td style="text-align: right;">0.086</td>
-<td style="text-align: right;">10.6%</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Regression + postal codes</td>
-<td style="text-align: right;">0.089</td>
-<td style="text-align: right;">11.8%</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">kNN, standardised</td>
-<td style="text-align: right;">0.090</td>
-<td style="text-align: right;">11.5%</td>
-</tr>
-<tr class="even">
-<td style="text-align: left;">Regression + kNN of its residuals</td>
-<td style="text-align: right;">0.092</td>
-<td style="text-align: right;">12.5%</td>
-</tr>
-<tr class="odd">
-<td style="text-align: left;">Linear regression</td>
-<td style="text-align: right;">0.120</td>
-<td style="text-align: right;">16.8%</td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<p><em>Note.</em> <em>N</em> = 2,877. Median error: the median of the absolute relative error of the price.</p>
-<p><strong>Points to remember:</strong></p>
-<ul>
-<li>Report the scaling and the weights: they are the model.</li>
-<li>Say how <span class="math inline">\(k\)</span> was chosen.</li>
-<li>Test on later cases if the use is prediction.</li>
-<li>Give errors in percent, not only in logs.</li>
-</ul>
-<hr>
-</section>
-<section id="summary" class="level2">
-<h2 class="anchored" data-anchor-id="summary">11. Summary</h2>
-<table class="caption-top table">
-<tbody>
-<tr class="odd">
-<td><strong>When</strong></td>
-<td>Prediction with few, strong predictors and much data, especially positions</td>
-</tr>
-<tr class="even">
-<td><strong>The method</strong></td>
-<td>The mean outcome of the <span class="math inline">\(k\)</span> nearest cases</td>
-</tr>
-<tr class="odd">
-<td><strong>How (R)</strong></td>
-<td><code>FNN::knn.reg(train, test, y, k)</code>; neighbours: <code>get.knnx()</code></td>
-</tr>
-<tr class="even">
-<td><strong>Choices</strong></td>
-<td>Predictors, scaling, weights, <span class="math inline">\(k\)</span></td>
-</tr>
-<tr class="odd">
-<td><strong><span class="math inline">\(k\)</span></strong></td>
-<td>Small: noisy. Large: biased. Choose by validation</td>
-</tr>
-<tr class="even">
-<td><strong>Strength</strong></td>
-<td>No assumptions, and every prediction can be shown</td>
-</tr>
-<tr class="odd">
-<td><strong>Weakness</strong></td>
-<td>Many predictors, edges, sparse regions</td>
-</tr>
-<tr class="even">
-<td><strong>A useful mixture</strong></td>
-<td>Correct a regression by the mean residual of the nearest cases</td>
-</tr>
-<tr class="odd">
-<td><strong>Related pages</strong></td>
-<td><a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_LOESS.html">LOESS</a>, <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_RANDOM_FOREST.html">random forest</a>, <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_SUPPORT_VECTOR_REGRESSION.html">support vector regression</a></td>
-</tr>
-</tbody>
-</table>
-<hr>
-</section>
-<section id="references" class="level2">
-<h2 class="anchored" data-anchor-id="references">References</h2>
-<p>Beyer, K., Goldstein, J., Ramakrishnan, R., &amp; Shaft, U. (1999). When is “nearest neighbor” meaningful? In <em>Database theory – ICDT’99</em> (pp.&nbsp;217–235). Springer. https://doi.org/10.1007/3-540-49257-7_15</p>
-<p>Cover, T., &amp; Hart, P. (1967). Nearest neighbor pattern classification. <em>IEEE Transactions on Information Theory</em>, <em>13</em>(1), 21–27. https://doi.org/10.1109/TIT.1967.1053964</p>
-<p>Fix, E., &amp; Hodges, J. L. (1951). <em>Discriminatory analysis: Nonparametric discrimination: Consistency properties</em> (Report No.&nbsp;4). USAF School of Aviation Medicine. https://doi.org/10.1037/e471672008-001</p>
-<p>Lei, J., G’Sell, M., Rinaldo, A., Tibshirani, R. J., &amp; Wasserman, L. (2018). Distribution-free predictive inference for regression. <em>Journal of the American Statistical Association</em>, <em>113</em>(523), 1094–1111. https://doi.org/10.1080/01621459.2017.1307116</p>
-<p>OpenML. (2019). <em>House sales in King County, USA</em> (data set 42092) [Data set]. https://www.openml.org/d/42092</p>
-<!-- -->
-</section>
-<p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/example/EXAMPLE_K_NEAREST_NEIGHBOURS.html">Worked Examples in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
     </item>
   </channel>
 </rss>
