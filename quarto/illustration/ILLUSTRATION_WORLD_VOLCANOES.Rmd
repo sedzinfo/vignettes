@@ -27,7 +27,7 @@ Most people know a few volcanoes: Vesuvius, Etna, Krakatau, perhaps Santorini. T
 4. **Which were the deadliest eruptions?**
 5. **How many people live close to a volcano, and where does Greece stand?**
 
-[Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html) looks at earthquakes, [Waves That Cross Oceans](ILLUSTRATION_WORLD_TSUNAMIS.html) at tsunamis, and [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html) puts the hazards side by side.
+[Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html) looks at earthquakes, [Waves from the Sea](ILLUSTRATION_WORLD_TSUNAMIS.html) at tsunamis, and [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html) puts the hazards side by side.
 
 The data come from two sources, downloaded when the page is rendered:
 
@@ -489,7 +489,7 @@ knitr::kable(
 )
 ```
 
-**The biggest are much older.** The list has `r nrow(huge)` eruptions of VEI 7 or more in the whole Holocene, `r and_list(paste0(flip(huge$Volcano_Name), " (", year_text(huge$StartDateYear), ")"))`. The GVP dates Tambora's eruption from `r confirmed$StartDateYear[confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7]` to `r confirmed$EndDateYear[confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7]`, and NOAA gives the year of its great explosion, `r max(significant$year[significant$name == "Tambora" & significant$vei %in% 7])`; the table gives the year each eruption began. The date of an old eruption is an estimate: the GVP gives each one a margin of error, and some dates are marked as uncertain.
+**The biggest are much older.** The list has `r nrow(huge)` eruptions of VEI 7 or more in the whole Holocene, `r and_list(paste0(flip(huge$Volcano_Name), " (", year_text(huge$StartDateYear), ")"))`. The GVP dates Tambora's eruption from `r confirmed$StartDateYear[which(confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7)]` to `r confirmed$EndDateYear[which(confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7)]`, and NOAA gives the year of its great explosion, `r max(significant$year[significant$name == "Tambora" & significant$vei %in% 7])`; the table gives the year each eruption began. The date of an old eruption is an estimate: the GVP gives each one a margin of error, and some dates are marked as uncertain.
 
 **Big eruptions are rare, and small ones are the easiest to miss.** From `r complete_from` the list has `r one(vei_n(0:4) / n_years)` of them a year, but only `r one(vei_n(5:8) / n_years)` of VEI 5 or more, about one in `r round(n_years / vei_n(5:8))` years. The VEI is also missing more often for older eruptions: for `r percent(100 * mean(is.na(confirmed$ExplosivityIndexMax[confirmed$StartDateYear < complete_from & confirmed$StartDateYear >= 1800])))` of the eruptions from 1800 to `r complete_from - 1`, against `r percent(100 * vei_missing / nrow(modern), 1)` since.
 
@@ -663,11 +663,11 @@ santorini_dead <- with_deaths[with_deaths$name == "Santorini", ]
 2. **About `r round(nrow(modern) / n_years)` eruptions begin a year, and the number has not changed since `r complete_from`.** The apparent rise before that is a rise in what was recorded.
 3. **Most eruptions are small.** `r vei_share(0:2)` of the eruptions since `r complete_from` are VEI 0 to 2; `r nrow(big)` since 1800 were VEI 6 or more.
 4. **The deadliest eruptions are not always the biggest.** The five deadliest on record have `r percent(top_five_share)` of the deaths of the eruptions with a known number, `r and_list(paste0(flip(head(worst$name, 5)), " ", year_text(head(worst$year, 5))))`.
-5. **Many volcanoes have people near them.** In `r number(sum(near(30) >= 1e6))` volcanoes of the list, more than a million people live within 30 km; Greece has `r nrow(greece)` volcanoes in the list, and `r volcanoes$Volcano_Name[which.max(ifelse(volcanoes$Country == "Greece", volcanoes$Last_Eruption_Year, -Inf))]` is the one that erupted last.
+5. **Many volcanoes have people near them.** In `r number(sum(near(30) >= 1e6))` volcanoes of the list, more than a million people live within 30 km; Greece has `r nrow(greece_list)` volcanoes in the list, and `r volcanoes$Volcano_Name[which.max(ifelse(volcanoes$Country == "Greece", volcanoes$Last_Eruption_Year, -Inf))]` is the one that erupted last.
 
 **What this does not show.** A list of eruptions is a list of what people recorded: it is incomplete before about `r complete_from`, and eruptions on the seafloor are the hardest to see. The VEI measures the explosion, not the harm, and it is missing for some eruptions. NOAA lists only significant eruptions, and for many of them the deaths are not known, so the totals are minimums, and a death toll is partly a matter of who counted and how. The numbers of people near volcanoes come from a population map whose year the data do not give, and each person near several volcanoes is counted several times. Nothing here says when or where the next eruption will be: a count of past eruptions is not a forecast.
 
-For earthquakes, see [Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html); for tsunamis, [Waves That Cross Oceans](ILLUSTRATION_WORLD_TSUNAMIS.html); for all the hazards together, [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html).
+For earthquakes, see [Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html); for tsunamis, [Waves from the Sea](ILLUSTRATION_WORLD_TSUNAMIS.html); for all the hazards together, [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html).
 
 ---
 
