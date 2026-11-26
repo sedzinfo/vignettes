@@ -69,6 +69,7 @@ PAGES = {   # "<site>/<page>": [(target, note, or None for the target's own desc
     "illustration/ILLUSTRATION_GREEK_INVESTMENT": [("golemeurostat", None), ("golemworldbank", None)],
     "illustration/ILLUSTRATION_GREEK_ECONOMY": [("golemeurostat", None)],
     "illustration/ILLUSTRATION_GREEK_POPULATION": [("golemeurostat", None)],
+    "illustration/ILLUSTRATION_GREEK_EMIGRATION": [("golemeurostat", None)],
     "illustration/ILLUSTRATION_GREEK_TOURISM": [("golemeurostat", None)],
     "illustration/ILLUSTRATION_GREEK_WAGES_PRICES": [("golemeurostat", None)],
     "illustration/ILLUSTRATION_GREEK_WORKFORCE": [("golemeurostat", None)],

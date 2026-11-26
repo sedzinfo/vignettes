@@ -21,6 +21,7 @@ charts <- list(
   illustration = c(
     ILLUSTRATION_AI_LAYOFFS = 1,           # job cuts blamed on AI, by year
     ILLUSTRATION_AIRPORT_WEATHER = 1,      # daily temperature ribbon
+    ILLUSTRATION_ATHENS_HEAT = 1,          # warming stripes of the summers
     ILLUSTRATION_CLIMATE_HIGHCHARTER = 1,  # temperature spiral
     ILLUSTRATION_COLOR_CHART = 2,          # colours sorted by hue
     ILLUSTRATION_EU_SALARY = 4,            # bar chart race (a frame of the GIF)
@@ -30,11 +31,13 @@ charts <- list(
     ILLUSTRATION_GREECE_SINCE_2000 = 1,    # income per person
     ILLUSTRATION_GREEK_DEBT = 1,           # debt in billion euros
     ILLUSTRATION_GREEK_ECONOMY = 2,        # GDP by use
+    ILLUSTRATION_GREEK_EMIGRATION = 1,     # people who left Greece each year
     ILLUSTRATION_GREEK_HOUSING = 1,        # house prices and rents since 2015
     ILLUSTRATION_GREEK_INVESTMENT = 3,     # 10-year bond yields
     ILLUSTRATION_GREEK_POPULATION = 1,     # population and projections
     ILLUSTRATION_GREEK_TOURISM = 2,        # nights by month, a heatmap
     ILLUSTRATION_GREEK_WAGES_PRICES = 1,   # wages, prices and real wages since 2015
+    ILLUSTRATION_GREEK_WILDFIRES = 3,      # map of every fire EFFIS outlined
     ILLUSTRATION_GREEK_WORKFORCE = 3,      # below the basic PISA level
     ILLUSTRATION_ILLUSIONS = 1,            # the café wall
     ILLUSTRATION_SEA_ICE = 1,              # September minimum since 1979
