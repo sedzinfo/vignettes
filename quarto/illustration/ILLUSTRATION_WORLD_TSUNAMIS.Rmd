@@ -1,0 +1,720 @@
+---
+title: "Waves from the Sea: Where Tsunamis Start and Where They Strike Since 1900"
+description: "Tsunamis since 1900 in NOAA's global database: where they start, how far their waves travel, how tall they get, which were the deadliest, and whether there are more of them than there used to be."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+A tsunami is a series of waves that starts when something moves a great deal of water at once, most often an earthquake under the sea. In the open ocean the waves are low and fast. Near a coast they grow, and they can flood it. This story looks at the tsunamis of the last 125 years and asks five questions:
+
+1. **Where in the world do tsunamis start?**
+2. **Where do the waves strike, and how far do they travel?**
+3. **How big are they, and how often does one kill?**
+4. **Which were the deadliest?**
+5. **Are there more of them than there used to be?**
+
+For the earthquakes behind most tsunamis, see [Earthquakes](ILLUSTRATION_WORLD_EARTHQUAKES.html); for those that come from eruptions, [Volcanoes](ILLUSTRATION_WORLD_VOLCANOES.html); for all the hazards together, [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html).
+
+The data come from the **Global Historical Tsunami Database** of the US National Oceanic and Atmospheric Administration (NOAA), kept by its National Centers for Environmental Information (NCEI) ([database](https://www.ngdc.noaa.gov/hazard/tsu_db.shtml)). It lists tsunamis from 2000 BC to today, collected from reports, tide gauges and surveys. Its hazard-service interface gives it as two tables, downloaded here when the page is rendered, with no key:
+
+- **The events**: one row for each tsunami, with where its source was, what caused it, how reliable the report is, the highest water, and the deaths. We use the tsunamis since 1900, the first year of instrumentally located earthquakes ([NOAA](https://www.ngdc.noaa.gov/hazard/tsunami-db-intro.html)).
+- **The runups**: one row for each place where a tsunami's waves were measured, with the height of the water, the distance from the source and the country. A **runup** is the maximum height of the water above the normal sea level ([NOAA](https://www.ngdc.noaa.gov/hazard/tsunami-db-intro.html)).
+
+The meaning of every code below (validity, cause, region, kind of measurement) is from the help pages of NOAA's own search tool ([HazEL](https://www.ngdc.noaa.gov/hazel/view/hazards/tsunami/event-search)).
+
+**The record is of reports, not of every wave.** A tsunami enters the database when someone saw it, measured it or wrote about it. Small waves far from people are missed, and how well they are recorded has changed over the years (section 5).
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("curl", "dplyr", "ggplot2", "plotly", "jsonlite"))
+library(curl)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(jsonlite)
+```
+
+## The data
+
+```{r download}
+# one table of NOAA's hazard service: the first page says how many pages there are, and the rest
+# are asked for at the same time, five at once, because one page takes a few seconds
+noaa <- function(table, filter = "") {
+  base <- paste0("https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/tsunamis/", table, "?", filter, "&page=")
+  items <- function(response) {
+    if (is.null(response) || response$status_code != 200) {
+      return(NULL)
+    }
+    fromJSON(rawToChar(response$content))$items
+  }
+  first <- fromJSON(paste0(base, 1))
+  pages <- list(first$items)
+  todo <- seq_len(first$totalPages)[-1]
+  for (attempt in 1:3) {
+    if (length(todo) == 0) break
+    got <- list()
+    pool <- new_pool(total_con = 5, host_con = 5)
+    for (p in todo) {
+      local({
+        page <- p
+        curl_fetch_multi(
+          paste0(base, page),
+          done = function(r) got[[as.character(page)]] <<- items(r),
+          fail = function(e) NULL,
+          pool = pool
+        )
+      })
+    }
+    multi_run(pool = pool)
+    pages <- c(pages, got)
+    todo <- setdiff(todo, as.integer(names(got)[!sapply(got, is.null)]))
+  }
+  stopifnot(length(todo) == 0)
+  bind_rows(pages)
+}
+# the tsunamis since 1900
+events_all <- noaa("events", "minYear=1900&maxYear=2026")
+# the places where waves were measured; this table cannot be cut by year, so all of it is downloaded
+runups_all <- noaa("runups")
+```
+
+```{r groups}
+# the codes of NOAA (HazEL help pages)
+validity <- c(
+  "-1" = "erroneous entry",
+  "0" = "only a seiche",
+  "1" = "very doubtful",
+  "2" = "questionable",
+  "3" = "probable",
+  "4" = "definite"
+)
+# the regions of the source, in NOAA's names, and the sea or ocean that they are in
+regions <- c(
+  "30" = "Red Sea and Persian Gulf",
+  "40" = "Black Sea and Caspian Sea",
+  "50" = "Mediterranean Sea",
+  "60" = "Indian Ocean",
+  "70" = "Southeast Atlantic",
+  "71" = "Southwest Atlantic",
+  "72" = "Northwest Atlantic",
+  "73" = "Northeast Atlantic",
+  "74" = "Caribbean Sea",
+  "75" = "East coast of USA and Canada",
+  "76" = "Gulf of Mexico",
+  "77" = "West coast of Africa",
+  "78" = "Central Africa",
+  "80" = "Hawaii",
+  "81" = "Australia, New Zealand and South Pacific",
+  "82" = "New Guinea, Solomon Is. and Vanuatu",
+  "83" = "Indonesia (Pacific) and Malaysia",
+  "84" = "China, Koreas, Philippines, Taiwan",
+  "85" = "Japan",
+  "86" = "Kamchatka and Kuril Islands",
+  "87" = "Alaska and Aleutian Islands",
+  "88" = "West coast of North and Central America",
+  "89" = "West coast of South America"
+)
+pacific_codes <- 80:89
+# the causes, in the groups of this page
+cause_group <- function(code) {
+  case_when(
+    code %in% 1:3 ~ "Earthquake",
+    code %in% 4:7 ~ "Volcano",
+    code == 8 ~ "Landslide",
+    code == 9 ~ "Weather",
+    TRUE ~ "Other or unknown"
+  )
+}
+cause_levels <- c("Earthquake", "Volcano", "Landslide", "Weather", "Other or unknown")
+
+events_all$status <- validity[as.character(events_all$eventValidity)]
+first_year <- 1900
+last_year <- max(events_all$year)
+```
+
+```{r clean}
+# the events to keep: probable or definite tsunamis
+events <- events_all |>
+  filter(eventValidity >= 3) |>
+  mutate(
+    cause = factor(cause_group(causeCode), levels = cause_levels),
+    region = regions[as.character(regionCode)],
+    ocean = case_when(
+      is.na(regionCode) ~ NA_character_,
+      regionCode %in% pacific_codes ~ "Pacific Ocean",
+      regionCode == 60 ~ "Indian Ocean",
+      regionCode %in% 70:78 ~ "Atlantic Ocean, Caribbean and Gulf",
+      regionCode == 50 ~ "Mediterranean Sea",
+      TRUE ~ "Black, Caspian and Red Seas, Persian Gulf"
+    ),
+    deadly = deaths >= 1 | deathsAmountOrder >= 1
+  )
+# the runups: the waves of the kept events, in places where the report was not doubtful
+runups_since <- runups_all |> filter(year >= first_year)
+runups <- runups_since |>
+  filter(tsunamiEventId %in% events$id, doubtful == "n")
+
+# a country name in a sentence
+country_name <- function(x) {
+  y <- tools::toTitleCase(tolower(x))
+  y[x == "USA"] <- "United States"
+  y[x == "USA TERRITORY"] <- "US territories"
+  y[x == "RUSSIA"] <- "Russia"
+  y[x == "TURKEY"] <- "Turkey"
+  y
+}
+# a place name in a table
+place_name <- function(x) {
+  y <- tools::toTitleCase(tolower(x))
+  gsub("\\b(Ak|Se|Nw|Ne|Sw|Bc|Hi|Wa)\\b", "\\U\\1", y, perl = TRUE)
+}
+
+full_years <- first_year:(last_year - 1)
+n_full <- length(full_years)
+```
+
+```{r chart_style}
+red <- "#d62728"
+gray <- "#bdbdbd"
+dark_gray <- "#6b6b6b" # also the colour of the notes
+# the causes: earthquake, volcano, landslide and weather were checked for colour blindness (all pairs);
+# the rest is grey
+cause_colors <- c(
+  "Earthquake" = "#2c7fb8",
+  "Volcano" = "#d62728",
+  "Landslide" = "#f0a000",
+  "Weather" = "#6a3d9a",
+  "Other or unknown" = "#9e9e9e"
+)
+# one hue, from light to dark, for amounts: water
+blues <- c("#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594")
+
+# the source of a plotly chart, as a note under it, and the common layout
+chart <- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note <- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) |>
+    config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the look of the ggplot charts
+theme_page <- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      plot.title = element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+      plot.caption.position = "plot",
+      legend.position = "top",
+      legend.justification = "left"
+    )
+}
+
+# numbers in the text
+number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
+with_the <- function(x) ifelse(x == "United States", "the United States", x)
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
+# without a trend
+chance <- function(x, years) {
+  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p < 0.01) "less than 1" else as.character(round(100 * p))
+}
+```
+
+```{r decisions}
+n_all <- nrow(events_all)
+n_kept <- nrow(events)
+count_status <- function(codes) sum(events_all$eventValidity %in% codes)
+n_with_xy <- sum(!is.na(events$latitude) & !is.na(events$longitude))
+n_lake <- sum(!events$oceanicTsunami)
+total_ex <- events |> filter(!is.na(deaths), !is.na(deathsTotal), deaths != deathsTotal)
+haiti <- events |> filter(year == 2010, grepl("HAITI", locationName))
+n_runups_all <- nrow(runups_all)
+n_runups_since <- nrow(runups_since)
+n_runups <- nrow(runups)
+n_runup_events <- n_distinct(runups$tsunamiEventId)
+n_runups_doubtful <- sum(runups_since$tsunamiEventId %in% events$id & runups_since$doubtful != "n")
+n_runups_dropped_events <- sum(!runups_since$tsunamiEventId %in% events$id)
+```
+
+**Only probable and definite tsunamis are kept.** NOAA rates every report from -1 to 4. Since 1900 the database has `r number(n_all)` entries: `r number(count_status(4))` definite, `r number(count_status(3))` probable, `r number(count_status(2))` questionable, `r number(count_status(1))` very doubtful, `r number(count_status(0))` that only caused a seiche (a wave that sloshes in a lake or bay) and `r number(count_status(-1))` erroneous. This page keeps the `r number(n_kept)` definite and probable ones, `r percent(100 * n_kept / n_all)` of the entries. The rest are too uncertain to count as tsunamis. Of those kept, `r number(n_lake)` started in a lake, a reservoir or a river rather than the sea; they stay, and are named where they matter.
+
+**Deaths are those of the tsunami alone.** The database gives two figures: the deaths of the tsunami, and a total for the whole event, which includes the earthquake or eruption that caused it. For the earthquake of Haiti in 2010 the total is `r number(haiti$deathsTotal[1])` and the tsunami's own figure `r number(haiti$deaths[1])`. The two differ for `r number(nrow(total_ex))` of the tsunamis that have both, so this page uses the tsunami's own deaths, and only where a number is recorded (section 4).
+
+**The runups are those of the kept tsunamis, in places where the report was not doubtful.** The runups table has `r number(n_runups_all)` rows for all of history, and its filters do not cut it by year, so all of it is downloaded. `r number(n_runups_since)` are of tsunamis since 1900. Of these, `r number(n_runups_dropped_events)` belong to tsunamis that are not probable or definite, and `r number(n_runups_doubtful)` more are marked by NOAA as doubtful, or as waves that probably came from the weather or from an eruption's air waves rather than from the sea. That leaves `r number(n_runups)` places, for `r number(n_runup_events)` tsunamis.
+
+**Places without a position are not on the map.** `r number(n_kept - n_with_xy)` of the kept tsunamis have no latitude and longitude, so the map shows `r number(n_with_xy)`.
+
+**The latest year is incomplete.** The database has tsunamis up to `r last_year`, a year that is not over, so the counts over time (section 5) use the `r n_full` full years, `r first_year` to `r last_year - 1`.
+
+---
+
+## 1. Where in the world do tsunamis start?
+
+```{r where_numbers}
+n_per_year <- sum(events$year < last_year) / n_full
+by_cause <- events |>
+  count(cause) |>
+  mutate(share = 100 * n / sum(n), deaths = tapply(events$deaths, events$cause, sum, na.rm = TRUE)[as.character(cause)])
+cause_n <- function(g, column = "n") by_cause[[column]][by_cause$cause == g]
+with_region <- events[!is.na(events$regionCode), ]
+ocean_share <- with_region |>
+  count(ocean) |>
+  mutate(share = 100 * n / sum(n))
+ocean_in <- function(g) ocean_share$share[ocean_share$ocean == g]
+by_region <- with_region |>
+  count(regionCode, region) |>
+  arrange(desc(n)) |>
+  mutate(pacific = regionCode %in% pacific_codes)
+by_country <- events |>
+  count(country, sort = TRUE) |>
+  mutate(name = country_name(country), share = 100 * n / sum(n))
+top_countries <- head(by_country, 5)
+earthquake_with_slide <- sum(events$causeCode == 3)
+# the Mediterranean
+med <- events |> filter(regionCode == 50)
+med_country <- function(x) sum(med$country == x)
+med_dead <- med |>
+  filter(oceanicTsunami, !is.na(deaths)) |>
+  slice_max(deaths, n = 1, with_ties = FALSE)
+med_lakes <- med |> filter(!oceanicTsunami)
+med_height <- median(med$maxWaterHeight, na.rm = TRUE)
+pacific_height <- median(events$maxWaterHeight[events$regionCode %in% pacific_codes], na.rm = TRUE)
+```
+
+**The Pacific Ocean: `r percent(ocean_in("Pacific Ocean"))` of the tsunamis.** Since `r first_year`, `r number(n_kept)` probable or definite tsunamis have been recorded, `r one(n_per_year)` a year. Of those with a region, `r percent(ocean_in("Pacific Ocean"))` started in a region of the Pacific, `r percent(ocean_in("Atlantic Ocean, Caribbean and Gulf"))` in the Atlantic, the Caribbean and the Gulf of Mexico, `r percent(ocean_in("Mediterranean Sea"))` in the Mediterranean and `r percent(ocean_in("Indian Ocean"))` in the Indian Ocean. By country of the source, `r and_list(paste0(top_countries$name, " (", top_countries$n, ")"))` come first.
+
+```{r map, fig.height = 5.2}
+set.seed(2026)
+on_map <- events |>
+  filter(!is.na(latitude), !is.na(longitude)) |>
+  # the commonest cause first, so that the rarer ones are drawn on top of it
+  arrange(cause)
+map <- plot_ly()
+for (g in cause_levels) {
+  d <- on_map[on_map$cause == g, ]
+  map <- add_trace(
+    map,
+    data = d,
+    type = "scattergeo",
+    lon = ~longitude,
+    lat = ~latitude,
+    mode = "markers",
+    name = paste0(g, " (", nrow(d), ")"),
+    marker = list(color = cause_colors[[g]], size = 6, opacity = 0.75, line = list(color = "white", width = 0.4)),
+    text = ~ paste0(
+      year,
+      " ",
+      place_name(locationName),
+      ", ",
+      country_name(country),
+      "<br>",
+      ifelse(is.na(eqMagnitude), "", paste0("Earthquake magnitude ", eqMagnitude, "<br>")),
+      ifelse(is.na(maxWaterHeight), "", paste0("Highest water ", maxWaterHeight, " m"))
+    ),
+    hoverinfo = "text"
+  )
+}
+map |>
+  chart(
+    paste0("Where tsunamis started, by cause, ", first_year, "–", last_year),
+    "NOAA NCEI Global Historical Tsunami Database; probable and definite tsunamis.",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = FALSE,
+      showland = TRUE,
+      landcolor = "#e8e8e8",
+      projection = list(type = "natural earth"),
+      lataxis = list(range = c(-70, 85))
+    ),
+    legend = c(legend_top, list(y = 0.99, yanchor = "bottom")),
+    margin = list(t = 80, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )
+```
+
+**Earthquakes start `r percent(cause_n("Earthquake", "share"))` of them.** `r number(cause_n("Earthquake"))` of the tsunamis were caused by an earthquake (`r number(earthquake_with_slide)` of them by an earthquake and a landslide together), `r number(cause_n("Landslide"))` by a landslide alone, `r number(cause_n("Weather"))` by the weather, `r number(cause_n("Volcano"))` by a volcano, and `r number(cause_n("Other or unknown"))` by something else or something unknown. On the map, most of them lie along the coasts of the Pacific, from Chile round to Japan and Indonesia. The **weather** tsunamis are what NOAA's help pages call tsunami-like waves: they are produced by storms and other disturbances of the air, not by a movement of the sea floor. The table gives the toll of each cause:
+
+```{r cause_table}
+knitr::kable(
+  data.frame(
+    cause = as.character(by_cause$cause),
+    n = number(by_cause$n),
+    share = percent(by_cause$share),
+    deaths = number(unname(by_cause$deaths))
+  ),
+  row.names = FALSE,
+  col.names = c("Cause", "Tsunamis", "Share", "Deaths recorded"),
+  align = "lrrr"
+)
+```
+
+```{r regions_chart, fig.height = 4.8}
+top_regions <- head(by_region, 12)
+top_regions <- top_regions[order(top_regions$n), ] # the largest at the top
+top_regions$region <- factor(top_regions$region, levels = top_regions$region)
+plot_ly() |>
+  add_bars(
+    data = top_regions[top_regions$pacific, ],
+    x = ~n,
+    y = ~region,
+    orientation = "h",
+    name = "Regions of the Pacific",
+    marker = list(color = red),
+    text = ~n,
+    textposition = "outside",
+    cliponaxis = FALSE,
+    hovertemplate = "%{y}: %{x} tsunamis<extra></extra>"
+  ) |>
+  add_bars(
+    data = top_regions[!top_regions$pacific, ],
+    x = ~n,
+    y = ~region,
+    orientation = "h",
+    name = "Other regions",
+    marker = list(color = gray),
+    text = ~n,
+    textposition = "outside",
+    cliponaxis = FALSE,
+    hovertemplate = "%{y}: %{x} tsunamis<extra></extra>"
+  ) |>
+  chart(
+    paste0("Tsunamis by region of the source, top 12"),
+    "NOAA NCEI tsunami database.",
+    x_axis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE, range = c(0, 1.12 * max(top_regions$n))),
+    y_axis = list(automargin = TRUE),
+    legend = legend_top,
+    margin = list(l = 10, t = 80, b = 50, r = 10),
+    note_y = -0.05
+  )
+```
+
+**The Mediterranean has `r number(nrow(med))` tsunamis, `r percent(100 * nrow(med) / nrow(with_region))` of the world's.** Greece has `r number(med_country("GREECE"))` of them, Italy `r number(med_country("ITALY"))` and Turkey `r number(med_country("TURKEY"))`. The median highest water of a Mediterranean tsunami is `r one(med_height)` m, against `r one(pacific_height)` m in the Pacific. The deadliest of the sea itself was in `r med_dead$year`, at `r place_name(med_dead$locationName)`, where `r number(med_dead$deaths)` died. `r number(nrow(med_lakes))` of the Mediterranean entries are in lakes or reservoirs, such as the Vajont dam in Italy in 1963.
+
+---
+
+## 2. Where do the waves strike, and how far do they travel?
+
+```{r far_numbers}
+# the farthest place that each tsunami reached
+reach <- runups |>
+  filter(!is.na(distFromSource)) |>
+  group_by(tsunamiEventId) |>
+  summarise(far = max(distFromSource))
+far_km <- 3000
+far_events <- reach |> filter(far >= far_km)
+n_far <- nrow(far_events)
+far_info <- events |> filter(id %in% far_events$tsunamiEventId)
+far_pacific <- 100 * mean(far_info$regionCode %in% pacific_codes, na.rm = TRUE)
+far_earthquake <- 100 * mean(far_info$cause == "Earthquake")
+far_magnitude <- median(far_info$eqMagnitude, na.rm = TRUE)
+far_by_country <- runups |>
+  filter(distFromSource >= far_km) |>
+  distinct(tsunamiEventId, country) |>
+  count(country, sort = TRUE) |>
+  mutate(name = country_name(country))
+us_far <- runups |>
+  filter(distFromSource >= far_km, country == "USA") |>
+  distinct(tsunamiEventId, area) |>
+  count(area)
+hawaii_far <- us_far$n[us_far$area == "HI"]
+farthest <- runups |> slice_max(distFromSource, n = 1, with_ties = FALSE)
+runups_by_country <- runups |>
+  count(country, sort = TRUE) |>
+  mutate(name = country_name(country), share = 100 * n / sum(n))
+```
+
+**Most tsunamis stay near home; the few that cross an ocean are earthquakes of the Pacific.** Of the `r number(nrow(reach))` tsunamis with a measured distance, `r percent(100 * mean(reach$far >= 1000))` were measured at least 1,000 km from their source, and `r number(n_far)` (`r percent(100 * n_far / nrow(reach))`) at least `r number(far_km)` km away. `r percent(far_pacific)` of those `r number(n_far)` began in a region of the Pacific and `r percent(far_earthquake)` were earthquakes, with a median magnitude of `r one(far_magnitude)`. The waves that travelled farthest were those of the earthquake of `r farthest$year`, measured at `r place_name(farthest$locationName)` in `r country_name(farthest$country)`, `r number(farthest$distFromSource)` km from the source.
+
+```{r far_chart, fig.height = 4.6}
+far_top <- head(far_by_country, 10)
+far_top <- far_top[order(far_top$n), ]
+far_top$name <- factor(far_top$name, levels = far_top$name)
+plot_ly(
+  far_top,
+  x = ~n,
+  y = ~name,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(far_top$country == "USA", red, gray)),
+  text = ~n,
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x} tsunamis<extra></extra>",
+  showlegend = FALSE
+) |>
+  chart(
+    paste0("Tsunamis that struck from ", number(far_km), " km or more"),
+    "NOAA NCEI tsunami database (runups); top 10.",
+    x_axis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE, range = c(0, 1.12 * max(far_top$n))),
+    y_axis = list(automargin = TRUE),
+    margin = list(l = 10, t = 70, b = 50, r = 10),
+    note_y = -0.05
+  )
+```
+
+**The United States, mostly Hawaii, is struck from afar the most.** `r number(far_by_country$n[far_by_country$country == "USA"])` tsunamis reached the United States from `r number(far_km)` km or more, and `r number(hawaii_far)` of them reached Hawaii. It lies in the middle of the Pacific, so the waves of earthquakes all round the ocean can arrive there. Then come `r and_list(paste0(far_by_country$name[2:4], " (", far_by_country$n[2:4], ")"))`.
+
+**The number of places where waves were measured says as much about the measuring as about the waves.** The runups table has `r number(runups_by_country$n[1])` places in `r country_name(runups_by_country$country[1])` (`r percent(runups_by_country$share[1])` of all), `r number(runups_by_country$n[2])` in `r with_the(country_name(runups_by_country$country[2]))` and `r number(runups_by_country$n[3])` in `r with_the(country_name(runups_by_country$country[3]))`. A country with few places may have few measurements rather than few waves.
+
+---
+
+## 3. How big are they, and how often does one kill?
+
+```{r size_numbers}
+with_height <- events |> filter(!is.na(maxWaterHeight))
+n_height <- nrow(with_height)
+height_breaks <- c(0, 1, 3, 10, 30, Inf)
+height_names <- c("Under 1 m", "1 to 3 m", "3 to 10 m", "10 to 30 m", "30 m or more")
+with_height$class <- cut(with_height$maxWaterHeight, height_breaks, right = FALSE, labels = height_names)
+height_counts <- as.integer(table(with_height$class))
+height_share <- function(i) 100 * height_counts[i] / n_height
+tall <- with_height |> filter(maxWaterHeight >= 30)
+tallest <- with_height |> slice_max(maxWaterHeight, n = 1, with_ties = FALSE)
+tall_by_cause <- table(tall$cause)
+tall_slide_codes <- sum(tall$causeCode %in% c(3, 5, 7, 8))
+tall_lake <- sum(!tall$oceanicTsunami)
+tall_since_2000 <- sum(tall$year >= 2000)
+n_far_slide <- sum(far_info$cause == "Landslide")
+cause_name_of <- function(code) c("3" = "an earthquake and a landslide", "8" = "a landslide")[as.character(code)]
+n_deadly <- sum(events$deadly, na.rm = TRUE)
+n_counted <- sum(!is.na(events$deaths))
+n_code_only <- sum(is.na(events$deaths) & events$deathsAmountOrder >= 1, na.rm = TRUE)
+n_1000 <- sum(events$deathsAmountOrder == 4, na.rm = TRUE)
+n_100 <- sum(events$deathsAmountOrder >= 3, na.rm = TRUE)
+```
+
+**More than half of the tsunamis are under a metre, and a few are over 30.** Of the `r number(n_height)` tsunamis with a measured height of water, `r percent(height_share(1))` are under 1 m, `r percent(height_share(2))` 1 to 3 m, `r percent(height_share(3))` 3 to 10 m, `r percent(height_share(4))` 10 to 30 m and `r percent(height_share(5))` (`r height_counts[5]`) 30 m or more. The height is the highest water of the event above the normal sea level: for a tide gauge it is half the height from trough to crest, and for a survey the highest point reached on land (NOAA).
+
+```{r size_chart, fig.height = 4}
+plot_ly(
+  x = factor(height_names, levels = height_names),
+  y = height_counts,
+  type = "bar",
+  marker = list(color = blues),
+  text = height_counts,
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{x}: %{y} tsunamis<extra></extra>",
+  showlegend = FALSE
+) |>
+  chart(
+    "Highest water of each tsunami",
+    paste0("NOAA NCEI Global Historical Tsunami Database; the ", number(n_height), " tsunamis with a measured height."),
+    y_title = "Tsunamis",
+    y_axis = list(range = c(0, 1.15 * max(height_counts))),
+    margin = list(t = 60, b = 80, r = 10),
+    note_y = -0.2
+  )
+```
+
+**The tallest waves are not those of the great earthquakes.** Of the `r nrow(tall)` tsunamis of 30 m or more, `r tall_by_cause[["Landslide"]]` were caused by a landslide alone, `r tall_by_cause[["Volcano"]]` by a volcano and `r tall_by_cause[["Earthquake"]]` by an earthquake; `r tall_slide_codes` involved a landslide, `r tall_lake` of them in a lake, a reservoir or a river, and `r tall_since_2000` have happened since 2000. Of the `r cause_n("Landslide")` tsunamis caused by a landslide alone, `r n_far_slide` were measured `r number(far_km)` km or more away (section 2). The tallest of all was in `r place_name(tallest$locationName)` in `r tallest$year`, `r one(tallest$maxWaterHeight)` m, from `r cause_name_of(tallest$causeCode)`, which killed `r number(tallest$deaths)` people.
+
+**Most tsunamis kill nobody on record, but a few kill thousands.** `r number(n_deadly)` of the `r number(n_kept)` tsunamis (`r percent(100 * n_deadly / n_kept)`) have at least one death recorded: `r one(n_deadly / n_full)` a year. NOAA records a number of deaths for `r number(n_counted)` of them, and for `r n_code_only` only a class (for example "few, 1 to 50"). `r n_100` tsunamis killed more than 100 people and `r n_1000` more than 1,000, one every `r one(n_full / n_1000)` years.
+
+---
+
+## 4. Which were the deadliest?
+
+```{r deadly_numbers}
+dead <- events |>
+  filter(!is.na(deaths)) |>
+  arrange(desc(deaths))
+total_dead <- sum(dead$deaths)
+top10 <- head(dead, 10)
+top2_share <- 100 * sum(dead$deaths[1:2]) / total_dead
+by_country_dead <- dead |>
+  group_by(country) |>
+  summarise(deaths = sum(deaths), events = n()) |>
+  arrange(desc(deaths)) |>
+  mutate(name = country_name(country), share = 100 * deaths / total_dead)
+cause_phrase <- function(code) {
+  c("1" = "Earthquake", "2" = "Questionable earthquake", "3" = "Earthquake and landslide", "6" = "Volcano", "8" = "Landslide")[as.character(code)]
+}
+top10_lake <- top10 |> filter(!oceanicTsunami)
+```
+
+**Two tsunamis caused `r percent(top2_share)` of the deaths on record.** From `r first_year` to `r last_year`, `r number(total_dead)` deaths are recorded, in `r number(nrow(dead))` tsunamis with a number of deaths. The earthquake off Sumatra on 26 December 2004 killed `r number(dead$deaths[1])` and the one off Honshu, Japan, in 2011, `r number(dead$deaths[2])`. Indonesia has `r percent(by_country_dead$share[by_country_dead$country == "INDONESIA"])` of all the recorded deaths, Japan `r percent(by_country_dead$share[by_country_dead$country == "JAPAN"])`.
+
+```{r deadly_chart, fig.height = 4.8}
+dc <- head(by_country_dead, 8)
+dc <- dc[order(dc$deaths), ]
+dc$name <- factor(dc$name, levels = dc$name)
+plot_ly(
+  dc,
+  x = ~deaths,
+  y = ~name,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(dc$country == "INDONESIA", red, gray)),
+  text = ~ number(deaths),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:,.0f} deaths in %{customdata} tsunamis<extra></extra>",
+  customdata = ~events,
+  showlegend = FALSE
+) |>
+  chart(
+    paste0("Recorded tsunami deaths by country, top 8"),
+    "NOAA NCEI tsunami database; country of the source.",
+    x_axis = list(showgrid = FALSE, showticklabels = FALSE, zeroline = FALSE, range = c(0, 1.45 * max(dc$deaths))),
+    y_axis = list(automargin = TRUE),
+    margin = list(l = 10, t = 70, b = 50, r = 10),
+    note_y = -0.05
+  )
+```
+
+The ten deadliest, with the highest water that each reached:
+
+```{r deadly_table}
+knitr::kable(
+  data.frame(
+    year = top10$year,
+    place = paste0(place_name(top10$locationName), ", ", country_name(top10$country)),
+    cause = cause_phrase(top10$causeCode),
+    deaths = number(top10$deaths),
+    height = ifelse(is.na(top10$maxWaterHeight), "", one(top10$maxWaterHeight))
+  ),
+  col.names = c("Year", "Place", "Cause", "Deaths", "Highest water (m)"),
+  align = "rllrr"
+)
+```
+
+`r if (nrow(top10_lake) > 0) paste0("The tsunami of ", top10_lake$year[1], " at ", place_name(top10_lake$locationName[1]), " was in a reservoir, behind a dam, and not in the sea.") else ""` These figures are a floor: `r number(nrow(events) - n_counted)` tsunamis have no number of deaths in the database, and the database does not say whether they had none or whether the number is unknown.
+
+---
+
+## 5. Are there more of them than there used to be?
+
+```{r change_numbers}
+yearly <- events |>
+  filter(year < last_year) |>
+  count(year) |>
+  right_join(data.frame(year = full_years), by = "year") |>
+  mutate(n = coalesce(n, 0L))
+big <- events |> filter(causeCode %in% 1:3, eqMagnitude >= 7.5, year < last_year)
+yearly_big <- big |>
+  count(year) |>
+  right_join(data.frame(year = full_years), by = "year") |>
+  mutate(n = coalesce(n, 0L))
+span <- 25
+early <- first_year:(first_year + span - 1)
+late <- (last_year - span):(last_year - 1)
+mean_years <- function(x, years) mean(x$n[x$year %in% years])
+decade_of <- function(x) 10 * (x %/% 10)
+by_decade <- events |>
+  mutate(decade = decade_of(year)) |>
+  count(decade, name = "all") |>
+  left_join(
+    events |> filter(causeCode %in% 1:3, eqMagnitude >= 7.5) |> mutate(decade = decade_of(year)) |> count(decade, name = "big"),
+    by = "decade"
+  )
+by_decade$big[is.na(by_decade$big)] <- 0
+by_decade$label <- ifelse(by_decade$decade == decade_of(last_year), paste0(by_decade$decade, "–", substr(last_year, 3, 4)), paste0(by_decade$decade, "s"))
+# how well the tsunamis are measured, by half century
+half <- cut(events$year, c(1900, 1950, 2000, Inf), right = FALSE, labels = c("1900–1949", "1950–1999", paste0("2000–", last_year)))
+measured <- tapply(!is.na(events$maxWaterHeight), half, mean) * 100
+```
+
+**More tsunamis are recorded than a century ago, but that does not show that more happen.** From `r first_year` to `r first_year + span - 1` the database has `r one(mean_years(yearly, early))` tsunamis a year; from `r last_year - span` to `r last_year - 1`, `r one(mean_years(yearly, late))`. A rank test over the `r n_full` full years puts the chance of a pattern this strong without a rise at `r chance(yearly$n, yearly$year)` in 100. The same holds for the tsunamis of the great earthquakes alone (magnitude 7.5 or more, `r one(mean_years(yearly_big, early))` a year at first and `r one(mean_years(yearly_big, late))` lately; the chance is `r chance(yearly_big$n, yearly_big$year)` in 100). But the records are not equally complete: a measured height is given for `r percent(measured[1])` of the tsunamis of `r names(measured)[1]`, `r percent(measured[2])` of `r names(measured)[2]` and `r percent(measured[3])` of `r names(measured)[3]`. Later tsunamis are better documented, so part of the rise may be better recording. The data cannot say how much of it is real.
+
+```{r change_chart, fig.height = 4.6}
+plot_ly(by_decade, x = ~label) |>
+  add_bars(y = ~all, name = "All tsunamis", marker = list(color = gray), hovertemplate = "%{x}: %{y} tsunamis<extra></extra>") |>
+  add_bars(
+    y = ~big,
+    name = "Large earthquakes (magnitude 7.5+)",
+    marker = list(color = red),
+    hovertemplate = "%{x}: %{y} tsunamis<extra></extra>"
+  ) |>
+  chart(
+    "Tsunamis in each decade",
+    paste0("NOAA NCEI Global Historical Tsunami Database. The ", by_decade$label[nrow(by_decade)], " is not over."),
+    y_title = "Tsunamis",
+    legend = legend_top,
+    barmode = "group",
+    margin = list(t = 90, b = 90),
+    note_y = -0.14
+  )
+```
+
+---
+
+## So, what does it mean?
+
+1. **Tsunamis follow the earthquakes, and most of them are in the Pacific.** `r percent(ocean_in("Pacific Ocean"))` of the tsunamis with a region started in the Pacific; `r percent(cause_n("Earthquake", "share"))` of all of them were caused by an earthquake.
+2. **A few cross an ocean.** `r number(n_far)` tsunamis, `r percent(100 * n_far / nrow(reach))` of those measured, struck `r number(far_km)` km or more from their source, and Hawaii received `r number(hawaii_far)` of them.
+3. **The tallest waves come from landslides, the deadliest from earthquakes.** `r tall_by_cause[["Landslide"]]` of the `r nrow(tall)` tsunamis of 30 m or more were landslides alone, and the highest water was `r one(tallest$maxWaterHeight)` m.
+4. **Deaths are concentrated in a few events.** Two tsunamis, off Sumatra in 2004 and off Japan in 2011, account for `r percent(top2_share)` of the deaths on record.
+5. **More are recorded now, and the data cannot say whether more happen.** `r one(mean_years(yearly, early))` a year at first and `r one(mean_years(yearly, late))` lately, while the share with a measured height went from `r percent(measured[1])` to `r percent(measured[3])`.
+
+**What this does not show.** The database lists the tsunamis that were reported, not all the waves of the sea, and it does not say how likely a tsunami is in any one place. The map shows the sources, not the coasts that are in danger. Doubtful reports are left out, and so is everything before `r first_year`, though the database goes back to 2000 BC. Deaths are a floor, and the heights mix the tide gauge, the eyewitness and the survey. The numbers of places for each country depend on how well each country measures its tsunamis.
+
+For the earthquakes behind most tsunamis, see [Earthquakes](ILLUSTRATION_WORLD_EARTHQUAKES.html); for eruptions, [Volcanoes](ILLUSTRATION_WORLD_VOLCANOES.html); for all the hazards together, [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html).
+
+---
+
+## Sources
+
+- NOAA National Centers for Environmental Information, [NCEI/WDS Global Historical Tsunami Database](https://www.ngdc.noaa.gov/hazard/tsu_db.shtml), doi:[10.7289/V5PN93H7](https://doi.org/10.7289/V5PN93H7): the events and the runups, from the [hazard-service interface](https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/tsunamis/events), without a key. Access is unrestricted; NOAA gives no warranty for the data (the use constraints of the [dataset record](https://data.noaa.gov/metaview/page?xml=NOAA/NESDIS/NGDC/MGG/Hazards/iso/xml/G02151.xml&view=getDataView)).
+- NOAA NCEI, [Introduction to Global Historical Tsunami Data](https://www.ngdc.noaa.gov/hazard/tsunami-db-intro.html): the definition of a runup and the notes on the data.
+- NOAA NCEI, [Hazard Tsunami Search](https://www.ngdc.noaa.gov/hazel/view/hazards/tsunami/event-search) (HazEL): the help pages with the codes of validity, cause, region, deaths and kind of measurement.
+
+---
+
+*Rendered with R `r getRversion()` · curl · dplyr · ggplot2 · plotly · jsonlite*

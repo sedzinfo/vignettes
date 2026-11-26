@@ -1,0 +1,799 @@
+---
+title: "Where Tornadoes Strike: The United States, Canada and What Cannot Be Compared"
+description: "Where tornadoes happen: the United States state by state since 1950, how Canada's count compares, when they strike, how strong and how deadly they are, the worst events, and whether there are more of them."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+A tornado is a narrow, violently rotating column of air that reaches from a storm cloud to the ground. People think of the American Plains, and the United States does report more tornadoes than any other country we can count. But there is no single open database of the world's tornadoes, so this story does what the data allow: it counts the United States closely, sets Canada beside it, and says plainly what cannot be compared. It asks five questions:
+
+1. **Where do tornadoes happen?**
+2. **When do they strike?**
+3. **How strong and how deadly are they?**
+4. **Which were the worst?**
+5. **Are there more of them than there used to be?**
+
+This is one of a series on natural disasters: see the [overview](ILLUSTRATION_NATURAL_DISASTERS.html) and [Floods](ILLUSTRATION_WORLD_FLOODS.html).
+
+The data come from two places, downloaded when the page is rendered:
+
+- **The United States**: the tornado database of the National Oceanic and Atmospheric Administration's **Storm Prediction Center** (SPC), one row for each tornado since 1950, with its date and time, the state, the start and end points, the length and width of its path, the rating, and the people injured and killed ([SPC severe weather database](https://www.spc.noaa.gov/wcm/#data)). It is made of the reports that the National Weather Service's offices send in ([format description](https://www.spc.noaa.gov/wcm/data/SPC_severe_database_description.pdf)). The file used here is the one with single tracks: a tornado that crosses a state line is one row, in the state where it touched down.
+- **Canada**: the event summaries of the **Northern Tornadoes Project**, founded at Western University in 2017, which investigates tornadoes by ground, drone, aerial and satellite surveys ([Northern Tornadoes Project](https://www.uwo.ca/ntp/)).
+
+**The rating of a tornado** is not a measurement of its wind. Since February 2007 the National Weather Service rates a tornado on the **Enhanced Fujita scale**, from EF0 to EF5, from the damage that it leaves: an EF0 is estimated at 65 to 85 miles per hour (the gust of three seconds), an EF1 at 86 to 110, an EF2 at 111 to 135, an EF3 at 136 to 165, an EF4 at 166 to 200 and an EF5 at more than 200 ([National Weather Service](https://www.weather.gov/oun/efscale)). Before 2007 the original **Fujita scale** (F0 to F5) was used, in the same way. This page writes EF0 to EF5 for both. A tornado is rated by what it destroys, so one that crosses empty land can get a low rating whatever its wind.
+
+**Europe is missing, on purpose.** The European Severe Weather Database, kept by the European Severe Storms Laboratory, lets a guest browse only recent events; the full data need a request for restricted access ([ESWD](https://eswd.eu/)). A study of its reports from 1950 to 2015 finds that tornadoes do occur in Europe, with injuries, deaths and damage, "although their reported frequencies and intensities are lower compared with the United States" ([Antonescu et al. 2017](https://doi.org/10.1175/bams-d-16-0171.1)). That is all this page can say about Europe from what it has read.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "ggplot2", "plotly", "jsonlite"))
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+
+## The data
+
+```{r download}
+# the SPC file of single tornado tracks since 1950, named after the last year it holds: try the
+# latest years first
+this_year <- as.integer(format(Sys.Date(), "%Y"))
+tor <- NULL
+for (y in this_year:2020) {
+  tor <- tryCatch(
+    read.csv(paste0("https://www.spc.noaa.gov/wcm/data/1950-", y, "_actual_tornadoes.csv")),
+    error = function(e) NULL
+  )
+  if (!is.null(tor)) break
+}
+# the Northern Tornadoes Project's event summaries (Canada), a thousand rows at a time
+ntp_url <- paste0(
+  "https://services.arcgis.com/rGKxabTU9mcXMw7k/arcgis/rest/services/",
+  "NTP_Event_Summaries_stakeholder/FeatureServer/0/query"
+)
+ntp <- do.call(rbind, lapply(seq(0, 9000, by = 1000), function(offset) {
+  r <- jsonlite::fromJSON(paste0(
+    ntp_url,
+    "?where=1%3D1&outFields=Year,event_type,province&returnGeometry=false&resultOffset=",
+    offset,
+    "&resultRecordCount=1000&f=json"
+  ))
+  if (length(r$features) == 0) NULL else r$features$attributes
+}))
+```
+
+```{r groups}
+first_year <- min(tor$yr)
+last_year <- max(tor$yr)
+first_ten <- first_year:(first_year + 9)
+last_ten <- (last_year - 9):last_year
+# the rating: -9 means that the tornado has no rating
+ratings <- c("EF0", "EF1", "EF2", "EF3", "EF4", "EF5")
+tor$rating <- factor(ifelse(tor$mag < 0, "Unrated", ratings[pmax(tor$mag, 0) + 1]), levels = c("Unrated", ratings))
+n_unrated <- sum(tor$mag < 0)
+unrated_modern <- tor[tor$mag < 0 & tor$yr >= 2007, ]
+estimated <- sum(tor$fc == 1, na.rm = TRUE)
+
+state_name <- function(s) ifelse(s %in% state.abb, state.name[match(s, state.abb)], s)
+# the states: 50 states, with their area (the R datasets) and the census division they are in
+areas <- data.frame(
+  st = state.abb,
+  state = state.name,
+  km2 = state.area * 2.589988,
+  division = as.character(state.division)
+)
+tor_states <- tor[tor$st %in% areas$st, ]
+
+# the time of day: the SPC puts all times, but a few, on central standard time (3 in the column tz);
+# the sun's time at the place is the clock in Greenwich (central standard time plus six hours) plus one
+# hour for every 15 degrees of longitude
+hms <- do.call(rbind, strsplit(tor$time, ":"))
+tor$clock <- as.numeric(hms[, 1]) + as.numeric(hms[, 2]) / 60
+tor$sun_hour <- floor((tor$clock + 6 + tor$slon / 15) %% 24)
+timed <- tor[tor$tz == 3 & tor$slon != 0, ]
+n_other_clock <- sum(tor$tz != 3)
+```
+
+```{r chart_style}
+red <- "#d62728"
+gray <- "#bdbdbd"
+dark_gray <- "#6b6b6b" # also the colour of the notes
+blue <- "#2171b5"
+# one hue, from light to dark, for amounts: the maps and the calendar
+blues <- c("#eff3ff", "#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594")
+# one hue for the ratings, from EF0 to EF5; the unrated are grey
+rating_colors <- c(Unrated = "#d9d9d9", EF0 = "#c6dbef", EF1 = "#9ecae1", EF2 = "#6baed6", EF3 = "#4292c6", EF4 = "#2171b5", EF5 = "#084594")
+
+# the source of a plotly chart, as a note under it, and the common layout
+chart <- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note <- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) |>
+    config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the look of the ggplot charts
+theme_page <- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      plot.title = element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+      plot.caption.position = "plot",
+      legend.position = "top",
+      legend.justification = "left"
+    )
+}
+
+# numbers in the text
+number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
+# a change in per cent, with its sign (the bold font of the charts has no minus sign: a dash there)
+change_text <- function(x, minus = "−") paste0(ifelse(x >= 0, "+", minus), round(abs(x)), "%")
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
+# without a trend
+chance <- function(x, years) {
+  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p < 0.01) "less than 1" else as.character(round(100 * p))
+}
+# a date as "27 April 2011"
+long_date <- function(x) format(as.Date(x), "%e %B %Y") |> trimws()
+```
+
+```{r traps}
+# the unrated tornadoes in the years of the Enhanced Fujita scale, and the tornadoes that the SPC rated
+# afterwards from the damage (fc = 1, from 1953 to 1982)
+n_all <- nrow(tor)
+unrated_years <- tor |>
+  filter(yr >= 2007) |>
+  group_by(yr) |>
+  summarise(share = 100 * mean(mag < 0))
+first_unrated <- min(tor$yr[tor$mag < 0 & tor$yr >= 2007])
+rated_early <- tor[tor$fc == 1, ]
+```
+
+**Some tornadoes have no rating.** `r number(n_unrated)` of the `r number(n_all)` tornadoes (`r percent(100 * n_unrated / n_all, 1)`) are coded -9, "unknown". For 1953 to 1982 the SPC has filled in an estimated rating, from the property loss and the length of the path, for `r number(nrow(rated_early))` tornadoes that had none; the file marks them. The `r number(sum(tor$mag < 0 & tor$yr >= 2007))` that remain unrated come from `r first_unrated` on, and from 2019 on they are `r percent(min(unrated_years$share[unrated_years$yr >= 2019]))` to `r percent(max(unrated_years$share[unrated_years$yr >= 2019]))` of the tornadoes of a year. The documentation does not say why. This page counts them in the totals, shows them apart in the tables, and, where a trend depends on the ratings, tests what happens if all of them were strong (section 5).
+
+**Times are those of the sun.** The SPC converts the time of a tornado to central standard time, whatever the state (`r n_other_clock` tornadoes are on another clock). A tornado in Georgia at 17:00 central standard time struck at six in the evening by the clock there. To compare places, section 2 turns each time into **the sun's time at the place where the tornado began**, from its longitude: an hour for every 15 degrees.
+
+---
+
+## 1. Where do tornadoes happen?
+
+```{r where_numbers}
+last_eight <- (last_year - 7):last_year
+us_a_year <- tor |>
+  filter(yr %in% last_eight) |>
+  nrow() / length(last_eight)
+ntp$Year <- as.integer(ntp$Year)
+canada_tornadoes <- ntp[ntp$event_type %in% c("tornado_over_land", "tornado_over_water") & ntp$Year %in% last_eight, ]
+canada_a_year <- nrow(canada_tornadoes) / length(last_eight)
+canada_provinces <- sort(table(canada_tornadoes$province), decreasing = TRUE) / length(last_eight)
+canada_water <- 100 * mean(canada_tornadoes$event_type == "tornado_over_water")
+
+# the states since 2006, the years of the Enhanced Fujita scale
+since <- 2006
+years_since <- last_year - since + 1
+by_state <- tor_states |>
+  filter(yr >= since) |>
+  group_by(st) |>
+  summarise(all = n(), ef2 = sum(mag >= 2), ef3 = sum(mag >= 3)) |>
+  left_join(areas, by = "st") |>
+  mutate(
+    per_10k = all / years_since / km2 * 1e4,
+    ef2_per_10k = ef2 / years_since / km2 * 1e4,
+    a_year = all / years_since
+  )
+by_count <- by_state |> arrange(desc(all))
+by_density <- by_state |> arrange(desc(per_10k))
+by_strong <- by_state |> arrange(desc(ef2_per_10k))
+top_density <- by_density$state[1:3]
+# the state with the most tornadoes, and its density
+texas <- by_state[by_state$st == "TX", ]
+rank_texas_density <- which(by_density$st == "TX")
+n_states <- nrow(by_state)
+```
+
+**The United States reports about `r number(us_a_year)` tornadoes a year; Canada's project finds about `r number(canada_a_year)`, and for Europe there is no open count.** From `r min(last_eight)` to `r max(last_eight)` the United States had `r number(us_a_year)` a year on average and Canada `r number(canada_a_year)` (`r percent(canada_water)` of them over water, which the Canadian figures count). The two numbers are **not** a fair comparison. They come from different ways of finding tornadoes, and a tornado that nobody reports or surveys is not counted anywhere.
+
+```{r compare_table}
+knitr::kable(
+  data.frame(
+    place = c("United States", "Canada", "Europe"),
+    a_year = c(number(us_a_year), number(canada_a_year), "no open count"),
+    source = c(
+      "SPC database: reports sent in by National Weather Service offices",
+      "Northern Tornadoes Project: surveys on the ground, by drone, from the air and from satellites",
+      "European Severe Weather Database: browsing is limited to recent events; the study of Antonescu et al. finds fewer reports than in the United States"
+    )
+  ),
+  col.names = c("", paste0("Tornadoes a year, ", min(last_eight), "–", max(last_eight)), "Where it comes from"),
+  align = "lrl"
+)
+```
+
+**In the United States, `r by_count$state[1]` has the most tornadoes, but the most for their size are in `r top_density[1]`.** `r by_count$state[1]` had the most tornadoes from `r since` to `r last_year`, `r number(by_count$a_year[1])` a year, but it is large. Per area, `r and_list(top_density)` come first, with `r two(by_density$per_10k[1])`, `r two(by_density$per_10k[2])` and `r two(by_density$per_10k[3])` tornadoes a year for every 10,000 square kilometres; `r texas$state` is only `r rank_texas_density`th of the `r n_states` states, with `r two(texas$per_10k)`. For the strong tornadoes (EF2 and above) the order is `r and_list(by_strong$state[1:3])`: `r two(by_strong$ef2_per_10k[1])`, `r two(by_strong$ef2_per_10k[2])` and `r two(by_strong$ef2_per_10k[3])`. Hover over a state to see its numbers.
+
+```{r map, fig.height = 5.2}
+classes <- c(0, 0.1, 0.5, 1, 2, 3, 4, Inf)
+class_names <- c("Under 0.1", "0.1–0.5", "0.5–1", "1–2", "2–3", "3–4", "4 or more")
+by_state$class <- as.integer(cut(by_state$per_10k, classes, right = FALSE))
+steps <- do.call(c, lapply(seq_along(blues), function(i) {
+  list(list((i - 1) / 7, blues[i]), list(i / 7, blues[i]))
+}))
+plot_ly(
+  by_state,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~st,
+  z = ~class,
+  zmin = 0.5,
+  zmax = 7.5,
+  colorscale = steps,
+  marker = list(line = list(color = "white", width = 0.6)),
+  text = ~ paste0(
+    state,
+    ": ",
+    two(per_10k),
+    " a year per 10,000 km²<br>",
+    one(a_year),
+    " tornadoes a year, ",
+    one(ef2 / years_since),
+    " of them EF2 or above"
+  ),
+  hoverinfo = "text",
+  colorbar = list(
+    title = list(text = "Tornadoes<br>a year per<br>10,000 km²"),
+    tickvals = 1:7,
+    ticktext = class_names,
+    len = 0.8,
+    thickness = 14
+  )
+) |>
+  chart(
+    paste0("Tornadoes a year per 10,000 km², ", since, "–", last_year),
+    "NOAA Storm Prediction Center; areas: R datasets (state.area). 50 states.",
+    geo = list(scope = "usa", projection = list(type = "albers usa"), showlakes = FALSE),
+    margin = list(t = 50, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )
+```
+
+The strongest tornadoes show where the damage is. The map shows where the most violent ones began, every EF3, EF4 and EF5 tornado from `r first_year` to `r last_year`:
+
+```{r strong_map, fig.height = 5.2}
+strong <- tor[tor$mag >= 3 & tor$slon != 0 & tor$slat != 0, ]
+strong_dots <- function(p, x, color, name) {
+  add_trace(
+    p,
+    data = x,
+    type = "scattergeo",
+    mode = "markers",
+    lon = ~ round(slon, 2),
+    lat = ~ round(slat, 2),
+    name = name,
+    marker = list(color = color, size = 4, opacity = 0.55),
+    hoverinfo = "skip"
+  )
+}
+plot_ly() |>
+  strong_dots(strong[strong$mag == 3, ], blue, "EF3") |>
+  strong_dots(strong[strong$mag >= 4, ], red, "EF4 and EF5") |>
+  chart(
+    paste0("Where EF3 or stronger tornadoes began, ", first_year, "–", last_year),
+    "NOAA Storm Prediction Center. A dot is the start of a tornado.",
+    geo = list(scope = "usa", projection = list(type = "albers usa"), showlakes = FALSE),
+    legend = c(legend_top, list(y = 1.0)),
+    margin = list(t = 70, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )
+```
+
+```{r strong_numbers}
+strong_states <- tor_states |>
+  filter(mag >= 3) |>
+  count(st) |>
+  arrange(desc(n))
+violent <- tor_states[tor_states$mag >= 4, ]
+division_of <- function(s) areas$division[match(s, areas$st)]
+violent_by_division <- sort(table(division_of(violent$st)), decreasing = TRUE)
+violent_share <- 100 * violent_by_division / sum(violent_by_division)
+divisions_names <- function(d) and_list(areas$state[areas$division == d])
+```
+
+Most of the violent ones, the EF4 and EF5, began in two census divisions: the `r names(violent_by_division)[1]` division (`r divisions_names(names(violent_by_division)[1])`) had `r percent(violent_share[1])` of them and the `r names(violent_by_division)[2]` division (`r divisions_names(names(violent_by_division)[2])`) `r percent(violent_share[2])`.
+
+---
+
+## 2. When do they strike?
+
+```{r when_numbers}
+month_share <- function(x) 100 * tabulate(x$mo, 12) / nrow(x)
+all_months <- month_share(tor)
+strong_months <- month_share(tor[tor$mag >= 3, ])
+peak_month <- which.max(all_months)
+three_months <- function(s) sapply(1:12, function(m) sum(s[(m - 1 + 0:2) %% 12 + 1]))
+best_three <- which.max(three_months(all_months))
+best_three_share <- max(three_months(all_months))
+winter_share <- sum(all_months[c(12, 1, 2)])
+strong_winter <- sum(strong_months[c(12, 1, 2)])
+hour_share <- 100 * tabulate(timed$sun_hour + 1, 24) / nrow(timed)
+peak_hour <- which.max(hour_share) - 1
+afternoon <- sum(hour_share[(15:19) + 1]) # 15:00 to 19:59
+night <- timed$sun_hour <= 5
+night_tornadoes <- 100 * mean(night)
+night_deaths <- 100 * sum(timed$fat[night]) / sum(timed$fat)
+night_strong <- 100 * mean(night[timed$mag >= 3]) # the share of the EF3 and above that began at night
+hour_label <- function(h) paste0(sprintf("%02d", h), ":00")
+```
+
+**May is the peak month, and each part of the country peaks at its own time.** `r percent(all_months[peak_month])` of all tornadoes since `r first_year` began in `r month.name[peak_month]`, and `r percent(best_three_share)` in the three months of `r month.name[best_three]` to `r month.name[(best_three + 1) %% 12 + 1]`. The strong ones (EF3 and above) are more spread out over the year than the weak ones: `r percent(strong_winter)` of them came in December, January and February, against `r percent(winter_share)` of all tornadoes.
+
+The calendar shows, for each census division, the share of its tornadoes that came in each month. The divisions are ordered from the one with the most tornadoes.
+
+```{r calendar, fig.height = 4.6}
+#| fig-alt: "Share of each census division's tornadoes in each month, as a calendar"
+by_division <- tor_states |>
+  mutate(division = division_of(st)) |>
+  group_by(division, mo) |>
+  summarise(n = n(), .groups = "drop_last") |>
+  mutate(share = 100 * n / sum(n)) |>
+  ungroup()
+division_order <- tor_states |>
+  mutate(division = division_of(st)) |>
+  count(division, sort = TRUE) |>
+  pull(division)
+by_division$class <- cut(
+  by_division$share,
+  c(-Inf, 2, 5, 10, 15, 20, Inf),
+  labels = c("Under 2%", "2–5%", "5–10%", "10–15%", "15–20%", "20% or more")
+)
+ggplot(by_division, aes(x = mo, y = factor(division, levels = rev(division_order)), fill = class)) +
+  geom_tile(colour = "white", linewidth = 0.4) +
+  scale_fill_manual(values = blues[2:7], drop = FALSE) +
+  scale_x_continuous(breaks = 1:12, labels = month.abb, expand = c(0, 0)) +
+  guides(fill = guide_legend(nrow = 1)) +
+  labs(
+    title = "When each part of the country has its tornadoes",
+    subtitle = paste0("Share of a division's tornadoes in each month, ", first_year, "–", last_year),
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    caption = "Data: NOAA Storm Prediction Center. Census divisions of the 50 states."
+  ) +
+  theme_page(12) +
+  theme(panel.grid = element_blank(), legend.text = element_text(size = rel(0.75)))
+```
+
+```{r calendar_numbers}
+division_peak <- by_division |>
+  group_by(division) |>
+  slice_max(share, n = 1, with_ties = FALSE)
+peak_of <- function(d) month.name[division_peak$mo[division_peak$division == d]]
+peak_share_of <- function(d) percent(division_peak$share[division_peak$division == d])
+south_east <- "East South Central"
+plains <- "West North Central"
+```
+
+In the `r south_east` division (`r divisions_names(south_east)`) the busiest month is `r peak_of(south_east)` (`r peak_share_of(south_east)` of its tornadoes); in the `r plains` division (`r divisions_names(plains)`) it is `r peak_of(plains)` (`r peak_share_of(plains)`). The chart shows the seasons of each division; it does not say why they differ.
+
+**Late afternoon and evening.** By the sun's time at the place where they began, the busiest hour of the day is `r hour_label(peak_hour)` to `r hour_label(peak_hour + 1)`, and `r percent(afternoon)` of all tornadoes began between 15:00 and 20:00.
+
+```{r hours, fig.height = 3.8}
+#| fig-alt: "Share of tornadoes that began in each hour of the day, by the sun's time"
+hours <- data.frame(hour = 0:23, share = hour_share)
+ggplot(hours, aes(x = hour, y = share, fill = hour == peak_hour)) +
+  geom_col(width = 0.85) +
+  scale_fill_manual(values = c(`TRUE` = red, `FALSE` = gray), guide = "none") +
+  scale_x_continuous(breaks = seq(0, 21, 3), labels = hour_label(seq(0, 21, 3)), expand = c(0.01, 0)) +
+  scale_y_continuous(labels = function(x) paste0(x, "%"), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "What time of day tornadoes begin",
+    subtitle = paste0("Share of tornadoes that began in each hour, by the sun's time, ", first_year, "–", last_year),
+    x = NULL,
+    y = NULL,
+    caption = "Data: NOAA Storm Prediction Center. Red: the busiest hour."
+  ) +
+  theme_page(13) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major.x = element_blank())
+```
+
+**Few begin at night, and they are somewhat deadlier.** Between midnight and 06:00 began `r percent(night_tornadoes)` of the tornadoes, and `r percent(night_deaths)` of the deaths were from them. Among the EF3 and stronger tornadoes, `r percent(night_strong)` began at night.
+
+---
+
+## 3. How strong and how deadly are they?
+
+```{r strength_numbers}
+by_rating <- tor |>
+  group_by(rating) |>
+  summarise(n = n(), deaths = sum(fat), injured = sum(inj)) |>
+  mutate(
+    share = 100 * n / sum(n),
+    death_share = 100 * deaths / sum(deaths),
+    per_thousand = 1000 * deaths / n
+  )
+of_rating <- function(r, column) by_rating[[column]][by_rating$rating == r]
+rated_n <- sum(by_rating$n[by_rating$rating != "Unrated"])
+weak_share <- 100 * sum(by_rating$n[by_rating$rating %in% c("EF0", "EF1")]) / rated_n
+violent_n <- sum(by_rating$n[by_rating$rating %in% c("EF4", "EF5")])
+violent_tor_share <- 100 * violent_n / sum(by_rating$n)
+violent_death_share <- sum(by_rating$death_share[by_rating$rating %in% c("EF4", "EF5")])
+total_deaths <- sum(tor$fat)
+total_injured <- sum(tor$inj)
+deaths_ef0 <- of_rating("EF0", "deaths")
+```
+
+**Most tornadoes are weak; most of the deaths come from the strongest.** Of the tornadoes that have a rating, `r percent(weak_share)` were EF0 or EF1. The `r number(violent_n)` EF4 and EF5 tornadoes were `r percent(violent_tor_share, 1)` of all of them, and `r percent(violent_death_share)` of the `r number(total_deaths)` people killed from `r first_year` to `r last_year` died in them. An EF5 killed on average `r number(of_rating("EF5", "per_thousand") / 1000)` people, an EF0 one in `r number(1000 / of_rating("EF0", "per_thousand"))` (the chart and the table count the unrated too).
+
+```{r strength_chart, fig.height = 4.4}
+bars <- by_rating
+bars$rating <- factor(bars$rating, levels = rev(levels(bars$rating)))
+colors <- rating_colors[as.character(bars$rating)]
+left <- plot_ly(
+  bars,
+  x = ~share,
+  y = ~rating,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = colors),
+  text = ~ percent(share, 1),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f}% of the tornadoes (%{customdata:,})<extra></extra>",
+  customdata = ~n,
+  showlegend = FALSE
+)
+right <- plot_ly(
+  bars,
+  x = ~death_share,
+  y = ~rating,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = colors),
+  text = ~ percent(death_share, 1),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f}% of the deaths (%{customdata:,})<extra></extra>",
+  customdata = ~deaths,
+  showlegend = FALSE
+)
+hidden_axis <- list(title = "", showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE)
+panel_title <- function(text, axis) {
+  list(
+    text = text,
+    xref = paste(axis, "domain"),
+    yref = "paper",
+    x = 0,
+    y = 1,
+    xanchor = "left",
+    yanchor = "bottom",
+    showarrow = FALSE,
+    font = list(size = 13)
+  )
+}
+subplot(left, right, shareY = TRUE, margin = 0.04, widths = c(0.5, 0.5)) |>
+  chart(
+    paste0("Tornadoes and deaths by rating, ", first_year, "–", last_year),
+    "NOAA Storm Prediction Center. Share of all tornadoes and of all deaths; the table has the numbers.",
+    x_axis = c(hidden_axis, list(range = c(0, 1.7 * max(bars$share)))),
+    xaxis2 = c(hidden_axis, list(range = c(0, 1.7 * max(bars$death_share)))),
+    annotations = list(
+      panel_title("Tornadoes", "x"),
+      panel_title("Deaths", "x2")
+    ),
+    margin = list(l = 70, t = 90, b = 50, r = 10),
+    note_y = -0.06
+  )
+```
+
+```{r strength_table}
+knitr::kable(
+  data.frame(
+    rating = as.character(by_rating$rating),
+    n = number(by_rating$n),
+    share = percent(by_rating$share, 1),
+    deaths = number(by_rating$deaths),
+    injured = number(by_rating$injured),
+    per = ifelse(by_rating$n > 0, one(by_rating$per_thousand), "")
+  ),
+  col.names = c("Rating", "Tornadoes", "Share", "Deaths", "Injured", "Deaths per 1,000 tornadoes"),
+  align = "lrrrrr"
+)
+```
+
+**A rating describes damage, not size.** The tornadoes with no rating killed `r number(of_rating("Unrated", "deaths"))` people. A violent tornado over open fields leaves little to damage and can be rated low, so the weak tornadoes are not all harmless and the rating cannot be the whole story of a tornado: the length and width of the path, and what lies on it, matter too.
+
+---
+
+## 4. Which were the worst?
+
+```{r worst_numbers}
+deadliest <- tor |>
+  arrange(desc(fat), desc(inj)) |>
+  head(8)
+by_year <- tor |>
+  group_by(yr) |>
+  summarise(n = n(), deaths = sum(fat), ef1 = sum(mag >= 1), ef2 = sum(mag >= 2), ef3 = sum(mag >= 3), unrated = sum(mag < 0)) |>
+  arrange(yr)
+worst_years <- by_year |> arrange(desc(deaths))
+by_day <- tor |>
+  group_by(date) |>
+  summarise(n = n(), ef3 = sum(mag >= 3), deaths = sum(fat)) |>
+  arrange(desc(n))
+top_days <- head(by_day, 5)
+day_of <- function(d) by_day[by_day$date == d, ]
+record_day <- by_day[1, ]
+deadliest_day <- by_day |> arrange(desc(deaths)) |> head(1)
+deadliest_rating <- deadliest$rating[1]
+n_100 <- sum(tor$fat >= 100)
+fat_50 <- tor[tor$fat >= 50, ]
+```
+
+**The deadliest tornado in the data killed `r number(deadliest$fat[1])` people, in `r state_name(deadliest$st[1])` on `r long_date(deadliest$date[1])`.** The table has the eight deadliest. The path length is in miles and the width in yards, as in the documentation. The data start in `r first_year`, so tornadoes before that are not in them.
+
+```{r deadliest_table}
+knitr::kable(
+  data.frame(
+    date = long_date(deadliest$date),
+    state = deadliest$st,
+    rating = as.character(deadliest$rating),
+    deaths = number(deadliest$fat),
+    injured = number(deadliest$inj),
+    len = one(deadliest$len),
+    wid = number(deadliest$wid)
+  ),
+  col.names = c("Date", "State where it began", "Rating", "Deaths", "Injured", "Path, miles", "Width, yards"),
+  align = "llrrrrr"
+)
+```
+
+`r number(nrow(fat_50))` tornadoes killed 50 people or more, `r number(n_100)` of them 100 or more. **A single day can bring the most tornadoes of all.** `r long_date(record_day$date)` had `r number(record_day$n)` tornadoes, `r number(record_day$ef3)` of them EF3 or stronger, and `r number(record_day$deaths)` deaths. The five days with the most tornadoes:
+
+```{r top_days_table}
+knitr::kable(
+  data.frame(
+    date = long_date(top_days$date),
+    n = number(top_days$n),
+    ef3 = number(top_days$ef3),
+    deaths = number(top_days$deaths)
+  ),
+  col.names = c("Date", "Tornadoes", "EF3 or above", "Deaths"),
+  align = "lrrr"
+)
+```
+
+```{r deaths_chart, fig.height = 4}
+#| fig-alt: "People killed by tornadoes in each year of the United States, with the worst years in red"
+worst_three <- worst_years$yr[1:3]
+ggplot(by_year, aes(x = yr, y = deaths, fill = yr %in% worst_three)) +
+  geom_col(width = 0.85) +
+  geom_text(
+    data = by_year[by_year$yr %in% worst_three, ],
+    aes(label = paste0(yr, ": ", number(deaths))),
+    vjust = -0.4,
+    size = 3.6,
+    colour = "grey20"
+  ) +
+  scale_fill_manual(values = c(`TRUE` = red, `FALSE` = gray), guide = "none") +
+  scale_x_continuous(breaks = seq(1950, 2020, 10)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.12))) +
+  labs(
+    title = "People killed by tornadoes each year",
+    subtitle = "United States, red: the three worst years",
+    x = NULL,
+    y = NULL,
+    caption = "Data: NOAA Storm Prediction Center"
+  ) +
+  theme_page(13) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major.x = element_blank())
+```
+
+**The worst years were `r and_list(worst_years$yr[1:3])`**, with `r and_list(number(worst_years$deaths[1:3]))` deaths. The data say how many died, not how many tornadoes struck places where people live: that is a question of where tornadoes land, and of warnings and shelter, which this page does not follow.
+
+---
+
+## 5. Are there more of them than there used to be?
+
+```{r trend_numbers}
+count_after <- function(x, years) mean(x[by_year$yr %in% years])
+trend_row <- function(name, x) {
+  data.frame(
+    name = name,
+    start = count_after(x, first_ten),
+    end = count_after(x, last_ten),
+    chance = chance(x, by_year$yr),
+    stringsAsFactors = FALSE
+  )
+}
+# the days of the year with at least one tornado of rating EF1 or above, and the days with ten or more
+ef1_days <- tor[tor$mag >= 1, ] |>
+  count(yr, date) |>
+  group_by(yr) |>
+  summarise(days = n(), big_days = sum(n >= 10))
+ef1_days <- left_join(data.frame(yr = by_year$yr), ef1_days, by = "yr")
+ef1_days[is.na(ef1_days)] <- 0
+changes <- rbind(
+  trend_row("All tornadoes", by_year$n),
+  trend_row("EF1 or above", by_year$ef1),
+  trend_row("EF2 or above", by_year$ef2),
+  trend_row("EF3 or above", by_year$ef3),
+  trend_row("People killed", by_year$deaths),
+  trend_row("Days with an EF1 or above", ef1_days$days),
+  trend_row("Days with ten or more EF1 or above", ef1_days$big_days)
+)
+changes$change <- 100 * (changes$end / changes$start - 1)
+of_change <- function(name, column) changes[[column]][changes$name == name]
+# what if every unrated tornado were EF1 or above?
+chance_if_strong <- chance(by_year$ef1 + by_year$unrated, by_year$yr)
+before_2007 <- by_year$yr < 2007
+chance_before <- chance(by_year$ef1[before_2007], by_year$yr[before_2007])
+chance_after <- chance(by_year$ef1[!before_2007], by_year$yr[!before_2007])
+ef2_peak <- by_year$yr[which.max(by_year$ef2)]
+ef0 <- by_year$n - by_year$ef1 - by_year$unrated
+ef0_start <- count_after(ef0, first_ten)
+ef0_end <- count_after(ef0, last_ten)
+```
+
+**More are reported, but the rise is mostly in the weak tornadoes.** In `r min(first_ten)`–`r max(first_ten)` the SPC database had `r number(of_change("All tornadoes", "start"))` tornadoes a year, in `r min(last_ten)`–`r max(last_ten)` `r number(of_change("All tornadoes", "end"))`: `r percent(of_change("All tornadoes", "change"))` more, and a rank test of all the years finds the rise (the chance of a pattern as strong as this one without a trend is `r of_change("All tornadoes", "chance")` in 100). Much of the rise is in the weakest tornadoes: EF0 tornadoes went from `r number(ef0_start)` a year to `r number(ef0_end)`. A study of the database found that the doubling of the count from the 1950s to the 2000s "is likely not related to meteorological causes alone", and that the count of F1 and stronger tornadoes was steadier than that of F2 and stronger ([Verbout et al. 2006](https://doi.org/10.1175/waf910.1)); another says that changes in how tornadoes are reported "have made it difficult" to read the trend, and leaves out the weakest ([Brooks et al. 2014](https://doi.org/10.1126/science.1257460)). Counting from EF1 up, the rise is smaller: `r number(of_change("EF1 or above", "start"))` a year at the start and `r number(of_change("EF1 or above", "end"))` at the end (`r change_text(of_change("EF1 or above", "change"))`), and the test does not clearly find a trend (`r of_change("EF1 or above", "chance")` in 100).
+
+The table compares the first and the last ten years. The last column is the chance, in 100, of a pattern as strong as that of all the years without a trend.
+
+```{r trend_table}
+knitr::kable(
+  data.frame(
+    name = changes$name,
+    start = number(changes$start),
+    end = number(changes$end),
+    change = change_text(changes$change),
+    chance = changes$chance
+  ),
+  col.names = c(
+    "",
+    paste0(min(first_ten), "–", max(first_ten)),
+    paste0(min(last_ten), "–", max(last_ten)),
+    "Change",
+    "By chance, in 100"
+  ),
+  align = "lrrrr"
+)
+```
+
+```{r trend_chart, fig.height = 6}
+#| fig-alt: "Tornadoes in each year of the United States since 1950, all and by rating, with the average of the first and of the last ten years"
+panels <- c("All tornadoes", "EF1 or above", "EF2 or above", "EF3 or above")
+long <- rbind(
+  data.frame(panel = panels[1], yr = by_year$yr, n = by_year$n),
+  data.frame(panel = panels[2], yr = by_year$yr, n = by_year$ef1),
+  data.frame(panel = panels[3], yr = by_year$yr, n = by_year$ef2),
+  data.frame(panel = panels[4], yr = by_year$yr, n = by_year$ef3)
+)
+long$panel <- factor(long$panel, levels = panels)
+ten_year <- changes[match(panels, changes$name), ]
+bands <- rbind(
+  data.frame(panel = factor(panels, levels = panels), x0 = min(first_ten) - 0.4, x1 = max(first_ten) + 0.4, y = ten_year$start, who = "first"),
+  data.frame(panel = factor(panels, levels = panels), x0 = min(last_ten) - 0.4, x1 = max(last_ten) + 0.4, y = ten_year$end, who = "last")
+)
+ggplot(long, aes(x = yr, y = n)) +
+  geom_line(colour = dark_gray, linewidth = 0.5) +
+  geom_point(colour = dark_gray, size = 0.9) +
+  geom_segment(
+    data = bands,
+    aes(x = x0, xend = x1, y = y, yend = y, colour = who),
+    linewidth = 1.2
+  ) +
+  scale_colour_manual(values = c(first = blue, last = red), guide = "none") +
+  facet_wrap(~panel, ncol = 2, scales = "free_y") +
+  scale_x_continuous(breaks = seq(1950, 2020, 20)) +
+  scale_y_continuous(limits = c(0, NA)) +
+  labs(
+    title = "More tornadoes, or only more found?",
+    subtitle = paste0(
+      "Tornadoes in each year. Blue: the average of ",
+      min(first_ten),
+      "–",
+      max(first_ten),
+      "; red: of ",
+      min(last_ten),
+      "–",
+      max(last_ten)
+    ),
+    x = NULL,
+    y = NULL,
+    caption = "Data: NOAA Storm Prediction Center. Unrated tornadoes are in the first panel only."
+  ) +
+  theme_page(13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", hjust = 0)
+  )
+```
+
+**The strongest tornadoes are fewer, but be careful with that.** The EF2 and stronger tornadoes fell from `r number(of_change("EF2 or above", "start"))` a year to `r number(of_change("EF2 or above", "end"))` (by chance `r of_change("EF2 or above", "chance")` in 100), the EF3 and stronger from `r number(of_change("EF3 or above", "start"))` to `r number(of_change("EF3 or above", "end"))` (`r of_change("EF3 or above", "chance")` in 100). Their peak year was `r ef2_peak`. But ratings are judgements of damage, they changed from one scale to the other in 2007, and from `r first_unrated` the unrated tornadoes grew in number, so this page does not conclude that the strong tornadoes have become rarer. The unrated tornadoes matter for the count of EF1 and above: if every one of them is counted in it, the chance of a pattern as strong as this one without a trend becomes `r chance_if_strong` in 100, against `r of_change("EF1 or above", "chance")`. For the years before 2007 alone it is `r chance_before` in 100, and for 2007 on `r chance_after` in 100. People killed fell from `r number(of_change("People killed", "start"))` a year to `r number(of_change("People killed", "end"))` (`r of_change("People killed", "chance")` in 100); these data do not say why.
+
+**What changed more is how the tornadoes come.** The days with at least one tornado of EF1 or above fell from `r one(of_change("Days with an EF1 or above", "start"))` a year to `r one(of_change("Days with an EF1 or above", "end"))`, while the days with ten or more of them rose from `r one(of_change("Days with ten or more EF1 or above", "start"))` to `r one(of_change("Days with ten or more EF1 or above", "end"))` (the chances of the two patterns, `r of_change("Days with an EF1 or above", "chance")` and `r of_change("Days with ten or more EF1 or above", "chance")` in 100). That is what a study of the database found, after setting aside the weakest tornadoes: the mean annual number "has remained relatively constant", but the variability has increased since the 1970s, with fewer days with tornadoes and more days with many ([Brooks et al. 2014](https://doi.org/10.1126/science.1257460)).
+
+---
+
+## So, what does it mean?
+
+1. **A few states have the most tornadoes for their size, and they are not the largest.** `r and_list(top_density)` had the most per area from `r since` to `r last_year`, and `r by_count$state[1]`, the state with the most tornadoes, only `r which(by_density$st == by_count$st[1])`th. Canada's project finds about `r number(canada_a_year)` a year, against `r number(us_a_year)` in the United States, but the two are not counted the same way.
+2. **They come in the afternoon and evening, mostly in spring.** `r percent(all_months[peak_month])` of them began in `r month.name[peak_month]`, and each part of the country has its own busiest month.
+3. **Most are weak and most deaths come from the strongest.** EF4 and EF5 tornadoes were `r percent(violent_tor_share, 1)` of the tornadoes and `r percent(violent_death_share)` of the deaths.
+4. **The worst years and days are far from the average.** `r record_day$date |> long_date()` had `r number(record_day$n)` tornadoes in one day, and `r worst_years$yr[1]` killed `r number(worst_years$deaths[1])` people.
+5. **More are counted, but that is not the same as more.** The tornadoes of EF2 and above did not rise; what has changed is that the tornadoes of EF1 and above come on fewer days and in bigger groups.
+
+**What this does not show.** There is no worldwide count: the data cover the United States and, in outline, Canada, and say nothing of the many countries where tornadoes are not systematically recorded, so this page cannot say that the United States has the most tornadoes in the world, only the most that are counted. Reports depend on who is there to see a tornado, and the ratings on what it destroyed. Averages by state hide the differences inside a state, and a rank test says whether a pattern is likely to be chance, not what causes it. And the counts say nothing of the people who live where tornadoes land.
+
+For floods, see [Floods](ILLUSTRATION_WORLD_FLOODS.html); for all the hazards together, the [overview](ILLUSTRATION_NATURAL_DISASTERS.html).
+
+---
+
+## Sources
+
+- NOAA National Weather Service Storm Prediction Center, [Severe weather database files (1950–`r last_year`)](https://www.spc.noaa.gov/wcm/#data), file *1950-`r last_year`_actual_tornadoes.csv*, and its [format description](https://www.spc.noaa.gov/wcm/data/SPC_severe_database_description.pdf). The information on National Weather Service web pages is in the public domain ([NWS disclaimer](https://www.weather.gov/disclaimer)).
+- National Weather Service, [The Enhanced Fujita Scale (EF Scale)](https://www.weather.gov/oun/efscale).
+- Northern Tornadoes Project, Western University: [Open Data](https://ntpdata-uwo.hub.arcgis.com/), the layer *NTP Event Summaries* (non-commercial use is permitted, per [the project's page](https://www.uwo.ca/ntp/)).
+- European Severe Storms Laboratory, [European Severe Weather Database](https://eswd.eu/) (not used: access beyond recent events is by request).
+- Antonescu, B., Schultz, D. M., Holzer, A. and Groenemeijer, P. (2017), [Tornadoes in Europe: An underestimated threat](https://doi.org/10.1175/bams-d-16-0171.1), *Bulletin of the American Meteorological Society* 98, 713–728.
+- Brooks, H. E., Carbin, G. W. and Marsh, P. T. (2014), [Increased variability of tornado occurrence in the United States](https://doi.org/10.1126/science.1257460), *Science* 346, 349–352.
+- Verbout, S. M., Brooks, H. E., Leslie, L. M. and Schultz, D. M. (2006), [Evolution of the U.S. tornado database: 1954–2003](https://doi.org/10.1175/waf910.1), *Weather and Forecasting* 21, 86–93.
+- R Core Team, the *datasets* package: `state.area`, `state.name`, `state.division`.
+
+---
+
+*Rendered with R `r getRversion()` · dplyr · ggplot2 · plotly · jsonlite*

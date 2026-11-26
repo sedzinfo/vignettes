@@ -1,0 +1,684 @@
+---
+title: "Where the Earth Erupts: Volcanoes of the World"
+description: "Where the world's volcanoes are, which ones erupt, how big the eruptions get, the deadliest eruptions on record, how many people live close to a volcano, and where Greece stands."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+Most people know a few volcanoes: Vesuvius, Etna, Krakatau, perhaps Santorini. They are a small part of the whole. More than a thousand volcanoes have erupted in the last 10,000 years, and some of them erupt again every year. This story asks five questions:
+
+1. **Where in the world are the volcanoes?**
+2. **Which volcanoes erupt, and how often?**
+3. **How big do eruptions get?**
+4. **Which were the deadliest eruptions?**
+5. **How many people live close to a volcano, and where does Greece stand?**
+
+[Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html) looks at earthquakes, [Waves That Cross Oceans](ILLUSTRATION_WORLD_TSUNAMIS.html) at tsunamis, and [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html) puts the hazards side by side.
+
+The data come from two sources, downloaded when the page is rendered:
+
+- **The Smithsonian Institution's Global Volcanism Program** (GVP), which keeps the *Volcanoes of the World* database, no key needed ([GVP](https://volcano.si.edu/)): the list of volcanoes that have erupted in the Holocene (the last 10,000 years or so), where they are and what kind they are; their eruptions, with the year they began and how explosive they were; and the number of people who live within 5, 10, 30 and 100 kilometres of each volcano.
+- **NOAA's National Centers for Environmental Information** (NCEI), whose *Significant Volcanic Eruptions Database* lists the eruptions that did the most harm, with the number of deaths where it is known ([NCEI volcanoes](https://www.ncei.noaa.gov/products/natural-hazards/tsunamis-earthquakes-volcanoes/volcanoes)).
+
+The map also draws the boundaries between the plates of the Earth's crust, from Peter Bird's model ([Bird 2003](https://doi.org/10.1029/2001GC000252)), in the version of the GitHub repository [fraxen/tectonicplates](https://github.com/fraxen/tectonicplates).
+
+**The Volcanic Explosivity Index (VEI)** measures how big an explosive eruption was, on a scale that starts at 0 for a gentle eruption and is open-ended, with 8 for the largest eruptions in history. It is mainly based on the volume of ash thrown out, and also on the height of the eruption cloud. Each step up is about ten times more ash, apart from the first ([USGS](https://www.usgs.gov/observatories/yvo/news/volcanic-explosivity-index-a-tool-comparing-sizes-explosive-volcanic); [Newhall and Self 1982](https://doi.org/10.1029/JC087iC02p01231)).
+
+**A volcano here is a volcano of the GVP's list.** A large volcanic field, with hundreds of small vents, counts as one volcano.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "ggplot2", "plotly", "jsonlite"))
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(jsonlite)
+```
+
+## The data
+
+```{r download}
+# the layers of the GVP's web service, as tables
+gvp <- function(layer) {
+  read.csv(
+    paste0(
+      "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0",
+      "&request=GetFeature&typeName=GVP-VOTW:", layer, "&outputFormat=csv"
+    ),
+    encoding = "UTF-8"
+  )
+}
+# the volcanoes of the Holocene: place, type, tectonic setting and last eruption
+volcanoes <- gvp("Smithsonian_VOTW_Holocene_Volcanoes")
+# the eruptions of the Holocene: one row for each eruption, with the year it began and its VEI
+eruptions <- gvp("Smithsonian_VOTW_Holocene_Eruptions")
+# the people who live within 5, 10, 30 and 100 km of each volcano
+people <- gvp("E3WebApp_HoloceneVolcanoes")
+
+# NOAA's significant eruptions: 200 to a page
+noaa_page <- function(page) {
+  fromJSON(paste0("https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/volcanoes?page=", page))
+}
+first_page <- noaa_page(1)
+significant <- bind_rows(c(
+  list(first_page$items),
+  lapply(seq_len(first_page$totalPages)[-1], function(page) noaa_page(page)$items)
+))
+
+# the boundaries of the plates (Bird 2003), as lines
+plates <- fromJSON(
+  "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json",
+  simplifyVector = FALSE
+)
+```
+
+```{r chart_style}
+red <- "#d62728"
+gray <- "#bdbdbd"
+dark_gray <- "#6b6b6b" # also the colour of the notes
+# one hue, from light to dark, for amounts
+oranges <- c("#feedde", "#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#8c2d04")
+# the colour of a volcano that has erupted in the time of the complete records (the dark orange of
+# the scale) and of the plate boundaries
+erupted_color <- "#d94801"
+plate_color <- "#6b6b6b"
+
+# the source of a plotly chart, as a note under it, and the common layout
+chart <- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note <- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) |>
+    config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the look of the ggplot charts
+theme_page <- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      plot.title = element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+      plot.caption.position = "plot",
+      legend.position = "top",
+      legend.justification = "left"
+    )
+}
+
+# numbers in the text
+number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
+# millions of people: one decimal below 10 million
+million <- function(x) ifelse(abs(x) >= 1e7, number(x / 1e6), one(x / 1e6))
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# country names that take "the" in a sentence
+with_the <- function(x) ifelse(x %in% c("United States", "United Kingdom"), paste("the", x), x)
+# the first letter of a sentence in capitals
+cap <- function(x) paste0(toupper(substr(x, 1, 1)), substring(x, 2))
+# a volcano name as people say it: "Ruiz, Nevado del" is Nevado del Ruiz
+flip <- function(x) sub("^(.*), (.*)$", "\\2 \\1", x)
+# a year, as in the text: years before the year 1 are BCE
+year_text <- function(y) ifelse(y < 0, paste(-y, "BCE"), as.character(y))
+# a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
+# without a trend
+chance <- function(x, years) {
+  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p < 0.01) "less than 1" else as.character(round(100 * p))
+}
+```
+
+```{r prepare}
+# the eruptions that are certain: the GVP also lists eruptions that are only possible
+confirmed <- eruptions[eruptions$Activity_Type == "Confirmed Eruption" & !is.na(eruptions$StartDateYear), ]
+n_uncertain <- sum(eruptions$Activity_Type != "Confirmed Eruption")
+# the country of each eruption: the country of its volcano
+confirmed$country <- volcanoes$Country[match(confirmed$Volcano_Number, volcanoes$Volcano_Number)]
+# the year of the data is not complete: its eruptions so far are left out of the rates
+current_year <- max(confirmed$StartDateYear)
+last_full_year <- current_year - 1
+so_far <- sum(confirmed$StartDateYear == current_year)
+# the records are complete from 1960 (explained below)
+complete_from <- 1960
+modern <- confirmed[confirmed$StartDateYear >= complete_from & confirmed$StartDateYear <= last_full_year, ]
+n_years <- last_full_year - complete_from + 1
+# NOAA's rows are events with a date of their own: one volcano can have several in a year
+same_year <- sum(duplicated(significant[, c("name", "year")]))
+```
+
+**The list of eruptions has `r number(nrow(eruptions))` rows, but not all of them are certain.** `r number(n_uncertain)` are marked by the GVP as uncertain, and they are left out: this page counts the `r number(nrow(confirmed))` confirmed eruptions with a year, over the whole Holocene. An eruption counts in the year it began, and one that goes on for years counts once.
+
+**The records of eruptions are far more complete in recent times, so the page counts eruptions only from `r complete_from`.** Newhall and Self, who invented the VEI, wrote that only the largest eruptions have a complete record back to the early 19th century, and that other important explosive events went unrecorded before about 1960 ([Newhall and Self 1982](https://doi.org/10.1029/JC087iC02p01231)). Section 2 shows the numbers. From `r complete_from` to `r last_full_year` the list has `r number(nrow(modern))` confirmed eruptions, `r one(nrow(modern) / n_years)` a year. For `r current_year` only `r so_far` eruptions are listed so far, the year is not over, and it is left out of every rate and every trend.
+
+**The deaths are not always known.** NOAA lists `r number(nrow(significant))` significant eruptions, from `r year_text(min(significant$year))` to `r year_text(max(significant$year))`, but only `r number(sum(!is.na(significant$deathsTotal) | !is.na(significant$deaths)))` have a number of deaths. An empty cell means that the number is not known, not that nobody died, so the deaths below are a minimum. NOAA's *total deaths* count the eruption and its secondary effects, whenever possible; where it has no total, this page takes the direct deaths. Each row of the database is an event with its own date, so the same volcano can appear more than once in a year (`r same_year` times here), and the deadliest *eruptions* below are rows of the database, which may be one phase of a longer eruption.
+
+```{r deaths_prepare}
+
+# the deaths of an eruption: the total if there is one, and never less than the direct deaths
+significant$dead <- ifelse(
+  is.na(significant$deathsTotal) & is.na(significant$deaths),
+  NA,
+  pmax(significant$deathsTotal, significant$deaths, na.rm = TRUE)
+)
+with_deaths <- significant[!is.na(significant$dead), ]
+```
+
+---
+
+## 1. Where in the world are the volcanoes?
+
+```{r where_numbers}
+n_volcanoes <- nrow(volcanoes)
+# volcanoes by country (a volcano on a border has both countries in its name: they stay together)
+by_country <- volcanoes |>
+  count(Country, sort = TRUE) |>
+  mutate(share = 100 * n / n_volcanoes)
+top_countries <- head(by_country, 10)
+top_ten_share <- sum(top_countries$n) / n_volcanoes * 100
+# the tectonic setting that the GVP gives each volcano: the first part, before the crust
+volcanoes$setting <- sub(" /.*", "", volcanoes$Tectonic_Setting)
+settings <- table(volcanoes$setting)
+setting_share <- function(x) percent(100 * settings[[x]] / sum(settings))
+# volcanoes whose last eruption is known (the year is empty when it is not)
+n_since <- function(year) sum(volcanoes$Last_Eruption_Year >= year, na.rm = TRUE)
+in_country <- function(name) by_country$n[by_country$Country == name]
+type_top <- volcanoes |> count(Primary_Volcano_Type, sort = TRUE)
+n_undersea <- sum(volcanoes$Elevation < 0, na.rm = TRUE)
+```
+
+**Along the plate boundaries, and in a few countries.** The GVP lists `r number(n_volcanoes)` volcanoes that have erupted in the Holocene. The `r nrow(top_countries)` countries with the most have `r percent(top_ten_share)` of them: `r and_list(paste0(with_the(top_countries$Country[1:3]), " (", top_countries$n[1:3], ")"))` lead, followed by `r and_list(with_the(top_countries$Country[4:6]))`. `r percent(100 * settings[["Subduction zone"]] / sum(settings))` of the volcanoes sit in what the GVP calls a subduction zone, a place where one plate of the crust slides under another, `r setting_share("Rift zone")` in a rift zone, where plates pull apart, and `r setting_share("Intraplate")` inside a plate, away from its edges. On the map the volcanoes follow the plate boundaries.
+
+```{r map, fig.height = 5.6}
+volcanoes$recent <- !is.na(volcanoes$Last_Eruption_Year) & volcanoes$Last_Eruption_Year >= complete_from
+volcanoes$label <- paste0(
+  volcanoes$Volcano_Name,
+  " (",
+  volcanoes$Country,
+  ")<br>",
+  ifelse(
+    is.na(volcanoes$Last_Eruption_Year),
+    "last eruption not known",
+    paste("last eruption:", year_text(volcanoes$Last_Eruption_Year))
+  )
+)
+# the plate boundaries as one line with gaps, rounded to a tenth of a degree
+boundary_lines <- do.call(rbind, lapply(plates$features, function(f) {
+  xy <- do.call(rbind, lapply(f$geometry$coordinates, unlist))
+  rbind(round(xy[, 1:2, drop = FALSE], 1), c(NA, NA))
+}))
+older <- volcanoes[!volcanoes$recent, ]
+recent <- volcanoes[volcanoes$recent, ]
+plot_ly() |>
+  add_trace(
+    type = "scattergeo",
+    mode = "lines",
+    lon = boundary_lines[, 1],
+    lat = boundary_lines[, 2],
+    line = list(color = plate_color, width = 1),
+    name = "Plate boundaries",
+    hoverinfo = "skip"
+  ) |>
+  add_trace(
+    type = "scattergeo",
+    mode = "markers",
+    lon = older$Longitude,
+    lat = older$Latitude,
+    text = older$label,
+    hoverinfo = "text",
+    marker = list(color = gray, size = 5, line = list(color = "#8a8a8a", width = 0.4)),
+    name = paste("No eruption since", complete_from)
+  ) |>
+  add_trace(
+    type = "scattergeo",
+    mode = "markers",
+    lon = recent$Longitude,
+    lat = recent$Latitude,
+    text = recent$label,
+    hoverinfo = "text",
+    marker = list(color = erupted_color, size = 6, line = list(color = "white", width = 0.4)),
+    name = paste("Erupted since", complete_from)
+  ) |>
+  chart(
+    paste0("The ", number(n_volcanoes), " volcanoes of the Holocene"),
+    "Smithsonian GVP, Volcanoes of the World; plates: Bird (2003), via fraxen/tectonicplates.",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = TRUE,
+      coastlinecolor = "#d0d0d0",
+      coastlinewidth = 0.5,
+      showland = TRUE,
+      landcolor = "#f3f3f3",
+      projection = list(type = "natural earth"),
+      lataxis = list(range = c(-70, 85))
+    ),
+    legend = c(legend_top, list(itemsizing = "constant")),
+    margin = list(t = 70, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )
+```
+
+`r number(n_since(complete_from))` of the volcanoes have erupted since `r complete_from`, `r number(n_since(1900))` since 1900. For `r number(sum(is.na(volcanoes$Last_Eruption_Year)))` the year of the last eruption is not known: the evidence of an eruption in the Holocene is there, but not its date.
+
+```{r where_chart, fig.height = 4.4}
+bars <- top_countries[order(top_countries$n), ] # the largest at the top
+bars$Country <- factor(bars$Country, levels = bars$Country)
+plot_ly(
+  bars,
+  x = ~n,
+  y = ~Country,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(bars$n == max(bars$n), red, gray)),
+  text = ~ paste0(n, " (", percent(share), ")"),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x} volcanoes<extra></extra>",
+  showlegend = FALSE
+) |>
+  chart(
+    "Countries with the most volcanoes",
+    "Smithsonian GVP, Volcanoes of the World. Share of the world in brackets.",
+    x_axis = list(range = c(0, 1.5 * max(bars$n)), showgrid = FALSE, showticklabels = FALSE),
+    margin = list(l = 130, t = 60, b = 50, r = 10),
+    note_y = -0.1
+  )
+```
+
+ `r cap(with_the(top_countries$Country[1]))` is first, with `r top_countries$n[1]` volcanoes, `r percent(top_countries$share[1])` of the world's; Japan has `r in_country("Japan")` and Indonesia `r in_country("Indonesia")`. In Europe, Iceland has `r in_country("Iceland")`, Italy `r in_country("Italy")` and Greece `r in_country("Greece")`. The `r number(n_undersea)` volcanoes of the list whose summit is below the sea are counted too, but the seafloor is far less surveyed than the land, and the list is surely less complete there.
+
+---
+
+## 2. Which volcanoes erupt, and how often?
+
+```{r often_numbers}
+by_year <- as.data.frame(table(factor(modern$StartDateYear, levels = complete_from:last_full_year)))
+by_year$year <- complete_from:last_full_year
+by_year$n <- by_year$Freq
+trend_chance <- chance(by_year$n, by_year$year)
+first_ten <- mean(by_year$n[by_year$year < complete_from + 10])
+last_ten <- mean(by_year$n[by_year$year > last_full_year - 10])
+n_erupted <- n_distinct(modern$Volcano_Number)
+# the eruptions of each volcano since 1960
+by_volcano <- modern |>
+  group_by(Volcano_Number, Volcano_Name, country) |>
+  summarise(eruptions = n(), .groups = "drop") |>
+  arrange(desc(eruptions))
+# volcanoes that erupted since 1960, by country
+erupting <- modern |>
+  group_by(country) |>
+  summarise(volcanoes = n_distinct(Volcano_Number), eruptions = n(), .groups = "drop") |>
+  arrange(desc(volcanoes), desc(eruptions))
+erupting$in_list <- by_country$n[match(erupting$country, by_country$Country)]
+# the GVP's "country" of volcanoes under the sea that belong to no country
+erupting$country[erupting$country == "Undersea Features"] <- "Undersea (no country)"
+top_erupting <- head(erupting, 10)
+# the eruptions in 50 years and in decades since 1600, per year: the part before the complete records
+# is shown in grey
+decades <- confirmed[confirmed$StartDateYear >= 1600 & confirmed$StartDateYear <= last_full_year, ]
+decades$decade <- 10 * (decades$StartDateYear %/% 10)
+per_decade <- decades |>
+  count(decade) |>
+  mutate(years = pmin(decade + 9, last_full_year) - decade + 1, per_year = n / years)
+per_year_in <- function(from, to) {
+  nrow(confirmed[confirmed$StartDateYear >= from & confirmed$StartDateYear <= to, ]) / (to - from + 1)
+}
+```
+
+**About `r round(nrow(modern) / n_years)` eruptions begin each year, and the number has not changed since `r complete_from`.** From `r complete_from` to `r last_full_year`, between `r min(by_year$n)` and `r max(by_year$n)` eruptions began in a year, `r one(first_ten)` a year on average in the first ten years and `r one(last_ten)` in the last ten. A rank test of all the years finds no clear trend: the chance of a pattern as strong as this one without a trend is `r trend_chance` in 100. And `r number(n_erupted)` different volcanoes erupted at least once, `r percent(100 * n_erupted / n_volcanoes)` of the list: most volcanoes are quiet, and a few erupt again and again.
+
+```{r often_chart, fig.height = 4.2}
+#| fig-alt: "Eruptions that began each year in each decade since 1600: far fewer before 1960, about 30 to 40 a year since"
+ggplot(per_decade, aes(x = decade, y = per_year, fill = decade >= complete_from)) +
+  geom_col(width = 8) +
+  scale_fill_manual(values = c("TRUE" = erupted_color, "FALSE" = gray), guide = "none") +
+  scale_x_continuous(breaks = seq(1600, 2000, 100)) +
+  labs(
+    title = "The records get more complete",
+    subtitle = paste0(
+      "Eruptions that began each year, average of each decade (dark: from ",
+      complete_from,
+      ")"
+    ),
+    x = NULL,
+    y = NULL,
+    caption = "Data: Smithsonian GVP, Volcanoes of the World. Confirmed eruptions."
+  ) +
+  theme_page(13) +
+  theme(panel.grid.minor = element_blank())
+```
+
+**Before `r complete_from` the list is not a count of eruptions, but of what people recorded.** In `r min(per_decade$decade[per_decade$decade >= 1600])`–`r min(per_decade$decade[per_decade$decade >= 1600]) + 99` the list has `r one(per_year_in(1600, 1699))` eruptions a year, in 1800–1899 `r one(per_year_in(1800, 1899))`, in 1900–1959 `r one(per_year_in(1900, 1959))`, and since `r complete_from` `r one(nrow(modern) / n_years)`. Volcanoes did not wake up in the 20th century: the records improved.
+
+```{r often_countries, fig.height = 4.4}
+bars <- top_erupting[order(top_erupting$volcanoes), ]
+bars$country <- factor(bars$country, levels = bars$country)
+plot_ly(
+  bars,
+  x = ~volcanoes,
+  y = ~country,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(bars$volcanoes == max(bars$volcanoes), red, gray)),
+  text = ~ paste0(volcanoes, " of ", in_list),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x} volcanoes erupted<br>%{customdata} eruptions<extra></extra>",
+  customdata = ~eruptions,
+  showlegend = FALSE
+) |>
+  chart(
+    paste0("Volcanoes that erupted, ", complete_from, "–", last_full_year),
+    "Smithsonian GVP, Volcanoes of the World. Confirmed eruptions; \"of\": volcanoes of the country in the list.",
+    x_axis = list(range = c(0, 1.6 * max(bars$volcanoes)), showgrid = FALSE, showticklabels = FALSE),
+    margin = list(l = 130, t = 60, b = 50, r = 10),
+    note_y = -0.1
+  )
+```
+
+**A few countries have most of the eruptions.** Since `r complete_from`, `r cap(with_the(top_erupting$country[1]))` had `r top_erupting$volcanoes[1]` different volcanoes erupt, `r and_list(paste0(with_the(top_erupting$country[2:4]), " (", top_erupting$volcanoes[2:4], ")"))` come next, and the ten countries of the chart have `r percent(100 * sum(top_erupting$volcanoes) / n_erupted)` of all the volcanoes that erupted. The volcanoes with the most eruptions are `r and_list(paste0(flip(by_volcano$Volcano_Name[1:3]), " in ", with_the(by_volcano$country[1:3]), " (", by_volcano$eruptions[1:3], ")"))`. Whether the GVP splits a long period of activity into many eruptions or counts one affects such numbers, so they are best read as rough.
+
+---
+
+## 3. How big do eruptions get?
+
+```{r size_numbers}
+vei_total <- table(factor(modern$ExplosivityIndexMax, levels = 0:8))
+vei_known <- sum(vei_total)
+vei_missing <- nrow(modern) - vei_known
+vei_share <- function(levels) percent(100 * sum(vei_total[as.character(levels)]) / vei_known)
+vei_n <- function(levels) sum(vei_total[as.character(levels)])
+big <- confirmed[!is.na(confirmed$ExplosivityIndexMax) & confirmed$ExplosivityIndexMax >= 6 &
+  confirmed$StartDateYear >= 1800, ]
+big <- big[order(big$StartDateYear), ]
+big$country <- with_the(big$country)
+# the largest eruptions of the Holocene (VEI 7 and 8) in the list
+huge <- confirmed[!is.na(confirmed$ExplosivityIndexMax) & confirmed$ExplosivityIndexMax >= 7, ]
+since_1800 <- confirmed[confirmed$StartDateYear >= 1800 & confirmed$StartDateYear <= last_full_year &
+  !is.na(confirmed$ExplosivityIndexMax), ]
+```
+
+**Most eruptions are small; a few are enormous.** Of the `r number(vei_known)` eruptions since `r complete_from` with a VEI, `r vei_share(0:2)` are VEI 0 to 2, `r vei_share(3)` are VEI 3, `r vei_share(4)` VEI 4, and only `r vei_n(5:8)` VEI 5 or more (`r vei_n(5)` at VEI 5, `r vei_n(6)` at VEI 6, none higher). `r vei_missing` have no VEI in the list.
+
+```{r size_chart, fig.height = 4}
+sizes <- data.frame(vei = 0:7, n = as.integer(vei_total[as.character(0:7)]))
+plot_ly(
+  sizes,
+  x = ~vei,
+  y = ~n,
+  type = "bar",
+  marker = list(color = colorRampPalette(oranges)(8)),
+  text = ~n,
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "VEI %{x}: %{y} eruptions<extra></extra>",
+  showlegend = FALSE
+) |>
+  chart(
+    paste0("Eruptions by size, ", complete_from, "–", last_full_year),
+    "Smithsonian GVP, Volcanoes of the World. Confirmed eruptions with a VEI.",
+    x_axis = list(title = "Volcanic Explosivity Index (VEI)", dtick = 1),
+    y_axis = list(range = c(0, 1.15 * max(sizes$n)), showgrid = FALSE, showticklabels = FALSE),
+    margin = list(l = 20, t = 60, b = 80, r = 10),
+    note_y = -0.25
+  )
+```
+
+**The largest eruptions are rare: `r nrow(big)` of VEI 6 or more since 1800, and none above VEI 7.** The table lists them.
+
+```{r size_table}
+knitr::kable(
+  data.frame(
+    year = big$StartDateYear,
+    volcano = flip(big$Volcano_Name),
+    country = big$country,
+    vei = big$ExplosivityIndexMax
+  ),
+  col.names = c("Year", "Volcano", "Country", "VEI"),
+  align = "rllr"
+)
+```
+
+**The biggest are much older.** The list has `r nrow(huge)` eruptions of VEI 7 or more in the whole Holocene, `r and_list(paste0(flip(huge$Volcano_Name), " (", year_text(huge$StartDateYear), ")"))`. The GVP dates Tambora's eruption from `r confirmed$StartDateYear[confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7]` to `r confirmed$EndDateYear[confirmed$Volcano_Name == "Tambora" & confirmed$ExplosivityIndexMax == 7]`, and NOAA gives the year of its great explosion, `r max(significant$year[significant$name == "Tambora" & significant$vei %in% 7])`; the table gives the year each eruption began. The date of an old eruption is an estimate: the GVP gives each one a margin of error, and some dates are marked as uncertain.
+
+**Big eruptions are rare, and small ones are the easiest to miss.** From `r complete_from` the list has `r one(vei_n(0:4) / n_years)` of them a year, but only `r one(vei_n(5:8) / n_years)` of VEI 5 or more, about one in `r round(n_years / vei_n(5:8))` years. The VEI is also missing more often for older eruptions: for `r percent(100 * mean(is.na(confirmed$ExplosivityIndexMax[confirmed$StartDateYear < complete_from & confirmed$StartDateYear >= 1800])))` of the eruptions from 1800 to `r complete_from - 1`, against `r percent(100 * vei_missing / nrow(modern), 1)` since.
+
+---
+
+## 4. Which were the deadliest eruptions?
+
+```{r deadly_numbers}
+worst <- with_deaths[order(-with_deaths$dead), ]
+top_dead <- head(worst, 10)
+top_dead$label <- paste0(flip(top_dead$name), " ", year_text(top_dead$year))
+total_dead <- sum(with_deaths$dead)
+top_five_share <- 100 * sum(head(worst$dead, 5)) / total_dead
+since_1900 <- with_deaths[with_deaths$year >= 1900, ]
+n_1900 <- sum(significant$year >= 1900)
+dead_1900 <- sum(since_1900$dead)
+by_dead_country <- with_deaths |>
+  group_by(country) |>
+  summarise(dead = sum(dead), .groups = "drop") |>
+  arrange(desc(dead))
+n_100k <- sum(with_deaths$dead >= 10000)
+# eruptions with a given number of deaths, since 1900, whose VEI is below 4
+low_vei <- since_1900[!is.na(since_1900$vei) & since_1900$vei <= 3, ]
+low_vei <- low_vei[order(-low_vei$dead), ]
+tam <- worst[1, ]
+```
+
+**`r number(sum(with_deaths$dead > 25000))` eruptions have killed more than 25,000 people each.** NOAA's list has `r number(nrow(with_deaths))` eruptions with a known number of deaths, `r number(total_dead)` deaths together. The five deadliest, `r and_list(paste0(flip(head(worst$name, 5)), " ", year_text(head(worst$year, 5))))`, account for `r percent(top_five_share)` of them. The deadliest, `r flip(tam$name)` in `r tam$year`, has `r number(tam$dead)` deaths on record, of which NOAA puts `r number(tam$deaths)` directly on the eruption and the rest on its secondary effects.
+
+```{r deadly_chart, fig.height = 4.8}
+bars <- top_dead[order(top_dead$dead), ]
+bars$label <- factor(bars$label, levels = bars$label)
+plot_ly(
+  bars,
+  x = ~dead,
+  y = ~label,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(bars$dead == max(bars$dead), red, gray)),
+  text = ~ paste0(number(dead), ifelse(is.na(vei), "", paste0(" (VEI ", vei, ")"))),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:,} deaths<extra></extra>",
+  showlegend = FALSE
+) |>
+  chart(
+    "The ten deadliest eruptions on record",
+    "NOAA NCEI, Significant Volcanic Eruptions Database; VEI: the database. Total deaths where known.",
+    x_axis = list(range = c(0, 1.8 * max(bars$dead)), showgrid = FALSE, showticklabels = FALSE),
+    margin = list(l = 150, t = 60, b = 60, r = 10),
+    note_y = -0.1
+  )
+```
+
+**The deadliest are not always the biggest.** Of the ten, `r and_list(flip(top_dead$name[top_dead$vei <= 3 & !is.na(top_dead$vei)]))` had a VEI of 3 or less, and the `r top_dead$label[top_dead$name == "Ruiz, Nevado del"]` eruption, with `r number(top_dead$dead[top_dead$name == "Ruiz, Nevado del"])` deaths, was VEI `r top_dead$vei[top_dead$name == "Ruiz, Nevado del"]`. How big an eruption is and how many people it kills are two different things.
+
+```{r deadly_countries}
+timeline <- with_deaths[with_deaths$year >= 1500, ]
+timeline$labelled <- timeline$dead >= 20000
+```
+
+**The deaths on record are concentrated in a few countries.** `r cap(with_the(by_dead_country$country[1]))` has `r percent(100 * by_dead_country$dead[1] / total_dead)` of the deaths on the list, `r and_list(paste0(with_the(by_dead_country$country[2:4]), " (", percent(100 * by_dead_country$dead[2:4] / total_dead), ")"))` follow. And the list is not constant over time: since 1900 NOAA lists `r n_1900` significant eruptions, `r number(nrow(since_1900))` of them with a number of deaths, `r number(dead_1900)` deaths in all, `r percent(100 * dead_1900 / total_dead)` of the total.
+
+```{r deadly_timeline, fig.height = 4.6}
+#| fig-alt: "Deaths in each eruption on record since 1500, on a log scale: a few eruptions with tens of thousands of deaths, most with fewer than a hundred"
+ggplot(timeline, aes(x = year, y = dead)) +
+  geom_point(aes(colour = labelled), size = 2, alpha = 0.8) +
+  geom_text(
+    data = timeline[timeline$labelled, ],
+    aes(label = paste0(flip(name), " ", year)),
+    colour = "grey20",
+    size = 3.2,
+    vjust = -0.9,
+    check_overlap = TRUE
+  ) +
+  scale_colour_manual(values = c("TRUE" = red, "FALSE" = dark_gray), guide = "none") +
+  scale_y_log10(
+    breaks = c(1, 10, 100, 1000, 10000),
+    labels = c("1", "10", "100", "1,000", "10,000"),
+    expand = expansion(mult = c(0.05, 0.2))
+  ) +
+  labs(
+    title = "Few eruptions kill many",
+    subtitle = "Deaths in each eruption with a known number, since 1500, on a log scale",
+    x = NULL,
+    y = NULL,
+    caption = "Data: NOAA NCEI, Significant Volcanic Eruptions Database.\nEruptions without a known number of deaths are not shown."
+  ) +
+  theme_page(13) +
+  theme(panel.grid.minor = element_blank())
+```
+
+---
+
+## 5. How many people live close to a volcano, and where does Greece stand?
+
+```{r people_numbers}
+people$country <- people$Country
+known <- people[!is.na(people$Within_100km), ]
+n_known <- nrow(known)
+near <- function(km) known[[paste0("Within_", km, "km")]]
+share_over <- function(km, n) percent(100 * mean(near(km) >= n))
+close <- known[order(-known$Within_30km), ]
+top_close <- head(close, 10)
+hundred <- known[order(-known$Within_100km), ]
+greece <- known[known$Country == "Greece", ]
+greece <- greece[order(-greece$Within_30km), ]
+# the volcanoes of Greece in the list, the last eruption first
+greece_list <- volcanoes[volcanoes$Country == "Greece", ]
+greece_list <- greece_list[order(-greece_list$Last_Eruption_Year), ]
+santorini <- known[known$VolcanoName == "Santorini", ]
+italy_top <- known[known$Country == "Italy", ]
+italy_top <- italy_top[order(-italy_top$Within_30km), ]
+```
+
+**Many volcanoes have millions of people near them, but the figures cannot simply be added up.** The GVP counts, for each volcano, the people who live within 5, 10, 30 and 100 km. A person who lives near two volcanoes is counted for both, so the numbers of different volcanoes must not be added; this page compares volcanoes, and does not total the people. The GVP gives the numbers for `r number(n_known)` of the `r number(nrow(people))` volcanoes.
+
+```{r people_chart, fig.height = 4.8}
+bars <- top_close[order(top_close$Within_30km), ]
+bars$name <- paste0(flip(bars$VolcanoName), ", ", bars$Country)
+bars$name <- factor(bars$name, levels = bars$name)
+plot_ly(
+  bars,
+  x = ~ Within_30km / 1e6,
+  y = ~name,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = ifelse(bars$Within_30km == max(bars$Within_30km), red, gray)),
+  text = ~ paste0(one(Within_30km / 1e6), " million"),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = paste0(
+    "%{y}<br>%{x:.1f} million people within 30 km<br>",
+    "%{customdata:,.0f} people within 100 km<extra></extra>"
+  ),
+  customdata = ~Within_100km,
+  showlegend = FALSE
+) |>
+  chart(
+    "Most people within 30 km of a volcano",
+    "Smithsonian GVP, Volcanoes of the World. People within 30 km.",
+    x_axis = list(range = c(0, 1.6 * max(bars$Within_30km) / 1e6), showgrid = FALSE, showticklabels = FALSE),
+    margin = list(l = 240, t = 60, b = 60, r = 10),
+    note_y = -0.1
+  )
+```
+
+**In `r number(sum(near(30) >= 1e6))` volcanoes, more than a million people live within 30 km.** The top of the list is `r and_list(paste0(flip(top_close$VolcanoName[1:3]), " in ", with_the(top_close$Country[1:3]), " (", million(top_close$Within_30km[1:3]), " million)"))`. Some of the volcanoes at the top are volcanic fields, which cover a large area and count as one volcano. Within 100 km, `r percent(100 * mean(near(100) >= 1e6))` of the volcanoes have a million people or more, and `r percent(100 * mean(near(100) >= 10e6))` have ten million or more; the most is `r million(hundred$Within_100km[1])` million, near `r flip(hundred$VolcanoName[1])` in `r with_the(hundred$Country[1])`. And the other end: `r percent(100 * mean(near(30) < 1000))` of the volcanoes have fewer than 1,000 people within 30 km. The GVP's counts come from a gridded population map whose year the data do not give, so they may not match today's population.
+
+**Greece has `r nrow(greece_list)` volcanoes in the list:** `r and_list(paste0(greece_list$Volcano_Name, " (last eruption ", year_text(greece_list$Last_Eruption_Year), ")"))`. That is far fewer than Italy's `r in_country("Italy")` or Iceland's `r in_country("Iceland")`.
+
+```{r greece_numbers}
+greece_eruptions <- confirmed[confirmed$country %in% "Greece", ]
+santorini_eruptions <- greece_eruptions[greece_eruptions$Volcano_Name == "Santorini", ]
+minoan <- santorini_eruptions[which.max(santorini_eruptions$ExplosivityIndexMax), ]
+last_santorini <- max(santorini_eruptions$StartDateYear)
+kolumbo <- significant[significant$name == "Kolumbo", ]
+kolumbo_year <- greece_eruptions$StartDateYear[greece_eruptions$Volcano_Name == "Kolumbo"][1]
+kolumbo_vei <- greece_eruptions$ExplosivityIndexMax[greece_eruptions$Volcano_Name == "Kolumbo"][1]
+kolumbo_dead <- sum(kolumbo$dead, na.rm = TRUE)
+santorini_dead <- with_deaths[with_deaths$name == "Santorini", ]
+```
+
+**Santorini's recent eruptions were small, but its largest was far older.** The GVP lists `r nrow(santorini_eruptions)` confirmed eruptions of Santorini in the Holocene, the last in `r last_santorini`, with a VEI of `r santorini_eruptions$ExplosivityIndexMax[santorini_eruptions$StartDateYear == last_santorini]`; the largest, dated to `r year_text(minoan$StartDateYear)`, was VEI `r minoan$ExplosivityIndexMax`, one of the `r nrow(huge)` of VEI 7 or more in the Holocene in the list. Kolumbo, whose summit is `r number(-volcanoes$Elevation[volcanoes$Volcano_Name == "Kolumbo"])` metres below the sea, erupted in `r kolumbo_year` (VEI `r kolumbo_vei`), and NOAA's database gives its `r nrow(kolumbo)` entries of that year `r number(kolumbo_dead)` deaths together. Within 30 km of Santorini live `r number(santorini$Within_30km)` people, and within 100 km `r number(santorini$Within_100km)`. Of the `r nrow(greece)` volcanoes with a population count, the most people live near `r greece$VolcanoName[1]` (`r number(greece$Within_30km[1])` within 30 km). By the same measure Campi Flegrei, in Italy, has `r million(known$Within_30km[known$VolcanoName == "Campi Flegrei"])` million.
+
+---
+
+## So, what does it mean?
+
+1. **Volcanoes are where the plates meet, and in a few countries.** The `r nrow(top_countries)` countries with the most volcanoes have `r percent(top_ten_share)` of the `r number(n_volcanoes)` in the list, and `r setting_share("Subduction zone")` sit in subduction zones. `r cap(with_the(top_countries$Country[1]))`, Japan and Indonesia lead.
+2. **About `r round(nrow(modern) / n_years)` eruptions begin a year, and the number has not changed since `r complete_from`.** The apparent rise before that is a rise in what was recorded.
+3. **Most eruptions are small.** `r vei_share(0:2)` of the eruptions since `r complete_from` are VEI 0 to 2; `r nrow(big)` since 1800 were VEI 6 or more.
+4. **The deadliest eruptions are not always the biggest.** The five deadliest on record have `r percent(top_five_share)` of the deaths of the eruptions with a known number, `r and_list(paste0(flip(head(worst$name, 5)), " ", year_text(head(worst$year, 5))))`.
+5. **Many volcanoes have people near them.** In `r number(sum(near(30) >= 1e6))` volcanoes of the list, more than a million people live within 30 km; Greece has `r nrow(greece)` volcanoes in the list, and `r volcanoes$Volcano_Name[which.max(ifelse(volcanoes$Country == "Greece", volcanoes$Last_Eruption_Year, -Inf))]` is the one that erupted last.
+
+**What this does not show.** A list of eruptions is a list of what people recorded: it is incomplete before about `r complete_from`, and eruptions on the seafloor are the hardest to see. The VEI measures the explosion, not the harm, and it is missing for some eruptions. NOAA lists only significant eruptions, and for many of them the deaths are not known, so the totals are minimums, and a death toll is partly a matter of who counted and how. The numbers of people near volcanoes come from a population map whose year the data do not give, and each person near several volcanoes is counted several times. Nothing here says when or where the next eruption will be: a count of past eruptions is not a forecast.
+
+For earthquakes, see [Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.html); for tsunamis, [Waves That Cross Oceans](ILLUSTRATION_WORLD_TSUNAMIS.html); for all the hazards together, [Natural Disasters](ILLUSTRATION_NATURAL_DISASTERS.html).
+
+---
+
+## Sources
+
+- Global Volcanism Program, Smithsonian Institution, [*Volcanoes of the World*](https://volcano.si.edu/), compiled by E. Venzke (database; the page uses the Holocene volcanoes, Holocene eruptions and population layers of the GVP's [web service](https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&request=GetCapabilities)). Cite as Global Volcanism Program, *Volcanoes of the World* (v. 5), distributed by Smithsonian Institution, compiled by Venzke, E., for example [v. 5.3.1, 2025](https://doi.org/10.5479/si.gvp.votw5-2025.5.3). The web service does not say which version it serves. Use is governed by the Smithsonian's [terms of use](https://www.si.edu/termsofuse), which invite personal, educational and other non-commercial use.
+- NOAA National Centers for Environmental Information, [Significant Volcanic Eruptions Database](https://www.ncei.noaa.gov/products/natural-hazards/tsunamis-earthquakes-volcanoes/volcanoes), [doi:10.7289/V5JW8BSH](https://doi.org/10.7289/V5JW8BSH), through its [HazEL](https://www.ngdc.noaa.gov/hazel/view/hazards/volcano/event-search/) service. The pages read state no licence; the database is the work of a US federal agency.
+- Bird, P. (2003), [An updated digital model of plate boundaries](https://doi.org/10.1029/2001GC000252), *Geochemistry, Geophysics, Geosystems* 4(3); in the GeoJSON version of [fraxen/tectonicplates](https://github.com/fraxen/tectonicplates) (Hugo Ahlenius, Nordpil), under the [Open Data Commons Attribution License](http://opendatacommons.org/licenses/by/1.0/).
+- Newhall, C. G. and Self, S. (1982), [The volcanic explosivity index (VEI): an estimate of explosive magnitude for historical volcanism](https://doi.org/10.1029/JC087iC02p01231), *Journal of Geophysical Research* 87(C2), 1231–1238.
+- USGS Yellowstone Volcano Observatory, [The Volcanic Explosivity Index: a tool for comparing the sizes of explosive volcanic eruptions](https://www.usgs.gov/observatories/yvo/news/volcanic-explosivity-index-a-tool-comparing-sizes-explosive-volcanic).
+
+---
+
+*Rendered with R `r getRversion()` · dplyr · ggplot2 · plotly · jsonlite*
