@@ -19,7 +19,7 @@ knitr::opts_chunk$set(cache = FALSE)
 
 ## What is this?
 
-Wherever rain falls and a river runs, a flood is possible, so floods happen on every continent. But they do not happen equally often, and they do not kill equally often. This story asks five questions:
+Wherever rain falls and a river runs, a flood is possible, so the records show floods in every part of the world. But they do not happen equally often, and they do not kill equally often. This story asks five questions:
 
 1. **Where in the world do the large floods happen?**
 2. **Where do floods kill the most people?**
@@ -131,6 +131,7 @@ renamed <- c(
   "Bolivia (Plurinational State of)" = "Bolivia",
   "Canary Islands" = "Spain",
   "Côte d’Ivoire" = "Cote d'Ivoire",
+  "Réunion" = "Reunion",
   "Democratic Republic of the Congo" = "Democratic Republic of Congo",
   "Democratic People's Republic of Korea" = "North Korea",
   "Germany Federal Republic" = "Germany",
@@ -293,9 +294,9 @@ chance <- function(x, years) {
 
 **The archive and the countries.** The DFO archive has `r number(n_records)` records; `r n_after` of them start in January `r last_dfo_year + 1`, after the end of the years it covers, and are left out. `r number(n_multi)` records name more than one country, and a flood counts once for each country it hit. `r n_gone` records name only `r and_list(gone)`, which no longer exist as countries, and are left out of the figures by country.
 
-**Tsunamis are not floods.** DFO's records have `r n_tsunami` tsunamis: `r n_tsunami - nrow(thai)` with the cause "tsunami", and the record of `r format(thai$start_date, "%d %B %Y")` in `r thai$country`, which DFO calls a "`r tolower(thai$cause)`" and gives `r number(thai$dead)` dead: the date of the earthquake and tsunami in the Indian Ocean, which killed `r number(227898)` people in all the countries on its shores ([NOAA](https://www.ngdc.noaa.gov/hazard/data/publications/2004_1226.pdf)). EM-DAT counts the Thai tsunami with the earthquakes, with `r number(as.numeric(emdat$dead[emdat$iso == "THA" & emdat$year == 2004 & emdat$subtype == "Tsunami"]))` dead. These `r n_tsunami` are left out, which leaves `r number(n_floods)` floods from `r first_dfo_year` to `r last_dfo_year`.
+**Tsunamis are not floods.** DFO's records have `r n_tsunami` tsunamis: `r n_tsunami - nrow(thai)` with the cause "tsunami", and the record of `r format(thai$start_date, "%d %B %Y")` in `r thai$country`, which DFO calls a "`r tolower(thai$cause)`" and gives `r number(thai$dead)` dead: the date of the earthquake and tsunami in the Indian Ocean, which left `r number(227898)` people dead or missing in all the countries on its shores ([NOAA](https://www.ngdc.noaa.gov/hazard/data/publications/2004_1226.pdf)). EM-DAT counts the Thai tsunami with the earthquakes, with `r number(as.numeric(emdat$dead[emdat$iso == "THA" & emdat$year == 2004 & emdat$subtype == "Tsunami"]))` dead and missing. These `r n_tsunami` are left out, which leaves `r number(n_floods)` floods from `r first_dfo_year` to `r last_dfo_year`.
 
-**EM-DAT: the years, and the empty cells.** EM-DAT's figures start in `r first_em_year` on the site this page uses, and they are for the version of `r format(emdat_date, "%d %B %Y")`. `r partial_year` is not over, and its `r n_partial` floods so far are left out: the figures run from `r first_em_year` to `r last_em_year`. In `r percent(share_no_dead)` of the country-years of floods no number of dead is given, and in `r percent(share_no_affected)` no number of people affected. EM-DAT cannot tell an unreported number from none ([EM-DAT FAQ](https://doc.emdat.be/docs/additional-resources-and-tutorials/faq/)), so a total here is a minimum, and the rows without a figure are counted as zero. A flood that hit several countries is a record in each. `r nrow(em_lost)` rows for former countries are left out. EM-DAT includes `r n_glof` country-years of glacial lake outburst floods, which are kept.
+**EM-DAT: the years, and the empty cells.** The yearly figures of EM-DAT that this page uses start in `r first_em_year`, and they are those of the version of `r format(emdat_date, "%d %B %Y")`. `r partial_year` is not over, and its `r n_partial` floods so far are left out: the figures run from `r first_em_year` to `r last_em_year`. In `r percent(share_no_dead)` of the rows of floods (a country, a year and a kind of flood) no number of dead is given, and in `r percent(share_no_affected)` no number of people affected. EM-DAT cannot tell an unreported number from none ([EM-DAT FAQ](https://doc.emdat.be/docs/additional-resources-and-tutorials/faq/)), so a total here is a minimum, and the rows without a figure are counted as zero. A flood that hit several countries is a record in each. `r nrow(em_lost)` rows for former countries are left out. EM-DAT includes `r n_glof` country-years of glacial lake outburst floods, which are kept.
 
 ---
 
@@ -326,7 +327,7 @@ by_country <- places_ok |>
 top_count <- head(by_country, 5)
 # per square kilometre, the countries of more than 10,000 square kilometres (the smallest ones
 # would lead with a handful of floods)
-min_km2 <- 10000
+min_km2 <- 25000
 n_small <- sum(by_country$km2 < min_km2, na.rm = TRUE)
 top_area <- by_country |>
   filter(km2 >= min_km2) |>
@@ -355,9 +356,13 @@ only_dfo <- setdiff(top_dfo, top_em)
 europe <- places_ok[places_ok$group %in% c("Europe without Russia"), ]
 n_europe <- n_distinct(europe$row)
 greece_n <- sum(places_ok$code == "GRC")
+greece_years <- em_flood[em_flood$iso == "GRC", ] |>
+  group_by(year) |>
+  summarise(dead = sum(dead, na.rm = TRUE))
+greece_worst <- greece_years[which.max(greece_years$dead), ]
 ```
 
-**Asia: more than a third of the large floods, and Africa fewer than its size suggests.** DFO's `r number(n_floods)` large floods from `r first_dfo_year` to `r last_dfo_year` were in `r number(n_distinct_floods)` of the cases where a country is known (a flood that crosses a border counts in each continent it touches). `r percent(share_asia)` of the floods were in Asia: `r number(of_group("Asia", "n_floods"))` floods, one for every `r number(1e6 / of_group("Asia", "per_area"))` square kilometres of land. In South America there were `r number(of_group("South America", "n_floods"))`, in North America `r number(of_group("North America", "n_floods"))`, in Africa `r number(of_group("Africa", "n_floods"))`, in Europe without Russia `r number(of_group("Europe without Russia", "n_floods"))`, in Oceania `r number(of_group("Oceania", "n_floods"))` and in Russia `r number(of_group("Russia", "n_floods"))`. Per square kilometre, Europe without Russia has `r one(of_group("Europe without Russia", "per_area") / of_group("Africa", "per_area"))` times as many large floods as Africa does.
+**Asia: more than two in five of the large floods.** DFO's `r number(n_floods)` large floods from `r first_dfo_year` to `r last_dfo_year` include `r number(n_distinct_floods)` in at least one country that has a continent (a flood that crosses a border counts in each continent it touches). `r percent(share_asia)` of these floods were in Asia: `r number(of_group("Asia", "n_floods"))` floods, one for every `r number(1e6 / of_group("Asia", "per_area"))` square kilometres of land. In South America there were `r number(of_group("South America", "n_floods"))`, in North America `r number(of_group("North America", "n_floods"))`, in Africa `r number(of_group("Africa", "n_floods"))`, in Europe without Russia `r number(of_group("Europe without Russia", "n_floods"))`, in Oceania `r number(of_group("Oceania", "n_floods"))` and in Russia `r number(of_group("Russia", "n_floods"))`. Per square kilometre, Europe without Russia has `r one(of_group("Europe without Russia", "per_area") / of_group("Africa", "per_area"))` times as many large floods as Africa does, which may say as much about how much news reaches DFO as about floods: its notes say that news from poorer countries tends to arrive later and in less detail ([DFO notes on the archive](https://web.archive.org/web/2023/https://floodobservatory.colorado.edu/Archives/ArchiveNotes.html)).
 
 ```{r where_chart, fig.height = 4.6}
 bars <- by_group[order(by_group$n_floods), ] # the largest at the top
@@ -418,7 +423,7 @@ subplot(left, right, shareY = TRUE, margin = 0.04, widths = c(0.55, 0.45)) |>
   )
 ```
 
-**The United States and China lead the countries.** The most large floods were in `r and_list(paste0(with_the(top_count$name[1:4]), " (", number(top_count$n_floods[1:4]), ")"))` and `r with_the(top_count$name[5])` (`r number(top_count$n_floods[5])`): large countries, with a lot of land for a flood to hit. Per square kilometre of land, the list changes. Of the countries of more than `r number(min_km2)` square kilometres, `r and_list(paste0(with_the(top_area$name[1:4]), " (", number(top_area$per_area[1:4]), " per million km²)"))` and `r with_the(top_area$name[5])` (`r number(top_area$per_area[5])`) come first; the United States has `r number(in_country("United States", "per_area"))`. The `r n_small` countries of less than `r number(min_km2)` square kilometres are not ranked, because a handful of floods would put them first.
+**The most large floods are in a few large countries.** The most large floods were in `r and_list(paste0(with_the(top_count$name), " (", number(top_count$n_floods), ")"))`: large countries, with a lot of land for a flood to hit. Per square kilometre of land, the list changes. Of the countries of more than `r number(min_km2)` square kilometres, `r and_list(with_the(top_area$name))` come first, with `r and_list(number(top_area$per_area))` large floods per million km²; the United States has `r number(in_country("United States", "per_area"))`. The `r n_small` countries of less than `r number(min_km2)` square kilometres are not ranked, because a handful of floods would put them first.
 
 ```{r map, fig.height = 5.2}
 on_map <- by_country[!is.na(by_country$n_floods), ]
@@ -473,7 +478,7 @@ plot_ly(
 
 **EM-DAT, a different record, finds much the same countries.** Counting the floods that EM-DAT records in each country from `r both_from` to `r both_to`, and the large floods of DFO in the same years, `r length(shared_top)` of the 10 countries with the most floods are the same in both records. `r and_list(with_the(name_of(only_em)))` come in the top 10 of EM-DAT only, `r and_list(with_the(name_of(only_dfo)))` in the top 10 of DFO only.
 
-**Europe.** `r number(n_europe)` large floods hit Europe without Russia, `r number(greece_n)` of them Greece, which also has `r number(sum(em_flood$events[em_flood$iso == "GRC"]))` floods in EM-DAT from `r first_em_year` to `r last_em_year`. The worst flood of Greece's recent years was in September 2023 (section 4).
+**Europe.** `r number(n_europe)` large floods hit Europe without Russia, `r number(greece_n)` of them Greece, which also has `r number(sum(em_flood$events[em_flood$iso == "GRC"]))` floods in EM-DAT from `r first_em_year` to `r last_em_year`. `r greece_worst$year` is the year with the most dead and missing in the floods of Greece in EM-DAT (`r number(greece_worst$dead)`; section 4).
 
 ---
 
@@ -511,7 +516,7 @@ of_dead <- function(name, column) em_country[[column]][em_country$name == name]
 world_dead_rate <- total_dead / sum(em_country$pop) * 1e6 / n_years_em
 ```
 
-**Most of the dead are in a few large countries of South Asia.** From `r first_em_year` to `r last_em_year`, EM-DAT counts `r number(total_dead)` dead and missing in floods. `r and_list(paste0(with_the(top_dead$name[1:3]), " (", number(top_dead$dead[1:3]), ")"))` come first, and the ten countries with the most dead have `r percent(100 * sum(top_dead$dead) / total_dead)` of all of them: India alone has `r percent(100 * of_dead("India", "dead") / total_dead)`. But a large country has a lot of people to lose. Per million people, a different list leads: `r and_list(paste0(with_the(top_rate$name[1:3]), " (", one(top_rate$per_million[1:3]), " a year)"))`, against `r one(world_dead_rate)` for all the countries together.
+**Most of the dead are in a few large countries.** From `r first_em_year` to `r last_em_year`, EM-DAT counts `r number(total_dead)` dead and missing in floods. `r and_list(paste0(with_the(top_dead$name[1:3]), " (", number(top_dead$dead[1:3]), ")"))` come first, and the ten countries with the most dead have `r percent(100 * sum(top_dead$dead) / total_dead)` of all of them: India alone has `r percent(100 * of_dead("India", "dead") / total_dead)`. But a large country has a lot of people to lose. Per million people, a different list leads: `r and_list(paste0(with_the(top_rate$name[1:3]), " (", one(top_rate$per_million[1:3]), " a year)"))`, against `r one(world_dead_rate)` a year for all the countries together.
 
 ```{r deaths_chart, fig.height = 5.4}
 #| fig-alt: "The ten countries with the most flood deaths since 2000, and the ten with the most deaths for each million people"
@@ -547,7 +552,7 @@ ggplot(dots, aes(x = value, y = key, fill = highlight)) +
   )
 ```
 
-**The people affected: floods in Asia, Africa and Latin America.** Deaths are one measure; EM-DAT also counts the people affected (injured, affected or homeless, counted again each time they are hit). The countries of over `r million(min_pop)` million people in which the average year of `r first_em_year`–`r last_em_year` had the largest numbers, against the number of people in the country, are `r and_list(paste0(with_the(top_affected$name), " (", one(top_affected$affected_share), "%)"))`. Read these with care: how many people are "affected" depends on who counts, and EM-DAT takes the number that its source gives ([EM-DAT](https://doc.emdat.be/docs/data-structure-and-content/impact-variables/human/)).
+**The people affected: a different list again.** Deaths are one measure; EM-DAT also counts the people affected (injured, affected or homeless, counted again each time they are hit). In an average year of `r first_em_year`–`r last_em_year`, the countries of over `r number(min_pop / 1e6)` million people with the largest share of their people affected are `r and_list(paste0(with_the(top_affected$name), " (", one(top_affected$affected_share), "%)"))`. Read these with care: how many people are "affected" depends on who counts, and EM-DAT takes the number that its source gives ([EM-DAT](https://doc.emdat.be/docs/data-structure-and-content/impact-variables/human/)).
 
 ---
 
@@ -592,12 +597,12 @@ asia_jjas <- 100 * mean(asia_months$month %in% 6:9)
 asia_jul <- 100 * mean(asia_months$month == 7)
 monsoon_share <- 100 * mean(asia_months$cause_group == "Monsoon rain")
 monsoon_in_jjas <- 100 * mean(asia_months$cause_group[asia_months$month %in% 6:9] == "Monsoon rain")
+heavy_in_jjas <- 100 * mean(asia_months$cause_group[asia_months$month %in% 6:9] == "Heavy rain")
 all_causes <- floods |>
   count(cause_group) |>
   mutate(share = 100 * n / sum(n)) |>
   arrange(desc(n))
 of_cause <- function(x) all_causes$share[all_causes$cause_group == x]
-sa <- c(season_text("South America"), season_text("Oceania"))
 ```
 
 **Each part of the world floods in its own wet season.** The calendar shows, for each group, the share of its large floods that start in each month, from `r first_dfo_year` to `r last_dfo_year`. If floods came evenly through the year, each month would have 8% to 9%.
@@ -627,7 +632,7 @@ ggplot(season, aes(x = month, y = factor(group, levels = rev(groups_all)), fill 
   theme(panel.grid = element_blank(), legend.text = element_text(size = rel(0.8)))
 ```
 
-**Asia floods in the summer of the north.** `r percent(asia_jjas)` of the large floods of Asia start from June to September, `r percent(asia_jul)` in July alone. DFO puts `r percent(monsoon_share)` of them down to monsoon rain, and `r percent(monsoon_in_jjas)` of those that start in June to September. In South America and Oceania the floods come in the other half of the year: South America floods most from `r season_text("South America")` (`r season_share("South America")` of its floods), Oceania from `r season_text("Oceania")` (`r season_share("Oceania")`). Africa's season is `r season_text("Africa")` (`r season_share("Africa")`), North America's `r season_text("North America")` (`r season_share("North America")`) and Europe's, without Russia, `r season_text("Europe without Russia")` (`r season_share("Europe without Russia")`); Russia's floods come in `r season_text("Russia")` (`r season_share("Russia")`).
+**Asia floods in the summer of the north.** `r percent(asia_jjas)` of the large floods of Asia start from June to September, `r percent(asia_jul)` in July alone. DFO puts `r percent(monsoon_share)` of them down to monsoon rain, and `r percent(monsoon_in_jjas)` of those that start in June to September; `r percent(heavy_in_jjas)` of those are down to heavy rain, so DFO's word for the cause is not a count of monsoon floods. In South America and Oceania the floods come in the other half of the year: South America floods most from `r season_text("South America")` (`r season_share("South America")` of its floods), Oceania from `r season_text("Oceania")` (`r season_share("Oceania")`). Africa's season is `r season_text("Africa")` (`r season_share("Africa")`), North America's `r season_text("North America")` (`r season_share("North America")`) and Europe's, without Russia, `r season_text("Europe without Russia")` (`r season_share("Europe without Russia")`); Russia's floods come in `r season_text("Russia")` (`r season_share("Russia")`).
 
 **What causes them, in DFO's words.** DFO writes down one main cause for each flood. For all the floods of the record, `r percent(of_cause("Heavy rain"))` are down to heavy or torrential rain, `r percent(of_cause("Cyclone"))` to a cyclone (including a tropical storm), `r percent(of_cause("Monsoon rain"))` to monsoon rain, `r percent(of_cause("Snowmelt or ice"))` to snowmelt or ice, and `r percent(of_cause("Dam or levee failure"))` to the failure of a dam or levee. The rest is another cause, or none is given. The names are written freely in the file, with typing mistakes and storm names, and are sorted here by the words they contain.
 
@@ -656,6 +661,7 @@ worst$em_dead <- ifelse(
   NA
 )
 worst$where <- sapply(worst$codes, function(codes) and_list(with_the(name_of(codes))))
+worst$where_plain <- sapply(worst$codes, function(codes) and_list(name_of(codes)))
 # a record whose dead are more than ten times those of EM-DAT for the same countries and years
 worst$doubtful <- !is.na(worst$em_dead) & worst$dead > 10 * worst$em_dead
 doubtful <- worst[worst$doubtful, ]
@@ -687,7 +693,7 @@ top_displaced <- displaced_ok |>
   arrange(desc(displaced)) |>
   head(8)
 top_displaced$codes <- lapply(top_displaced$row, function(r) places_ok$code[places_ok$row == r])
-top_displaced$where <- sapply(top_displaced$codes, function(codes) and_list(with_the(name_of(codes))))
+top_displaced$where_plain <- sapply(top_displaced$codes, function(codes) and_list(name_of(codes)))
 top_displaced$share <- 100 * top_displaced$displaced / sapply(seq_len(nrow(top_displaced)), function(i) {
   sum(pop_of(top_displaced$codes[[i]], top_displaced$year[i]), na.rm = TRUE)
 })
@@ -698,13 +704,13 @@ libya <- floods[floods$year == 2023 & floods$country == "Libya", ]
 libya_em <- emdat[emdat$iso == "LBY" & emdat$year == 2023 & emdat$type == "Storm", ]
 ```
 
-**A handful of floods kill most of the people.** DFO records `r number(all_dead)` dead in its floods. The ten floods in the table, `r nrow(top_worst)` of the `r nrow(floods)`, have `r percent(top_share)` of them. The table is the floods with the most dead in DFO's record, after two checks: the tsunami is out (see the data), and so are the records that give more than ten times the dead that EM-DAT has, for the same countries in the year of the flood and the year after, in floods and storms together: `r and_list(paste0(doubtful$where, ", ", format(doubtful$start_date, "%B %Y"), " (", number(doubtful$dead), " dead in DFO, ", number(doubtful$em_dead), " in EM-DAT)"))`. EM-DAT starts in `r first_em_year`, so the floods before it cannot be checked this way.
+**A handful of floods kill most of the people.** Leaving out the `r nrow(doubtful)` doubtful records named below, DFO's floods have `r number(all_dead)` dead. The `r nrow(top_worst)` floods in the table, `r percent(100 * nrow(top_worst) / nrow(floods), 1)` of all the floods, have `r percent(top_share)` of them. The table is the floods with the most dead in DFO's record, after two checks: the tsunami is out (see the data), and so are the records that give more than ten times the dead that EM-DAT has, for the same countries in the year of the flood and the year after, in floods and storms together: `r and_list(paste0(doubtful$where, ", ", format(doubtful$start_date, "%B %Y"), " (", number(doubtful$dead), " dead in DFO, ", number(doubtful$em_dead), " in EM-DAT)"))`. EM-DAT starts in `r first_em_year`, so the floods before it cannot be checked this way.
 
 ```{r worst_table}
 knitr::kable(
   data.frame(
     start = format(top_worst$start_date, "%d %b %Y"),
-    where = top_worst$where,
+    where = top_worst$where_plain,
     cause = top_worst$cause_group,
     dead = number(top_worst$dead),
     em_dead = ifelse(is.na(top_worst$em_dead), "–", number(top_worst$em_dead)),
@@ -723,7 +729,7 @@ knitr::kable(
 knitr::kable(
   data.frame(
     start = format(top_displaced$start_date, "%d %b %Y"),
-    where = top_displaced$where,
+    where = top_displaced$where_plain,
     cause = top_displaced$cause_group,
     displaced = million(top_displaced$displaced),
     share = percent(top_displaced$share, 1)
@@ -733,7 +739,7 @@ knitr::kable(
 )
 ```
 
-**Storm Daniel, September 2023.** The storm brought record rain to Greece on 5 and 6 September, with a reported 750 mm in 24 hours at a station in Zagora, and heavy floods in Libya a few days later, where two old dams burst above the city of Derna ([WMO](https://wmo.int/media/news/storm-daniel-leads-extreme-rain-and-floods-mediterranean-heavy-loss-of-life-libya)). In DFO's record, the flood of Greece, Türkiye and Bulgaria has `r number(daniel$dead)` dead and `r number(daniel$displaced)` displaced; EM-DAT has `r number(daniel_em$dead)` dead and missing in Greece in `r daniel_em$events` flood in 2023. The flood of Libya (cause in DFO: dam failure) has `r number(libya$dead)` dead in DFO, and EM-DAT puts the storm of Libya under storms, not floods, with `r number(libya_em$dead)` dead and missing. The two records differ, as the numbers of such a disaster do: the Libyan Red Crescent reported up to 10,000 people missing in the first days, and the WMO says that "the number of casualties was not immediately confirmed".
+**Storm Daniel, September 2023.** The storm brought record rain to Greece on 5 and 6 September, with a reported 750 mm in 24 hours at a station in Zagora, and heavy floods in Libya a few days later, where two old dams burst above the city of Derna ([WMO](https://wmo.int/media/news/storm-daniel-leads-extreme-rain-and-floods-mediterranean-heavy-loss-of-life-libya)). In DFO's record, the flood of Greece, Türkiye and Bulgaria has `r number(daniel$dead)` dead and `r number(daniel$displaced)` displaced; EM-DAT has `r number(daniel_em$dead)` dead and missing in Greece in `r daniel_em$events` flood in 2023. The flood of Libya (cause in DFO: dam failure) has `r number(libya$dead)` dead in DFO, and EM-DAT has no flood in Libya in 2023, only a storm, with `r number(libya_em$dead)` dead and missing. The two records differ, as the numbers of such a disaster do: the Libyan Red Crescent reported up to 10,000 people missing in the first days, and the WMO says that "the number of casualties was not immediately confirmed".
 
 ---
 
@@ -755,16 +761,23 @@ last_pop_year <- max(rate_years$year)
 dfo_early <- dfo_year[dfo_year$year < 2000, ]
 dfo_late <- dfo_year[dfo_year$year >= 2000, ]
 peak <- dfo_year[which.max(dfo_year$n), ]
-low_late <- dfo_late[which.min(dfo_late$n), ]
+after_peak <- dfo_year[dfo_year$year > peak$year, ]
+low_after <- min(after_peak$n)
+low_after_years <- after_peak$year[after_peak$n == low_after]
 low_first <- dfo_year[which.min(dfo_year$n), ]
 em_peak <- em_year[which.max(em_year$n), ]
-direction <- function(x, years) if (cor(x, years, method = "kendall") > 0) "up" else "down"
+# what a rank test says of a trend: "no clear trend" unless the chance of the pattern without a trend is
+# under 5 in 100
+trend_text <- function(x, years) {
+  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p >= 0.05) "no clear trend" else if (cor(x, years, method = "kendall") > 0) "a rise" else "a fall"
+}
 em_dead_peak <- em_year[which.max(em_year$dead), ]
 ```
 
-**There is no clear trend in the floods since 2000, and the older years do not compare.** The count of large floods in DFO's record went from `r low_first$n` in `r low_first$year` to `r peak$n` in `r peak$year`, and down to `r low_late$n` in `r low_late$year`: swings of that size over a few years say more about how floods were found and written down than about floods (from 2000 to 2023 a rank test finds no trend in this count: by chance, `r chance(dfo_late$n, dfo_late$year)` in 100). DFO warns that the quality and the quantity of the information about a flood is "not always in proportion to its actual magnitude", and that news from some countries arrives later and with less detail ([DFO notes on the archive](https://web.archive.org/web/2023/https://floodobservatory.colorado.edu/Archives/ArchiveNotes.html)). EM-DAT warns of the same, the more so for the years before 2000: the rise in the number of disasters recorded from the 1960s on "largely reflects improvements in reporting, communication technology, and the growth of the database itself", and it advises leaving the years before 2000 out of any study of trends ([EM-DAT FAQ](https://doc.emdat.be/docs/additional-resources-and-tutorials/faq/)). So the figures for EM-DAT keep to `r first_em_year` onwards.
+**There is no clear trend in the floods since 2000, and the older years do not compare.** The count of large floods in DFO's record went from `r low_first$n` in `r low_first$year` to `r peak$n` in `r peak$year`, and down to `r low_after` in `r and_list(low_after_years)`: swings of that size over a few years say more about how floods were found and written down than about floods (from 2000 to 2023 a rank test finds no trend in this count: by chance, `r chance(dfo_late$n, dfo_late$year)` in 100). DFO warns that the quality and the quantity of the information about a flood is "not always in proportion to its actual magnitude", and that news from some countries arrives later and with less detail ([DFO notes on the archive](https://web.archive.org/web/2023/https://floodobservatory.colorado.edu/Archives/ArchiveNotes.html)). EM-DAT warns of the same, the more so for the years before 2000: the rise in the number of disasters recorded from the 1960s on "largely reflects improvements in reporting, communication technology, and the growth of the database itself", and it advises leaving the years before 2000 out of any study of trends ([EM-DAT FAQ](https://doc.emdat.be/docs/additional-resources-and-tutorials/faq/)). So the figures for EM-DAT keep to `r first_em_year` onwards.
 
-From `r first_em_year` to `r last_em_year`, EM-DAT records `r number(min(em_year$n))` to `r number(max(em_year$n))` floods a year, with `r number(em_peak$n)` in `r em_peak$year`, and a rank test finds no trend: the chance, in 100, of a pattern as strong as this one without a trend is `r chance(em_year$n, em_year$year)`. The same test on the dead finds none either (`r chance(em_year$dead, em_year$year)` in 100); the dead range from `r number(min(em_year$dead))` to `r number(max(em_year$dead))` a year, most in `r em_dead_peak$year`. Per million people in the world, the dead of floods went `r direction(rate_years$per_million_world, rate_years$year)` from `r first_em_year` to `r last_pop_year`, the last year of the population data (`r one(rate_years$per_million_world[1])` in `r first_em_year`, `r one(rate_years$per_million_world[nrow(rate_years)])` in `r last_pop_year`; by chance, `r chance(rate_years$per_million_world, rate_years$year)` in 100). The people affected went `r direction(em_year$affected, em_year$year)` (by chance, `r chance(em_year$affected, em_year$year)` in 100), but a few years dominate the total, such as `r em_year$year[which.max(em_year$affected)]`, with `r million(max(em_year$affected))` million.
+From `r first_em_year` to `r last_em_year`, EM-DAT records `r number(min(em_year$n))` to `r number(max(em_year$n))` floods a year, with `r number(em_peak$n)` in `r em_peak$year`, and a rank test finds `r trend_text(em_year$n, em_year$year)`: the chance, in 100, of a pattern as strong as this one without a trend is `r chance(em_year$n, em_year$year)`. For the dead it finds `r trend_text(em_year$dead, em_year$year)` (`r chance(em_year$dead, em_year$year)` in 100); the dead range from `r number(min(em_year$dead))` to `r number(max(em_year$dead))` a year, most in `r em_dead_peak$year`. For the dead of floods per million people in the world, from `r first_em_year` to `r last_pop_year`, the last year of the population data, it finds `r trend_text(rate_years$per_million_world, rate_years$year)` (`r one(rate_years$per_million_world[1])` in `r first_em_year`, `r one(rate_years$per_million_world[nrow(rate_years)])` in `r last_pop_year`; `r chance(rate_years$per_million_world, rate_years$year)` in 100). For the people affected it finds `r trend_text(em_year$affected, em_year$year)` (`r chance(em_year$affected, em_year$year)` in 100), but a few years dominate the total, such as `r em_year$year[which.max(em_year$affected)]`, with `r million(max(em_year$affected))` million.
 
 ```{r trend_chart, fig.height = 6.4}
 #| fig-alt: "Large floods each year in the DFO record, and floods and flood deaths each year in EM-DAT"
@@ -808,7 +821,7 @@ ggplot(series, aes(x = year, y = value)) +
 1. **Asia has the most large floods.** `r percent(share_asia)` of the large floods of the record, and the countries with the most are `r and_list(with_the(top_count$name[1:3]))`. Per square kilometre, `r and_list(with_the(top_area$name[1:2]))` lead.
 2. **A few large countries have most of the dead, and other countries have the most for each person.** The ten countries with the most dead have `r percent(100 * sum(top_dead$dead) / total_dead)` of the deaths in EM-DAT since `r first_em_year`; per million people, `r with_the(top_rate$name[1])` leads, with `r one(top_rate$per_million[1])` a year.
 3. **Every part of the world has its wet season.** Asia floods in June to September, South America and Oceania in the first months of the year.
-4. **A few floods kill most of the people.** The ten deadliest of the table have `r percent(top_share)` of the dead of DFO's floods, and several came with a cyclone.
+4. **A few floods kill most of the people.** The `r nrow(top_worst)` deadliest floods have `r percent(top_share)` of the dead of DFO's floods, and `r sum(top_worst$cause_group == "Cyclone")` of them came with a cyclone.
 5. **The records do not show a clear rise in floods or in flood deaths since `r first_em_year`.** Older counts rise and fall with the way floods were recorded.
 
 **What this does not show.** Neither record is a count of all floods: DFO records the large floods that the news and government reports tell of, and EM-DAT those that meet its entry criteria, so a country with little news coverage or few reports may have more floods than it shows. A flood that kills nobody, in a country that does not ask for help, may appear in neither. The counts are of floods, not of how long they lasted or how much land they covered, and the estimates of the dead, the missing and the displaced differ between sources. Nothing here says what causes floods, or whether climate change is changing them: for that, a record must be built to measure it. And the table of the worst floods leaves out the records that did not agree with the other source, which may include a true record that EM-DAT lists differently.

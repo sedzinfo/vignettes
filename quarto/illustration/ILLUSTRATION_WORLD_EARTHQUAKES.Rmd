@@ -221,6 +221,7 @@ middle$place_index[on_land] <- vapply(inside[on_land], `[`, 1L, 1L)
 reach <- 200
 middle$place_index[!on_land][offshore_km <= reach] <- nearest[offshore_km <= reach]
 land$NAME_LONG[land$NAME_LONG == "Russian Federation"] <- "Russia"
+land$NAME_LONG[land$NAME_LONG == "South Georgia and the Islands"] <- "South Georgia"
 middle$country <- land$NAME_LONG[middle$place_index]
 middle$code <- land$ADM0_A3[middle$place_index]
 middle$continent <- land$CONTINENT[middle$place_index]
@@ -334,7 +335,7 @@ for (k in names(depth_colors)) {
     text = x$text,
     hoverinfo = "text",
     name = paste0(k, " (", ifelse(k == "Shallow", "under 70 km", ifelse(k == "Deep", "300 km or more", "70–300 km")), ")"),
-    marker = list(color = depth_colors[[k]], size = 5, opacity = 0.75, line = list(width = 0))
+    marker = list(color = depth_colors[[k]], size = 4.5, opacity = 0.75, line = list(width = 0))
   )
 }
 p |>
@@ -376,9 +377,9 @@ plot_ly(
   showlegend = FALSE
 ) |>
   chart(
-    paste0("Earthquakes of magnitude 5+, ", 1973, "–", last_year, ", 15 leading countries"),
+    paste0("Most earthquakes of magnitude 5+, ", 1973, "–", last_year),
     "USGS ComCat; countries: Natural Earth. Red: the most of magnitude 6 and above.",
-    x_axis = list(range = c(0, 1.12 * max(bars$n)), showgrid = FALSE),
+    x_axis = list(range = c(0, 1.25 * max(bars$n)), showgrid = FALSE),
     margin = list(l = 160, t = 70, b = 60, r = 20),
     note_y = -0.1
   )
@@ -387,7 +388,7 @@ plot_ly(
 ```{r country_map, fig.height = 5.2}
 on_map <- places[places$code %in% land$ADM0_A3, ]
 classes <- c(1, 10, 50, 100, 500, 1000, Inf)
-class_names <- c("1–9", "10–49", "50–99", "100–499", "500–999", "1,000 or more")
+class_names <- c("1–9", "10–49", "50–99", "100–499", "500–999", "1,000+")
 on_map$class <- as.integer(cut(on_map$n, classes, right = FALSE))
 steps <- do.call(c, lapply(seq_along(class_names), function(i) {
   list(list((i - 1) / 6, blues[i + 1]), list(i / 6, blues[i + 1]))
@@ -404,10 +405,15 @@ plot_ly(
   text = ~ paste0(country, ": ", number(n), " earthquakes of magnitude 5+<br>", strong, " of magnitude 6+"),
   hoverinfo = "text",
   colorbar = list(
-    title = list(text = "Earthquakes<br>of magnitude 5+"),
+    title = list(text = "Earthquakes of magnitude 5+", side = "top"),
+    orientation = "h",
+    x = 0.5,
+    xanchor = "center",
+    y = -0.02,
+    yanchor = "top",
     tickvals = 1:6,
     ticktext = class_names,
-    len = 0.8,
+    len = 0.95,
     thickness = 14
   )
 ) |>
@@ -422,8 +428,8 @@ plot_ly(
       projection = list(type = "natural earth"),
       lataxis = list(range = c(-57, 85))
     ),
-    margin = list(t = 50, b = 40, l = 0, r = 0),
-    note_y = -0.02
+    margin = list(t = 50, b = 110, l = 0, r = 0),
+    note_y = -0.2
   )
 ```
 
@@ -530,7 +536,7 @@ for (k in names(depth_colors)) {
     name = k,
     orientation = "h",
     marker = list(color = depth_colors[[k]], line = list(color = "white", width = 1.5)),
-    text = ifelse(x$share >= 6, percent(x$share), ""),
+    text = ifelse(x$share >= 10, percent(x$share), ""),
     textposition = "inside",
     insidetextanchor = "middle",
     textfont = list(color = "white"),
@@ -618,7 +624,7 @@ plot_ly(
   chart(
     paste0("Deaths in earthquakes since ", since, ", 10 countries"),
     "NCEI Significant Earthquake Database. Deaths as recorded, in the country that NCEI names.",
-    x_axis = list(range = c(0, 1.2 * max(bars$deaths)), showgrid = FALSE),
+    x_axis = list(range = c(0, 1.3 * max(bars$deaths)), showgrid = FALSE),
     margin = list(l = 120, t = 70, b = 60, r = 20),
     note_y = -0.1
   )
@@ -728,7 +734,7 @@ ggplot(series, aes(x = year, y = n)) +
   geom_line(colour = dark_gray, linewidth = 0.5) +
   geom_point(colour = dark_gray, size = 1) +
   geom_segment(data = step_lines, aes(x = x, xend = xend, y = y, yend = y), colour = red, linewidth = 1.2) +
-  facet_wrap(~panel, ncol = 1, scales = "free_y") +
+  facet_wrap(~panel, ncol = 1, scales = "free") +
   scale_x_continuous(breaks = seq(1900, 2020, 20)) +
   scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.08))) +
   labs(
