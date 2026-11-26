@@ -1,0 +1,826 @@
+---
+title: "Where the World Burns: Wildfires on Every Continent Since 2002"
+description: "Wildfires on every continent in satellite data: how much of Africa, Europe and the rest of the world burns each year, whether the world burns more than it used to, what burns, when each continent burns, and the worst years."
+author: ""
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+---
+
+```{r setup, include=FALSE}
+directory <- if (rstudioapi::isAvailable()) {
+  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
+} else {
+  ""
+}
+source(paste0(directory, "R/code_options.R"))
+# no knitr cache: the data are downloaded when the page is rendered, and the site keeps
+# what was rendered in _freeze/
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## What is this?
+
+Every summer the fires of California, Canada, Australia or Greece make the news. They are a small part of the land that burns in the world: most of it burns in Africa, every year, in dry seasons that seldom make the news at all. This story compares the continents and asks five questions:
+
+1. **Where in the world does land burn?**
+2. **Is the world burning more than it used to?**
+3. **What burns: forest, savanna, grassland or fields?**
+4. **When does each continent burn?**
+5. **Which were the worst years?**
+
+[Greece Burning](ILLUSTRATION_GREEK_WILDFIRES.html) looks at one country close up; this page looks at the whole world.
+
+The data come from the **Global Wildfire Information System** (GWIS), a joint initiative of the Group on Earth Observations and the EU's Copernicus programme, funded mainly by the European Commission ([GWIS](https://gwis.jrc.ec.europa.eu/)). Our World in Data adds up its figures by continent ([Wildfires](https://ourworldindata.org/wildfires)), and they are downloaded from there when the page is rendered:
+
+- **The land burnt each year since 2002 in every country**, mapped by NASA's MODIS sensors on the Terra and Aqua satellites, which find land that has just burnt in their images (the product MCD64A1, [Giglio et al. 2018](https://doi.org/10.1016/j.rse.2018.08.005)), with the kind of land that burnt: forest, savanna, shrubland and grassland, cropland or other land ([GWIS country profiles](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads)).
+- **The land burnt each week since 2012**, from MODIS and the finer VIIRS sensors, and the **carbon dioxide** that the fires released each year since 2003 ([GWIS seasonal trends](https://gwis.jrc.ec.europa.eu/apps/gwis.statistics/seasonaltrend)).
+- **The land area of each country**, from the World Bank ([land area](https://ourworldindata.org/grapher/land-area-km)), and the continent it is in ([continents](https://ourworldindata.org/grapher/continents-according-to-our-world-in-data)).
+
+A **hectare** is a square of 100 metres by 100, so a million hectares are 10,000 square kilometres.
+
+**The satellites count every fire.** They map the land that burnt, whatever started the fire: a wildfire, a farmer burning the stubble of a field, or a fire set on purpose to clear dry grass. And they miss some: small fires, and fires hidden by cloud or by the trees above them ([Our World in Data](https://ourworldindata.org/grapher/annual-area-burnt-by-wildfires-gwis)).
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("dplyr", "ggplot2", "plotly"))
+library(dplyr)
+library(ggplot2)
+library(plotly)
+```
+
+## The data
+
+```{r download}
+# a chart of Our World in Data as a table: one row for each country or region and each year (or week)
+owid <- function(chart) {
+  read.csv(paste0(
+    "https://ourworldindata.org/grapher/",
+    chart,
+    ".csv?v=1&csvType=full&useColumnShortNames=true"
+  ))
+}
+# the land burnt each year, in hectares, by the kind of land (MODIS)
+cover <- owid("annual-burned-area-by-landcover")
+# the land burnt each week, in hectares (MODIS and VIIRS); the weeks are written as "2012-W01"
+weekly <- owid("weekly-area-burnt-by-wildfires")
+# the carbon dioxide that the fires released each year, in tonnes (MODIS and VIIRS)
+co2 <- owid("annual-carbon-dioxide-emissions")
+# the land area of each country, in square kilometres (World Bank), and the continent it is in
+land <- owid("land-area-km")
+continents <- owid("continents-according-to-our-world-in-data")
+```
+
+```{r groups}
+# the kinds of land: the columns of the data and their names on this page
+covers <- c(
+  forest = "Forest",
+  savannas = "Savanna",
+  shrublands_grasslands = "Shrubland and grassland",
+  croplands = "Cropland",
+  other = "Other land"
+)
+cover$all <- rowSums(cover[names(covers)])
+first_year <- min(cover$year)
+last_year <- max(cover$year)
+first_five <- first_year:(first_year + 4)
+last_five <- (last_year - 4):last_year
+
+# the continents of Our World in Data, which counts all of Russia in Europe, with Russia on its own
+by_group <- function(x, time = "year") {
+  values <- setdiff(names(x), c("entity", "code", time))
+  europe <- x[x$entity == "Europe", ]
+  russia <- x[x$entity == "Russia", ]
+  russia <- russia[match(europe[[time]], russia[[time]]), ]
+  rest <- europe
+  rest[values] <- europe[values] - russia[values]
+  rest$entity <- "Europe without Russia"
+  others <- c("Africa", "Asia", "North America", "Oceania", "South America", "Russia")
+  y <- rbind(x[x$entity %in% others, ], rest)
+  names(y)[names(y) == "entity"] <- "group"
+  y
+}
+yearly <- by_group(cover)
+world <- cover[cover$entity == "World", ]
+# the groups, from the one that burns the most land to the one that burns the least
+groups <- names(sort(tapply(yearly$all, yearly$group, mean), decreasing = TRUE))
+# the groups and the world in one table, the world first
+with_world <- rbind(
+  yearly[, c("group", "year", "all", names(covers))],
+  data.frame(group = "World", world[, c("year", "all", names(covers))])
+)
+with_world$group <- factor(with_world$group, levels = c("World", groups))
+
+# the countries: rows with a country code that Our World in Data puts on a continent (its regions,
+# such as "Europe (excl. Russia)", have no code or one that starts with OWID_, like Kosovo's)
+country_codes <- continents$code[nzchar(continents$code)]
+group_of <- function(code) {
+  continent <- continents$owid_region[match(code, continents$code)]
+  ifelse(code == "RUS", "Russia", ifelse(continent == "Europe", "Europe without Russia", continent))
+}
+# each country: the land burnt in an average year, its land area (the latest year that the World Bank
+# has) and its group
+countries <- cover[cover$code %in% country_codes, ] |>
+  group_by(code, entity) |>
+  summarise(burnt = mean(all), crops = mean(croplands), .groups = "drop")
+land_now <- land[land$code %in% country_codes & !is.na(land$ag_lnd_totl_k2), ] |>
+  group_by(code) |>
+  slice_max(year, n = 1)
+countries$km2 <- land_now$ag_lnd_totl_k2[match(countries$code, land_now$code)]
+countries$group <- group_of(countries$code)
+# a hectare is 1% of a square kilometre, so hectares per square kilometre are a percentage
+countries$share <- countries$burnt / countries$km2
+```
+
+```{r chart_style}
+red <- "#d62728"
+gray <- "#bdbdbd"
+dark_gray <- "#6b6b6b" # also the colour of the notes
+# the kinds of land, in the order of the stacked bars, whose neighbours were checked for colour
+# blindness; the other land, a sliver, is grey
+cover_colors <- c(
+  forest = "#008300",
+  savannas = "#eda100",
+  shrublands_grasslands = "#1baf7a",
+  croplands = "#eb6834",
+  other = "#d9d9d9"
+)
+# one hue, from light to dark, for amounts: the map and the calendar
+oranges <- c("#feedde", "#fdd0a2", "#fdae6b", "#fd8d3c", "#f16913", "#d94801", "#8c2d04")
+
+# the source of a plotly chart, as a note under it, and the common layout
+chart <- function(
+  p,
+  title,
+  source,
+  y_title = "",
+  y_axis = list(),
+  x_axis = list(),
+  annotations = list(),
+  margin = list(t = 70, b = 90),
+  note_y = -0.16,
+  ...
+) {
+  note <- list(
+    text = paste("Source:", source),
+    xref = "paper",
+    yref = "paper",
+    x = 0,
+    y = note_y,
+    xanchor = "left",
+    yanchor = "top",
+    showarrow = FALSE,
+    font = list(size = 11, color = dark_gray)
+  )
+  layout(
+    p,
+    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
+    yaxis = c(list(title = y_title), y_axis),
+    xaxis = c(list(title = ""), x_axis),
+    margin = margin,
+    annotations = c(annotations, list(note)),
+    ...
+  ) |>
+    config(displaylogo = FALSE)
+}
+legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+# the look of the ggplot charts
+theme_page <- function(base_size = 14) {
+  theme_minimal(base_size = base_size) +
+    theme(
+      plot.background = element_rect(fill = "white", colour = NA),
+      plot.title = element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
+      plot.caption.position = "plot",
+      legend.position = "top",
+      legend.justification = "left"
+    )
+}
+
+# numbers in the text
+number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
+percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
+one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
+two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
+# millions (of hectares or tonnes): whole numbers from 10 million, one decimal below
+million <- function(x) ifelse(abs(x) >= 1e7, number(x / 1e6), one(x / 1e6))
+# a change in per cent, with its sign (the bold font of the charts has no minus sign: a dash there)
+change_text <- function(x, minus = "−") paste0(ifelse(x >= 0, "+", minus), round(abs(x)), "%")
+and_list <- function(x) {
+  if (length(x) < 2) {
+    return(paste(x))
+  }
+  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+}
+# country names that take "the" in a sentence
+with_the <- function(x) {
+  ifelse(
+    x %in% c("Central African Republic", "Democratic Republic of Congo", "United States", "Gambia"),
+    paste("the", x),
+    x
+  )
+}
+# a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
+# without a trend
+chance <- function(x, years) {
+  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
+  if (p < 0.01) "less than 1" else as.character(round(100 * p))
+}
+```
+
+```{r weekly}
+# the weekly figures: the year, and the week (the 53rd week of the years that have one counts as the
+# 52nd, so that every year has the same weeks)
+week_parts <- function(x) {
+  x$year <- as.integer(substr(x$week, 1, 4))
+  x$w <- pmin(as.integer(substr(x$week, 7, 8)), 52)
+  x
+}
+weekly <- week_parts(weekly)
+# the month of a week: that of its middle day, near enough
+month_of <- function(w) as.integer(format(as.Date("2001-01-01") + 7 * (w - 1) + 3, "%m"))
+first_week_year <- min(weekly$year)
+last_season <- 2024 # the last year of the weekly figures and the carbon dioxide used here (below)
+
+# for the world, the weekly figures of each year added up, against the yearly MODIS figures
+weekly_world <- weekly[weekly$entity == "World", ]
+agree <- weekly_world |>
+  group_by(year) |>
+  summarise(weekly = sum(area_ha)) |>
+  inner_join(world[, c("year", "all")], by = "year") |>
+  mutate(ratio = 100 * weekly / all)
+before <- agree[agree$year <= last_season, ]
+# April to September: weeks 14 to 39
+mid_year <- weekly_world[weekly_world$w %in% 14:39, ] |>
+  group_by(year) |>
+  summarise(area = sum(area_ha))
+mid_before <- mid_year$area[mid_year$year <= last_season]
+modis_before <- world$all[world$year %in% before$year]
+```
+
+**The continents are those of Our World in Data, with Russia on its own.** Our World in Data counts all of Russia in Europe. But most of Russia is in Asia, and Russia burns `r round(mean(yearly$all[yearly$group == "Russia"]) / mean(yearly$all[yearly$group == "Europe without Russia"]))` times as much land as the rest of Europe put together: as part of Europe, it would hide everything else.
+
+**The weekly figures, and the carbon dioxide, stop at `r last_season`.** From `r first_week_year` to `r last_season`, the weekly figures of a year added up to between `r round(min(before$ratio))`% and `r round(max(before$ratio))`% of the yearly MODIS figure for the world; in `r last_season + 1`, to `r round(agree$ratio[agree$year == last_season + 1])`%. From April to September `r last_season + 1` they add up to `r million(mid_year$area[mid_year$year == last_season + 1])` million hectares, against `r million(min(mid_before))` to `r million(max(mid_before))` in the same months of the years before, while the yearly MODIS figure for `r last_season + 1`, `r million(world$all[world$year == last_season + 1])` million hectares, is within the range of the years before it (`r million(min(modis_before))` to `r million(max(modis_before))`). The weekly figures may have changed the way they are made; until the two series agree again, this page uses them, and the carbon dioxide that comes with them, only up to `r last_season`.
+
+---
+
+## 1. Where in the world does land burn?
+
+```{r where_numbers}
+mean_by_group <- yearly |>
+  group_by(group) |>
+  summarise(burnt = mean(all)) |>
+  mutate(world_share = 100 * burnt / mean(world$all))
+# the share of its land, from the countries whose land area the World Bank has
+group_land <- countries |>
+  filter(!is.na(km2)) |>
+  group_by(group) |>
+  summarise(land_share = sum(burnt) / sum(km2))
+mean_by_group$land_share <- group_land$land_share[match(mean_by_group$group, group_land$group)]
+in_group <- function(g, column) mean_by_group[[column]][mean_by_group$group == g]
+world_burnt <- mean(world$all)
+with_land <- countries[!is.na(countries$km2), ]
+world_land_share <- sum(with_land$burnt) / sum(with_land$km2)
+eu <- land[land$entity == "European Union (27)", ]
+eu_hectares <- 100 * eu$ag_lnd_totl_k2[which.max(eu$year)]
+in_country <- function(name, column) countries[[column]][countries$entity == name]
+most_burnt <- countries |>
+  filter(!is.na(km2)) |>
+  arrange(desc(share)) |>
+  head(4)
+n_years <- last_year - first_year + 1
+europe_rest <- countries[countries$group == "Europe without Russia", ]
+ukraine_part <- 100 * in_country("Ukraine", "burnt") / sum(europe_rest$burnt)
+```
+
+**Africa: two thirds of all the land that burns.** From `r first_year` to `r last_year`, fires burnt `r million(world_burnt)` million hectares of the world's land in an average year, about as much as all the land of the European Union (`r million(eu_hectares)` million hectares), and `r percent(world_land_share, 1)` of the land of the world. `r percent(in_group("Africa", "world_share"))` of it was in Africa: `r million(in_group("Africa", "burnt"))` million hectares a year, as much as `r percent(in_group("Africa", "land_share"))` of the continent. Oceania, almost all of it Australia, had `r percent(in_group("Oceania", "world_share"))` of the world's burnt land, South America `r percent(in_group("South America", "world_share"))` and Asia `r percent(in_group("Asia", "world_share"))`. Russia had `r percent(in_group("Russia", "world_share"), 1)`, North America `r percent(in_group("North America", "world_share"), 1)` and the rest of Europe `r percent(in_group("Europe without Russia", "world_share"), 1)`.
+
+```{r where_chart, fig.height = 4.6}
+bars <- mean_by_group[order(mean_by_group$burnt), ] # the largest at the top
+bars$group <- factor(bars$group, levels = bars$group)
+bar_colors <- ifelse(bars$group == "Africa", red, gray)
+left <- plot_ly(
+  bars,
+  x = ~ burnt / 1e6,
+  y = ~group,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = bar_colors),
+  text = ~ paste0(million(burnt), " (", percent(world_share), ")"),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f} million hectares a year<extra></extra>",
+  showlegend = FALSE
+)
+right <- plot_ly(
+  bars,
+  x = ~land_share,
+  y = ~group,
+  type = "bar",
+  orientation = "h",
+  marker = list(color = bar_colors),
+  text = ~ percent(land_share, 1),
+  textposition = "outside",
+  cliponaxis = FALSE,
+  hovertemplate = "%{y}: %{x:.1f}% of its land a year<extra></extra>",
+  showlegend = FALSE
+)
+hidden_axis <- list(title = "", showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE)
+panel_title <- function(text, axis) {
+  list(
+    text = text,
+    xref = paste(axis, "domain"),
+    yref = "paper",
+    x = 0,
+    y = 1,
+    xanchor = "left",
+    yanchor = "bottom",
+    showarrow = FALSE,
+    font = list(size = 13)
+  )
+}
+# the left panel wider: its labels are longer
+subplot(left, right, shareY = TRUE, margin = 0.04, widths = c(0.6, 0.4)) |>
+  chart(
+    paste0("Land burnt in an average year, ", first_year, "–", last_year),
+    "GWIS (MODIS), via Our World in Data; land areas: World Bank.",
+    x_axis = c(hidden_axis, list(range = c(0, 1.75 * max(bars$burnt) / 1e6))),
+    xaxis2 = c(hidden_axis, list(range = c(0, 1.45 * max(bars$land_share)))),
+    annotations = list(
+      panel_title("Million hectares (and share of the world)", "x"),
+      panel_title("Share of its own land", "x2")
+    ),
+    margin = list(l = 150, t = 90, b = 50, r = 10),
+    note_y = -0.06
+  )
+```
+
+**Some countries burn a large part of their land every year.** In `r with_the(most_burnt$entity[1])`, the land burnt in an average year adds up to `r percent(most_burnt$share[1])` of the country: over the `r n_years` years, `r round(n_years * most_burnt$share[1] / 100)` times the whole country, so the same land burns again and again. `r and_list(paste0(with_the(most_burnt$entity[2:4]), " (", percent(most_burnt$share[2:4]), ")"))` come next, all in the belts of grassland and scattered trees north and south of Africa's rainforest.
+
+```{r map, fig.height = 5.2}
+on_map <- countries[!is.na(countries$share), ]
+classes <- c(0, 0.1, 0.5, 1, 5, 10, 20, Inf)
+class_names <- c("Under 0.1%", "0.1–0.5%", "0.5–1%", "1–5%", "5–10%", "10–20%", "20% or more")
+on_map$class <- as.integer(cut(on_map$share, classes, right = FALSE))
+# a colour scale of seven steps, one colour for each class
+steps <- do.call(c, lapply(seq_along(oranges), function(i) {
+  list(list((i - 1) / 7, oranges[i]), list(i / 7, oranges[i]))
+}))
+plot_ly(
+  on_map,
+  type = "choropleth",
+  locations = ~code,
+  z = ~class,
+  zmin = 0.5,
+  zmax = 7.5,
+  colorscale = steps,
+  marker = list(line = list(color = "white", width = 0.3)),
+  text = ~ paste0(
+    entity,
+    ": ",
+    ifelse(share < 1, two(share), one(share)),
+    "% of its land a year<br>",
+    number(burnt),
+    " hectares a year"
+  ),
+  hoverinfo = "text",
+  colorbar = list(
+    title = list(text = "Land burnt<br>each year"),
+    tickvals = 1:7,
+    ticktext = class_names,
+    len = 0.8,
+    thickness = 14
+  )
+) |>
+  chart(
+    paste0("Land burnt in an average year, % of each country, ", first_year, "–", last_year),
+    "GWIS (MODIS), via Our World in Data; land areas: World Bank. Grey: no land area in the World Bank's data.",
+    geo = list(
+      showframe = FALSE,
+      showcoastlines = FALSE,
+      showland = TRUE,
+      landcolor = "#e8e8e8",
+      projection = list(type = "natural earth"),
+      lataxis = list(range = c(-57, 85))
+    ),
+    margin = list(t = 50, b = 40, l = 0, r = 0),
+    note_y = -0.02
+  )
+```
+
+**In Europe, most of it is Ukraine's.** Without Russia, Europe burnt `r million(in_group("Europe without Russia", "burnt"))` million hectares a year, `r percent(in_group("Europe without Russia", "land_share"), 1)` of its land, and `r percent(ukraine_part)` of that was in Ukraine, which burnt `r percent(in_country("Ukraine", "share"), 1)` of its own land every year, mostly fields (section 3). The countries of Europe's south burn far less of their land: Portugal `r percent(in_country("Portugal", "share"), 2)` a year, Greece `r percent(in_country("Greece", "share"), 2)`, Spain `r percent(in_country("Spain", "share"), 2)` and Italy `r percent(in_country("Italy", "share"), 2)`.
+
+---
+
+## 2. Is the world burning more than it used to?
+
+```{r trend_numbers}
+changes <- with_world |>
+  group_by(group) |>
+  summarise(
+    start = mean(all[year %in% first_five]),
+    end = mean(all[year %in% last_five]),
+    chance = chance(all, year)
+  ) |>
+  mutate(change = 100 * (end / start - 1))
+of_change <- function(g, column) changes[[column]][changes$group == g]
+world_fall <- of_change("World", "start") - of_change("World", "end")
+africa_part <- 100 * (of_change("Africa", "start") - of_change("Africa", "end")) / world_fall
+north_america <- yearly[yearly$group == "North America", ]
+without_2023 <- mean(north_america$all[north_america$year %in% setdiff(last_five, 2023)])
+falls <- changes[changes$group != "World" & changes$change <= -30, ]
+```
+
+**Less, by about a fifth.** In `r min(first_five)`–`r max(first_five)` fires burnt `r million(of_change("World", "start"))` million hectares a year, in `r min(last_five)`–`r max(last_five)` `r million(of_change("World", "end"))`: `r percent(-of_change("World", "change"))` less. And the fall is not just a matter of a few good years at the end: a rank test of all the years finds it too (the chance of a pattern as strong as this one without a trend is `r of_change("World", "chance")` in 100).
+
+The table compares the first and the last five years, million hectares a year. The last column is the chance, in 100, of a pattern as strong as that of all the years without a trend.
+
+```{r trend_table}
+knitr::kable(
+  data.frame(
+    group = changes$group,
+    start = million(changes$start),
+    end = million(changes$end),
+    change = change_text(changes$change),
+    chance = changes$chance
+  ),
+  col.names = c(
+    "",
+    paste0(min(first_five), "–", max(first_five)),
+    paste0(min(last_five), "–", max(last_five)),
+    "Change",
+    "By chance, in 100"
+  ),
+  align = "lrrrr"
+)
+```
+
+**Most of the fall is Africa's.** `r percent(africa_part)` of the land that the world stopped burning was in Africa, which burnt `r percent(-of_change("Africa", "change"))` less. `r and_list(falls$group[falls$group != "Africa"])` burnt `r percent(-max(falls$change[falls$group != "Africa"]))` to `r percent(-min(falls$change[falls$group != "Africa"]))` less, but they burn far less land than Africa to begin with. Only North America burnt more, by `r percent(of_change("North America", "change"))`, and mostly because of 2023: the other four of its last five years burnt `r percent(100 * (without_2023 / of_change("North America", "start") - 1))` more than its first five.
+
+This is not new. Satellites found the same from 1998 to 2015: the land burnt in the world fell by about a quarter, most of all in the savannas, and mainly because farming spread and grew more intensive ([Andela et al. 2017](https://doi.org/10.1126/science.aal4108)).
+
+```{r trend_chart, fig.height = 5.6}
+#| fig-alt: "Land burnt each year in the world and in each continent, against its average of the first five years"
+index <- with_world |>
+  group_by(group) |>
+  mutate(index = 100 * all / mean(all[year %in% first_five])) |>
+  ungroup()
+late_lines <- changes |>
+  mutate(level = 100 * end / start)
+# the title of each panel: the group and its change
+panel_names <- setNames(
+  paste0(gsub("without ", "without\n", changes$group), "\n", change_text(changes$change, minus = "–")),
+  changes$group
+)
+ggplot(index, aes(x = year, y = index)) +
+  geom_hline(yintercept = 100, colour = "grey75", linewidth = 0.4) +
+  geom_line(colour = dark_gray, linewidth = 0.5) +
+  geom_point(colour = dark_gray, size = 0.9) +
+  geom_segment(
+    data = late_lines,
+    aes(x = min(last_five) - 0.4, xend = max(last_five) + 0.4, y = level, yend = level),
+    colour = red,
+    linewidth = 1.2
+  ) +
+  facet_wrap(~group, ncol = 4, labeller = as_labeller(panel_names)) +
+  scale_x_continuous(breaks = c(2005, 2015, 2025)) +
+  scale_y_continuous(breaks = seq(50, 250, 50)) +
+  labs(
+    title = "Burning more or less?",
+    subtitle = paste0(
+      "Land burnt each year, the average of ",
+      min(first_five),
+      "–",
+      max(first_five),
+      " = 100\nRed: the average of ",
+      min(last_five),
+      "–",
+      max(last_five),
+      ", and the change, under each name"
+    ),
+    x = NULL,
+    y = NULL,
+    caption = "Data: GWIS (MODIS), via Our World in Data"
+  ) +
+  theme_page(13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold", hjust = 0)
+  )
+```
+
+---
+
+## 3. What burns: forest, savanna, grassland or fields?
+
+```{r cover_numbers}
+cover_totals <- with_world |>
+  group_by(group) |>
+  summarise(across(all_of(names(covers)), sum))
+cover_shares <- cover_totals
+cover_shares[names(covers)] <- 100 * cover_totals[names(covers)] / rowSums(cover_totals[names(covers)])
+of_cover <- function(g, k) cover_shares[[k]][cover_shares$group == g]
+# the world, by kind of land: the first and the last five years, and the trend over all the years
+world_covers <- do.call(rbind, lapply(names(covers)[1:4], function(k) {
+  data.frame(
+    cover = covers[[k]],
+    start = mean(world[[k]][world$year %in% first_five]),
+    end = mean(world[[k]][world$year %in% last_five]),
+    chance = chance(world[[k]], world$year)
+  )
+}))
+world_covers$change <- 100 * (world_covers$end / world_covers$start - 1)
+of_world_cover <- function(name, column) world_covers[[column]][world_covers$cover == name]
+# the forest burnt in a group: the first and the last five years, and the trend
+forest_in <- function(g, column) {
+  x <- yearly[yearly$group == g, ]
+  list(
+    start = mean(x$forest[x$year %in% first_five]),
+    end = mean(x$forest[x$year %in% last_five]),
+    chance = chance(x$forest, x$year)
+  )[[column]]
+}
+ukraine_crops <- 100 *
+  in_country("Ukraine", "crops") /
+  sum(countries$crops[countries$group == "Europe without Russia"])
+```
+
+**Mostly savanna, shrubs and grass; forest is a small part.** Of all the land that burnt in the world from `r first_year` to `r last_year`, `r percent(of_cover("World", "savannas"))` was savanna, `r percent(of_cover("World", "shrublands_grasslands"))` shrubland and grassland, `r percent(of_cover("World", "croplands"))` cropland and `r percent(of_cover("World", "forest"))` forest.
+
+```{r cover_chart, fig.height = 5.2}
+rows <- factor(cover_shares$group, levels = rev(c("World", groups)))
+p <- plot_ly()
+for (k in names(covers)) {
+  p <- add_bars(
+    p,
+    x = cover_shares[[k]],
+    y = rows,
+    name = covers[[k]],
+    orientation = "h",
+    marker = list(color = cover_colors[[k]], line = list(color = "white", width = 1.5)),
+    # a label only on the larger parts
+    text = ifelse(cover_shares[[k]] >= 12, percent(cover_shares[[k]]), ""),
+    textposition = "inside",
+    insidetextanchor = "middle",
+    textfont = list(color = if (k == "forest") "white" else "#1a1a1a"),
+    hovertemplate = paste0("%{y}: %{x:.1f}% ", tolower(covers[[k]]), "<extra></extra>")
+  )
+}
+p |>
+  chart(
+    paste0("What burnt, % of the land burnt, ", first_year, "–", last_year),
+    "GWIS (MODIS burned area and land cover), via Our World in Data.",
+    x_axis = list(range = c(0, 100), ticksuffix = "%", showgrid = FALSE),
+    barmode = "stack",
+    legend = c(legend_top, list(traceorder = "normal")),
+    uniformtext = list(minsize = 10, mode = "hide"),
+    margin = list(l = 150, t = 100, b = 70, r = 10),
+    note_y = -0.1
+  )
+```
+
+**What the satellites call savanna.** GWIS lays the burnt land on NASA's map of land cover, made from the same MODIS images ([GWIS country profiles](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads)), and that map sorts land by how much of it trees cover, not by climate: forest is land where trees cover more than 60% of the ground, savanna land where they cover between 10% and 60% ([MODIS land cover user guide](https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf)). In Africa, South America and Australia that is the savanna of the word, grass under scattered trees. In Russia and Canada, where there is no tropical savanna, it takes in northern forest with gaps between the trees, which is why `r percent(of_cover("Russia", "savannas"))` of Russia's burnt land and `r percent(of_cover("North America", "savannas"))` of North America's counts as savanna.
+
+**Europe burns fields.** Without Russia, `r percent(of_cover("Europe without Russia", "croplands"))` of the land that burnt in Europe was cropland, `r percent(ukraine_crops)` of it in Ukraine; forest, as the satellites define it, was `r percent(of_cover("Europe without Russia", "forest"), 1)`.
+
+**Savanna, grassland and fields burn less; forest, not clearly.** In the world, by kind of land, million hectares a year:
+
+```{r cover_table}
+knitr::kable(
+  data.frame(
+    cover = world_covers$cover,
+    start = million(world_covers$start),
+    end = million(world_covers$end),
+    change = change_text(world_covers$change),
+    chance = world_covers$chance
+  ),
+  col.names = c(
+    "",
+    paste0(min(first_five), "–", max(first_five)),
+    paste0(min(last_five), "–", max(last_five)),
+    "Change",
+    "By chance, in 100"
+  ),
+  align = "lrrrr"
+)
+```
+
+The burnt cropland fell the most, `r percent(-of_world_cover("Cropland", "change"))`, and savanna, shrubland and grassland by about a fifth, all with clear trends. The burnt forest fell by `r percent(-of_world_cover("Forest", "change"))`, but a pattern like that would come up by chance `r of_world_cover("Forest", "chance")` times in 100 without a trend. In North America the forest that burnt rose from `r one(forest_in("North America", "start") / 1e6)` million hectares a year in `r min(first_five)`–`r max(first_five)` to `r one(forest_in("North America", "end") / 1e6)` in `r min(last_five)`–`r max(last_five)` (by chance `r forest_in("North America", "chance")` in 100); in Russia it fell, from `r one(forest_in("Russia", "start") / 1e6)` to `r one(forest_in("Russia", "end") / 1e6)`.
+
+---
+
+## 4. When does each continent burn?
+
+```{r season_numbers}
+seasons_of <- weekly[weekly$year <= last_season, ]
+# each group: the share of the year's burnt land in each week, the average of the years
+season <- by_group(seasons_of[, c("entity", "code", "week", "area_ha")], time = "week") |>
+  week_parts() |>
+  group_by(group, year, w) |>
+  summarise(area = sum(area_ha), .groups = "drop_last") |>
+  mutate(share = 100 * area / sum(area)) |>
+  group_by(group, w) |>
+  summarise(share = mean(share), .groups = "drop")
+by_month <- season |>
+  mutate(month = month_of(w)) |>
+  group_by(group, month) |>
+  summarise(share = sum(share), .groups = "drop") |>
+  arrange(group, month)
+# the three months in a row in which each group burns the most (December to February included)
+three <- function(shares) sapply(1:12, function(m) sum(shares[(m - 1 + 0:2) %% 12 + 1]))
+best <- by_month |>
+  group_by(group) |>
+  summarise(start = which.max(three(share)), share = max(three(share)))
+months_of <- function(g) {
+  s <- best$start[best$group == g]
+  (s - 1 + 0:2) %% 12 + 1
+}
+season_text <- function(g) {
+  m <- months_of(g)
+  paste(month.name[m[1]], "to", month.name[m[3]])
+}
+season_share <- function(g) percent(best$share[best$group == g])
+# the countries that burn the most of a group's land in its three months
+countries_weekly <- seasons_of[seasons_of$code %in% country_codes, ]
+countries_weekly$group <- group_of(countries_weekly$code)
+leaders <- function(g, n = 2) {
+  x <- countries_weekly[countries_weekly$group == g & month_of(countries_weekly$w) %in% months_of(g), ]
+  s <- sort(tapply(x$area_ha, x$entity, sum), decreasing = TRUE)
+  and_list(paste0(with_the(names(s)[1:n]), " (", percent(100 * s[1:n] / sum(s)), ")"))
+}
+# the share of a country's burnt land in some months
+in_months <- function(name, months) {
+  x <- countries_weekly[countries_weekly$entity == name, ]
+  percent(100 * sum(x$area_ha[month_of(x$w) %in% months]) / sum(x$area_ha))
+}
+```
+
+**Each in its own dry season, and Africa in two.** The chart shows, for each group, how the land it burns is spread over the year: the share of a year's burnt land in each week, on average from `r first_week_year` to `r last_season`.
+
+```{r season, fig.height = 4.4}
+#| fig-alt: "Share of the year's burnt land in each week, for each continent, as a calendar"
+season$class <- cut(
+  season$share,
+  c(-Inf, 0.5, 1, 2, 3, 4, Inf),
+  labels = c("Under 0.5%", "0.5–1%", "1–2%", "2–3%", "3–4%", "4% or more")
+)
+middle_of_month <- (as.integer(format(as.Date(paste0("2001-", 1:12, "-15")), "%j")) - 1) / 7 + 1
+ggplot(season, aes(x = w, y = factor(group, levels = rev(groups)), fill = class)) +
+  geom_tile(colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = oranges[2:7], drop = FALSE) +
+  scale_x_continuous(breaks = middle_of_month, labels = month.abb, expand = c(0, 0)) +
+  guides(fill = guide_legend(nrow = 2)) +
+  labs(
+    title = "When each continent burns",
+    subtitle = paste0(
+      "Share of the year's burnt land in each week, ",
+      first_week_year,
+      "–",
+      last_season
+    ),
+    x = NULL,
+    y = NULL,
+    fill = NULL,
+    caption = "Data: GWIS (MODIS and VIIRS), via Our World in Data"
+  ) +
+  theme_page(13) +
+  theme(panel.grid = element_blank(), legend.text = element_text(size = rel(0.8)))
+```
+
+**Africa** burns the most from `r season_text("Africa")`, `r season_share("Africa")` of the land it burns in a year, but it has two seasons, one on each side of the equator, each in its own dry months: `r in_months("South Sudan", c(11, 12, 1, 2))` of South Sudan's burnt land burns from November to February, and `r in_months("Angola", 6:9)` of Angola's from June to September. **South America** burns from `r season_text("South America")` (`r season_share("South America")`), most of it in `r leaders("South America")`, and **Oceania** from `r season_text("Oceania")` (`r season_share("Oceania")`), almost all of it in Australia.
+
+**Asia** burns from `r season_text("Asia")` (`r season_share("Asia")`), mostly in `r leaders("Asia", 3)`. **North America** burns most in spring too, from `r season_text("North America")` (`r season_share("North America")`), mostly in `r leaders("North America", 3)`; Canada's fires come later, `r in_months("Canada", 7:8)` of its burnt land in July and August. **Russia** has a spring season and a summer one: `r in_months("Russia", 4:5)` of its burnt land in April and May, `r in_months("Russia", 7:8)` in July and August. So has Ukraine, which burns most of the rest of Europe: `r in_months("Ukraine", 3:4)` of its burnt land in March and April, `r in_months("Ukraine", 7:10)` from July to October.
+
+---
+
+## 5. Which were the worst years?
+
+```{r worst_numbers}
+co2_groups <- by_group(co2)
+co2_groups <- co2_groups[co2_groups$year <= last_season, ]
+first_co2 <- min(co2_groups$year)
+worst <- co2_groups |>
+  group_by(group) |>
+  summarise(average = mean(co2), worst_year = year[which.max(co2)], worst = max(co2)) |>
+  mutate(times = worst / average) |>
+  arrange(desc(times))
+of_worst <- function(g, column) worst[[column]][worst$group == g]
+co2_in <- function(g, year) co2_groups$co2[co2_groups$group == g & co2_groups$year == year]
+canada <- cover[cover$entity == "Canada", ]
+oceania <- yearly[yearly$group == "Oceania", ]
+asia <- yearly[yearly$group == "Asia", ]
+in_year <- function(x, year, column = "all") x[[column]][x$year == year]
+```
+
+**Where fire is rare, the worst years stand out the most.** Burnt land is one measure of a bad year; the carbon dioxide that the fires released is another, which counts the fires that burn forest and peat for more than those of grass. For each group, from `r first_co2` to `r last_season`, million tonnes of carbon dioxide:
+
+```{r worst_table}
+knitr::kable(
+  data.frame(
+    group = worst$group,
+    average = number(worst$average / 1e6),
+    year = worst$worst_year,
+    worst = number(worst$worst / 1e6),
+    times = one(worst$times)
+  ),
+  col.names = c("", "A year on average", "Worst year", "That year", "Times the average"),
+  align = "lrrrr"
+)
+```
+
+```{r worst_chart, fig.height = 5}
+set.seed(2026)
+strip <- co2_groups |>
+  group_by(group) |>
+  mutate(of_average = 100 * co2 / mean(co2), is_worst = co2 == max(co2)) |>
+  ungroup()
+order <- rev(worst$group) # the most extreme worst year at the top
+strip$position <- match(strip$group, order) + runif(nrow(strip), -0.17, 0.17)
+dots <- function(p, x, color) {
+  add_markers(
+    p,
+    data = x,
+    x = ~of_average,
+    y = ~position,
+    marker = list(color = color, size = 9, line = list(color = "white", width = 1)),
+    text = ~ paste0(group, " ", year, ": ", number(co2 / 1e6), " million tonnes, ", round(of_average), "% of its average"),
+    hovertemplate = "%{text}<extra></extra>",
+    showlegend = FALSE
+  )
+}
+plot_ly() |>
+  dots(strip[!strip$is_worst, ], gray) |>
+  dots(strip[strip$is_worst, ], red) |>
+  chart(
+    paste0("CO₂ from fires, % of each group's average, ", first_co2, "–", last_season),
+    "GWIS (MODIS and VIIRS), via Our World in Data. Dots: years; red: the worst year.",
+    x_axis = list(rangemode = "tozero", ticksuffix = "%"),
+    y_axis = list(
+      tickvals = seq_along(order),
+      ticktext = order,
+      range = c(0.4, length(order) + 0.6),
+      zeroline = FALSE
+    ),
+    annotations = lapply(seq_along(order), function(i) {
+      list(
+        x = 100 * of_worst(order[i], "times"),
+        y = i,
+        text = of_worst(order[i], "worst_year"),
+        showarrow = FALSE,
+        xanchor = "left",
+        xshift = 8,
+        font = list(size = 12, color = dark_gray)
+      )
+    }),
+    shapes = list(list(
+      type = "line",
+      x0 = 100,
+      x1 = 100,
+      yref = "paper",
+      y0 = 0,
+      y1 = 1,
+      line = list(color = dark_gray, width = 1)
+    )),
+    margin = list(l = 150, t = 70, b = 90, r = 40),
+    note_y = -0.14
+  )
+```
+
+- **North America, 2023**: `r number(co2_in("North America", 2023) / 1e6)` million tonnes, `r one(co2_in("North America", 2023) / of_worst("North America", "average"))` times its average. Canada had the worst fire season in its records, about 15 million hectares by its own count, from mid-April to late October, after an early snowmelt and a drought, in a season 2.2 °C warmer than the average of 1991–2020 ([Jain et al. 2024](https://doi.org/10.1038/s41467-024-51154-7)). MODIS mapped `r million(canada$all[canada$year == 2023])` million hectares in Canada that year, `r round(canada$all[canada$year == 2023] / mean(canada$all))` times its average: the satellites miss part of what burns.
+- **Russia, 2003**: `r number(co2_in("Russia", 2003) / 1e6)` million tonnes, `r one(co2_in("Russia", 2003) / of_worst("Russia", "average"))` times its average.
+- **Asia, 2015**: `r number(co2_in("Asia", 2015) / 1e6)` million tonnes, `r one(co2_in("Asia", 2015) / of_worst("Asia", "average"))` times its average, though the land it burnt that year, `r million(in_year(asia, 2015))` million hectares, was only `r percent(100 * (in_year(asia, 2015) / mean(asia$all) - 1))` above its average. In September and October forests and peat burnt across the islands of South-East Asia, above all in Indonesia, after a long drought, and for those two months the fires released 11.3 million tonnes of carbon dioxide a day, more than the fossil fuels of the EU, 8.9 million tonnes a day ([Huijnen et al. 2016](https://doi.org/10.1038/srep26886)). Peat is soil made of dead plants, full of carbon.
+- **Oceania, 2012**: its worst year for burnt land too, `r million(in_year(oceania, 2012))` million hectares, `r percent(100 * in_year(oceania, 2012, "shrublands_grasslands") / in_year(oceania, 2012))` of it shrubland and grassland. The fires that most people remember came later: between September 2019 and early January 2020, about 5.8 million hectares of mainly temperate broadleaf forest burnt in New South Wales and Victoria ([Boer et al. 2020](https://doi.org/10.1038/s41558-020-0716-1)). In MODIS, `r million(in_year(oceania, 2019, "forest"))` million hectares of forest burnt in Oceania in 2019, `r round(in_year(oceania, 2019, "forest") / mean(oceania$forest))` times its average, but that is a small part of the `r million(in_year(oceania, 2019))` million hectares it burnt that year.
+- **Africa**, which burns the most, is the steadiest: its worst year, `r of_worst("Africa", "worst_year")`, released only `r one(of_worst("Africa", "times"))` times its average. And for the rest of Europe the worst year was `r of_worst("Europe without Russia", "worst_year")`, the year of Greece's worst fires ([Greece Burning](ILLUSTRATION_GREEK_WILDFIRES.html)).
+
+---
+
+## So, what does it mean?
+
+1. **Most of the world's fire is African.** Africa has `r percent(in_group("Africa", "world_share"))` of the land that burns; the land it burns in a year is as large as `r percent(in_group("Africa", "land_share"))` of the continent. Europe without Russia burns `r percent(in_group("Europe without Russia", "land_share"), 1)` of its land a year.
+2. **The world burns less than it did**: `r percent(-of_change("World", "change"))` less in `r min(last_five)`–`r max(last_five)` than in `r min(first_five)`–`r max(first_five)`, `r percent(africa_part)` of the fall in Africa.
+3. **Forest is a small part of what burns, and it is not clearly burning less.** In North America more of it burns.
+4. **Every continent burns in its own dry months**, and Africa has two seasons, one on each side of the equator.
+5. **The worst years come where fire is rarer.** North America released `r one(of_worst("North America", "times"))` times its average carbon dioxide in 2023; Africa's worst year, only `r one(of_worst("Africa", "times"))` times.
+
+**What this does not show.** The satellites map the land that burnt, not what started the fire, and they miss small fires and fires under cloud or trees; the fires here include those that people set on purpose. A continent is large, and its average hides countries that burn far more or far less. The carbon dioxide is an estimate, from GWIS's figures up to `r last_season`. And hectares do not count the people, the homes and the animals lost in the fires, or the smoke that people breathe far from them.
+
+For one country close up, see [Greece Burning](ILLUSTRATION_GREEK_WILDFIRES.html); for the heat that dries out the land, [Athens Is Getting Hotter](ILLUSTRATION_ATHENS_HEAT.html); for the temperature of the world, the [NASA GISS Global Temperature Anomaly](ILLUSTRATION_CLIMATE_HIGHCHARTER.html).
+
+---
+
+## Sources
+
+- GWIS, the [Global Wildfire Information System](https://gwis.jrc.ec.europa.eu/): the [country profiles](https://gwis.jrc.ec.europa.eu/apps/country.profile/downloads), with the land burnt each year by kind of land since 2002, from MODIS (MCD64A1 burned area, MCD12 land cover); the [seasonal trends](https://gwis.jrc.ec.europa.eu/apps/gwis.statistics/seasonaltrend), with the land burnt each week and the carbon dioxide, from MODIS and VIIRS; [data licence](https://gwis.jrc.ec.europa.eu/about-gwis/data-license), CC BY 4.0.
+- Our World in Data, [Wildfires](https://ourworldindata.org/wildfires): the GWIS figures by country and continent, from its charts [annual-burned-area-by-landcover](https://ourworldindata.org/grapher/annual-burned-area-by-landcover), [weekly-area-burnt-by-wildfires](https://ourworldindata.org/grapher/weekly-area-burnt-by-wildfires) and [annual-carbon-dioxide-emissions](https://ourworldindata.org/grapher/annual-carbon-dioxide-emissions); the [land area](https://ourworldindata.org/grapher/land-area-km) of each country, from the World Bank; its [continents](https://ourworldindata.org/grapher/continents-according-to-our-world-in-data) (CC BY 4.0).
+- Giglio, L. et al. (2018), [The Collection 6 MODIS burned area mapping algorithm and product](https://doi.org/10.1016/j.rse.2018.08.005), *Remote Sensing of Environment* 217, 72–85.
+- NASA LP DAAC, [MODIS Collection 6.1 Land Cover Type Product User Guide](https://lpdaac.usgs.gov/documents/1409/MCD12_User_Guide_V61.pdf) (MCD12Q1: forest and savanna by tree cover).
+- Andela, N. et al. (2017), [A human-driven decline in global burned area](https://doi.org/10.1126/science.aal4108), *Science* 356, 1356–1362.
+- Jain, P. et al. (2024), [Drivers and impacts of the record-breaking 2023 wildfire season in Canada](https://doi.org/10.1038/s41467-024-51154-7), *Nature Communications* 15, 6764.
+- Huijnen, V. et al. (2016), [Fire carbon emissions over maritime southeast Asia in 2015 largest since 1997](https://doi.org/10.1038/srep26886), *Scientific Reports* 6, 26886.
+- Boer, M. M. et al. (2020), [Unprecedented burn area of Australian mega forest fires](https://doi.org/10.1038/s41558-020-0716-1), *Nature Climate Change* 10, 171–172.
+
+---
+
+*Rendered with R `r getRversion()` · dplyr · ggplot2 · plotly*

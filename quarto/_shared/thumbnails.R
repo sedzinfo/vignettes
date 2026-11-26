@@ -41,7 +41,8 @@ charts <- list(
     ILLUSTRATION_GREEK_WORKFORCE = 3,      # below the basic PISA level
     ILLUSTRATION_ILLUSIONS = 1,            # the café wall
     ILLUSTRATION_SEA_ICE = 1,              # September minimum since 1979
-    ILLUSTRATION_SEA_ICE_TEMP = 1          # the sea ice map (a frame of the GIF)
+    ILLUSTRATION_SEA_ICE_TEMP = 1,         # the sea ice map (a frame of the GIF)
+    ILLUSTRATION_WORLD_WILDFIRES = 2       # world map of the land burnt each year
   )
 )
 ##########################################################################################
