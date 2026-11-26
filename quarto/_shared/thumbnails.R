@@ -40,8 +40,14 @@ charts <- list(
     ILLUSTRATION_GREEK_WILDFIRES = 3,      # map of every fire EFFIS outlined
     ILLUSTRATION_GREEK_WORKFORCE = 3,      # below the basic PISA level
     ILLUSTRATION_ILLUSIONS = 1,            # the café wall
+    ILLUSTRATION_NATURAL_DISASTERS = 2,    # disaster deaths by decade and kind
     ILLUSTRATION_SEA_ICE = 1,              # September minimum since 1979
     ILLUSTRATION_SEA_ICE_TEMP = 1,         # the sea ice map (a frame of the GIF)
+    ILLUSTRATION_WORLD_EARTHQUAKES = 1,    # map of the earthquakes and the plate boundaries
+    ILLUSTRATION_WORLD_FLOODS = 2,         # map of the large floods in each country
+    ILLUSTRATION_WORLD_TORNADOES = 2,      # map of the EF3+ tornadoes in the US
+    ILLUSTRATION_WORLD_TSUNAMIS = 1,       # map of the tsunami sources by cause
+    ILLUSTRATION_WORLD_VOLCANOES = 1,      # map of the volcanoes and the plate boundaries
     ILLUSTRATION_WORLD_WILDFIRES = 2       # world map of the land burnt each year
   )
 )
