@@ -6,15 +6,13 @@ date: "`r format(Sys.Date(), '%d %B %Y')`"
 ---
 
 ```{r setup, include=FALSE}
-directory <- if (rstudioapi::isAvailable()) {
-  paste0(dirname(rstudioapi::getActiveDocumentContext()$path), "/")
-} else {
-  ""
-}
-source(paste0(directory, "R/code_options.R"))
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
 # no knitr cache: the data are downloaded when the page is rendered, and the site keeps
 # what was rendered in _freeze/
-knitr::opts_chunk$set(cache = FALSE)
+knitr::opts_chunk$set(cache=FALSE)
 ```
 
 ## What is this?
@@ -40,9 +38,8 @@ The data come from three places, besides the [boundaries of the regions](https:/
 ## Packages
 
 ```{r packages}
-# install.packages(c("dplyr", "eurostat", "ggplot2", "ggrepel"))
+# install.packages(c("eurostat", "ggplot2", "ggrepel"))
 # install.packages(c("jsonlite", "plotly", "readxl", "sf"))
-library(dplyr)
 library(eurostat)
 library(ggplot2)
 library(plotly)
@@ -54,190 +51,149 @@ library(sf)
 ```{r national}
 # the country totals: an Excel file with one sheet for the area burnt (hectares) and one for the
 # number of fires, with a row for each year and a column for each country
-totals_file <- tempfile(fileext = ".xlsx")
-download.file(
-  paste0(
-    "https://forest-fire.emergency.copernicus.eu/effis/applications/data-and-services/",
-    "report_2024.xlsx"
-  ),
-  totals_file,
-  mode = "wb",
-  quiet = TRUE
-)
-read_greece <- function(sheet) {
-  x <- as.data.frame(readxl::read_excel(totals_file, sheet = sheet, col_types = "text"))
+totals_file<-tempfile(fileext=".xlsx")
+download.file(paste0("https://forest-fire.emergency.copernicus.eu/effis/applications/",
+                     "data-and-services/","report_2024.xlsx"),
+              totals_file,mode="wb",quiet=TRUE)
+read_greece<-function(sheet) {
+  x<-as.data.frame(readxl::read_excel(totals_file,sheet=sheet,col_types="text"))
   # numbers are written with spaces between the thousands, such as "32 965"
-  data.frame(year = as.integer(x$Year), value = as.numeric(gsub("[^0-9.]", "", x$GRC)))
+  result<-data.frame(year=as.integer(x$Year),value=as.numeric(gsub("[^0-9.]","",x$GRC)))
+  return(result)
 }
-national <- data.frame(
-  year = read_greece(1)$year,
-  area = read_greece(1)$value,
-  fires = read_greece(2)$value
-)
+national<-data.frame(year=read_greece(1)$year,area=read_greece(1)$value,fires=read_greece(2)$value)
 ```
 
 ```{r effis}
 # EFFIS's estimates for a country (its three-letter code): the area burnt each year, in hectares,
 # and the number of fires of about 30 hectares or more, from satellite images
-effis_annual <- function(code) {
-  x <- jsonlite::fromJSON(paste0(
-    "https://api2.effis.emergency.copernicus.eu/statistics/v2/effis/",
-    "estimatesbycountry?country=",
-    code
-  ))
-  data.frame(code = code, year = x$year, area = x$ba, fires = x$nf)
+effis_annual<-function(code) {
+  x<-jsonlite::fromJSON(paste0("https://api2.effis.emergency.copernicus.eu/statistics/v2/effis/",
+                               "estimatesbycountry?country=",code))
+  result<-data.frame(code=code,year=x$year,area=x$ba,fires=x$nf)
+  return(result)
 }
-countries <- data.frame(
-  code = c("GRC", "PRT", "ESP", "ITA", "FRA", "CYP"),
-  geo = c("EL", "PT", "ES", "IT", "FR", "CY"),
-  name = c("Greece", "Portugal", "Spain", "Italy", "France", "Cyprus")
-)
-effis <- do.call(rbind, lapply(countries$code, effis_annual))
-effis_greece <- effis[effis$code == "GRC", ]
+countries<-data.frame(code=c("GRC","PRT","ESP","ITA","FRA","CYP"),
+                      geo=c("EL","PT","ES","IT","FR","CY"),
+                      name=c("Greece","Portugal","Spain","Italy","France","Cyprus"))
+effis<-do.call(rbind,lapply(countries$code,effis_annual))
+effis_greece<-effis[effis$code=="GRC",]
 
 # the area of each country, in square kilometres: for France, without its overseas departments
-area_all <- get_eurostat(
-  "reg_area3",
-  filters = list(geo = c(countries$geo, "FRY"), landuse = "TOTAL", unit = "KM2"),
-  time_format = "num",
-  cache = FALSE
-)
-area_now <- area_all[area_all$time == max(area_all$time), ]
-land <- setNames(area_now$values, area_now$geo)
-countries$km2 <- land[countries$geo] - ifelse(countries$geo == "FR", land["FRY"], 0)
+area_all<-get_eurostat("reg_area3",
+                       filters=list(geo=c(countries$geo,"FRY"),landuse="TOTAL",unit="KM2"),
+                       time_format="num",cache=FALSE)
+area_now<-area_all[area_all$time==max(area_all$time),]
+land<-setNames(area_now$values,area_now$geo)
+countries$km2<-land[countries$geo]-ifelse(countries$geo=="FR",land["FRY"],0)
 ```
 
 ```{r outlines}
 # the outlines of the fires in Greece: EFFIS's map service, only those of the country EL
-wfs <- c(
-  service = "WFS",
-  version = "1.1.0",
-  request = "GetFeature",
-  typename = "ms:modis.ba.poly",
-  outputformat = "geojson",
-  Filter = paste0(
-    "<Filter><PropertyIsEqualTo><PropertyName>COUNTRY</PropertyName>",
-    "<Literal>EL</Literal></PropertyIsEqualTo></Filter>"
-  )
-)
-wfs_url <- paste0(
-  "https://maps.effis.emergency.copernicus.eu/effis?",
-  paste0(names(wfs), "=", sapply(wfs, URLencode, reserved = TRUE), collapse = "&")
-)
-fires <- st_make_valid(st_read(wfs_url, quiet = TRUE))
-fires$date <- as.Date(substr(fires$FIREDATE, 1, 10))
-fires$year <- as.integer(format(fires$date, "%Y"))
-fires$area <- as.numeric(fires$AREA_HA)
-last_fire <- max(fires$date)
-first_year <- min(fires$year)
-last_year <- max(fires$year)
+wfs<-c(service="WFS",version="1.1.0",request="GetFeature",typename="ms:modis.ba.poly",
+       outputformat="geojson",
+       Filter=paste0("<Filter><PropertyIsEqualTo><PropertyName>COUNTRY</PropertyName>",
+                     "<Literal>EL</Literal></PropertyIsEqualTo></Filter>"))
+wfs_url<-paste0("https://maps.effis.emergency.copernicus.eu/effis?",
+                paste0(names(wfs),"=",sapply(wfs,URLencode,reserved=TRUE),collapse="&"))
+fires<-st_make_valid(st_read(wfs_url,quiet=TRUE))
+fires$date<-as.Date(substr(fires$FIREDATE,1,10))
+fires$year<-as.integer(format(fires$date,"%Y"))
+fires$area<-as.numeric(fires$AREA_HA)
+last_fire<-max(fires$date)
+first_year<-min(fires$year)
+last_year<-max(fires$year)
 ```
 
 ```{r hot_spots}
 # the hot spots of one year: one file per country and year. Type 0 is a presumed vegetation fire,
 # and frp is the fire radiative power of the hot spot, in megawatts
-hot_spots_of <- function(year) {
-  x <- read.csv(paste0(
-    "https://firms.modaps.eosdis.nasa.gov/data/country/modis/",
-    year,
-    "/modis_",
-    year,
-    "_Greece.csv"
-  ))
-  x[x$type == 0, c("acq_date", "frp")]
+hot_spots_of<-function(year) {
+  x<-read.csv(paste0("https://firms.modaps.eosdis.nasa.gov/data/country/modis/",year,"/modis_",year,
+                     "_Greece.csv"))
+  result<-x[x$type==0,c("acq_date","frp")]
+  return(result)
 }
-hot_spot_years <- 2003:(as.integer(format(Sys.Date(), "%Y")) - 1)
-hot_spots <- do.call(rbind, lapply(hot_spot_years, hot_spots_of))
-hot_spots$date <- as.Date(hot_spots$acq_date)
+hot_spot_years<-2003:(as.integer(format(Sys.Date(),"%Y"))-1)
+hot_spots<-do.call(rbind,lapply(hot_spot_years,hot_spots_of))
+hot_spots$date<-as.Date(hot_spots$acq_date)
 ```
 
 ```{r boundaries}
 # the 13 regions of Greece (NUTS level 2), and the names of the smaller ones (level 3): EFFIS gives
 # the Greek name of the place of each fire, GISCO the name in Latin letters
-gisco <- "https://gisco-services.ec.europa.eu/distribution/v2/nuts/"
-regions <- st_read(paste0(gisco, "geojson/NUTS_RG_03M_2024_4326_LEVL_2.geojson"), quiet = TRUE)
-regions <- regions[regions$CNTR_CODE == "EL", ]
-places <- read.csv(paste0(gisco, "csv/NUTS_AT_2024.csv"), encoding = "UTF-8")
-places <- places[places$CNTR_CODE == "EL" & nchar(places$NUTS_ID) == 5, ]
-region_names <- c(
-  EL30 = "Attica",
-  EL41 = "North Aegean",
-  EL42 = "South Aegean",
-  EL43 = "Crete",
-  EL51 = "East Macedonia and Thrace",
-  EL52 = "Central Macedonia",
-  EL53 = "West Macedonia",
-  EL54 = "Epirus",
-  EL61 = "Thessaly",
-  EL62 = "Ionian Islands",
-  EL63 = "West Greece",
-  EL64 = "Central Greece",
-  EL65 = "Peloponnese"
-)
+gisco<-"https://gisco-services.ec.europa.eu/distribution/v2/nuts/"
+regions<-st_read(paste0(gisco,"geojson/NUTS_RG_03M_2024_4326_LEVL_2.geojson"),quiet=TRUE)
+regions<-regions[regions$CNTR_CODE=="EL",]
+places<-read.csv(paste0(gisco,"csv/NUTS_AT_2024.csv"),encoding="UTF-8")
+places<-places[places$CNTR_CODE=="EL"&nchar(places$NUTS_ID)==5,]
+region_names<-c(EL30="Attica",EL41="North Aegean",EL42="South Aegean",EL43="Crete",
+                EL51="East Macedonia and Thrace",EL52="Central Macedonia",EL53="West Macedonia",
+                EL54="Epirus",EL61="Thessaly",EL62="Ionian Islands",EL63="West Greece",
+                EL64="Central Greece",EL65="Peloponnese")
 ```
 
 ```{r chart_style}
-red <- "#d62728"
-blue <- "#1f77b4"
-gray <- "#bdbdbd"
-dark_gray <- "#6b6b6b" # also the color of the notes
+red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#bdbdbd"
+dark_gray<-"#6b6b6b" # also the color of the notes
 # three periods of fires, from the earliest to the latest: one hue, from light to dark
-period_colors <- c("#fd8d3c", "#d94801", "#7f2704")
+period_colors<-c("#fd8d3c","#d94801","#7f2704")
 
 # the source of a chart, as a note under it, and the common layout
-chart <- function(
-  p,
-  title,
-  source,
-  y_title = "",
-  y_axis = list(),
-  x_axis = list(),
-  annotations = list(),
-  margin = list(t = 70, b = 90),
-  note_y = -0.16,
-  ...
-) {
-  note <- list(
-    text = paste("Source:", source),
-    xref = "paper",
-    yref = "paper",
-    x = 0,
-    y = note_y,
-    xanchor = "left",
-    yanchor = "top",
-    showarrow = FALSE,
-    font = list(size = 11, color = dark_gray)
-  )
-  layout(
-    p,
-    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    yaxis = c(list(title = y_title), y_axis),
-    xaxis = c(list(title = ""), x_axis),
-    margin = margin,
-    annotations = c(annotations, list(note)),
-    ...
-  ) |>
-    config(displaylogo = FALSE)
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),margin=margin,
+                 annotations=c(annotations,list(note)),...) %>%
+    config(displaylogo=FALSE)
+  return(result)
 }
-legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+# a colour scale of steps for classes numbered 1, 2, ... (with zmin = 0.5): one colour for each
+# class
+color_steps<-function(colors) {
+  n<-length(colors)
+  result<-do.call(c,
+                  lapply(seq_len(n),function(i) list(list((i-1)/n,colors[i]),list(i/n,colors[i]))))
+  return(result)
+}
 
 # numbers and dates in the text
-number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
-percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
-one <- function(x) format(round(x, 1), nsmall = 1)
-two <- function(x) format(round(x, 2), nsmall = 2)
-and_list <- function(x) {
-  if (length(x) < 2) {
+number<-function(x) {
+  result<-format(round(x),big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+percent<-function(x,digits=0) {
+  result<-paste0(format(round(x,digits),nsmall=digits),"%")
+  return(result)
+}
+one<-function(x) {
+  result<-format(round(x,1),nsmall=1)
+  return(result)
+}
+two<-function(x) {
+  result<-format(round(x,2),nsmall=2)
+  return(result)
+}
+and_list<-function(x) {
+  if(length(x)<2) {
     return(paste(x))
   }
-  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+  result<-paste(paste(head(x,-1),collapse=", "),"and",tail(x,1))
+  return(result)
 }
-date_text <- function(d) {
-  paste(as.integer(format(d, "%d")), month.name[as.integer(format(d, "%m"))], format(d, "%Y"))
+date_text<-function(d) {
+  result<-paste(as.integer(format(d,"%d")),month.name[as.integer(format(d,"%m"))],format(d,"%Y"))
+  return(result)
 }
-day_text <- function(j) {
-  d <- as.Date(round(j) - 1, origin = "2001-01-01")
-  paste(as.integer(format(d, "%d")), month.name[as.integer(format(d, "%m"))])
+day_text<-function(j) {
+  d<-as.Date(round(j)-1,origin="2001-01-01")
+  result<-paste(as.integer(format(d,"%d")),month.name[as.integer(format(d,"%m"))])
+  return(result)
 }
 ```
 
@@ -246,127 +202,95 @@ day_text <- function(j) {
 ## 1. Is Greece burning more than it used to?
 
 ```{r totals_numbers}
-area_in <- function(year) national$area[national$year == year]
-last_total <- max(national$year)
-worst <- head(national$year[order(-national$area)], 5)
-decade_of <- function(year) {
-  ifelse(year >= 2020, paste0("2020–", last_total), paste0(10 * (year %/% 10), "s"))
+area_in<-function(year) {
+  result<-national$area[national$year==year]
+  return(result)
 }
-by_decade <- national |>
-  mutate(decade = decade_of(year)) |>
-  group_by(decade) |>
-  summarise(
-    years = n(),
-    area_a_year = mean(area),
-    fires_a_year = mean(fires),
-    size_of_fire = sum(area) / sum(fires)
-  )
-of_decade <- function(decade, column) by_decade[[column]][by_decade$decade == decade]
-last_decade <- tail(by_decade$decade, 1)
+last_total<-max(national$year)
+worst<-head(national$year[order(-national$area)],5)
+decade_of<-function(year) {
+  result<-ifelse(year>=2020,paste0("2020–",last_total),paste0(10*(year%/%10),"s"))
+  return(result)
+}
+# each period: its years, the area burnt and the fires of an average year, and the size of a fire
+by_decade<-do.call(rbind,lapply(split(national,decade_of(national$year)),function(x) {
+  data.frame(decade=decade_of(x$year[1]),
+             years=nrow(x),
+             area_a_year=mean(x$area),
+             fires_a_year=mean(x$fires),
+             size_of_fire=sum(x$area)/sum(x$fires))
+}))
+rownames(by_decade)<-NULL
+of_decade<-function(decade,column) {
+  result<-by_decade[[column]][by_decade$decade==decade]
+  return(result)
+}
+last_decade<-tail(by_decade$decade,1)
 # a rank test of a trend over the years: the chance of a pattern as strong as this without one
-trend_area <- cor.test(national$year, national$area, method = "kendall", exact = FALSE)$p.value
-trend_fires <- cor.test(national$year, national$fires, method = "kendall", exact = FALSE)$p.value
+trend_area<-cor.test(national$year,national$area,method="kendall",exact=FALSE)$p.value
+trend_fires<-cor.test(national$year,national$fires,method="kendall",exact=FALSE)$p.value
 # the area burnt by year, both sources side by side
-both <- merge(national, effis_greece, by = "year", suffixes = c("_national", "_effis"))
-ratio <- sum(both$area_effis) / sum(both$area_national)
+both<-merge(national,effis_greece,by="year",suffixes=c("_national","_effis"))
+ratio<-sum(both$area_effis)/sum(both$area_national)
 ```
 
 **Not steadily. The area burnt swings far more from one year to the next than it changes over the decades.**
 
-In the `r nrow(national)` years from `r min(national$year)` to `r last_total`, Greece's forest fires burnt between `r number(min(national$area))` hectares (`r national$year[which.min(national$area)]`) and `r number(max(national$area))` (`r national$year[which.max(national$area)]`). Five years, `r and_list(sort(worst))`, make up `r percent(100 * sum(national$area[national$year %in% worst]) / sum(national$area))` of everything that burnt in those `r nrow(national)` years. The averages of the decades differ less:
+In the `r nrow(national)` years from `r min(national$year)` to `r last_total`, Greece's forest fires burnt between `r number(min(national$area))` hectares (`r national$year[which.min(national$area)]`) and `r number(max(national$area))` (`r national$year[which.max(national$area)]`). Five years, `r and_list(sort(worst))`, make up `r percent(100*sum(national$area[national$year%in%worst])/sum(national$area))` of everything that burnt in those `r nrow(national)` years. The averages of the decades differ less:
 
 ```{r decades}
-knitr::kable(
-  by_decade[, c("decade", "area_a_year", "fires_a_year", "size_of_fire")],
-  digits = 0,
-  format.args = list(big.mark = ","),
-  col.names = c("Period", "Hectares burnt a year", "Fires a year", "Hectares a fire")
-)
+knitr::kable(by_decade[,c("decade","area_a_year","fires_a_year","size_of_fire")],digits=0,
+             format.args=list(big.mark=","),
+             col.names=c("Period","Hectares burnt a year","Fires a year","Hectares a fire"))
 ```
 
-A rank test finds no trend in the area burnt from year to year (a pattern as strong as this one would come up by chance `r round(100 * trend_area)` times in 100), but a fall in the number of fires (`r round(100 * trend_fires)` in 100). The average fire grew from `r round(of_decade("1990s", "size_of_fire"))` hectares in the 1990s to `r round(of_decade(last_decade, "size_of_fire"))` in `r last_decade`, which is because the number of fires fell while a few of them were enormous. The number needs care, though: since 1998 the Fire Service has been responsible for forest fires, instead of the Forest Service, and the two did not count in the same way ([European Commission 2001](https://forest-fire.emergency.copernicus.eu/effis/reports-and-publications/annual-fire-reports/08-forest-fires-in-southern-europe-2000.pdf)).
+A rank test finds no trend in the area burnt from year to year (a pattern as strong as this one would come up by chance `r round(100*trend_area)` times in 100), but a fall in the number of fires (`r round(100*trend_fires)` in 100). The average fire grew from `r round(of_decade("1990s","size_of_fire"))` hectares in the 1990s to `r round(of_decade(last_decade,"size_of_fire"))` in `r last_decade`, which is because the number of fires fell while a few of them were enormous. The number needs care, though: since 1998 the Fire Service has been responsible for forest fires, instead of the Forest Service, and the two did not count in the same way ([European Commission 2001](https://forest-fire.emergency.copernicus.eu/effis/reports-and-publications/annual-fire-reports/08-forest-fires-in-southern-europe-2000.pdf)).
 
 ```{r totals_chart}
-bars <- national
-bars$worst <- bars$year %in% worst
-p <- plot_ly() |>
-  add_bars(
-    data = bars[!bars$worst, ],
-    x = ~year,
-    y = ~ area / 1000,
-    name = "Area burnt",
-    marker = list(color = gray),
-    hovertemplate = "%{x}: %{y:.1f} thousand ha<extra>National statistics</extra>"
-  ) |>
-  add_bars(
-    data = bars[bars$worst, ],
-    x = ~year,
-    y = ~ area / 1000,
-    name = "The five worst years",
-    marker = list(color = red),
-    hovertemplate = "%{x}: %{y:.1f} thousand ha<extra>National statistics</extra>"
-  )
+bars<-national
+bars$worst<-bars$year%in%worst
+p<-plot_ly() %>%
+  add_bars(data=bars[!bars$worst,],x=~year,y=~area/1000,name="Area burnt",marker=list(color=gray),
+           hovertemplate="%{x}: %{y:.1f} thousand ha<extra>National statistics</extra>") %>%
+  add_bars(data=bars[bars$worst,],x=~year,y=~area/1000,name="The five worst years",
+           marker=list(color=red),
+           hovertemplate="%{x}: %{y:.1f} thousand ha<extra>National statistics</extra>")
 # the average of each decade, as a line over its years
-for (k in seq_len(nrow(by_decade))) {
-  years <- national$year[decade_of(national$year) == by_decade$decade[k]]
-  p <- add_lines(
-    p,
-    x = c(min(years) - 0.45, max(years) + 0.45),
-    y = rep(by_decade$area_a_year[k] / 1000, 2),
-    name = "Average of the period",
-    legendgroup = "average",
-    showlegend = k == 1,
-    line = list(color = "black", width = 2.5),
-    hovertemplate = paste0(by_decade$decade[k], ": %{y:.1f} thousand ha a year<extra></extra>")
-  )
+for(k in seq_len(nrow(by_decade))) {
+  years<-national$year[decade_of(national$year)==by_decade$decade[k]]
+  p<-add_lines(p,x=c(min(years)-0.45,max(years)+0.45),y=rep(by_decade$area_a_year[k]/1000,2),
+               name="Average of the period",legendgroup="average",showlegend=k==1,
+               line=list(color="black",width=2.5),
+               hovertemplate=paste0(by_decade$decade[k],
+                                    ": %{y:.1f} thousand ha a year<extra></extra>"))
 }
-p |>
-  add_markers(
-    data = effis_greece,
-    x = ~year,
-    y = ~ area / 1000,
-    name = "Satellite maps (EFFIS)",
-    marker = list(color = blue, size = 8, line = list(color = "white", width = 1)),
-    hovertemplate = "%{x}: %{y:.1f} thousand ha<extra>EFFIS</extra>"
-  ) |>
-  chart(
-    "Area burnt by fires in Greece each year, thousand hectares",
-    paste0(
-      "JRC, country totals (bars); EFFIS, fires of about 30 ha or more (dots). EFFIS's ",
-      last_year,
-      ": to ",
-      date_text(last_fire),
-      "."
-    ),
-    "Thousand hectares",
-    legend = legend_top,
-    margin = list(t = 110, b = 90)
-  )
+p %>%
+  add_markers(data=effis_greece,x=~year,y=~area/1000,name="Satellite maps (EFFIS)",
+              marker=list(color=blue,size=8,line=list(color="white",width=1)),
+              hovertemplate="%{x}: %{y:.1f} thousand ha<extra>EFFIS</extra>") %>%
+  chart("Area burnt by fires in Greece each year, thousand hectares",
+        paste0("JRC, country totals (bars); EFFIS, fires of about 30 ha or more (dots). EFFIS's ",
+               last_year,": to ",date_text(last_fire),"."),
+        "Thousand hectares",legend=legend_top,margin=list(t=110,b=90))
 ```
 
-The 2010s were the quietest of the five periods, and the years from 2020 to `r last_total` the worst, `r number(of_decade(last_decade, "area_a_year"))` hectares a year, with two of the five worst years in them. But an average of five years says little when one of them burns `r number(max(national$area[national$year >= 2020]))` hectares and another `r number(min(national$area[national$year >= 2020]))`.
+The 2010s were the quietest of the five periods, and the years from 2020 to `r last_total` the worst, `r number(of_decade(last_decade,"area_a_year"))` hectares a year, with two of the five worst years in them. But an average of five years says little when one of them burns `r number(max(national$area[national$year>=2020]))` hectares and another `r number(min(national$area[national$year>=2020]))`.
 
-**The satellites agree, and go on to the present.** EFFIS maps more land than the national statistics count, farmland included: `r percent(100 * (ratio - 1))` more in the years that both have, and their highs and lows are the same ones. After the country totals end, it has `r number(effis_greece$area[effis_greece$year == 2025])` hectares for 2025 and `r number(effis_greece$area[effis_greece$year == last_year])` for `r last_year`, up to `r date_text(last_fire)`. For 2025 the national figure, still provisional, is 41,540 hectares of forest land in 561 fires ([JRC 2026](https://doi.org/10.2760/3888324)).
+**The satellites agree, and go on to the present.** EFFIS maps more land than the national statistics count, farmland included: `r percent(100*(ratio-1))` more in the years that both have, and their highs and lows are the same ones. After the country totals end, it has `r number(effis_greece$area[effis_greece$year==2025])` hectares for 2025 and `r number(effis_greece$area[effis_greece$year==last_year])` for `r last_year`, up to `r date_text(last_fire)`. For 2025 the national figure, still provisional, is 41,540 hectares of forest land in 561 fires ([JRC 2026](https://doi.org/10.2760/3888324)).
 
 ---
 
 ## 2. Which were the worst years, and why?
 
 ```{r worst_numbers}
-largest <- st_drop_geometry(fires) |>
-  arrange(desc(area)) |>
-  head(10)
-place_english <- c(
-  Evvoia = "Evia",
-  "Kalymnos, Karpathos, Kasos, Kos, Rodos" = "Rhodes and nearby islands",
-  Ileia = "Ilia",
-  "Dytiki Attiki" = "West Attica",
-  "Lakonia, Messinia" = "Laconia and Messinia",
-  "Anatoliki Attiki" = "East Attica",
-  "Magnisia, Sporades" = "Magnesia and the Sporades"
-)
-latin <- places$NAME_LATN[match(largest$PROVINCE, places$NUTS_NAME)]
-largest$place <- ifelse(latin %in% names(place_english), place_english[latin], latin)
+largest<-st_drop_geometry(fires)
+largest<-head(largest[order(-largest$area),],10)
+place_english<-c(Evvoia="Evia","Kalymnos, Karpathos, Kasos, Kos, Rodos"="Rhodes and nearby islands",
+                 Ileia="Ilia","Dytiki Attiki"="West Attica",
+                 "Lakonia, Messinia"="Laconia and Messinia","Anatoliki Attiki"="East Attica",
+                 "Magnisia, Sporades"="Magnesia and the Sporades")
+latin<-places$NAME_LATN[match(largest$PROVINCE,places$NUTS_NAME)]
+largest$place<-ifelse(latin%in%names(place_english),place_english[latin],latin)
 ```
 
 **Years of heat, drought or wind, when a few fires became huge.** In the official record, the five worst years were:
@@ -382,18 +306,13 @@ largest$place <- ifelse(latin %in% names(place_english), place_english[latin], l
 The ten largest fires that EFFIS has outlined in Greece since `r first_year`:
 
 ```{r largest_table}
-knitr::kable(
-  data.frame(
-    started = date_text(largest$date),
-    place = largest$place,
-    area = number(largest$area)
-  ),
-  col.names = c("Started", "Place", "Area (hectares)"),
-  align = "llr"
-)
+knitr::kable(data.frame(started=date_text(largest$date),
+                        place=largest$place,
+                        area=number(largest$area)),
+             col.names=c("Started","Place","Area (hectares)"),align="llr")
 ```
 
-These ten made up `r percent(100 * sum(largest$area) / sum(fires$area))` of the area of all `r number(nrow(fires))` fires outlined from `r first_year` to `r last_year`; the fire near Alexandroupolis alone, in Evros, `r percent(100 * largest$area[1] / sum(fires$area))`. Most fires are small: `r percent(100 * mean(fires$area < 100))` of the outlined fires were under 100 hectares, and they made up `r percent(100 * sum(fires$area[fires$area < 100]) / sum(fires$area))` of the area. **A year is bad because a few fires are huge, not because there are many.**
+These ten made up `r percent(100*sum(largest$area)/sum(fires$area))` of the area of all `r number(nrow(fires))` fires outlined from `r first_year` to `r last_year`; the fire near Alexandroupolis alone, in Evros, `r percent(100*largest$area[1]/sum(fires$area))`. Most fires are small: `r percent(100*mean(fires$area<100))` of the outlined fires were under 100 hectares, and they made up `r percent(100*sum(fires$area[fires$area<100])/sum(fires$area))` of the area. **A year is bad because a few fires are huge, not because there are many.**
 
 ---
 
@@ -401,95 +320,70 @@ These ten made up `r percent(100 * sum(largest$area) / sum(fires$area))` of the 
 
 ```{r season_days}
 # the heat that each day's fires gave off when the satellites passed, in megawatts: the sum of the
-# fire radiative power of the day's hot spots
-daily <- hot_spots |>
-  group_by(date) |>
-  summarise(heat = sum(frp)) |>
-  right_join(
-    data.frame(
-      date = seq(
-        as.Date(paste0(min(hot_spot_years), "-01-01")),
-        as.Date(paste0(max(hot_spot_years), "-12-31")),
-        by = "day"
-      )
-    ),
-    by = "date"
-  ) |>
-  mutate(
-    heat = ifelse(is.na(heat), 0, heat),
-    year = as.integer(format(date, "%Y")),
-    day = as.Date(paste0("2001-", format(date, "%m-%d"))) # one calendar for every year
-  )
-big <- 2000 # a big-fire day: the fires gave off 2,000 megawatts or more when the satellites passed
-big_days <- daily[daily$heat >= big, ]
-big_days$j <- as.integer(format(big_days$date, "%j"))
-big_days$summer <- as.integer(format(big_days$date, "%m")) %in% 6:9
+# fire radiative power of the day's hot spots, and 0 on the days without hot spots
+heat_of_day<-tapply(hot_spots$frp,hot_spots$date,sum)
+all_days<-seq(as.Date(paste0(min(hot_spot_years),"-01-01")),
+              as.Date(paste0(max(hot_spot_years),"-12-31")),by="day")
+daily<-data.frame(date=all_days,heat=as.vector(heat_of_day[as.character(all_days)]))
+daily$heat[is.na(daily$heat)]<-0
+daily$year<-as.integer(format(daily$date,"%Y"))
+daily$day<-as.Date(paste0("2001-",format(daily$date,"%m-%d"))) # one calendar for every year
+big<-2000 # a big-fire day: the fires gave off 2,000 megawatts or more when the satellites passed
+big_days<-daily[daily$heat>=big,]
+big_days$j<-as.integer(format(big_days$date,"%j"))
+big_days$summer<-as.integer(format(big_days$date,"%m"))%in%6:9
 
 # two periods of eleven years
-periods <- list("2003–2013" = 2003:2013, "2015–2025" = 2015:2025)
-period_numbers <- lapply(periods, function(years) {
-  x <- big_days[big_days$year %in% years, ]
-  first <- tapply(x$j, x$year, min)
-  last <- tapply(x$j, x$year, max)
-  list(
-    per_year = nrow(x) / length(years),
-    outside = 100 * mean(!x$summer),
-    first = median(first),
-    last = median(last)
-  )
+periods<-list("2003–2013"=2003:2013,"2015–2025"=2015:2025)
+period_numbers<-lapply(periods,function(years) {
+  x<-big_days[big_days$year%in%years,]
+  first<-tapply(x$j,x$year,min)
+  last<-tapply(x$j,x$year,max)
+  list(per_year=nrow(x)/length(years),outside=100*mean(!x$summer),first=median(first),
+       last=median(last))
 })
-in_period <- function(k, what) period_numbers[[k]][[what]]
+in_period<-function(k,what) {
+  result<-period_numbers[[k]][[what]]
+  return(result)
+}
 # the heat of a hot spot in each month (median of all years)
-spot_heat <- tapply(hot_spots$frp, format(hot_spots$date, "%b"), median)
+spot_heat<-tapply(hot_spots$frp,format(hot_spots$date,"%b"),median)
 ```
 
 **Not that the satellites can see.** The chart shows every day since `r min(hot_spot_years)`, one row for each year and one square for each day. The colour is how much heat the fires of the day gave off when the satellites passed over, in megawatts: the sum of NASA's fire radiative power of all the hot spots of the day, the presumed vegetation fires only ([NASA's description of the hot spots](https://www.earthdata.nasa.gov/data/tools/firms/active-fire-data-attributes-modis-viirs)). The season of the big fires is the dark band of July and August. In the months around it there are many paler squares, especially in autumn, some of them probably farmers burning what is left in the fields: a hot spot gave off `r round(spot_heat[["Oct"]])` megawatts in October and `r round(spot_heat[["Aug"]])` in August (medians). The heat, not the number of hot spots, separates the big fires.
 
 ```{r season, fig.height = 5.6}
 #| fig-alt: "Heat of the fires in Greece each day, one row for each year since 2003"
-daily$class <- cut(
-  daily$heat,
-  c(-Inf, 0, 200, 1000, big, Inf),
-  labels = c(
-    "No fire seen",
-    "Under 200 MW",
-    "200 to 999 MW",
-    "1,000 to 1,999 MW",
-    "2,000 MW or more"
-  )
-)
-month_starts <- as.Date(paste0("2001-", 1:12, "-01"))
-ggplot(daily[!is.na(daily$day), ], aes(x = day, y = year, fill = class)) +
-  geom_tile() +
-  scale_fill_manual(
-    values = c("#f7f7f7", "#fee6ce", "#fdae6b", "#e6550d", "#7f2704"),
-    drop = FALSE
-  ) +
-  scale_x_date(breaks = month_starts + 14, labels = month.abb, expand = c(0, 0)) +
-  scale_y_continuous(breaks = seq(2005, 2025, 5), expand = c(0, 0)) +
-  guides(fill = guide_legend(nrow = 2)) +
-  labs(
-    title = "When Greece burns",
-    subtitle = "Heat of the fires that the satellites saw, each day, megawatts",
-    x = NULL,
-    y = NULL,
-    fill = NULL,
-    caption = "Data: NASA FIRMS, MODIS on Terra and Aqua, presumed vegetation fires"
-  ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    plot.title = element_text(face = "bold"),
-    plot.title.position = "plot",
-    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
-    plot.caption.position = "plot",
-    panel.grid = element_blank(),
-    legend.position = "top",
-    legend.justification = "left"
-  )
+heat_classes<-c("No fire seen","Under 200 MW","200 to 999 MW","1,000 to 1,999 MW",
+                "2,000 MW or more")
+daily$class<-as.integer(cut(daily$heat,c(-Inf,0,200,1000,big,Inf)))
+month_starts<-as.Date(paste0("2001-",1:12,"-01"))
+# the days as a table: one row for each year, one column for each date (29 February has no date in
+# the calendar of 2001, and is left out)
+calendar<-daily[!is.na(daily$day),]
+calendar_days<-sort(unique(calendar$day))
+calendar_years<-sort(unique(calendar$year))
+cells<-cbind(match(calendar$year,calendar_years),match(calendar$day,calendar_days))
+class_table<-matrix(NA,length(calendar_years),length(calendar_days))
+class_table[cells]<-calendar$class
+heat_table<-matrix("",length(calendar_years),length(calendar_days))
+heat_table[cells]<-paste(number(calendar$heat),"MW")
+
+plot_ly(x=calendar_days,y=calendar_years,z=class_table,type="heatmap",zmin=0.5,zmax=5.5,
+        colorscale=color_steps(c("#f7f7f7","#fee6ce","#fdae6b","#e6550d","#7f2704")),
+        text=heat_table,
+        colorbar=list(orientation="h",x=0,xanchor="left",y=-0.08,yanchor="top",tickvals=1:5,
+                      ticktext=heat_classes,len=0.9,thickness=12,tickfont=list(size=9),
+                      tickangle=0)) %>%
+  style(hovertemplate="%{x|%d %B} %{y}: %{text}<extra></extra>") %>%
+  chart("When Greece burns",
+        paste0("NASA FIRMS, MODIS on Terra and Aqua, presumed vegetation fires. ",
+               "Heat of the fires that the satellites saw, each day, megawatts."),
+        x_axis=list(tickvals=month_starts+14,ticktext=month.abb,showgrid=FALSE),
+        y_axis=list(tick0=2005,dtick=5,showgrid=FALSE),margin=list(t=60,b=130),note_y=-0.24)
 ```
 
-A big-fire day here is one on which the fires gave off `r number(big)` megawatts or more. In `r names(periods)[1]` there were `r one(in_period(1, "per_year"))` of them a year, in `r names(periods)[2]` `r one(in_period(2, "per_year"))`; `r round(in_period(1, "outside"))`% and `r round(in_period(2, "outside"))`% of them came outside the months from June to September. The first big-fire day of the year came on `r day_text(in_period(1, "first"))` in `r names(periods)[1]` and `r day_text(in_period(2, "first"))` in `r names(periods)[2]`, and the last on `r day_text(in_period(1, "last"))` and `r day_text(in_period(2, "last"))` (medians of the years). Nothing in these numbers says that the season has become longer.
+A big-fire day here is one on which the fires gave off `r number(big)` megawatts or more. In `r names(periods)[1]` there were `r one(in_period(1,"per_year"))` of them a year, in `r names(periods)[2]` `r one(in_period(2,"per_year"))`; `r round(in_period(1,"outside"))`% and `r round(in_period(2,"outside"))`% of them came outside the months from June to September. The first big-fire day of the year came on `r day_text(in_period(1,"first"))` in `r names(periods)[1]` and `r day_text(in_period(2,"first"))` in `r names(periods)[2]`, and the last on `r day_text(in_period(1,"last"))` and `r day_text(in_period(2,"last"))` (medians of the years). Nothing in these numbers says that the season has become longer.
 
 That is not the last word. The authors of Greece's chapter in the JRC's report for 2025 write that climate change has "systematically extended the fire season" ([JRC 2026](https://doi.org/10.2760/3888324)), and hot days do come earlier and last later, at least in Athens, as [Athens Is Getting Hotter](ILLUSTRATION_ATHENS_HEAT.html) shows. But the hot spots show what did burn, not how much could have: in years without a spark in a dangerous week, or with firefighters who put a fire out in time, a longer dangerous season leaves no trace in them. There are other limits too:
 
@@ -502,196 +396,126 @@ That is not the last word. The authors of Greece's chapter in the JRC's report f
 ## 4. Where do the fires burn?
 
 ```{r where_numbers}
-fires_area <- st_transform(fires, 3035) # an equal-area projection
-regions_area <- st_transform(st_make_valid(regions), 3035)
-burnt <- st_union(st_geometry(fires_area)) # the land burnt at least once
-inside <- st_intersection(regions_area[, "NUTS_ID"], st_sf(geometry = burnt))
-region_share <- data.frame(
-  NUTS_ID = regions_area$NUTS_ID,
-  land = as.numeric(st_area(regions_area)) / 1e4,
-  burnt = as.numeric(st_area(inside))[match(regions_area$NUTS_ID, inside$NUTS_ID)] / 1e4
-)
-region_share$share <- 100 * region_share$burnt / region_share$land
-region_share$name <- region_names[region_share$NUTS_ID]
-region_share <- region_share[order(region_share$share), ]
-in_region <- function(id, column) region_share[[column]][region_share$NUTS_ID == id]
-all_land <- sum(region_share$land)
-burnt_share <- 100 * sum(region_share$burnt) / all_land
+fires_area<-st_transform(fires,3035) # an equal-area projection
+regions_area<-st_transform(st_make_valid(regions),3035)
+burnt<-st_union(st_geometry(fires_area)) # the land burnt at least once
+inside<-st_intersection(regions_area[,"NUTS_ID"],st_sf(geometry=burnt))
+region_share<-data.frame(NUTS_ID=regions_area$NUTS_ID,
+                         land=as.numeric(st_area(regions_area))/1e4,
+                         burnt=as.numeric(st_area(inside))[match(regions_area$NUTS_ID,
+                                                                 inside$NUTS_ID)]/1e4)
+region_share$share<-100*region_share$burnt/region_share$land
+region_share$name<-region_names[region_share$NUTS_ID]
+region_share<-region_share[order(region_share$share),]
+in_region<-function(id,column) {
+  result<-region_share[[column]][region_share$NUTS_ID==id]
+  return(result)
+}
+all_land<-sum(region_share$land)
+burnt_share<-100*sum(region_share$burnt)/all_land
 
 # what burnt: EFFIS gives, for each fire, the share of its area that was each kind of land
-cover <- c(
-  BROADLEA = "forest",
-  CONIFER = "forest",
-  MIXED = "forest",
-  SCLEROPH = "other natural land",
-  TRANSIT = "other natural land",
-  OTHERNATLC = "other natural land",
-  AGRIAREAS = "farmland",
-  ARTIFSURF = "other",
-  OTHERLC = "other"
-)
-cover_share <- sapply(names(cover), function(column) {
-  as.numeric(fires[[column]]) / 100 * fires$area
+cover<-c(BROADLEA="forest",CONIFER="forest",MIXED="forest",SCLEROPH="other natural land",
+         TRANSIT="other natural land",OTHERNATLC="other natural land",AGRIAREAS="farmland",
+         ARTIFSURF="other",OTHERLC="other")
+cover_share<-sapply(names(cover),function(column) {
+  as.numeric(fires[[column]])/100*fires$area
 })
-cover_share <- cover_share[!is.na(rowSums(cover_share)), ]
-cover_total <- tapply(colSums(cover_share), cover, sum)
-cover_percent <- 100 * cover_total / sum(cover_total)
+cover_share<-cover_share[!is.na(rowSums(cover_share)),]
+cover_total<-tapply(colSums(cover_share),cover,sum)
+cover_percent<-100*cover_total/sum(cover_total)
 ```
 
-**Attica the most for its size, then the north-east and the Aegean.** By `r date_text(last_fire)`, EFFIS had outlined `r number(nrow(fires))` fires in Greece since `r first_year`. They burnt `r number(sum(fires$area) / 100)` square kilometres, some land more than once; `r percent(burnt_share, 1)` of Greece burnt at least once in those `r last_year - first_year + 1` years.
+**Attica the most for its size, then the north-east and the Aegean.** By `r date_text(last_fire)`, EFFIS had outlined `r number(nrow(fires))` fires in Greece since `r first_year`. They burnt `r number(sum(fires$area)/100)` square kilometres, some land more than once; `r percent(burnt_share,1)` of Greece burnt at least once in those `r last_year-first_year+1` years.
 
 ```{r map, fig.height = 7.6}
 #| fig-alt: "Map of every fire that EFFIS outlined in Greece since 2016, coloured by period"
-periods_map <- cut(
-  fires$year,
-  c(first_year - 1, 2020, 2023, last_year),
-  labels = c(
-    paste0(first_year, "–2020"),
-    "2021–2023",
-    paste0("2024–", last_year)
-  )
-)
-fires_map <- st_transform(fires, 2100) # the Greek grid
-fires_map$period <- periods_map
-regions_map <- st_transform(regions, 2100)
+periods_map<-cut(fires$year,c(first_year-1,2020,2023,last_year),
+                 labels=c(paste0(first_year,"–2020"),"2021–2023",paste0("2024–",last_year)))
+fires_map<-st_transform(fires,2100) # the Greek grid
+fires_map$period<-periods_map
+regions_map<-st_transform(regions,2100)
 # the names of the largest fires, at the middle of their outlines
-labelled <- fires_map[order(-fires_map$area)[1:7], ]
-labelled$label <- paste(
-  c(largest$place[1:7]),
-  labelled$year
-)
-xy <- st_coordinates(st_point_on_surface(st_geometry(labelled)))
-labels <- data.frame(x = xy[, 1], y = xy[, 2], label = labelled$label)
+labelled<-fires_map[order(-fires_map$area)[1:7],]
+labelled$label<-paste(c(largest$place[1:7]),labelled$year)
+xy<-st_coordinates(st_point_on_surface(st_geometry(labelled)))
+labels<-data.frame(x=xy[,1],y=xy[,2],label=labelled$label)
 
-ggplot() +
-  geom_sf(data = regions_map, fill = "#ededed", colour = "white", linewidth = 0.3) +
-  geom_sf(
-    data = fires_map[order(fires_map$period), ],
-    aes(fill = period, colour = period),
-    linewidth = 0.15
-  ) +
-  ggrepel::geom_label_repel(
-    data = labels,
-    aes(x = x, y = y, label = label),
-    size = 3.6,
-    min.segment.length = 0,
-    segment.colour = "grey40",
-    label.size = 0.2,
-    fill = "white",
-    seed = 1
-  ) +
-  scale_fill_manual(values = period_colors, drop = FALSE) +
-  scale_colour_manual(values = period_colors, drop = FALSE) +
-  guides(fill = guide_legend(title = NULL), colour = "none") +
-  coord_sf(datum = NA, expand = FALSE) +
-  labs(
-    title = "Every fire that EFFIS outlined in Greece",
-    subtitle = paste0(first_year, "–", last_year, ", the seven largest fires named"),
-    x = NULL,
-    y = NULL,
-    caption = paste(
-      "Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.",
-      "Fires of about 30 hectares or more until 2019, smaller ones too since 2020.",
-      sep = "\n"
-    )
-  ) +
-  theme_void(base_size = 14) +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    plot.margin = margin(10, 10, 10, 10),
-    plot.title = element_text(face = "bold"),
-    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
-    plot.caption.position = "plot",
-    plot.title.position = "plot",
-    legend.position = "top",
-    legend.justification = "left"
-  )
+ggplot()+
+  geom_sf(data=regions_map,fill="#ededed",colour="white",linewidth=0.3)+
+  geom_sf(data=fires_map[order(fires_map$period),],aes(fill=period,colour=period),linewidth=0.15)+
+  ggrepel::geom_label_repel(data=labels,aes(x=x,y=y,label=label),size=3.6,min.segment.length=0,
+                            segment.colour="grey40",label.size=0.2,fill="white",seed=1)+
+  scale_fill_manual(values=period_colors,drop=FALSE)+
+  scale_colour_manual(values=period_colors,drop=FALSE)+
+  guides(fill=guide_legend(title=NULL),colour="none")+
+  coord_sf(datum=NA,expand=FALSE)+
+  labs(title="Every fire that EFFIS outlined in Greece",
+       subtitle=paste0(first_year,"–",last_year,", the seven largest fires named"),
+       x=NULL,
+       y=NULL,
+       caption=paste("Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.",
+                     "Fires of about 30 hectares or more until 2019, smaller ones too since 2020.",
+                     sep="\n"))+
+  theme_void(base_size=14)+
+  theme(plot.background=element_rect(fill="white",colour=NA),
+        plot.margin=margin(10,10,10,10),
+        plot.title=element_text(face="bold"),
+        plot.caption=element_text(colour="grey40",size=rel(0.7),hjust=0),
+        plot.caption.position="plot",
+        plot.title.position="plot",
+        legend.position="top",
+        legend.justification="left")
 ```
 
-**Attica** has burnt the most for its size: `r percent(in_region("EL30", "share"), 1)` of its land burnt at least once from `r first_year` to `r last_year`, more than one square kilometre in five. The chart shows the same share for every region; that of the whole country was `r percent(burnt_share, 1)`. East Macedonia and Thrace has the fire of Evros, and the North Aegean, Central Greece with Evia and the South Aegean are next.
+**Attica** has burnt the most for its size: `r percent(in_region("EL30","share"),1)` of its land burnt at least once from `r first_year` to `r last_year`, more than one square kilometre in five. The chart shows the same share for every region; that of the whole country was `r percent(burnt_share,1)`. East Macedonia and Thrace has the fire of Evros, and the North Aegean, Central Greece with Evia and the South Aegean are next.
 
 ```{r regions}
-plot_ly(
-  region_share,
-  x = ~share,
-  y = ~ factor(name, levels = name),
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(region_share$NUTS_ID == "EL30", red, gray)),
-  text = percent(region_share$share, 1),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:.1f}% of its land<extra></extra>"
-) |>
-  chart(
-    paste0("Land burnt at least once, ", first_year, "–", last_year, ", % of the region"),
-    "EFFIS outlines (Copernicus); regions: GISCO.",
-    x_axis = list(range = c(0, 1.15 * max(region_share$share)), ticksuffix = "%"),
-    margin = list(l = 190, t = 70, b = 70, r = 40),
-    note_y = -0.1
-  )
+plot_ly(region_share,x=~share,y=~factor(name,levels=name),type="bar",orientation="h",
+        marker=list(color=ifelse(region_share$NUTS_ID=="EL30",red,gray)),
+        text=percent(region_share$share,1),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.1f}% of its land<extra></extra>") %>%
+  chart(paste0("Land burnt at least once, ",first_year,"–",last_year,", % of the region"),
+        "EFFIS outlines (Copernicus); regions: GISCO.",
+        x_axis=list(range=c(0,1.15*max(region_share$share)),ticksuffix="%"),
+        margin=list(l=190,t=70,b=70,r=40),note_y=-0.1)
 ```
 
 ```{r attica, fig.height = 6}
 #| fig-alt: "Map of the fires of Attica that EFFIS outlined since 2016, coloured by period"
 # the mainland of Attica and its neighbours: the region also has islands far to the south
-window <- st_bbox(c(xmin = 22.95, ymin = 37.5, xmax = 24.2, ymax = 38.45), crs = st_crs(4326))
-box <- st_bbox(st_transform(st_as_sfc(window), 2100))
+window<-st_bbox(c(xmin=22.95,ymin=37.5,xmax=24.2,ymax=38.45),crs=st_crs(4326))
+box<-st_bbox(st_transform(st_as_sfc(window),2100))
 # the years of the larger fires in the window, at the middle of their outlines
-in_window <- st_intersects(fires_map, st_as_sfc(box), sparse = FALSE)[, 1]
-attica_fires <- fires_map[in_window & fires_map$area >= 3000, ]
-attica_xy <- st_coordinates(st_point_on_surface(st_geometry(attica_fires)))
-attica_labels <- data.frame(x = attica_xy[, 1], y = attica_xy[, 2], label = attica_fires$year)
-ggplot() +
-  geom_sf(data = regions_map, fill = "#ededed", colour = "white", linewidth = 0.4) +
-  geom_sf(
-    data = fires_map[order(fires_map$period), ],
-    aes(fill = period, colour = period),
-    linewidth = 0.2
-  ) +
-  scale_fill_manual(values = period_colors, drop = FALSE) +
-  scale_colour_manual(values = period_colors, drop = FALSE) +
-  guides(fill = guide_legend(title = NULL), colour = "none") +
-  ggrepel::geom_label_repel(
-    data = attica_labels,
-    aes(x = x, y = y, label = label),
-    size = 3.4,
-    min.segment.length = 0,
-    segment.colour = "grey40",
-    label.size = 0.2,
-    fill = "white",
-    seed = 2
-  ) +
-  coord_sf(
-    xlim = c(box["xmin"], box["xmax"]),
-    ylim = c(box["ymin"], box["ymax"]),
-    datum = NA,
-    expand = FALSE
-  ) +
-  labs(
-    title = "Attica and its neighbourhood, close up",
-    subtitle = paste0(
-      "Fires outlined ",
-      first_year,
-      "–",
-      last_year,
-      "\nLabels: the year of the fires of 3,000 hectares or more"
-    ),
-    x = NULL,
-    y = NULL,
-    caption = "Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics."
-  ) +
-  theme_void(base_size = 14) +
-  theme(
-    plot.background = element_rect(fill = "white", colour = NA),
-    plot.margin = margin(10, 10, 10, 10),
-    plot.title = element_text(face = "bold"),
-    plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
-    plot.caption.position = "plot",
-    plot.title.position = "plot",
-    legend.position = "top",
-    legend.justification = "left"
-  )
+in_window<-st_intersects(fires_map,st_as_sfc(box),sparse=FALSE)[,1]
+attica_fires<-fires_map[in_window&fires_map$area>=3000,]
+attica_xy<-st_coordinates(st_point_on_surface(st_geometry(attica_fires)))
+attica_labels<-data.frame(x=attica_xy[,1],y=attica_xy[,2],label=attica_fires$year)
+ggplot()+
+  geom_sf(data=regions_map,fill="#ededed",colour="white",linewidth=0.4)+
+  geom_sf(data=fires_map[order(fires_map$period),],aes(fill=period,colour=period),linewidth=0.2)+
+  scale_fill_manual(values=period_colors,drop=FALSE)+
+  scale_colour_manual(values=period_colors,drop=FALSE)+
+  guides(fill=guide_legend(title=NULL),colour="none")+
+  ggrepel::geom_label_repel(data=attica_labels,aes(x=x,y=y,label=label),size=3.4,
+                            min.segment.length=0,segment.colour="grey40",label.size=0.2,
+                            fill="white",seed=2)+
+  coord_sf(xlim=c(box["xmin"],box["xmax"]),ylim=c(box["ymin"],box["ymax"]),datum=NA,expand=FALSE)+
+  labs(title="Attica and its neighbourhood, close up",
+       subtitle=paste0("Fires outlined ",first_year,"–",last_year,
+                       "\nLabels: the year of the fires of 3,000 hectares or more"),
+       x=NULL,
+       y=NULL,
+       caption="Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.")+
+  theme_void(base_size=14)+
+  theme(plot.background=element_rect(fill="white",colour=NA),
+        plot.margin=margin(10,10,10,10),
+        plot.title=element_text(face="bold"),
+        plot.caption=element_text(colour="grey40",size=rel(0.7),hjust=0),
+        plot.caption.position="plot",
+        plot.title.position="plot",
+        legend.position="top",
+        legend.justification="left")
 ```
 
 **What burns** is mostly not forest: of the area inside the outlines, `r percent(cover_percent["forest"])` was forest, `r percent(cover_percent["other natural land"])` shrubland, grassland and other natural land, and `r percent(cover_percent["farmland"])` farmland; the rest, `r percent(cover_percent["other"])`, was built-up land or other cover. EFFIS gets these shares by laying the outlines on the EU's CORINE map of land cover ([EFFIS, fire damage assessment](https://forest-fire.emergency.copernicus.eu/about-effis/technical-background/fire-damage-assessment)).
@@ -701,99 +525,75 @@ ggplot() +
 ## 5. How does Greece compare with its neighbours?
 
 ```{r compare_numbers}
-compare <- effis[effis$year %in% 2006:2025, ]
-compare <- merge(compare, countries[, c("code", "name", "km2")])
+compare<-effis[effis$year%in%2006:2025,]
+compare<-merge(compare,countries[,c("code","name","km2")])
 # 1% of a square kilometre is one hectare, so hectares per square kilometre are a percentage
-compare$share <- compare$area / compare$km2
-means <- compare |>
-  group_by(name) |>
-  summarise(mean = mean(share), worst = max(share), worst_year = year[which.max(share)]) |>
-  arrange(mean)
-in_country <- function(name, column) means[[column]][means$name == name]
-top_of_year <- compare |>
-  group_by(year) |>
-  slice_max(share, n = 1)
-first_place <- table(top_of_year$name)
-times_first <- function(name) {
-  if (name %in% names(first_place)) first_place[[name]] else 0
+compare$share<-compare$area/compare$km2
+# each country: the share burnt in an average year, and its worst year, from the lowest average
+means<-do.call(rbind,lapply(split(compare,compare$name),function(x) {
+  data.frame(name=x$name[1],
+             mean=mean(x$share),
+             worst=max(x$share),
+             worst_year=x$year[which.max(x$share)])
+}))
+means<-means[order(means$mean),]
+rownames(means)<-NULL
+in_country<-function(name,column) {
+  result<-means[[column]][means$name==name]
+  return(result)
+}
+# the country with the highest share of each year
+top_of_year<-compare[compare$share==ave(compare$share,compare$year,FUN=max),]
+first_place<-table(top_of_year$name)
+times_first<-function(name) {
+  result<-if(name%in%names(first_place)) first_place[[name]] else 0
+  return(result)
 }
 ```
 
-**Portugal burns the most for its size, and Greece is second.** In the years from 2006 to 2025, the satellites found that fires burnt on average `r two(in_country("Portugal", "mean"))`% of Portugal every year and `r two(in_country("Greece", "mean"))`% of Greece: `r one(in_country("Portugal", "mean") / in_country("Greece", "mean"))` times as much. Greece was ahead of Cyprus (`r two(in_country("Cyprus", "mean"))`%), Spain (`r two(in_country("Spain", "mean"))`%), Italy (`r two(in_country("Italy", "mean"))`%) and France (`r two(in_country("France", "mean"))`%). In `r times_first("Greece")` of the `r length(unique(compare$year))` years Greece had the highest share of all six, in `r times_first("Portugal")` Portugal.
+**Portugal burns the most for its size, and Greece is second.** In the years from 2006 to 2025, the satellites found that fires burnt on average `r two(in_country("Portugal","mean"))`% of Portugal every year and `r two(in_country("Greece","mean"))`% of Greece: `r one(in_country("Portugal","mean")/in_country("Greece","mean"))` times as much. Greece was ahead of Cyprus (`r two(in_country("Cyprus","mean"))`%), Spain (`r two(in_country("Spain","mean"))`%), Italy (`r two(in_country("Italy","mean"))`%) and France (`r two(in_country("France","mean"))`%). In `r times_first("Greece")` of the `r length(unique(compare$year))` years Greece had the highest share of all six, in `r times_first("Portugal")` Portugal.
 
 Here EFFIS's satellites measure all six countries in the same way, in fires of about 30 hectares or more, so the comparison does not depend on how each country counts.
 
 ```{r compare, fig.height = 6.2}
 set.seed(2026)
-compare$position <- match(compare$name, means$name) + runif(nrow(compare), -0.17, 0.17)
-plot_ly() |>
-  add_markers(
-    data = compare,
-    x = ~share,
-    y = ~position,
-    marker = list(
-      color = ifelse(compare$name == "Greece", red, gray),
-      size = 9,
-      line = list(color = "white", width = 1)
-    ),
-    text = ~ paste0(name, " ", year, ": ", two(share), "%"),
-    hovertemplate = "%{text}<extra></extra>",
-    showlegend = FALSE
-  ) |>
-  add_markers(
-    data = means,
-    x = ~mean,
-    y = ~ match(name, means$name),
-    marker = list(
-      color = ifelse(means$name == "Greece", red, dark_gray),
-      symbol = "line-ns-open",
-      size = 26,
-      line = list(width = 4)
-    ),
-    text = ~ paste0(name, ", average 2006–2025: ", two(mean), "% a year"),
-    hovertemplate = "%{text}<extra></extra>",
-    showlegend = FALSE
-  ) |>
-  chart(
-    "Land burnt each year, % of the country, 2006–2025",
-    paste0(
-      "EFFIS, fires of about 30 ha or more; areas of the countries: Eurostat, reg_area3. ",
-      "Dots: years. Bars: averages."
-    ),
-    x_axis = list(rangemode = "tozero", ticksuffix = "%"),
-    y_axis = list(
-      tickvals = seq_len(nrow(means)),
-      ticktext = means$name,
-      range = c(0.4, nrow(means) + 0.6),
-      zeroline = FALSE
-    ),
-    annotations = lapply(seq_len(nrow(means)), function(i) {
-      list(
-        x = means$worst[i],
-        y = i,
-        text = paste0(means$worst_year[i]),
-        showarrow = FALSE,
-        xanchor = "left",
-        xshift = 8,
-        font = list(size = 12, color = dark_gray)
-      )
-    }),
-    margin = list(l = 80, t = 70, b = 90, r = 40),
-    note_y = -0.14
-  )
+compare$position<-match(compare$name,means$name)+runif(nrow(compare),-0.17,0.17)
+# the worst year of each country, beside its row
+worst_labels<-lapply(seq_len(nrow(means)),function(i) {
+  list(x=means$worst[i],y=i,text=paste0(means$worst_year[i]),showarrow=FALSE,xanchor="left",
+       xshift=8,font=list(size=12,color=dark_gray))
+})
+plot_ly() %>%
+  add_markers(data=compare,x=~share,y=~position,
+              marker=list(color=ifelse(compare$name=="Greece",red,gray),size=9,
+                          line=list(color="white",width=1)),
+              text=~paste0(name," ",year,": ",two(share),"%"),
+              hovertemplate="%{text}<extra></extra>",showlegend=FALSE) %>%
+  add_markers(data=means,x=~mean,y=~match(name,means$name),
+              marker=list(color=ifelse(means$name=="Greece",red,dark_gray),symbol="line-ns-open",
+                          size=26,line=list(width=4)),
+              text=~paste0(name,", average 2006–2025: ",two(mean),"% a year"),
+              hovertemplate="%{text}<extra></extra>",showlegend=FALSE) %>%
+  chart("Land burnt each year, % of the country, 2006–2025",
+        paste0("EFFIS, fires of about 30 ha or more; areas of the countries: Eurostat, reg_area3. ",
+               "Dots: years. Bars: averages."),
+        x_axis=list(rangemode="tozero",ticksuffix="%"),
+        y_axis=list(tickvals=seq_len(nrow(means)),ticktext=means$name,range=c(0.4,nrow(means)+0.6),
+                    zeroline=FALSE),
+        annotations=worst_labels,margin=list(l=80,t=70,b=90,r=40),note_y=-0.14)
 ```
 
-The number beside each country's row marks its worst year: `r in_country("Portugal", "worst_year")` in Portugal, `r in_country("Greece", "worst_year")` in Greece, `r in_country("Cyprus", "worst_year")` in Cyprus.
+The number beside each country's row marks its worst year: `r in_country("Portugal","worst_year")` in Portugal, `r in_country("Greece","worst_year")` in Greece, `r in_country("Cyprus","worst_year")` in Cyprus.
 
 ---
 
 ## So, what does it mean?
 
-1. **Greece does not burn steadily more, but it burns in bursts.** Five years, `r and_list(sort(worst))`, have `r percent(100 * sum(national$area[national$year %in% worst]) / sum(national$area))` of everything that burnt from 1980 to `r last_total`, and there is no trend in the total.
-2. **A bad year is made of a few enormous fires.** The ten largest fires made up `r percent(100 * sum(largest$area) / sum(fires$area))` of the area of the `r number(nrow(fires))` fires outlined since `r first_year`.
+1. **Greece does not burn steadily more, but it burns in bursts.** Five years, `r and_list(sort(worst))`, have `r percent(100*sum(national$area[national$year%in%worst])/sum(national$area))` of everything that burnt from 1980 to `r last_total`, and there is no trend in the total.
+2. **A bad year is made of a few enormous fires.** The ten largest fires made up `r percent(100*sum(largest$area)/sum(fires$area))` of the area of the `r number(nrow(fires))` fires outlined since `r first_year`.
 3. **The satellites see no longer season of big fires**, though the heat that makes a fire dangerous does last longer, and the Greek authors of the JRC's report say that the season has.
 4. **Attica burns the most for its size**: more than a fifth of its land burnt at least once since `r first_year`.
-5. **Greece is second to Portugal.** Every year it burns about `r two(in_country("Greece", "mean"))`% of its land on average, against `r two(in_country("Spain", "mean"))`% in Spain and `r two(in_country("Italy", "mean"))`% in Italy.
+5. **Greece is second to Portugal.** Every year it burns about `r two(in_country("Greece","mean"))`% of its land on average, against `r two(in_country("Spain","mean"))`% in Spain and `r two(in_country("Italy","mean"))`% in Italy.
 
 **What this does not show.** It does not say what started the fires, how well they were fought, or what the climate will do to the next ones. The national statistics and the satellites do not count the same things, the satellites miss the small fires, and the outlines show where a fire burnt, not how severely. And the fires are counted in hectares here, which do not measure the people, the homes and the animals lost in them.
 
@@ -820,4 +620,4 @@ For the heat that dries out the land, see [Athens Is Getting Hotter](ILLUSTRATIO
 
 ---
 
-*Rendered with R `r getRversion()` · dplyr · ggplot2 · plotly · sf*
+*Rendered with R `r getRversion()` · ggplot2 · plotly · sf*

@@ -139,13 +139,14 @@ Done, checked and copied here:
 - [x] WORLD_FLOODS: no dplyr or ggplot2 left; text, tables and the two plotly charts identical; the deaths panels, the season calendar and the yearly counts are plotly (two years that tie for the most both stay red, as before); a comment that said 10,000 km² now says 25,000, as the code does
 - [x] WORLD_TORNADOES: no dplyr or ggplot2 left; text, five tables and the three plotly charts identical; the calendar of the divisions, the hours of the day, the deaths of each year and the four trend panels are plotly; six variables that the page computed but never used are gone (`strong_states`, `deadliest_day`, `deadliest_rating`, `unrated_modern`, `canada_provinces`, `estimated`)
 - [x] ATHENS_HEAT: no dplyr or ggplot2 left; text and all tables identical; the seven charts (stripes, the station against ERA5-Land, hot days, tropical nights, the calendar of every day, the season curves and the heatwaves) are plotly; three functions that were defined inside other functions are now top-level (`reported`, `day_number`, `month_word`)
+- [x] GREEK_WILDFIRES: no dplyr left; text, both tables, the two maps and the three plotly charts identical; the season calendar is plotly, a cell for each day coloured by its class of heat, with the megawatts in the hover text; the two maps stay ggplot (see the question below)
 
-To do, in this order:
+To do:
 
-- [ ] GREEK_WILDFIRES
+- [ ] The setup chunk on the first fifteen pages above (COLOR_CHART to WORLD_WILDFIRES), in one batch (see **The setup chunk**)
 
 Open questions:
 
-- **SEA_ICE maps:** sf polygons in a polar projection, in twelve panels. As plotly they would add megabytes of coordinates to the page, so they are still ggplot. Keep them as an exception?
+- **sf maps:** SEA_ICE draws sf polygons in a polar projection, in twelve panels; GREEK_WILDFIRES draws the outline of every fire, on Greece and on Attica. As plotly they would put every point of every outline in the page (megabytes for SEA_ICE), so they are still ggplot. Keep them as an exception?
 
 Fixed along the way: `plot_multiplot()` called `viewport()` and `grid.layout()` without `grid::`. Inside the rwf package that works (the package imports them), but in the copies of `R/code_rwf.R` that the pages source it stops the page. Fixed in rwf (`working_functions/FUNCTIONS_PLOT.R` and `rwf/R/FUNCTIONS_PLOT.R`, not committed there) and in the four copies here (illustration, example, validation, cat_irt_eap). EXAMPLE_GENERALIZED, EXAMPLE_LDA and VALIDATION_DESCRIPTIVES_OCEAN use it too and would have stopped the same way when run again.
