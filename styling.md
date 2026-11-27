@@ -25,7 +25,7 @@ The pages of `quarto/illustration/` (the "data stories" site) are being rewritte
   source(paste0(directory,"R/code_options.R"))
   ```
 
-  Pages restyled before this rule get it in one batch when all pages are done (a re-render pulls fresh data).
+  Every page has it, followed only by the `source()` of the page's own helpers (`R/code_rwf.R`, `R/code_golemworldbank.R`).
 - **Code shown to readers but not run** (a plain code block, a chunk with `eval=FALSE`) follows the same style, and stays in step with the code it stands for.
 - **Kept as they are:** chunk labels (they name the figure files in `_freeze/`), `#| fig-alt` lines, and code quoted from someone else (efg's script in the colour chart).
 
@@ -63,7 +63,7 @@ plot_ly(bars,x=~deaths,y=~name,type="bar",orientation="h",
 - **Colour classes** on a map or calendar are a `colorscale` of steps with `zmin`/`zmax`, and a colour bar shows the class names (see the earthquake country map).
 - **Overlapping labels** are left out, as ggplot's `check_overlap` did. The point keeps its colour and its hover text.
 - **A hover text for many points** is set with `style(hovertemplate=...)`: given to `plot_ly()`, plotly repeats it for every point (the decomposition of AIRPORT_WEATHER shrank from 3.1 MB to 0.8 MB). Pass the data as a data frame with formulas (`x=~date`), not as vectors, which plotly keeps a second copy of.
-- **A page with several plotly or highcharter charts** turns the knitr cache off (`knitr::opts_chunk$set(cache=FALSE)` in the setup chunk, as most pages do): when some chunks come from the cache and one runs again, the new chart can get the same id as a cached one, and then it does not draw.
+- **No knitr cache on any page:** `R/code_options.R` sets `cache = FALSE` for the whole site, and no page or chunk sets it again. The site keeps what was rendered in `_freeze/`; and when some chunks come from the cache and one runs again, the new chart can get the same id as a cached one, and then it does not draw.
 - **A package that is no longer used** comes out of `library()`, out of the install comment, and out of the footer (`*Rendered with R ... · plotly · sf*`).
 - **The PNG of a converted chart** stays in `_freeze/<page>/figure-html/` after the render, because Quarto does not remove it. Delete it once the freeze no longer refers to it.
 
@@ -133,20 +133,21 @@ Done, checked and copied here:
 - [x] GREEK_WAGES_PRICES: charts and GIFs identical; the first table now prints as a data frame (dplyr's `group_by()` had made it a tibble), with the same values
 - [x] CLIMATE_HIGHCHARTER: highcharter kept; dplyr, tidyr, reshape, stringr and lubridate replaced by base R; output identical
 - [x] ILLUSIONS: only the setup chunk; the drawings are quoted code ("not written by me") and stay as they are
-- [x] SEA_ICE: the time series is plotly; the two maps stay ggplot for now (see the question below)
+- [x] SEA_ICE: the time series is plotly; the two maps stay ggplot (see **Maps** below)
 - [x] SEA_ICE_TEMP: base R instead of dplyr and tidyr, unused packages out (dplyr, tidyr, lubridate, reshape, rnoaa); the two GIFs stay ggplot. The spiral's data were checked object by object, and both GIFs frame by frame. A full render takes about 3 minutes here, not the 1–2 hours the page mentions
 - [x] AIRPORT_WEATHER: base R (plyr, dplyr and lubridate gone) and plotly (ggplot2 and ggfortify gone). The daily band is a bar for each day, from its lowest to its highest temperature, coloured by the highest; the monthly band shows the highest temperatures as coloured points; the heatmaps keep a value in each cell; "All four together" and the decomposition are stacked plotly panels. The page could not run since early October because of `plot_multiplot()` (fixed, see below), and now no longer uses it
 - [x] WORLD_FLOODS: no dplyr or ggplot2 left; text, tables and the two plotly charts identical; the deaths panels, the season calendar and the yearly counts are plotly (two years that tie for the most both stay red, as before); a comment that said 10,000 km² now says 25,000, as the code does
 - [x] WORLD_TORNADOES: no dplyr or ggplot2 left; text, five tables and the three plotly charts identical; the calendar of the divisions, the hours of the day, the deaths of each year and the four trend panels are plotly; six variables that the page computed but never used are gone (`strong_states`, `deadliest_day`, `deadliest_rating`, `unrated_modern`, `canada_provinces`, `estimated`)
 - [x] ATHENS_HEAT: no dplyr or ggplot2 left; text and all tables identical; the seven charts (stripes, the station against ERA5-Land, hot days, tropical nights, the calendar of every day, the season curves and the heatwaves) are plotly; three functions that were defined inside other functions are now top-level (`reported`, `day_number`, `month_word`)
-- [x] GREEK_WILDFIRES: no dplyr left; text, both tables, the two maps and the three plotly charts identical; the season calendar is plotly, a cell for each day coloured by its class of heat, with the megawatts in the hover text; the two maps stay ggplot (see the question below)
+- [x] GREEK_WILDFIRES: no dplyr or ggplot2 left; text, both tables and the three plotly charts identical; the season calendar is plotly, a cell for each day coloured by its class of heat, with the megawatts in the hover text; the two maps are plotly too (see **Maps** below)
 
-To do:
+Then, for all pages (27 November):
 
-- [ ] The setup chunk on the first fifteen pages above (COLOR_CHART to WORLD_WILDFIRES), in one batch (see **The setup chunk**)
+- [x] The same setup chunk on every page, and the knitr cache off for the whole site in `R/code_options.R`: the cache lines of the pages are gone, and so is the `cache=TRUE` of GAPMINDER's animation. The 23 pages whose setup chunk changed were rendered again: their text, tables, charts and figures are identical to before, apart from plotly's random ids. WORLD_TSUNAMIS's freeze now shows the page's own code: the one committed came from a render that read the page before its last change, although its hash was right.
 
-Open questions:
+**Maps** (decided 27 November: plotly when that is not hard and looks good):
 
-- **sf maps:** SEA_ICE draws sf polygons in a polar projection, in twelve panels; GREEK_WILDFIRES draws the outline of every fire, on Greece and on Attica. As plotly they would put every point of every outline in the page (megabytes for SEA_ICE), so they are still ggplot. Keep them as an exception?
+- GREEK_WILDFIRES: both maps are plotly. The outlines are simplified to 200 metres (Greece) and 50 metres (Attica), less than a pixel, which takes the fires from 419,744 points to about 16,000; hovering over a fire shows its place, date and area; `place_labels()` puts the names of the largest fires where they do not cover each other, which ggrepel did before. The page is 1.4 MB, and no longer needs the two PNGs (560 KB).
+- SEA_ICE: the twelve polar panels stay ggplot. As plotly they would put megabytes of coordinates in the page.
 
 Fixed along the way: `plot_multiplot()` called `viewport()` and `grid.layout()` without `grid::`. Inside the rwf package that works (the package imports them), but in the copies of `R/code_rwf.R` that the pages source it stops the page. Fixed in rwf (`working_functions/FUNCTIONS_PLOT.R` and `rwf/R/FUNCTIONS_PLOT.R`, not committed there) and in the four copies here (illustration, example, validation, cat_irt_eap). EXAMPLE_GENERALIZED, EXAMPLE_LDA and VALIDATION_DESCRIPTIVES_OCEAN use it too and would have stopped the same way when run again.
