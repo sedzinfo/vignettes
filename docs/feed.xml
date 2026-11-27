@@ -4963,9 +4963,7 @@ ggplot(series, aes(x = year, y = n)) +
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("dplyr", "ggplot2", "plotly", "sf"))
-library(dplyr)
-library(ggplot2)
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("plotly", "sf"))
 library(plotly)
 library(sf)</code></pre></div></div>
 </details>
@@ -4977,36 +4975,30 @@ library(sf)</code></pre></div></div>
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r"># a chart of Our World in Data as a table: one row for each country or region and each year
-owid &lt;- function(chart) {
-  read.csv(paste0(
-    "https://ourworldindata.org/grapher/",
-    chart,
-    ".csv?v=1&amp;csvType=full&amp;useColumnShortNames=true"
-  ))
+owid&lt;-function(chart) {
+  result&lt;-read.csv(paste0("https://ourworldindata.org/grapher/",chart,
+                          ".csv?v=1&amp;csvType=full&amp;useColumnShortNames=true"))
+  return(result)
 }
 # EM-DAT: the people killed and affected in each country each year, by kind of disaster, and the
 # disasters recorded in the world each year, by kind
-deaths &lt;- owid("natural-disasters-deaths")
-affected &lt;- owid("natural-disasters-people-affected")
-events &lt;- owid("number-of-natural-disaster-events")
-population &lt;- owid("population")
-continents &lt;- owid("continents-according-to-our-world-in-data")
+deaths&lt;-owid("natural-disasters-deaths")
+affected&lt;-owid("natural-disasters-people-affected")
+events&lt;-owid("number-of-natural-disaster-events")
+population&lt;-owid("population")
+continents&lt;-owid("continents-according-to-our-world-in-data")
 # the earthquakes of magnitude 7 or more since 1900 (USGS)
-quakes &lt;- read.csv(paste0(
-  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
-  "&amp;starttime=1900-01-01&amp;minmagnitude=7&amp;orderby=time-asc"
-))
+quakes&lt;-read.csv(paste0(paste0("https://earthquake.usgs.gov/fdsnws/event/1/qu","ery?format=csv"),
+                        "&amp;starttime=1900-01-01&amp;minmagnitude=7&amp;orderby=time-asc"))
 # the volcanoes that have erupted in the last 12,000 years (Smithsonian); the geological summary of
 # each volcano has line breaks inside its quotes, which read.csv reads correctly
-volcanoes &lt;- read.csv(paste0(
-  "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&amp;version=2.0.0",
-  "&amp;request=GetFeature&amp;typeName=GVP-VOTW:Smithsonian_VOTW_Holocene_Volcanoes&amp;outputFormat=csv"
-))
+volcanoes&lt;-read.csv(paste0(paste0("https://webservices.volcano.si.edu/geoserver/",
+                                  "GVP-VOTW/ows?service=WFS&amp;version=2.0.0"),
+                           paste0("&amp;request=GetFeature&amp;typeName=GVP-VOTW:Smithso",
+                                  "nian_VOTW_Holocene_Volcanoes&amp;outputFormat=csv")))
 # the boundaries of the tectonic plates (Bird 2003, as GeoJSON)
-plates &lt;- st_read(
-  "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json",
-  quiet = TRUE
-)</code></pre></div></div>
+plates&lt;-st_read(paste0("https://raw.githubusercontent.com/fraxen/tect",
+                       "onicplates/master/GeoJSON/PB2002_boundaries.j","son"),quiet=TRUE)</code></pre></div></div>
 </details>
 </div>
 <div class="cell">
@@ -5014,144 +5006,113 @@ plates &lt;- st_read(
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre><code class="language-r"># the kinds of disaster: the columns of EM-DAT's tables, their names in its table of events, and
 # their names on this page
-kinds &lt;- data.frame(
-  key = c(
-    "flood",
-    "extreme_temperature",
-    "extreme_weather",
-    "drought",
-    "earthquake",
-    "volcanic_activity",
-    "landslide",
-    "wildfire"
-  ),
-  event_name = c(
-    "Flood",
-    "Extreme temperature",
-    "Extreme weather",
-    "Drought",
-    "Earthquake",
-    "Volcanic activity",
-    "Landslide",
-    "Wildfire"
-  ),
-  label = c(
-    "Flood",
-    "Extreme temperature",
-    "Storm",
-    "Drought",
-    "Earthquake",
-    "Volcano",
-    "Landslide",
-    "Wildfire"
-  )
-)
+kinds&lt;-data.frame(key=c("flood","extreme_temperature","extreme_weather","drought","earthquake",
+                        "volcanic_activity","landslide","wildfire"),
+                  event_name=c("Flood","Extreme temperature","Extreme weather","Drought",
+                               "Earthquake","Volcanic activity","Landslide","Wildfire"),
+                  label=c("Flood","Extreme temperature","Storm","Drought","Earthquake","Volcano",
+                          "Landslide","Wildfire"))
 # the charts with colours show the five deadliest kinds and put the other three together
-kinds$group &lt;- ifelse(kinds$key %in% c("volcanic_activity", "landslide", "wildfire"), "Other", kinds$label)
-group_levels &lt;- c("Flood", "Extreme temperature", "Storm", "Drought", "Earthquake", "Other")
-label_of &lt;- setNames(kinds$label, kinds$key)
-group_of &lt;- setNames(kinds$group, kinds$key)
-# a table of EM-DAT with one row for each place, year and kind; a year without a recorded disaster of
+kinds$group&lt;-ifelse(kinds$key%in%c("volcanic_activity","landslide","wildfire"),"Other",kinds$label)
+group_levels&lt;-c("Flood","Extreme temperature","Storm","Drought","Earthquake","Other")
+label_of&lt;-setNames(kinds$label,kinds$key)
+group_of&lt;-setNames(kinds$group,kinds$key)
+# a table of EM-DAT with one row for each place, year and kind; a year without a recorded disaster
+# of
 # a kind has no value there, which means that none was recorded: zero
-to_long &lt;- function(x, prefix) {
-  y &lt;- do.call(rbind, lapply(kinds$key, function(k) {
-    data.frame(entity = x$entity, code = x$code, year = x$year, kind = k, value = x[[paste0(prefix, k, "_yearly")]])
+to_long&lt;-function(x,prefix) {
+  y&lt;-do.call(rbind,
+             lapply(kinds$key,
+                    function(k) {
+    data.frame(entity=x$entity,
+               code=x$code,
+               year=x$year,
+               kind=k,
+               value=x[[paste0(prefix,k,"_yearly")]])
   }))
-  y$value[is.na(y$value)] &lt;- 0
-  y
+  y$value[is.na(y$value)]&lt;-0
+  result&lt;-y
+  return(result)
 }
-dead &lt;- to_long(deaths, "total_dead_")
-hit &lt;- to_long(affected, "total_affected_")
-first_year &lt;- min(dead$year)
-last_year &lt;- max(dead$year)
-recent &lt;- 2000:last_year
+dead&lt;-to_long(deaths,"total_dead_")
+hit&lt;-to_long(affected,"total_affected_")
+first_year&lt;-min(dead$year)
+last_year&lt;-max(dead$year)
+recent&lt;-2000:last_year
 # the countries: rows with a code that Our World in Data puts on a continent (its regions have no
 # code, or one that starts with OWID_)
-country_codes &lt;- continents$code[nzchar(continents$code)]
-continent_of &lt;- setNames(continents$owid_region, continents$code)
+country_codes&lt;-continents$code[nzchar(continents$code)]
+continent_of&lt;-setNames(continents$owid_region,continents$code)
 # the population of each place and year; the data end in 2023, and the years after it take the
 # population of 2023
-names(population)[names(population) == "population_historical"] &lt;- "people"
-last_population &lt;- max(population$year)
-carried &lt;- do.call(rbind, lapply((last_population + 1):last_year, function(y) {
-  transform(population[population$year == last_population, ], year = y)
+names(population)[names(population)=="population_historical"]&lt;-"people"
+last_population&lt;-max(population$year)
+carried&lt;-do.call(rbind,
+                 lapply((last_population+1):last_year,
+                        function(y) {
+  transform(population[population$year==last_population,],year=y)
 }))
-population &lt;- rbind(population[population$year &gt;= first_year, ], carried)</code></pre></div></div>
+population&lt;-rbind(population[population$year&gt;=first_year,],carried)</code></pre></div></div>
 </details>
 </div>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">red &lt;- "#d62728"
-gray &lt;- "#bdbdbd"
-dark_gray &lt;- "#6b6b6b" # also the colour of the notes
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">red&lt;-"#d62728"
+gray&lt;-"#bdbdbd"
+dark_gray&lt;-"#6b6b6b" # also the colour of the notes
 # the kinds of disaster, in the order of the stacked bars: the first five colours of a palette whose
 # neighbours were checked for colour blindness, and grey for the rest
-group_colors &lt;- c(
-  Flood = "#2a78d6",
-  "Extreme temperature" = "#eb6834",
-  Storm = "#1baf7a",
-  Drought = "#eda100",
-  Earthquake = "#e87ba4",
-  Other = "#bdbdbd"
-)
+group_colors&lt;-c(Flood="#2a78d6","Extreme temperature"="#eb6834",Storm="#1baf7a",Drought="#eda100",
+                Earthquake="#e87ba4",Other="#bdbdbd")
 # one hue, from light to dark, for the deaths per person on the map
-reds &lt;- c("#fee5d9", "#fcbba1", "#fc9272", "#fb6a4a", "#ef3b2c", "#cb181d", "#99000d")
+reds&lt;-c("#fee5d9","#fcbba1","#fc9272","#fb6a4a","#ef3b2c","#cb181d","#99000d")
 # the source of a plotly chart, as a note under it, and the common layout
-chart &lt;- function(
-  p,
-  title,
-  source,
-  y_title = "",
-  y_axis = list(),
-  x_axis = list(),
-  annotations = list(),
-  margin = list(t = 70, b = 90),
-  note_y = -0.16,
-  ...
-) {
-  note &lt;- list(
-    text = paste("Source:", source),
-    xref = "paper",
-    yref = "paper",
-    x = 0,
-    y = note_y,
-    xanchor = "left",
-    yanchor = "top",
-    showarrow = FALSE,
-    font = list(size = 11, color = dark_gray)
-  )
-  layout(
-    p,
-    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    yaxis = c(list(title = y_title), y_axis),
-    xaxis = c(list(title = ""), x_axis),
-    margin = margin,
-    annotations = c(annotations, list(note)),
-    ...
-  ) |&gt;
-    config(displaylogo = FALSE)
+chart&lt;-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note&lt;-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result&lt;-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),
+                 margin=margin,annotations=c(annotations,list(note)),...) %&gt;%
+    config(displaylogo=FALSE)
+  return(result)
 }
-legend_top &lt;- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom", traceorder = "normal")
+legend_top&lt;-list(orientation="h",x=0,y=1.02,yanchor="bottom",traceorder="normal")
 # numbers in the text
-number &lt;- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
-percent &lt;- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
-one &lt;- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
-two &lt;- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
-thousand &lt;- function(x) number(x / 1000)
-and_list &lt;- function(x) {
-  if (length(x) &lt; 2) {
+number&lt;-function(x) {
+  result&lt;-format(round(x),big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+percent&lt;-function(x,digits=0) {
+  result&lt;-paste0(format(round(x,digits),nsmall=digits,trim=TRUE),"%")
+  return(result)
+}
+one&lt;-function(x) {
+  result&lt;-format(round(x,1),nsmall=1,trim=TRUE)
+  return(result)
+}
+two&lt;-function(x) {
+  result&lt;-format(round(x,2),nsmall=2,trim=TRUE)
+  return(result)
+}
+thousand&lt;-function(x) {
+  result&lt;-number(x/1000)
+  return(result)
+}
+and_list&lt;-function(x) {
+  if(length(x)&lt;2) {
     return(paste(x))
   }
-  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+  result&lt;-paste(paste(head(x,-1),collapse=", "),"and",tail(x,1))
+  return(result)
 }
 # country names that take "the" in a sentence
-with_the &lt;- function(x) {
-  ifelse(
-    x %in% c("Democratic Republic of Congo", "Central African Republic", "United States", "Philippines"),
-    paste("the", x),
-    x
-  )
+with_the&lt;-function(x) {
+  result&lt;-ifelse(x%in%
+                 c("Democratic Republic of Congo","Central African Republic","United States",
+                   "Philippines"),paste("the",x),x)
+  return(result)
 }</code></pre></div></div>
 </details>
 </div>
@@ -5164,40 +5125,33 @@ with_the &lt;- function(x) {
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r">per_year &lt;- sapply(kinds$event_name, function(k) {
-  sum(events$n_events[events$entity == k &amp; events$year %in% recent]) / length(recent)
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r">per_year&lt;-sapply(kinds$event_name,
+                 function(k) {
+  sum(events$n_events[events$entity==k&amp;events$year%in%recent])/length(recent)
 })
-often &lt;- data.frame(label = kinds$label, per_year = per_year)
-often &lt;- often[order(-often$per_year), ]
-all_per_year &lt;- mean(events$n_events[events$entity == "All disasters" &amp; events$year %in% recent])
-of_often &lt;- function(label) often$per_year[often$label == label]</code></pre></div></div>
+often&lt;-data.frame(label=kinds$label,per_year=per_year)
+often&lt;-often[order(-often$per_year),]
+all_per_year&lt;-mean(events$n_events[events$entity=="All disasters"&amp;events$year%in%recent])
+of_often&lt;-function(label) {
+  result&lt;-often$per_year[often$label==label]
+  return(result)
+}</code></pre></div></div>
 </details>
 </div>
 <p><strong>Floods, then storms.</strong> Since 2000, EM-DAT has recorded 393 disasters a year: 167 floods and 110 storms, 71% of them. Earthquakes, droughts and extreme temperatures come next, 27, 26 and 25 a year, then landslides (20), wildfires (13) and volcanic eruptions (5).</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">often$label &lt;- factor(often$label, levels = rev(often$label))
-plot_ly(
-  often,
-  x = ~per_year,
-  y = ~label,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(often$label %in% c("Flood", "Storm"), red, gray)),
-  text = ~ round(per_year),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:.0f} a year&lt;extra&gt;&lt;/extra&gt;",
-  showlegend = FALSE
-) |&gt;
-  chart(
-    paste0("Disasters recorded a year, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE, range = c(0, 1.15 * max(often$per_year))),
-    margin = list(l = 140, t = 60, b = 50, r = 20),
-    note_y = -0.08
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">often$label&lt;-factor(often$label,levels=rev(often$label))
+plot_ly(often,x=~per_year,y=~label,type="bar",orientation="h",
+        marker=list(color=ifelse(often$label%in%c("Flood","Storm"),red,gray)),
+        text=~round(per_year),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.0f} a year&lt;extra&gt;&lt;/extra&gt;",showlegend=FALSE) %&gt;%
+  chart(paste0("Disasters recorded a year, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(showticklabels=FALSE,showgrid=FALSE,zeroline=FALSE,
+                    range=c(0,1.15*max(often$per_year))),margin=list(l=140,t=60,b=50,r=20),
+        note_y=-0.08)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: Disasters recorded a year, 2000–2025</a></p>
@@ -5210,53 +5164,54 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r">world_dead &lt;- dead[dead$entity == "World", ]
-since_2000 &lt;- world_dead[world_dead$year %in% recent, ] |&gt;
-  group_by(kind) |&gt;
-  summarise(deaths = sum(value)) |&gt;
-  arrange(desc(deaths))
-of_since &lt;- function(k) since_2000$deaths[since_2000$kind == k]
-all_since &lt;- sum(since_2000$deaths)
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r">world_dead&lt;-dead[dead$entity=="World",]
+# the deaths of each kind since 2000, the most first
+since_2000&lt;-aggregate(value~kind,world_dead[world_dead$year%in%recent,],sum)
+names(since_2000)[2]&lt;-"deaths"
+since_2000&lt;-since_2000[order(-since_2000$deaths),]
+of_since&lt;-function(k) {
+  result&lt;-since_2000$deaths[since_2000$kind==k]
+  return(result)
+}
+all_since&lt;-sum(since_2000$deaths)
 # deaths a year per 100,000 people in the world, by decade and kind
-world_people &lt;- population[population$entity == "World", c("year", "people")]
-decades &lt;- world_dead |&gt;
-  inner_join(world_people, by = "year") |&gt;
-  mutate(decade = 10 * (year %/% 10), group = group_of[kind]) |&gt;
-  group_by(decade) |&gt;
-  mutate(person_years = sum(people[kind == kinds$key[1]])) |&gt;
-  group_by(decade, group) |&gt;
-  summarise(rate = 1e5 * sum(value) / first(person_years), .groups = "drop")
-decade_total &lt;- decades |&gt;
-  group_by(decade) |&gt;
-  summarise(rate = sum(rate))
-worst_decade &lt;- decade_total$decade[which.max(decade_total$rate)]
-rate_of &lt;- function(d) decade_total$rate[decade_total$decade == d]
-last_decade &lt;- max(decade_total$decade)
+world_people&lt;-population[population$entity=="World",c("year","people")]
+decades&lt;-merge(world_dead,world_people,by="year")
+decades$decade&lt;-10*(decades$year%/%10)
+decades$group&lt;-group_of[decades$kind]
+# the people of each decade, each year counted once (in the rows of one kind)
+one_kind&lt;-decades[decades$kind==kinds$key[1],]
+person_years&lt;-tapply(one_kind$people,one_kind$decade,sum)
+decades&lt;-aggregate(value~decade+group,decades,sum)
+decades$rate&lt;-1e5*decades$value/person_years[as.character(decades$decade)]
+decades&lt;-decades[order(decades$decade,decades$group,method="radix"),c("decade","group","rate")]
+rownames(decades)&lt;-NULL
+decade_total&lt;-aggregate(rate~decade,decades,sum)
+worst_decade&lt;-decade_total$decade[which.max(decade_total$rate)]
+rate_of&lt;-function(d) {
+  result&lt;-decade_total$rate[decade_total$decade==d]
+  return(result)
+}
+last_decade&lt;-max(decade_total$decade)
 # the deadliest years of single countries: since 1900 and since 2000
-country_dead &lt;- dead[dead$code %in% country_codes, ]
-worst_ever &lt;- country_dead |&gt;
-  group_by(entity, year) |&gt;
-  slice_max(value, n = 1, with_ties = FALSE) |&gt;
-  ungroup() |&gt;
-  arrange(desc(value))
-worst_recent &lt;- worst_ever[worst_ever$year %in% recent, ]</code></pre></div></div>
+country_dead&lt;-dead[dead$code%in%country_codes,]
+# the deadliest kind of each country and year, the deadliest first
+place_years&lt;-split(country_dead,list(country_dead$entity,country_dead$year),drop=TRUE)
+worst_ever&lt;-do.call(rbind,lapply(place_years,function(x) x[which.max(x$value),]))
+worst_ever&lt;-worst_ever[order(-worst_ever$value,worst_ever$entity,worst_ever$year,method="radix"),]
+rownames(worst_ever)&lt;-NULL
+worst_recent&lt;-worst_ever[worst_ever$year%in%recent,]</code></pre></div></div>
 </details>
 </div>
 <p><strong>Since 2000, earthquakes.</strong> Disasters killed 1,595 thousand people from 2000 to 2025: 796 thousand in earthquakes and the tsunamis they caused, 377 thousand in heatwaves and cold, 228 thousand in storms and 142 thousand in floods. A few events make most of these numbers. The deadliest years of single countries since 2000:</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">knitr::kable(
-  data.frame(
-    country = worst_recent$entity[1:10],
-    year = worst_recent$year[1:10],
-    kind = label_of[worst_recent$kind[1:10]],
-    deaths = number(worst_recent$value[1:10])
-  ),
-  col.names = c("Country", "Year", "Kind", "Deaths"),
-  align = "llll",
-  row.names = FALSE
-)</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">knitr::kable(data.frame(country=worst_recent$entity[1:10],
+                        year=worst_recent$year[1:10],
+                        kind=label_of[worst_recent$kind[1:10]],
+                        deaths=number(worst_recent$value[1:10])),
+             col.names=c("Country","Year","Kind","Deaths"),align="llll",row.names=FALSE)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -5337,31 +5292,22 @@ worst_recent &lt;- worst_ever[worst_ever$year %in% recent, ]</code></pre></div><
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">decades$group &lt;- factor(decades$group, levels = group_levels)
-decades$label &lt;- paste0(decades$decade, "s")
-p &lt;- plot_ly()
-for (g in group_levels) {
-  x &lt;- decades[decades$group == g, ]
-  p &lt;- add_bars(
-    p,
-    data = x,
-    x = ~label,
-    y = ~rate,
-    name = g,
-    marker = list(color = group_colors[[g]], line = list(color = "white", width = 1)),
-    hovertemplate = paste0("%{x}, ", tolower(g), ": %{y:.2f} a year per 100,000&lt;extra&gt;&lt;/extra&gt;")
-  )
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">decades$group&lt;-factor(decades$group,levels=group_levels)
+decades$label&lt;-paste0(decades$decade,"s")
+p&lt;-plot_ly()
+for(g in group_levels) {
+  x&lt;-decades[decades$group==g,]
+  p&lt;-add_bars(p,data=x,x=~label,y=~rate,name=g,
+              marker=list(color=group_colors[[g]],line=list(color="white",width=1)),
+              hovertemplate=paste0("%{x}, ",tolower(g),
+                                   ": %{y:.2f} a year per 100,000&lt;extra&gt;&lt;/extra&gt;"))
 }
-p |&gt;
-  chart(
-    "Disaster deaths a year per 100,000 people, by decade",
-    paste0("EM-DAT, CRED / UCLouvain; population: HYDE, Gapminder, UN; via Our World in Data. 2020s: 2020–", last_year, "."),
-    "Deaths a year per 100,000",
-    barmode = "stack",
-    legend = legend_top,
-    margin = list(t = 110, b = 80, l = 60, r = 10),
-    note_y = -0.14
-  )</code></pre></div></div>
+p %&gt;%
+  chart("Disaster deaths a year per 100,000 people, by decade",
+        paste0(paste0("EM-DAT, CRED / UCLouvain; population: HYDE, ",
+                      "Gapminder, UN; via Our World in Data. 2020s: ","2020–"),last_year,"."),
+        "Deaths a year per 100,000",barmode="stack",legend=legend_top,
+        margin=list(t=110,b=80,l=60,r=10),note_y=-0.14)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: Disaster deaths a year per 100,000 people, by decade</a></p>
@@ -5374,39 +5320,34 @@ p |&gt;
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">affected_since &lt;- hit[hit$entity == "World" &amp; hit$year %in% recent, ] |&gt;
-  group_by(kind) |&gt;
-  summarise(people = sum(value)) |&gt;
-  arrange(desc(people))
-of_affected &lt;- function(k) affected_since$people[affected_since$kind == k]
-billion &lt;- function(x) one(x / 1e9)</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">affected_since&lt;-aggregate(value~kind,hit[hit$entity=="World"&amp;hit$year%in%recent,],sum)
+names(affected_since)[2]&lt;-"people"
+affected_since&lt;-affected_since[order(-affected_since$people),]
+of_affected&lt;-function(k) {
+  result&lt;-affected_since$people[affected_since$kind==k]
+  return(result)
+}
+billion&lt;-function(x) {
+  result&lt;-one(x/1e9)
+  return(result)
+}</code></pre></div></div>
 </details>
 </div>
 <p><strong>Floods and droughts.</strong> From 2000 to 2025, EM-DAT counted 1.9 billion people affected by floods, 1.8 billion by droughts and 0.9 billion by storms; earthquakes affected 159 million. These are not different people: someone hit by a flood in 2010 and again in 2020 is counted twice. EM-DAT counts as affected the people who needed immediate help, together with the injured and the homeless (<a href="https://doc.emdat.be/docs/data-structure-and-content/general-definitions-and-concepts/">EM-DAT, definitions</a>).</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">affected_since$label &lt;- factor(label_of[affected_since$kind], levels = rev(label_of[affected_since$kind]))
-plot_ly(
-  affected_since,
-  x = ~ people / 1e6,
-  y = ~label,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(affected_since$kind %in% c("flood", "drought"), red, gray)),
-  text = ~ number(people / 1e6),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:,.0f} million&lt;extra&gt;&lt;/extra&gt;",
-  showlegend = FALSE
-) |&gt;
-  chart(
-    paste0("People affected, millions, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE, range = c(0, 1.18 * max(affected_since$people) / 1e6)),
-    margin = list(l = 140, t = 60, b = 50, r = 20),
-    note_y = -0.08
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">affected_since$label&lt;-factor(label_of[affected_since$kind],
+                             levels=rev(label_of[affected_since$kind]))
+plot_ly(affected_since,x=~people/1e6,y=~label,type="bar",orientation="h",
+        marker=list(color=ifelse(affected_since$kind%in%c("flood","drought"),red,gray)),
+        text=~number(people/1e6),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:,.0f} million&lt;extra&gt;&lt;/extra&gt;",showlegend=FALSE) %&gt;%
+  chart(paste0("People affected, millions, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(showticklabels=FALSE,showgrid=FALSE,zeroline=FALSE,
+                    range=c(0,1.18*max(affected_since$people)/1e6)),
+        margin=list(l=140,t=60,b=50,r=20),note_y=-0.08)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: People affected, millions, 2000–2025</a></p>
@@ -5419,114 +5360,105 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">min_people &lt;- 1e6 # countries with fewer people are left out of the rates: one event decides them
-country_rates &lt;- country_dead[country_dead$year %in% recent, ] |&gt;
-  group_by(code, entity, year) |&gt;
-  summarise(deaths = sum(value), worst_kind = kind[which.max(value)], .groups = "drop") |&gt;
-  inner_join(population[, c("code", "year", "people")], by = c("code", "year")) |&gt;
-  group_by(code, entity) |&gt;
-  summarise(
-    worst_year = year[which.max(deaths)],
-    worst_kind = worst_kind[which.max(deaths)],
-    rate = 1e5 * sum(deaths) / sum(people),
-    people_now = people[which.max(year)],
-    deaths = sum(deaths),
-    .groups = "drop"
-  )
-small &lt;- country_rates[country_rates$people_now &lt; min_people, ]
-country_rates &lt;- country_rates[country_rates$people_now &gt;= min_people, ] |&gt;
-  arrange(desc(rate))
-top_rates &lt;- head(country_rates, 5)
-world_rate &lt;- 1e5 * sum(world_dead$value[world_dead$year %in% recent]) /
-  sum(world_people$people[world_people$year %in% recent])
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r">min_people&lt;-1e6 # countries with fewer people are left out of the rates: one event decides them
+# the deaths of each country and year, and the kind that killed the most
+recent_dead&lt;-country_dead[country_dead$year%in%recent,]
+recent_dead&lt;-recent_dead[order(recent_dead$code,recent_dead$entity,recent_dead$year,method="radix"),
+                         ]
+per_year&lt;-split(recent_dead,list(recent_dead$code,recent_dead$entity,recent_dead$year),drop=TRUE)
+yearly&lt;-do.call(rbind,
+                lapply(per_year,
+                       function(x) {
+  data.frame(code=x$code[1],
+             entity=x$entity[1],
+             year=x$year[1],
+             deaths=sum(x$value),
+             worst_kind=x$kind[which.max(x$value)])
+}))
+yearly&lt;-merge(yearly,population[,c("code","year","people")],by=c("code","year"))
+yearly&lt;-yearly[order(yearly$code,yearly$entity,yearly$year,method="radix"),]
+# each country: its deadliest year and kind, its deaths a year per 100,000 people, its people now
+per_country&lt;-split(yearly,list(yearly$code,yearly$entity),drop=TRUE)
+country_rates&lt;-do.call(rbind,
+                       lapply(per_country,
+                              function(x) {
+  data.frame(code=x$code[1],
+             entity=x$entity[1],
+             worst_year=x$year[which.max(x$deaths)],
+             worst_kind=x$worst_kind[which.max(x$deaths)],
+             rate=1e5*sum(x$deaths)/sum(x$people),
+             people_now=x$people[which.max(x$year)],
+             deaths=sum(x$deaths))
+}))
+country_rates&lt;-country_rates[order(country_rates$code,country_rates$entity,method="radix"),]
+rownames(country_rates)&lt;-NULL
+small&lt;-country_rates[country_rates$people_now&lt;min_people,]
+country_rates&lt;-country_rates[country_rates$people_now&gt;=min_people,]
+country_rates&lt;-country_rates[order(-country_rates$rate),]
+top_rates&lt;-head(country_rates,5)
+world_rate&lt;-1e5*sum(world_dead$value[world_dead$year%in%recent])/
+            sum(world_people$people[world_people$year%in%recent])
 # each continent: the deaths since 2000 by kind
-continent_dead &lt;- dead[dead$entity %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania", "World") &amp;
-  dead$year %in% recent, ] |&gt;
-  mutate(group = group_of[kind]) |&gt;
-  group_by(entity, group) |&gt;
-  summarise(deaths = sum(value), .groups = "drop_last") |&gt;
-  mutate(share = 100 * deaths / sum(deaths)) |&gt;
-  ungroup()
-share_in &lt;- function(place, g) continent_dead$share[continent_dead$entity == place &amp; continent_dead$group == g]
+continents_world&lt;-c("Africa","Asia","Europe","North America","South America","Oceania","World")
+continent_dead&lt;-dead[dead$entity%in%continents_world&amp;dead$year%in%recent,]
+continent_dead$group&lt;-group_of[continent_dead$kind]
+continent_dead&lt;-aggregate(value~entity+group,continent_dead,sum)
+names(continent_dead)[3]&lt;-"deaths"
+continent_dead&lt;-continent_dead[order(continent_dead$entity,continent_dead$group,method="radix"),]
+continent_dead$share&lt;-100*continent_dead$deaths/
+                      ave(continent_dead$deaths,continent_dead$entity,FUN=sum)
+rownames(continent_dead)&lt;-NULL
+share_in&lt;-function(place,g) {
+  result&lt;-continent_dead$share[continent_dead$entity==place&amp;continent_dead$group==g]
+  return(result)
+}
 # the deadliest kind in each continent (of all eight kinds), as text
-plural &lt;- c(
-  flood = "floods",
-  extreme_temperature = "heat and cold",
-  extreme_weather = "storms",
-  drought = "droughts",
-  earthquake = "earthquakes",
-  volcanic_activity = "volcanic eruptions",
-  landslide = "landslides",
-  wildfire = "wildfires"
-)
-killers &lt;- dead[dead$entity %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania") &amp;
-  dead$year %in% recent, ] |&gt;
-  group_by(entity, kind) |&gt;
-  summarise(deaths = sum(value), .groups = "drop_last") |&gt;
-  mutate(share = 100 * deaths / sum(deaths)) |&gt;
-  slice_max(share, n = 1, with_ties = FALSE) |&gt;
-  ungroup()
-killer_text &lt;- and_list(paste0("in ", killers$entity, ", ", plural[killers$kind], " (", percent(killers$share), ")"))
-europe_heat &lt;- dead[dead$entity == "Europe" &amp; dead$kind == "extreme_temperature", ]
-heat_in &lt;- function(year) europe_heat$value[europe_heat$year == year]
-greece &lt;- country_dead[country_dead$entity == "Greece" &amp; country_dead$year %in% recent, ]
-greece_heat &lt;- greece[greece$kind == "extreme_temperature", ]</code></pre></div></div>
+plural&lt;-c(flood="floods",extreme_temperature="heat and cold",extreme_weather="storms",
+          drought="droughts",earthquake="earthquakes",volcanic_activity="volcanic eruptions",
+          landslide="landslides",wildfire="wildfires")
+killers&lt;-dead[dead$entity%in%continents_world[1:6]&amp;dead$year%in%recent,]
+killers&lt;-aggregate(value~entity+kind,killers,sum)
+names(killers)[3]&lt;-"deaths"
+killers&lt;-killers[order(killers$entity,killers$kind,method="radix"),]
+killers$share&lt;-100*killers$deaths/ave(killers$deaths,killers$entity,FUN=sum)
+# the deadliest kind of each continent
+killers&lt;-do.call(rbind,lapply(split(killers,killers$entity),function(x) x[which.max(x$share),]))
+rownames(killers)&lt;-NULL
+killer_text&lt;-and_list(paste0("in ",killers$entity,", ",plural[killers$kind]," (",
+                             percent(killers$share),")"))
+europe_heat&lt;-dead[dead$entity=="Europe"&amp;dead$kind=="extreme_temperature",]
+heat_in&lt;-function(year) {
+  result&lt;-europe_heat$value[europe_heat$year==year]
+  return(result)
+}
+greece&lt;-country_dead[country_dead$entity=="Greece"&amp;country_dead$year%in%recent,]
+greece_heat&lt;-greece[greece$kind=="extreme_temperature",]</code></pre></div></div>
 </details>
 </div>
 <p><strong>Where one event struck a country hard.</strong> From 2000 to 2025, disasters killed 0.85 people a year for every 100,000 in the world. Among the countries of a million people or more, Haiti lost 88.4 a year, almost all in its earthquake of 2010; then Libya (47.5, storm of 2023), Myanmar (12.5, storm of 2008), Sri Lanka (6.9, earthquake of 2004) and Somalia (6.2, drought of 2010). The 58 places with fewer than a million people are left out of the rates and the map: on a small island, a single storm makes the rate enormous.</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">classes &lt;- c(0, 0.1, 0.5, 1, 2, 5, 10, Inf)
-class_names &lt;- c("Under 0.1", "0.1–0.5", "0.5–1", "1–2", "2–5", "5–10", "10 or more")
-country_rates$class &lt;- as.integer(cut(country_rates$rate, classes, right = FALSE))
-steps &lt;- do.call(c, lapply(seq_along(reds), function(i) {
-  list(list((i - 1) / 7, reds[i]), list(i / 7, reds[i]))
-}))
-plot_ly(
-  country_rates,
-  type = "choropleth",
-  locations = ~code,
-  z = ~class,
-  zmin = 0.5,
-  zmax = 7.5,
-  colorscale = steps,
-  marker = list(line = list(color = "white", width = 0.3)),
-  text = ~ paste0(
-    entity,
-    ": ",
-    two(rate),
-    " deaths a year per 100,000&lt;br&gt;",
-    number(deaths),
-    " deaths in all; the worst year ",
-    worst_year,
-    " (",
-    tolower(label_of[worst_kind]),
-    ")"
-  ),
-  hoverinfo = "text",
-  colorbar = list(
-    title = list(text = "Deaths a year&lt;br&gt;per 100,000"),
-    tickvals = 1:7,
-    ticktext = class_names,
-    len = 0.8,
-    thickness = 14
-  )
-) |&gt;
-  chart(
-    paste0("Disaster deaths per 100,000 people a year, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain; population: HYDE, Gapminder, UN; via Our World in Data. Grey: under a million people, or no data.",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = FALSE,
-      showland = TRUE,
-      landcolor = "#e8e8e8",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-57, 85))
-    ),
-    margin = list(t = 50, b = 40, l = 0, r = 0),
-    note_y = -0.02
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">classes&lt;-c(0,0.1,0.5,1,2,5,10,Inf)
+class_names&lt;-c("Under 0.1","0.1–0.5","0.5–1","1–2","2–5","5–10","10 or more")
+country_rates$class&lt;-as.integer(cut(country_rates$rate,classes,right=FALSE))
+steps&lt;-do.call(c,
+               lapply(seq_along(reds),function(i) {list(list((i-1)/7,reds[i]),list(i/7,reds[i]))}))
+plot_ly(country_rates,type="choropleth",locations=~code,z=~class,zmin=0.5,zmax=7.5,
+        colorscale=steps,marker=list(line=list(color="white",width=0.3)),
+        text=~paste0(entity,": ",two(rate)," deaths a year per 100,000&lt;br&gt;",
+                     number(deaths)," deaths in all; the worst year ",worst_year,
+                     " (",tolower(label_of[worst_kind]),")"),
+        hoverinfo="text",
+        colorbar=list(title=list(text="Deaths a year&lt;br&gt;per 100,000"),tickvals=1:7,
+                      ticktext=class_names,len=0.8,thickness=14)) %&gt;%
+  chart(paste0("Disaster deaths per 100,000 people a year, 2000–",last_year),
+        paste0("EM-DAT, CRED / UCLouvain; population: HYDE, ",
+               "Gapminder, UN; via Our World in Data. Grey: ",
+               "under a million people, or no data."),
+        geo=list(showframe=FALSE,showcoastlines=FALSE,showland=TRUE,landcolor="#e8e8e8",
+                 projection=list(type="natural earth"),lataxis=list(range=c(-57,85))),
+        margin=list(t=50,b=40,l=0,r=0),note_y=-0.02)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: Disaster deaths per 100,000 people a year, 2000–2025</a></p>
@@ -5537,37 +5469,22 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">rows &lt;- c("World", "Africa", "Asia", "Europe", "North America", "South America", "Oceania")
-continent_dead$row &lt;- factor(continent_dead$entity, levels = rev(rows))
-p &lt;- plot_ly()
-for (g in group_levels) {
-  x &lt;- continent_dead[continent_dead$group == g, ]
-  p &lt;- add_bars(
-    p,
-    data = x,
-    x = ~share,
-    y = ~row,
-    name = g,
-    orientation = "h",
-    marker = list(color = group_colors[[g]], line = list(color = "white", width = 1.5)),
-    text = ~ ifelse(share &gt;= 12, percent(share), ""),
-    textposition = "inside",
-    insidetextanchor = "middle",
-    textfont = list(color = "#1a1a1a"),
-    hovertemplate = paste0("%{y}: %{x:.1f}% of the deaths, ", tolower(g), "&lt;extra&gt;&lt;/extra&gt;")
-  )
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">rows&lt;-c("World","Africa","Asia","Europe","North America","South America","Oceania")
+continent_dead$row&lt;-factor(continent_dead$entity,levels=rev(rows))
+p&lt;-plot_ly()
+for(g in group_levels) {
+  x&lt;-continent_dead[continent_dead$group==g,]
+  p&lt;-add_bars(p,data=x,x=~share,y=~row,name=g,orientation="h",
+              marker=list(color=group_colors[[g]],line=list(color="white",width=1.5)),
+              text=~ifelse(share&gt;=12,percent(share),""),textposition="inside",
+              insidetextanchor="middle",textfont=list(color="#1a1a1a"),
+              hovertemplate=paste0("%{y}: %{x:.1f}% of the deaths, ",tolower(g),"&lt;extra&gt;&lt;/extra&gt;"))
 }
-p |&gt;
-  chart(
-    paste0("Disaster deaths by kind, % of each continent, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(range = c(0, 100), ticksuffix = "%", showgrid = FALSE),
-    barmode = "stack",
-    legend = legend_top,
-    uniformtext = list(minsize = 10, mode = "hide"),
-    margin = list(l = 120, t = 100, b = 70, r = 10),
-    note_y = -0.1
-  )</code></pre></div></div>
+p %&gt;%
+  chart(paste0("Disaster deaths by kind, % of each continent, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(range=c(0,100),ticksuffix="%",showgrid=FALSE),barmode="stack",legend=legend_top,
+        uniformtext=list(minsize=10,mode="hide"),margin=list(l=120,t=100,b=70,r=10),note_y=-0.1)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: Disaster deaths by kind, % of each continent, 2000–2025</a></p>
@@ -5581,30 +5498,27 @@ p |&gt;
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">sf_use_s2(TRUE)
-boundary &lt;- st_union(st_geometry(plates))
-quake_points &lt;- st_as_sf(quakes, coords = c("longitude", "latitude"), crs = 4326)
-erupted &lt;- volcanoes[!is.na(volcanoes$Last_Eruption_Year) &amp; volcanoes$Last_Eruption_Year &gt;= 1900, ]
-volcano_points &lt;- st_as_sf(erupted, coords = c("Longitude", "Latitude"), crs = 4326)
-quake_km &lt;- as.numeric(st_distance(quake_points, boundary)) / 1000
-volcano_km &lt;- as.numeric(st_distance(volcano_points, boundary)) / 1000
+boundary&lt;-st_union(st_geometry(plates))
+quake_points&lt;-st_as_sf(quakes,coords=c("longitude","latitude"),crs=4326)
+erupted&lt;-volcanoes[!is.na(volcanoes$Last_Eruption_Year)&amp;volcanoes$Last_Eruption_Year&gt;=1900,]
+volcano_points&lt;-st_as_sf(erupted,coords=c("Longitude","Latitude"),crs=4326)
+quake_km&lt;-as.numeric(st_distance(quake_points,boundary))/1000
+volcano_km&lt;-as.numeric(st_distance(volcano_points,boundary))/1000
 # how much of the Earth lies near a boundary: an even grid of points over the sphere (a Fibonacci
 # lattice), each measured like the earthquakes
-n_grid &lt;- 60000
-i &lt;- 0:(n_grid - 1)
-grid &lt;- st_as_sf(
-  data.frame(
-    lon = ((i * 180 * (3 - sqrt(5))) %% 360) - 180,
-    lat = asin(-1 + 2 * (i + 0.5) / n_grid) * 180 / pi
-  ),
-  coords = c("lon", "lat"),
-  crs = 4326
-)
-grid_km &lt;- as.numeric(st_distance(grid, boundary)) / 1000
-bands &lt;- data.frame(km = c(100, 200, 300))
-bands$earth &lt;- sapply(bands$km, function(k) 100 * mean(grid_km &lt;= k))
-bands$quakes &lt;- sapply(bands$km, function(k) 100 * mean(quake_km &lt;= k))
-bands$volcanoes &lt;- sapply(bands$km, function(k) 100 * mean(volcano_km &lt;= k))
-in_band &lt;- function(k, column) bands[[column]][bands$km == k]</code></pre></div></div>
+n_grid&lt;-60000
+i&lt;-0:(n_grid-1)
+grid&lt;-st_as_sf(data.frame(lon=((i*180*(3-sqrt(5)))%%360)-180,lat=asin(-1+2*(i+0.5)/n_grid)*180/pi),
+               coords=c("lon","lat"),crs=4326)
+grid_km&lt;-as.numeric(st_distance(grid,boundary))/1000
+bands&lt;-data.frame(km=c(100,200,300))
+bands$earth&lt;-sapply(bands$km,function(k) 100*mean(grid_km&lt;=k))
+bands$quakes&lt;-sapply(bands$km,function(k) 100*mean(quake_km&lt;=k))
+bands$volcanoes&lt;-sapply(bands$km,function(k) 100*mean(volcano_km&lt;=k))
+in_band&lt;-function(k,column) {
+  result&lt;-bands[[column]][bands$km==k]
+  return(result)
+}</code></pre></div></div>
 </details>
 </div>
 <p><strong>Along the edges of the plates.</strong> The outer shell of the Earth is broken into plates that move against each other (<a href="https://doi.org/10.1029/2001GC000252">Bird 2003</a>). The map shows the 1,620 earthquakes of magnitude 7 or more since 1900 and the 439 volcanoes that have erupted since 1900: they line the boundaries of the plates, above all around the Pacific Ocean. Within 300 km of a boundary, a band that covers 24% of the Earth’s surface, lie 89% of those earthquakes and 87% of those volcanoes.</p>
@@ -5612,72 +5526,39 @@ in_band &lt;- function(k, column) bands[[column]][bands$km == k]</code></pre></d
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r"># the boundaries as one line, broken (NA) between their segments
-segments &lt;- st_coordinates(plates)
-breaks &lt;- c(which(diff(segments[, "L1"]) != 0), nrow(segments))
-lines_lon &lt;- unlist(lapply(seq_along(breaks), function(k) {
-  from &lt;- if (k == 1) 1 else breaks[k - 1] + 1
-  c(segments[from:breaks[k], "X"], NA)
+segments&lt;-st_coordinates(plates)
+breaks&lt;-c(which(diff(segments[,"L1"])!=0),nrow(segments))
+lines_lon&lt;-unlist(lapply(seq_along(breaks),
+                         function(k) {
+  from&lt;-if(k==1) 1 else breaks[k-1]+1
+  c(segments[from:breaks[k],"X"],NA)
 }))
-lines_lat &lt;- unlist(lapply(seq_along(breaks), function(k) {
-  from &lt;- if (k == 1) 1 else breaks[k - 1] + 1
-  c(segments[from:breaks[k], "Y"], NA)
+lines_lat&lt;-unlist(lapply(seq_along(breaks),
+                         function(k) {
+  from&lt;-if(k==1) 1 else breaks[k-1]+1
+  c(segments[from:breaks[k],"Y"],NA)
 }))
-plot_geo() |&gt;
-  add_trace(
-    type = "scattergeo",
-    mode = "lines",
-    lon = lines_lon,
-    lat = lines_lat,
-    line = list(color = dark_gray, width = 1),
-    name = "Plate boundary",
-    hoverinfo = "skip"
-  ) |&gt;
-  add_trace(
-    type = "scattergeo",
-    mode = "markers",
-    lon = quakes$longitude,
-    lat = quakes$latitude,
-    marker = list(
-      color = "#2a78d6",
-      size = 3 + 3 * (quakes$mag - 7),
-      opacity = 0.6,
-      line = list(color = "white", width = 0.5)
-    ),
-    name = "Earthquake, magnitude 7+",
-    text = paste0(quakes$place, "&lt;br&gt;", substr(quakes$time, 1, 10), ", magnitude ", quakes$mag),
-    hoverinfo = "text"
-  ) |&gt;
-  add_trace(
-    type = "scattergeo",
-    mode = "markers",
-    lon = erupted$Longitude,
-    lat = erupted$Latitude,
-    marker = list(
-      color = "#eb6834",
-      symbol = "triangle-up",
-      size = 7,
-      line = list(color = "white", width = 0.5)
-    ),
-    name = "Volcano that erupted since 1900",
-    text = paste0(erupted$Volcano_Name, ", ", erupted$Country, "&lt;br&gt;last eruption ", erupted$Last_Eruption_Year),
-    hoverinfo = "text"
-  ) |&gt;
-  chart(
-    "Big earthquakes and active volcanoes since 1900",
-    "USGS earthquake catalogue; Smithsonian, Global Volcanism Program; plate boundaries: Bird (2003).",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = TRUE,
-      coastlinecolor = "#c8c8c8",
-      showland = TRUE,
-      landcolor = "#f2f2f2",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-60, 85))
-    ),
-    legend = legend_top,
-    margin = list(t = 80, b = 40, l = 0, r = 0),
-    note_y = -0.02
-  )</code></pre></div></div>
+plot_geo() %&gt;%
+  add_trace(type="scattergeo",mode="lines",lon=lines_lon,lat=lines_lat,
+            line=list(color=dark_gray,width=1),name="Plate boundary",hoverinfo="skip") %&gt;%
+  add_trace(type="scattergeo",mode="markers",lon=quakes$longitude,lat=quakes$latitude,
+            marker=list(color="#2a78d6",size=3+3*(quakes$mag-7),opacity=0.6,
+                        line=list(color="white",width=0.5)),name="Earthquake, magnitude 7+",
+            text=paste0(quakes$place,"&lt;br&gt;",substr(quakes$time,1,10),", magnitude ",quakes$mag),
+            hoverinfo="text") %&gt;%
+  add_trace(type="scattergeo",mode="markers",lon=erupted$Longitude,lat=erupted$Latitude,
+            marker=list(color="#eb6834",symbol="triangle-up",size=7,
+                        line=list(color="white",width=0.5)),
+            name="Volcano that erupted since 1900",
+            text=paste0(erupted$Volcano_Name,", ",erupted$Country,"&lt;br&gt;last eruption ",
+                        erupted$Last_Eruption_Year),hoverinfo="text") %&gt;%
+  chart("Big earthquakes and active volcanoes since 1900",
+        paste0("USGS earthquake catalogue; Smithsonian, ",
+               "Global Volcanism Program; plate boundaries: ","Bird (2003)."),
+        geo=list(showframe=FALSE,showcoastlines=TRUE,coastlinecolor="#c8c8c8",showland=TRUE,
+                 landcolor="#f2f2f2",projection=list(type="natural earth"),
+                 lataxis=list(range=c(-60,85))),legend=legend_top,margin=list(t=80,b=40,l=0,r=0),
+        note_y=-0.02)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_NATURAL_DISASTERS.html">Interactive chart: Big earthquakes and active volcanoes since 1900</a></p>
@@ -5686,21 +5567,13 @@ plot_geo() |&gt;
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">knitr::kable(
-  data.frame(
-    km = paste("Within", bands$km, "km"),
-    earth = percent(bands$earth),
-    quakes = percent(bands$quakes),
-    volcanoes = percent(bands$volcanoes)
-  ),
-  col.names = c(
-    "Distance from a plate boundary",
-    "Share of the Earth's surface",
-    "Earthquakes of magnitude 7+",
-    "Volcanoes that erupted since 1900"
-  ),
-  align = "lrrr"
-)</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">knitr::kable(data.frame(km=paste("Within",bands$km,"km"),
+                        earth=percent(bands$earth),
+                        quakes=percent(bands$quakes),
+                        volcanoes=percent(bands$volcanoes)),
+             col.names=c("Distance from a plate boundary","Share of the Earth's surface",
+                         "Earthquakes of magnitude 7+","Volcanoes that erupted since 1900"),
+             align="lrrr")</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -7845,164 +7718,144 @@ library(plotly)</code></pre></div></div>
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre><code class="language-r"># a Eurostat dataset, without its missing values, in the order of the years
-eurostat_values &lt;- function(id, filters) {
-  x &lt;- get_eurostat(id, filters = filters, time_format = "num", cache = FALSE)
-  x &lt;- as.data.frame(x[!is.na(x$values), ])
-  x[order(x$time), ]
+eurostat_values&lt;-function(id,filters) {
+  x&lt;-get_eurostat(id,filters=filters,time_format="num",cache=FALSE)
+  x&lt;-as.data.frame(x[!is.na(x$values),])
+  result&lt;-x[order(x$time),]
+  return(result)
 }
 # the years that Eurostat flags as a break in one series (flag b); the eurostat package leaves the
 # flags out when it filters, so they come from Eurostat's own API, in JSON-stat
-breaks_in &lt;- function(id, filters) {
-  api &lt;- "https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
-  query &lt;- paste(paste0(names(filters), "=", unlist(filters)), collapse = "&amp;")
-  x &lt;- jsonlite::fromJSON(paste0(api, id, "?", query))
-  years &lt;- names(sort(unlist(x$dimension$time$category$index)))
-  flags &lt;- unlist(x$status)
-  as.numeric(years[as.integer(names(flags)[flags == "b"]) + 1])
+breaks_in&lt;-function(id,filters) {
+  api&lt;-"https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/"
+  query&lt;-paste(paste0(names(filters),"=",unlist(filters)),collapse="&amp;")
+  x&lt;-jsonlite::fromJSON(paste0(api,id,"?",query))
+  years&lt;-names(sort(unlist(x$dimension$time$category$index)))
+  flags&lt;-unlist(x$status)
+  result&lt;-as.numeric(years[as.integer(names(flags)[flags=="b"])+1])
+  return(result)
 }
 # all ages, both sexes, age in completed years, numbers of people
-everyone &lt;- list(age = "TOTAL", sex = "T", agedef = "COMPLET", unit = "NR")
+everyone&lt;-list(age="TOTAL",sex="T",agedef="COMPLET",unit="NR")
 # Greece: the people who left each year, by sex and single year of age, and the breaks in the series
-emigration &lt;- eurostat_values("migr_emi2", list(geo = "EL", agedef = "COMPLET", unit = "NR"))
-breaks &lt;- breaks_in("migr_emi2", c(list(geo = "EL"), everyone))
+emigration&lt;-eurostat_values("migr_emi2",list(geo="EL",agedef="COMPLET",unit="NR"))
+breaks&lt;-breaks_in("migr_emi2",c(list(geo="EL"),everyone))
 # Greece: everyone (TOTAL) and the Greek citizens (NAT) among the people who left and among those
 # who arrived; the people who arrived who were born in Greece (NAT); and the people who left, by
 # group of country of next residence: another EU country, or a country outside the EU
-left &lt;- eurostat_values("migr_emi1ctz", c(list(geo = "EL", citizen = c("NAT", "TOTAL")), everyone))
-came &lt;- eurostat_values("migr_imm1ctz", c(list(geo = "EL", citizen = c("NAT", "TOTAL")), everyone))
-came_born &lt;- eurostat_values("migr_imm3ctb", c(list(geo = "EL", c_birth = "NAT"), everyone))
-next_residence &lt;- eurostat_values("migr_emi5nxt", list(geo = "EL", unit = "NR"))
+left&lt;-eurostat_values("migr_emi1ctz",c(list(geo="EL",citizen=c("NAT","TOTAL")),everyone))
+came&lt;-eurostat_values("migr_imm1ctz",c(list(geo="EL",citizen=c("NAT","TOTAL")),everyone))
+came_born&lt;-eurostat_values("migr_imm3ctb",c(list(geo="EL",c_birth="NAT"),everyone))
+next_residence&lt;-eurostat_values("migr_emi5nxt",list(geo="EL",unit="NR"))
 # every country that reports them, but not Greece itself or the EU as a whole: the Greek citizens
 # (EL) who arrived there each year, those who left, and those who lived there on 1 January
-abroad &lt;- function(x) x[!x$geo %in% c("EL", "EU27_2020"), ]
-greeks_came &lt;- abroad(eurostat_values("migr_imm1ctz", c(list(citizen = "EL"), everyone)))
-greeks_left &lt;- abroad(eurostat_values("migr_emi1ctz", c(list(citizen = "EL"), everyone)))
-greeks_living &lt;- abroad(eurostat_values(
-  "migr_pop1ctz",
-  list(citizen = "EL", age = "TOTAL", sex = "T", unit = "NR")
-))
+abroad&lt;-function(x) {
+  result&lt;-x[!x$geo%in%c("EL","EU27_2020"),]
+  return(result)
+}
+greeks_came&lt;-abroad(eurostat_values("migr_imm1ctz",c(list(citizen="EL"),everyone)))
+greeks_left&lt;-abroad(eurostat_values("migr_emi1ctz",c(list(citizen="EL"),everyone)))
+greeks_living&lt;-abroad(eurostat_values("migr_pop1ctz",
+                                      list(citizen="EL",age="TOTAL",sex="T",unit="NR")))
 # Greece: the population on 1 January, by sex and single year of age, and unemployment, % of the
 # labour force aged 15 to 74
-population &lt;- eurostat_values("demo_pjan", list(geo = "EL", sex = c("T", "M", "F"), unit = "NR"))
-unemployment &lt;- eurostat_values(
-  "une_rt_a",
-  list(geo = "EL", age = "Y15-74", sex = "T", unit = "PC_ACT")
-)
+population&lt;-eurostat_values("demo_pjan",list(geo="EL",sex=c("T","M","F"),unit="NR"))
+unemployment&lt;-eurostat_values("une_rt_a",list(geo="EL",age="Y15-74",sex="T",unit="PC_ACT"))
 # Labour Force Survey: the people born in Greece who live in another EU or EFTA country, by age
 # group and education, thousands; and those who live in Greece, aged 15 to 64, by education, %
-born_abroad &lt;- eurostat_values("lfst_lmbpcobed", list(c_birth = "EL", c_resid = "EU27_2020_EFTA"))
-born_home &lt;- eurostat_values(
-  "edat_lfs_9912",
-  list(geo = "EL", c_birth = "NAT", sex = "T", age = "Y15-64")
-)
+born_abroad&lt;-eurostat_values("lfst_lmbpcobed",list(c_birth="EL",c_resid="EU27_2020_EFTA"))
+born_home&lt;-eurostat_values("edat_lfs_9912",list(geo="EL",c_birth="NAT",sex="T",age="Y15-64"))
 # the names of the countries of the EU and EFTA, and of the United Kingdom
-country_name &lt;- c(
-  setNames(eu_countries$name, eu_countries$code),
-  setNames(efta_countries$name, efta_countries$code),
-  UK = "United Kingdom"
-)</code></pre></div></div>
+country_name&lt;-c(setNames(eu_countries$name,eu_countries$code),
+                setNames(efta_countries$name,efta_countries$code),UK="United Kingdom")</code></pre></div></div>
 </details>
 </div>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre><code class="language-r"># one series of a dataset, in the order of the years
-by_year &lt;- function(x, years) x$values[match(years, x$time)]
+by_year&lt;-function(x,years) {
+  result&lt;-x$values[match(years,x$time)]
+  return(result)
+}
 # Greece, year by year: the people who left, all of them and the Greek citizens; the people who
 # arrived, all of them, the Greek citizens and those born in Greece; and the population
-total_left &lt;- emigration[emigration$age == "TOTAL" &amp; emigration$sex == "T", ]
-flows &lt;- data.frame(year = total_left$time, left = total_left$values)
-flows$left_greek &lt;- by_year(left[left$citizen == "NAT", ], flows$year)
-flows$came &lt;- by_year(came[came$citizen == "TOTAL", ], flows$year)
-flows$came_greek &lt;- by_year(came[came$citizen == "NAT", ], flows$year)
-flows$came_born &lt;- by_year(came_born, flows$year)
-flows$net_greek &lt;- flows$came_greek - flows$left_greek
-everyone_living &lt;- population[population$age == "TOTAL" &amp; population$sex == "T", ]
-flows$population &lt;- by_year(everyone_living, flows$year)
-latest &lt;- max(flows$year)
-flow &lt;- function(column, year) flows[[column]][match(year, flows$year)]
+total_left&lt;-emigration[emigration$age=="TOTAL"&amp;emigration$sex=="T",]
+flows&lt;-data.frame(year=total_left$time,left=total_left$values)
+flows$left_greek&lt;-by_year(left[left$citizen=="NAT",],flows$year)
+flows$came&lt;-by_year(came[came$citizen=="TOTAL",],flows$year)
+flows$came_greek&lt;-by_year(came[came$citizen=="NAT",],flows$year)
+flows$came_born&lt;-by_year(came_born,flows$year)
+flows$net_greek&lt;-flows$came_greek-flows$left_greek
+everyone_living&lt;-population[population$age=="TOTAL"&amp;population$sex=="T",]
+flows$population&lt;-by_year(everyone_living,flows$year)
+latest&lt;-max(flows$year)
+flow&lt;-function(column,year) {
+  result&lt;-flows[[column]][match(year,flows$year)]
+  return(result)
+}
 # the years of the rescue loans: the first programme started in 2010, and the third and last ended
 # in August 2018 (ESM)
-rescue &lt;- c(2010, 2018)
-rescue_years &lt;- rescue[1]:rescue[2]</code></pre></div></div>
+rescue&lt;-c(2010,2018)
+rescue_years&lt;-rescue[1]:rescue[2]</code></pre></div></div>
 </details>
 </div>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">greek_red &lt;- "#d62728"
-blue &lt;- "#1f77b4"
-orange &lt;- "#ff7f0e"
-gray &lt;- "#9e9e9e"
-light_gray &lt;- "#ebebeb"
-dark_gray &lt;- "#6b6b6b" # also the color of the notes
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre><code class="language-r">greek_red&lt;-"#d62728"
+blue&lt;-"#1f77b4"
+orange&lt;-"#ff7f0e"
+gray&lt;-"#9e9e9e"
+light_gray&lt;-"#ebebeb"
+dark_gray&lt;-"#6b6b6b" # also the color of the notes
 # the source of a chart, as a note under it, and the common layout
-chart &lt;- function(
-  p,
-  title,
-  source,
-  y_title = "",
-  y_axis = list(),
-  x_axis = list(),
-  annotations = list(),
-  margin = list(t = 70, b = 90),
-  note_y = -0.16,
-  ...
-) {
-  note &lt;- list(
-    text = paste("Source:", source),
-    xref = "paper",
-    yref = "paper",
-    x = 0,
-    y = note_y,
-    xanchor = "left",
-    yanchor = "top",
-    showarrow = FALSE,
-    font = list(size = 11, color = dark_gray)
-  )
-  layout(
-    p,
-    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    yaxis = c(list(title = y_title), y_axis),
-    xaxis = c(list(title = ""), x_axis),
-    margin = margin,
-    annotations = c(annotations, list(note)),
-    ...
-  ) %&gt;%
-    config(displaylogo = FALSE)
+chart&lt;-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note&lt;-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result&lt;-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),
+                 margin=margin,annotations=c(annotations,list(note)),...) %&gt;%
+    config(displaylogo=FALSE)
+  return(result)
 }
-legend_top &lt;- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
+legend_top&lt;-list(orientation="h",x=0,y=1.02,yanchor="bottom")
 # the years of the rescue loans, shaded behind the data
-rescue_band &lt;- list(
-  type = "rect",
-  xref = "x",
-  yref = "paper",
-  x0 = rescue[1] - 0.5,
-  x1 = rescue[2] + 0.5,
-  y0 = 0,
-  y1 = 1,
-  fillcolor = light_gray,
-  line = list(width = 0),
-  layer = "below"
-)
-shaded &lt;- paste0("Shaded: the rescue loans, ", rescue[1], "–", rescue[2], ".")
+rescue_band&lt;-list(type="rect",xref="x",yref="paper",x0=rescue[1]-0.5,x1=rescue[2]+0.5,y0=0,y1=1,
+                  fillcolor=light_gray,line=list(width=0),layer="below")
+shaded&lt;-paste0("Shaded: the rescue loans, ",rescue[1],"–",rescue[2],".")
 # numbers in the text
-number &lt;- function(x) format(x, big.mark = ",", scientific = FALSE, trim = TRUE)
-thousands &lt;- function(x) format(round(x, -3), big.mark = ",", scientific = FALSE, trim = TRUE)
-percent &lt;- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits), "%")
-one &lt;- function(x) format(round(x, 1), nsmall = 1)
-and_list &lt;- function(x) {
-  if (length(x) &lt; 2) {
+number&lt;-function(x) {
+  result&lt;-format(x,big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+thousands&lt;-function(x) {
+  result&lt;-format(round(x,-3),big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+percent&lt;-function(x,digits=0) {
+  result&lt;-paste0(format(round(x,digits),nsmall=digits),"%")
+  return(result)
+}
+one&lt;-function(x) {
+  result&lt;-format(round(x,1),nsmall=1)
+  return(result)
+}
+and_list&lt;-function(x) {
+  if(length(x)&lt;2) {
     return(paste(x))
   }
-  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+  result&lt;-paste(paste(head(x,-1),collapse=", "),"and",tail(x,1))
+  return(result)
 }
 # years as ranges: 2014, 2015, 2016 and 2019 give "2014–2016, 2019"
-years_text &lt;- function(years) {
-  years &lt;- sort(unique(years))
-  starts &lt;- years[c(TRUE, diff(years) &gt; 1)]
-  ends &lt;- years[c(diff(years) &gt; 1, TRUE)]
-  paste(ifelse(starts == ends, starts, paste0(starts, "–", ends)), collapse = ", ")
+years_text&lt;-function(years) {
+  years&lt;-sort(unique(years))
+  starts&lt;-years[c(TRUE,diff(years)&gt;1)]
+  ends&lt;-years[c(diff(years)&gt;1,TRUE)]
+  result&lt;-paste(ifelse(starts==ends,starts,paste0(starts,"–",ends)),collapse=", ")
+  return(result)
 }</code></pre></div></div>
 </details>
 </div>
@@ -8013,19 +7866,25 @@ years_text &lt;- function(years) {
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r">in_2000s &lt;- flows$left[flows$year %in% 2000:2009]
-peak_year &lt;- flows$year[which.max(flows$left)]
-per_1000 &lt;- function(year) 1000 * flow("left", year) / flow("population", year)
-left_rescue &lt;- sum(flows$left[flows$year %in% rescue_years])
-left_greek_rescue &lt;- sum(flows$left_greek[flows$year %in% rescue_years])
-over_100k &lt;- flows$year[flows$left &gt; 1e5]
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre><code class="language-r">in_2000s&lt;-flows$left[flows$year%in%2000:2009]
+peak_year&lt;-flows$year[which.max(flows$left)]
+per_1000&lt;-function(year) {
+  result&lt;-1000*flow("left",year)/flow("population",year)
+  return(result)
+}
+left_rescue&lt;-sum(flows$left[flows$year%in%rescue_years])
+left_greek_rescue&lt;-sum(flows$left_greek[flows$year%in%rescue_years])
+over_100k&lt;-flows$year[flows$left&gt;1e5]
 # the last year in which more people left than the year before: the fall since goes on to the
 # latest year
-rose &lt;- flows$year[c(FALSE, diff(flows$left) &gt;= 0)]
-falling_since &lt;- max(rose)
-jobless &lt;- function(year) unemployment$values[unemployment$time == year]
-jobless_peak &lt;- unemployment$time[which.max(unemployment$values)]
-jobless_latest &lt;- max(unemployment$time)</code></pre></div></div>
+rose&lt;-flows$year[c(FALSE,diff(flows$left)&gt;=0)]
+falling_since&lt;-max(rose)
+jobless&lt;-function(year) {
+  result&lt;-unemployment$values[unemployment$time==year]
+  return(result)
+}
+jobless_peak&lt;-unemployment$time[which.max(unemployment$values)]
+jobless_latest&lt;-max(unemployment$time)</code></pre></div></div>
 </details>
 </div>
 <p><strong>About 41,000 a year in the 2000s; more than 100,000 a year in 2011–2019.</strong></p>
@@ -8034,41 +7893,18 @@ jobless_latest &lt;- max(unemployment$time)</code></pre></div></div>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">bars &lt;- flows[!is.na(flows$left), ]
-rescue_label &lt;- list(
-  x = mean(rescue),
-  y = 1,
-  xref = "x",
-  yref = "paper",
-  yanchor = "bottom",
-  text = paste0("Rescue loans, ", rescue[1], "–", rescue[2]),
-  showarrow = FALSE,
-  font = list(size = 12, color = dark_gray)
-)
-plot_ly(
-  bars,
-  x = ~year,
-  y = ~ left / 1000,
-  type = "bar",
-  name = "People who left",
-  marker = list(
-    color = greek_red,
-    pattern = list(
-      shape = ifelse(bars$year %in% breaks, "/", ""),
-      fillmode = "overlay",
-      fgcolor = "white"
-    )
-  ),
-  hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;&lt;/extra&gt;"
-) %&gt;%
-  chart(
-    "People who left Greece each year, thousands",
-    "Eurostat, migr_emi2 (estimates of ELSTAT). Striped: a break in the series.",
-    "Thousands",
-    annotations = list(rescue_label),
-    shapes = list(rescue_band),
-    showlegend = FALSE
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre><code class="language-r">bars&lt;-flows[!is.na(flows$left),]
+rescue_label&lt;-list(x=mean(rescue),y=1,xref="x",yref="paper",yanchor="bottom",
+                   text=paste0("Rescue loans, ",rescue[1],"–",rescue[2]),showarrow=FALSE,
+                   font=list(size=12,color=dark_gray))
+plot_ly(bars,x=~year,y=~left/1000,type="bar",name="People who left",
+        marker=list(color=greek_red,
+                    pattern=list(shape=ifelse(bars$year%in%breaks,"/",""),fillmode="overlay",
+                                 fgcolor="white")),
+        hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;&lt;/extra&gt;") %&gt;%
+  chart("People who left Greece each year, thousands",
+        "Eurostat, migr_emi2 (estimates of ELSTAT). Striped: a break in the series.","Thousands",
+        annotations=list(rescue_label),shapes=list(rescue_band),showlegend=FALSE)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: People who left Greece each year, thousands</a></p>
@@ -8084,56 +7920,48 @@ plot_ly(
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre><code class="language-r"># the age of a Eurostat age code: Y_LT1 is under one, Y_OPEN and Y_GE100 are the oldest, and the
 # codes of totals, such as TOTAL, give NA
-age_of &lt;- function(code) {
-  age &lt;- suppressWarnings(as.numeric(sub("^Y", "", code)))
-  age[code == "Y_LT1"] &lt;- 0
-  age[code %in% c("Y_OPEN", "Y_GE100")] &lt;- 100
-  age
+age_of&lt;-function(code) {
+  age&lt;-suppressWarnings(as.numeric(sub("^Y","",code)))
+  age[code=="Y_LT1"]&lt;-0
+  age[code%in%c("Y_OPEN","Y_GE100")]&lt;-100
+  result&lt;-age
+  return(result)
 }
-group_names &lt;- c(
-  "0–14",
-  "15–19",
-  "20–24",
-  "25–29",
-  "30–34",
-  "35–39",
-  "40–44",
-  "45–49",
-  "50–54",
-  "55–59",
-  "60–64",
-  "65+"
-)
-age_group &lt;- function(code) {
-  cut(age_of(code), c(-1, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, Inf), labels = group_names)
+group_names&lt;-c("0–14","15–19","20–24","25–29","30–34","35–39","40–44","45–49","50–54","55–59",
+               "60–64","65+")
+age_group&lt;-function(code) {
+  result&lt;-cut(age_of(code),c(-1,14,19,24,29,34,39,44,49,54,59,64,Inf),labels=group_names)
+  return(result)
 }
 # the people who left out of every 1,000 of the same sex and age group who lived in Greece on
 # 1 January
-rates &lt;- function(year, sex) {
-  out &lt;- emigration[emigration$time == year &amp; emigration$sex == sex, ]
-  living &lt;- population[population$time == year &amp; population$sex == sex, ]
-  1000 *
-    tapply(out$values, age_group(out$age), sum) /
-    tapply(living$values, age_group(living$age), sum)
+rates&lt;-function(year,sex) {
+  out&lt;-emigration[emigration$time==year&amp;emigration$sex==sex,]
+  living&lt;-population[population$time==year&amp;population$sex==sex,]
+  result&lt;-1000*tapply(out$values,age_group(out$age),sum)/
+          tapply(living$values,age_group(living$age),sum)
+  return(result)
 }
-rate &lt;- function(year, sex, group) rates(year, sex)[[group]]
+rate&lt;-function(year,sex,group) {
+  result&lt;-rates(year,sex)[[group]]
+  return(result)
+}
 # the age that half of the people are younger than or as old as
-median_age &lt;- function(x) {
-  x &lt;- x[!is.na(age_of(x$age)), ]
-  x &lt;- x[order(age_of(x$age)), ]
-  age_of(x$age)[which(cumsum(x$values) &gt;= sum(x$values) / 2)[1]]
+median_age&lt;-function(x) {
+  x&lt;-x[!is.na(age_of(x$age)),]
+  x&lt;-x[order(age_of(x$age)),]
+  result&lt;-age_of(x$age)[which(cumsum(x$values)&gt;=sum(x$values)/2)[1]]
+  return(result)
 }
-men_left &lt;- emigration[emigration$age == "TOTAL" &amp; emigration$sex == "M", ]
-men_share &lt;- data.frame(
-  year = men_left$time,
-  share = round(100 * men_left$values / flow("left", men_left$time), 1)
-)
+men_left&lt;-emigration[emigration$age=="TOTAL"&amp;emigration$sex=="M",]
+men_share&lt;-data.frame(year=men_left$time,
+                      share=round(100*men_left$values/flow("left",men_left$time),1))
 # the longest run of years in which the share of men is the same
-runs &lt;- rle(men_share$share)
-run_end &lt;- cumsum(runs$lengths)[which.max(runs$lengths)]
-same_years &lt;- men_share$year[(run_end - max(runs$lengths) + 1):run_end]
-middle_aged &lt;- c("35–39", "40–44", "45–49", "50–54")
-men_to_women &lt;- rates(peak_year, "M")[middle_aged] / rates(peak_year, "F")[middle_aged]</code></pre></div></div>
+runs&lt;-rle(men_share$share)
+run_end&lt;-cumsum(runs$lengths)[which.max(runs$lengths)]
+same_years&lt;-men_share$year[(run_end-max(runs$lengths)+1):run_end]
+middle_aged&lt;-c("35–39","40–44","45–49","50–54")
+men_to_women&lt;-rates(peak_year,"M")[middle_aged]/rates(peak_year,"F")[middle_aged]</code></pre></div></div>
 </details>
 </div>
 <p><strong>Mostly people in their twenties and thirties, and in the worst years, mostly men.</strong></p>
@@ -8142,36 +7970,26 @@ men_to_women &lt;- rates(peak_year, "M")[middle_aged] / rates(peak_year, "F")[mi
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">profile &lt;- data.frame(group = factor(group_names, levels = group_names))
-lines &lt;- data.frame(
-  year = c(peak_year, peak_year, latest, latest),
-  sex = c("M", "F", "M", "F"),
-  name = paste(c("Men,", "Women,", "Men,", "Women,"), c(peak_year, peak_year, latest, latest)),
-  color = c(blue, orange, blue, orange),
-  dash = c("solid", "solid", "dot", "dot")
-)
-p &lt;- plot_ly(profile, x = ~group)
-for (k in seq_len(nrow(lines))) {
-  p &lt;- add_trace(
-    p,
-    y = as.numeric(rates(lines$year[k], lines$sex[k])),
-    type = "scatter",
-    mode = "lines+markers",
-    name = lines$name[k],
-    line = list(color = lines$color[k], width = 3, dash = lines$dash[k]),
-    marker = list(color = lines$color[k]),
-    hovertemplate = paste0("Aged %{x}: %{y:.1f} per 1,000&lt;extra&gt;", lines$name[k], "&lt;/extra&gt;")
-  )
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre><code class="language-r">profile&lt;-data.frame(group=factor(group_names,levels=group_names))
+lines&lt;-data.frame(year=c(peak_year,peak_year,latest,latest),
+                  sex=c("M","F","M","F"),
+                  name=paste(c("Men,","Women,","Men,","Women,"),
+                             c(peak_year,peak_year,latest,latest)),
+                  color=c(blue,orange,blue,orange),
+                  dash=c("solid","solid","dot","dot"))
+p&lt;-plot_ly(profile,x=~group)
+for(k in seq_len(nrow(lines))) {
+  p&lt;-add_trace(p,y=as.numeric(rates(lines$year[k],lines$sex[k])),type="scatter",
+               mode="lines+markers",name=lines$name[k],
+               line=list(color=lines$color[k],width=3,dash=lines$dash[k]),
+               marker=list(color=lines$color[k]),
+               hovertemplate=paste0("Aged %{x}: %{y:.1f} per 1,000&lt;extra&gt;",lines$name[k],
+                                    "&lt;/extra&gt;"))
 }
 p %&gt;%
-  chart(
-    "People who left Greece, per 1,000 of their sex and age",
-    "Eurostat, migr_emi2 and demo_pjan (estimates of ELSTAT).",
-    "Per 1,000",
-    y_axis = list(rangemode = "tozero"),
-    legend = legend_top,
-    margin = list(t = 100, b = 90)
-  )</code></pre></div></div>
+  chart("People who left Greece, per 1,000 of their sex and age",
+        "Eurostat, migr_emi2 and demo_pjan (estimates of ELSTAT).","Per 1,000",
+        y_axis=list(rangemode="tozero"),legend=legend_top,margin=list(t=100,b=90))</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: People who left Greece, per 1,000 of their sex and age</a></p>
@@ -8183,41 +8001,32 @@ p %&gt;%
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">citizens &lt;- flows[!is.na(flows$left_greek), ]
-citizens$left_foreign &lt;- citizens$left - citizens$left_greek
-greek_share &lt;- function(year) 100 * flow("left_greek", year) / flow("left", year)
-mostly_greek &lt;- citizens$year[citizens$left_greek &gt; citizens$left_foreign]
-most_greek &lt;- citizens$year[which.max(citizens$left_greek / citizens$left)]
-foreign &lt;- function(year) citizens$left_foreign[citizens$year == year]</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre><code class="language-r">citizens&lt;-flows[!is.na(flows$left_greek),]
+citizens$left_foreign&lt;-citizens$left-citizens$left_greek
+greek_share&lt;-function(year) {
+  result&lt;-100*flow("left_greek",year)/flow("left",year)
+  return(result)
+}
+mostly_greek&lt;-citizens$year[citizens$left_greek&gt;citizens$left_foreign]
+most_greek&lt;-citizens$year[which.max(citizens$left_greek/citizens$left)]
+foreign&lt;-function(year) {
+  result&lt;-citizens$left_foreign[citizens$year==year]
+  return(result)
+}</code></pre></div></div>
 </details>
 </div>
 <p>In 2008, 44% of the people who left Greece were Greek citizens; the rest were foreigners who had lived in Greece. In 2011–2017, most of those who left were Greek citizens: 58% in 2011, and 70,696 people in 2012. Foreigners left in larger numbers too, 64,377 in 2012 against 23,956 in 2008. In 2024, 32,141 Greek citizens left, 41% of all who left.</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">plot_ly(
-  citizens,
-  x = ~year,
-  y = ~ left_greek / 1000,
-  type = "bar",
-  name = "Greek citizens",
-  marker = list(color = greek_red),
-  hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens&lt;/extra&gt;"
-) %&gt;%
-  add_trace(
-    y = ~ left_foreign / 1000,
-    name = "Foreign citizens",
-    marker = list(color = gray),
-    hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Foreign citizens&lt;/extra&gt;"
-  ) %&gt;%
-  chart(
-    "People who left Greece, by citizenship, thousands",
-    paste("Eurostat, migr_emi1ctz (estimates of ELSTAT).", shaded),
-    "Thousands",
-    shapes = list(rescue_band),
-    barmode = "stack",
-    legend = legend_top
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre><code class="language-r">plot_ly(citizens,x=~year,y=~left_greek/1000,type="bar",name="Greek citizens",
+        marker=list(color=greek_red),
+        hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens&lt;/extra&gt;") %&gt;%
+  add_trace(y=~left_foreign/1000,name="Foreign citizens",marker=list(color=gray),
+            hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Foreign citizens&lt;/extra&gt;") %&gt;%
+  chart("People who left Greece, by citizenship, thousands",
+        paste("Eurostat, migr_emi1ctz (estimates of ELSTAT).",shaded),"Thousands",
+        shapes=list(rescue_band),barmode="stack",legend=legend_top)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: People who left Greece, by citizenship, thousands</a></p>
@@ -8231,123 +8040,97 @@ foreign &lt;- function(year) citizens$left_foreign[citizens$year == year]</code>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">next_year &lt;- max(next_residence$time)
-went &lt;- function(partner) {
-  next_residence$values[next_residence$partner == partner &amp; next_residence$time == next_year]
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre><code class="language-r">next_year&lt;-max(next_residence$time)
+went&lt;-function(partner) {
+  result&lt;-next_residence$values[next_residence$partner==partner&amp;next_residence$time==next_year]
+  return(result)
 }
-to_eu &lt;- went("EU27_2020_FOR")
-outside &lt;- went("NEU27_2020_FOR")
+to_eu&lt;-went("EU27_2020_FOR")
+outside&lt;-went("NEU27_2020_FOR")
 # the years with figures for Germany, the main destination, after the gap of the crisis years
-since &lt;- min(greeks_came$time[greeks_came$geo == "DE" &amp; greeks_came$time &gt; 2008])
-window &lt;- since:latest
-counted &lt;- greeks_came[greeks_came$time %in% window, ]
-destinations &lt;- aggregate(values ~ geo, counted, sum)
-destinations &lt;- destinations[order(-destinations$values), ]
-left_window &lt;- sum(flows$left_greek[flows$year %in% window])
-counted_total &lt;- sum(destinations$values)
-not_counted &lt;- left_window - counted_total
-shown &lt;- head(destinations, 10)
-other &lt;- counted_total - sum(shown$values)
+since&lt;-min(greeks_came$time[greeks_came$geo=="DE"&amp;greeks_came$time&gt;2008])
+window&lt;-since:latest
+counted&lt;-greeks_came[greeks_came$time%in%window,]
+destinations&lt;-aggregate(values~geo,counted,sum)
+destinations&lt;-destinations[order(-destinations$values),]
+left_window&lt;-sum(flows$left_greek[flows$year%in%window])
+counted_total&lt;-sum(destinations$values)
+not_counted&lt;-left_window-counted_total
+shown&lt;-head(destinations,10)
+other&lt;-counted_total-sum(shown$values)
 # a country's name, with the years it has figures for when they are not all the years
-label &lt;- function(geo) {
-  name &lt;- if (geo %in% names(country_name)) country_name[[geo]] else geo
-  years &lt;- counted$time[counted$geo == geo]
-  if (length(years) == length(window)) name else paste0(name, " (", years_text(years), ")")
+label&lt;-function(geo) {
+  name&lt;-if(geo%in%names(country_name)) country_name[[geo]] else geo
+  years&lt;-counted$time[counted$geo==geo]
+  if(length(years)==length(window)) name else paste0(name," (",years_text(years),")")
 }
-shown$label &lt;- sapply(shown$geo, label)
-share_of_counted &lt;- function(geo) 100 * shown$values[shown$geo == geo] / counted_total
+shown$label&lt;-sapply(shown$geo,label)
+share_of_counted&lt;-function(geo) {
+  result&lt;-100*shown$values[shown$geo==geo]/counted_total
+  return(result)
+}
 # the countries of the EU and EFTA without figures on Greek citizens arriving in these years
-silent &lt;- setdiff(names(country_name), c(unique(counted$geo), "EL", "UK"))
-uk_years &lt;- counted$time[counted$geo == "UK"]
-uk_rank &lt;- function(year) {
-  in_year &lt;- counted[counted$time == year, ]
-  sum(in_year$values &gt; in_year$values[in_year$geo == "UK"]) + 1
+silent&lt;-setdiff(names(country_name),c(unique(counted$geo),"EL","UK"))
+uk_years&lt;-counted$time[counted$geo=="UK"]
+uk_rank&lt;-function(year) {
+  in_year&lt;-counted[counted$time==year,]
+  result&lt;-sum(in_year$values&gt;in_year$values[in_year$geo=="UK"])+1
+  return(result)
 }</code></pre></div></div>
 </details>
 </div>
-<p><strong>Above all to Germany. But the countries they went to counted only 54% of them arriving.</strong></p>
+<p><strong>Above all to Germany. But the countries they went to counted only 55% of them arriving.</strong></p>
 <p>Greece’s figures say only whether the people who left went to another EU country or outside the EU, not to which country: in 2024, 28,047 went to another EU country and 49,967 outside the EU, foreigners leaving Greece included (migr_emi5nxt).</p>
 <p>So the chart looks from the other end, at the countries that count the people who arrive, by citizenship. It follows the 545,000 Greek citizens who left Greece from 2014 to 2024, the years with figures for Germany, to the countries that counted them arriving.</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre><code class="language-r"># where they went, from top to bottom: not counted, the countries from the most, the others
-went_to &lt;- data.frame(
-  label = c(
-    paste0("Not counted arriving in Europe: ", thousands(not_counted)),
-    paste0(shown$label, ": ", thousands(shown$values)),
-    paste0("Other European countries: ", thousands(other))
-  ),
-  value = c(not_counted, shown$values, other),
-  color = c(gray, rep(blue, nrow(shown) + 1)),
-  link = c("rgba(158, 158, 158, 0.35)", rep("rgba(31, 119, 180, 0.3)", nrow(shown) + 1))
-)
+went_to&lt;-data.frame(label=c(paste0("Not counted arriving in Europe: ",thousands(not_counted)),
+                            paste0(shown$label,": ",thousands(shown$values)),
+                            paste0("Other European countries: ",thousands(other))),
+                    value=c(not_counted,shown$values,other),
+                    color=c(gray,rep(blue,nrow(shown)+1)),
+                    link=c("rgba(158, 158, 158, 0.35)",
+                           rep("rgba(31, 119, 180, 0.3)",nrow(shown)+1)))
 # the place of each node, as a share of the width and of the height (its middle), fixed so that
 # plotly keeps this order: the nodes share the height of the plot, less a gap of `pad` pixels
 # between two
-pad &lt;- 10
-margin &lt;- list(t = 60, b = 80, l = 10, r = 10)
+pad&lt;-10
+margin&lt;-list(t=60,b=80,l=10,r=10)
 # opts_chunk has the dots per inch that set the height of a plotly chart; opts_current has them
 # multiplied by fig.retina
-dpi &lt;- knitr::opts_chunk$get("dpi")
-plot_height &lt;- knitr::opts_current$get("fig.height") * dpi - margin$t - margin$b
-gap &lt;- pad / plot_height
-node_height &lt;- went_to$value / sum(went_to$value) * (1 - gap * (nrow(went_to) - 1))
-middle &lt;- cumsum(node_height + gap) - gap - node_height / 2
-plot_ly(
-  type = "sankey",
-  orientation = "h",
-  arrangement = "fixed",
-  valueformat = ",.0f",
-  textfont = list(size = 12),
-  node = list(
-    label = c(paste0("Left Greece: ", thousands(left_window)), went_to$label),
-    color = c(dark_gray, went_to$color),
-    x = c(0.001, rep(0.999, nrow(went_to))),
-    y = c(0.5, middle),
-    pad = pad,
-    thickness = 16,
-    line = list(width = 0),
-    hovertemplate = "%{label}&lt;extra&gt;&lt;/extra&gt;"
-  ),
-  link = list(
-    source = rep(0, nrow(went_to)),
-    target = seq_len(nrow(went_to)),
-    value = went_to$value,
-    color = went_to$link,
-    hovertemplate = "%{target.label}&lt;extra&gt;&lt;/extra&gt;"
-  )
-) %&gt;%
-  chart(
-    paste0("Where the Greek citizens who left went, ", since, "–", latest),
-    paste0(
-      "Eurostat, migr_emi1ctz (Greece's estimate) and migr_imm1ctz (the countries' counts). ",
-      "In brackets: the years with figures."
-    ),
-    margin = margin,
-    note_y = -0.04
-  )</code></pre></div></div>
+dpi&lt;-knitr::opts_chunk$get("dpi")
+plot_height&lt;-knitr::opts_current$get("fig.height")*dpi-margin$t-margin$b
+gap&lt;-pad/plot_height
+node_height&lt;-went_to$value/sum(went_to$value)*(1-gap*(nrow(went_to)-1))
+middle&lt;-cumsum(node_height+gap)-gap-node_height/2
+plot_ly(type="sankey",orientation="h",arrangement="fixed",valueformat=",.0f",
+        textfont=list(size=12),
+        node=list(label=c(paste0("Left Greece: ",thousands(left_window)),went_to$label),
+                  color=c(dark_gray,went_to$color),x=c(0.001,rep(0.999,nrow(went_to))),
+                  y=c(0.5,middle),pad=pad,thickness=16,line=list(width=0),
+                  hovertemplate="%{label}&lt;extra&gt;&lt;/extra&gt;"),
+        link=list(source=rep(0,nrow(went_to)),target=seq_len(nrow(went_to)),
+                  value=went_to$value,color=went_to$link,
+                  hovertemplate="%{target.label}&lt;extra&gt;&lt;/extra&gt;")) %&gt;%
+  chart(paste0("Where the Greek citizens who left went, ",since,"–",latest),
+        paste0("Eurostat, migr_emi1ctz (Greece's estimate) and ",
+               "migr_imm1ctz (the countries' counts). ",
+               "In brackets: the years with figures."),margin=margin,note_y=-0.04)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Where the Greek citizens who left went, 2014–2024</a></p>
 </div>
 </div>
-<p>Germany counted 153,000 Greek citizens arriving, 52% of all those counted in Europe, and the Netherlands 37,000, 12%. The United Kingdom has figures only for 2015, when 12,148 Greek citizens arrived there, the most after Germany; Eurostat’s figures for the United Kingdom stop with its withdrawal from the EU (<a href="https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm">Eurostat</a>).</p>
-<p>The other 251,000, 46% of those who left, were not counted arriving in any European country. They may have gone to countries outside Europe; to European countries that have no figures on Greek citizens arriving, Cyprus, Ireland, Malta, Poland, Portugal and Spain; or to countries in years without figures, such as the United Kingdom after 2015. And part of the gap is the difference between Greece’s estimate and the counts of the other countries. The figures cannot tell how much of each.</p>
+<p>Germany counted 153,000 Greek citizens arriving, 51% of all those counted in Europe, and the Netherlands 37,000, 12%. The United Kingdom has figures only for 2015, when 12,148 Greek citizens arrived there, the most after Germany; Eurostat’s figures for the United Kingdom stop with its withdrawal from the EU (<a href="https://ec.europa.eu/eurostat/cache/metadata/en/migr_immi_esms.htm">Eurostat</a>).</p>
+<p>The other 247,000, 45% of those who left, were not counted arriving in any European country. They may have gone to countries outside Europe; to European countries that have no figures on Greek citizens arriving, Cyprus, Ireland, Malta, Poland, Portugal and Spain; or to countries in years without figures, such as the United Kingdom after 2015. And part of the gap is the difference between Greece’s estimate and the counts of the other countries. The figures cannot tell how much of each.</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">knitr::kable(
-  data.frame(
-    c(shown$label, "Other European countries"),
-    number(c(shown$values, other))
-  ),
-  col.names = c(
-    "Country (years with figures)",
-    paste0("Greek citizens who arrived, ", since, "–", latest)
-  ),
-  align = "lr"
-)</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre><code class="language-r">knitr::kable(data.frame(c(shown$label,"Other European countries"),number(c(shown$values,other))),
+             col.names=c("Country (years with figures)",
+                         paste0("Greek citizens who arrived, ",since,"–",latest)),align="lr")</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <table class="caption-top table table-sm table-striped small">
@@ -8400,7 +8183,7 @@ plot_ly(
 </tr>
 <tr class="odd">
 <td style="text-align: left;">Other European countries</td>
-<td style="text-align: right;">26,307</td>
+<td style="text-align: right;">30,707</td>
 </tr>
 </tbody>
 </table>
@@ -8411,45 +8194,33 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">living &lt;- greeks_living[greeks_living$geo %in% names(country_name), ]
-newest &lt;- do.call(rbind, lapply(split(living, living$geo), function(x) x[which.max(x$time), ]))
-newest &lt;- head(newest[order(-newest$values), ], 15)
-living_year &lt;- max(newest$time)
-newest$label &lt;- ifelse(
-  newest$time == living_year,
-  country_name[newest$geo],
-  paste0(country_name[newest$geo], " (", newest$time, ")")
-)
-newest &lt;- newest[order(newest$values), ]
-newest$label &lt;- factor(newest$label, levels = newest$label)
-lived &lt;- function(geo, year) living$values[living$geo == geo &amp; living$time == year]
-uk_last &lt;- max(living$time[living$geo == "UK"])
-uk_place &lt;- sum(living$values[living$time == uk_last] &gt; lived("UK", uk_last)) + 1</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb14"><pre><code class="language-r">living&lt;-greeks_living[greeks_living$geo%in%names(country_name),]
+newest&lt;-do.call(rbind,lapply(split(living,living$geo),function(x) x[which.max(x$time),]))
+newest&lt;-head(newest[order(-newest$values),],15)
+living_year&lt;-max(newest$time)
+newest$label&lt;-ifelse(newest$time==living_year,country_name[newest$geo],
+                     paste0(country_name[newest$geo]," (",newest$time,")"))
+newest&lt;-newest[order(newest$values),]
+newest$label&lt;-factor(newest$label,levels=newest$label)
+lived&lt;-function(geo,year) {
+  result&lt;-living$values[living$geo==geo&amp;living$time==year]
+  return(result)
+}
+uk_last&lt;-max(living$time[living$geo=="UK"])
+uk_place&lt;-sum(living$values[living$time==uk_last]&gt;lived("UK",uk_last))+1</code></pre></div></div>
 </details>
 </div>
 <p>The countries also count the people who live there, by citizenship. Germany had by far the most Greek citizens: 298,398 on 1 January 2025. Its Greek community was as large before the crisis, 297,668 in 2010: the number of people living in a country does not grow by all who arrive, as people also leave, die, or take the citizenship of the country. In the Netherlands, the number of Greek citizens grew from 7,781 in 2010 to 32,924 in 2025. The United Kingdom had 74,970 in 2019, its last year in the figures, the most after Germany.</p>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">plot_ly(
-  newest,
-  x = ~values,
-  y = ~label,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = blue),
-  text = number(newest$values),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:,.0f}&lt;extra&gt;&lt;/extra&gt;"
-) %&gt;%
-  chart(
-    paste0("Greek citizens living elsewhere in Europe, 1 January ", living_year),
-    "Eurostat, migr_pop1ctz. In brackets: the last year with figures.",
-    x_axis = list(range = c(0, 1.2 * max(newest$values)), tickformat = ","),
-    margin = list(l = 150, t = 70, b = 70, r = 30),
-    note_y = -0.08
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre><code class="language-r">plot_ly(newest,x=~values,y=~label,type="bar",orientation="h",marker=list(color=blue),
+        text=number(newest$values),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:,.0f}&lt;extra&gt;&lt;/extra&gt;") %&gt;%
+  chart(paste0("Greek citizens living elsewhere in Europe, 1 January ",living_year),
+        "Eurostat, migr_pop1ctz. In brackets: the last year with figures.",
+        x_axis=list(range=c(0,1.2*max(newest$values)),tickformat=","),
+        margin=list(l=150,t=70,b=70,r=30),note_y=-0.08)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Greek citizens living elsewhere in Europe, 1 January 2025</a></p>
@@ -8463,27 +8234,28 @@ uk_place &lt;- sum(living$values[living$time == uk_last] &gt; lived("UK", uk_las
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">turn &lt;- min(flows$year[flows$year &gt; rescue[1] &amp; !is.na(flows$net_greek) &amp; flows$net_greek &gt; 0])
-after_turn &lt;- flows$year[flows$year &gt;= turn]
-before_turn &lt;- max(flows$year[
-  flows$year &lt; rescue[1] &amp; !is.na(flows$net_greek) &amp; flows$net_greek &gt; 0
-])
-lost &lt;- -sum(flows$net_greek[flows$year %in% rescue[1]:(turn - 1)])
-gained &lt;- sum(flows$net_greek[flows$year %in% after_turn])
-born_elsewhere &lt;- flow("came_greek", latest) - flow("came_born", latest)
-germany &lt;- data.frame(year = min(greeks_came$time[greeks_came$geo == "DE"]):latest)
-germany$came &lt;- by_year(greeks_came[greeks_came$geo == "DE", ], germany$year)
-germany$left &lt;- by_year(greeks_left[greeks_left$geo == "DE", ], germany$year)
-both &lt;- germany[!is.na(germany$came) &amp; !is.na(germany$left), ]
-before &lt;- both[both$year &lt; rescue[1], ]
-restart &lt;- min(both$year[both$year &gt; rescue[1]])
-since_restart &lt;- both[both$year &gt;= restart, ]
-peak_in &lt;- since_restart$year[which.max(since_restart$came - since_restart$left)]
-more_left &lt;- since_restart$year[since_restart$left &gt; since_restart$came]
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">turn&lt;-min(flows$year[flows$year&gt;rescue[1]&amp;!is.na(flows$net_greek)&amp;flows$net_greek&gt;0])
+after_turn&lt;-flows$year[flows$year&gt;=turn]
+before_turn&lt;-max(flows$year[flows$year&lt;rescue[1]&amp;!is.na(flows$net_greek)&amp;flows$net_greek&gt;0])
+lost&lt;--sum(flows$net_greek[flows$year%in%rescue[1]:(turn-1)])
+gained&lt;-sum(flows$net_greek[flows$year%in%after_turn])
+born_elsewhere&lt;-flow("came_greek",latest)-flow("came_born",latest)
+germany&lt;-data.frame(year=min(greeks_came$time[greeks_came$geo=="DE"]):latest)
+germany$came&lt;-by_year(greeks_came[greeks_came$geo=="DE",],germany$year)
+germany$left&lt;-by_year(greeks_left[greeks_left$geo=="DE",],germany$year)
+both&lt;-germany[!is.na(germany$came)&amp;!is.na(germany$left),]
+before&lt;-both[both$year&lt;rescue[1],]
+restart&lt;-min(both$year[both$year&gt;rescue[1]])
+since_restart&lt;-both[both$year&gt;=restart,]
+peak_in&lt;-since_restart$year[which.max(since_restart$came-since_restart$left)]
+more_left&lt;-since_restart$year[since_restart$left&gt;since_restart$came]
 # the years without figures between the last year before the crisis and the restart
-gap_years &lt;- (max(before$year) + 1):(restart - 1)
-in_germany &lt;- function(column, year) germany[[column]][germany$year == year]
-left_germany_first &lt;- length(more_left) == 1 &amp;&amp; more_left == latest</code></pre></div></div>
+gap_years&lt;-(max(before$year)+1):(restart-1)
+in_germany&lt;-function(column,year) {
+  result&lt;-germany[[column]][germany$year==year]
+  return(result)
+}
+left_germany_first&lt;-length(more_left)==1&amp;&amp;more_left==latest</code></pre></div></div>
 </details>
 </div>
 <p><strong>Some have. Since 2023, more Greek citizens move to Greece each year than leave it, by ELSTAT’s estimates, but they have made up only a small part of what the crisis took.</strong></p>
@@ -8492,41 +8264,22 @@ left_germany_first &lt;- length(more_left) == 1 &amp;&amp; more_left == latest</
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">greek_flows &lt;- flows[!is.na(flows$left_greek), ]
-plot_ly(
-  greek_flows,
-  x = ~year,
-  y = ~ left_greek / 1000,
-  type = "scatter",
-  mode = "lines+markers",
-  name = "Greek citizens who left Greece",
-  line = list(color = greek_red, width = 3),
-  marker = list(color = greek_red),
-  hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens who left&lt;/extra&gt;"
-) %&gt;%
-  add_trace(
-    y = ~ came_greek / 1000,
-    name = "Greek citizens who moved to Greece",
-    line = list(color = blue, width = 3),
-    marker = list(color = blue),
-    hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens who came&lt;/extra&gt;"
-  ) %&gt;%
-  add_trace(
-    y = ~ came_born / 1000,
-    name = "People born in Greece who moved to Greece",
-    line = list(color = blue, width = 2, dash = "dot"),
-    marker = list(color = blue, symbol = "circle-open"),
-    hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Born in Greece, came&lt;/extra&gt;"
-  ) %&gt;%
-  chart(
-    "Leaving Greece and moving to Greece, thousands a year",
-    paste("Eurostat, migr_emi1ctz, migr_imm1ctz and migr_imm3ctb (estimates of ELSTAT).", shaded),
-    "Thousands",
-    y_axis = list(rangemode = "tozero"),
-    shapes = list(rescue_band),
-    legend = legend_top,
-    margin = list(t = 110, b = 90)
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb17"><pre><code class="language-r">greek_flows&lt;-flows[!is.na(flows$left_greek),]
+plot_ly(greek_flows,x=~year,y=~left_greek/1000,type="scatter",mode="lines+markers",
+        name="Greek citizens who left Greece",line=list(color=greek_red,width=3),
+        marker=list(color=greek_red),
+        hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens who left&lt;/extra&gt;") %&gt;%
+  add_trace(y=~came_greek/1000,name="Greek citizens who moved to Greece",
+            line=list(color=blue,width=3),marker=list(color=blue),
+            hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Greek citizens who came&lt;/extra&gt;") %&gt;%
+  add_trace(y=~came_born/1000,name="People born in Greece who moved to Greece",
+            line=list(color=blue,width=2,dash="dot"),
+            marker=list(color=blue,symbol="circle-open"),
+            hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Born in Greece, came&lt;/extra&gt;") %&gt;%
+  chart("Leaving Greece and moving to Greece, thousands a year",
+        paste("Eurostat, migr_emi1ctz, migr_imm1ctz and migr_imm3ctb (estimates of ELSTAT).",
+              shaded),"Thousands",y_axis=list(rangemode="tozero"),shapes=list(rescue_band),
+        legend=legend_top,margin=list(t=110,b=90))</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Leaving Greece and moving to Greece, thousands a year</a></p>
@@ -8539,37 +8292,17 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">plot_ly(
-  germany,
-  x = ~year,
-  y = ~ came / 1000,
-  type = "scatter",
-  mode = "lines+markers",
-  name = "Greek citizens who moved to Germany",
-  line = list(color = greek_red, width = 3),
-  marker = list(color = greek_red),
-  hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Moved to Germany&lt;/extra&gt;"
-) %&gt;%
-  add_trace(
-    y = ~ left / 1000,
-    name = "Greek citizens who left Germany",
-    line = list(color = blue, width = 3),
-    marker = list(color = blue),
-    hovertemplate = "%{x}: %{y:.1f} thousand&lt;extra&gt;Left Germany&lt;/extra&gt;"
-  ) %&gt;%
-  chart(
-    "Greek citizens arriving in and leaving Germany, thousands",
-    paste0(
-      "Eurostat, migr_imm1ctz and migr_emi1ctz (figures of Germany; none for ",
-      years_text(gap_years),
-      "). ",
-      shaded
-    ),
-    "Thousands",
-    y_axis = list(rangemode = "tozero"),
-    shapes = list(rescue_band),
-    legend = legend_top
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r">plot_ly(germany,x=~year,y=~came/1000,type="scatter",mode="lines+markers",
+        name="Greek citizens who moved to Germany",line=list(color=greek_red,width=3),
+        marker=list(color=greek_red),
+        hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Moved to Germany&lt;/extra&gt;") %&gt;%
+  add_trace(y=~left/1000,name="Greek citizens who left Germany",line=list(color=blue,width=3),
+            marker=list(color=blue),
+            hovertemplate="%{x}: %{y:.1f} thousand&lt;extra&gt;Left Germany&lt;/extra&gt;") %&gt;%
+  chart("Greek citizens arriving in and leaving Germany, thousands",
+        paste0("Eurostat, migr_imm1ctz and migr_emi1ctz (figures of Germany; none for ",
+               years_text(gap_years),"). ",shaded),"Thousands",y_axis=list(rangemode="tozero"),
+        shapes=list(rescue_band),legend=legend_top)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Greek citizens arriving in and leaving Germany, thousands</a></p>
@@ -8583,31 +8316,32 @@ plot_ly(
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">education_names &lt;- c(
-  "ED5-8" = "Higher education",
-  "ED3_4" = "Upper secondary",
-  "ED0-2" = "At most lower secondary"
-)
-education_colors &lt;- c("ED5-8" = greek_red, "ED3_4" = gray, "ED0-2" = dark_gray)
-adults_abroad &lt;- born_abroad[born_abroad$age == "Y20-64" &amp; born_abroad$time &gt;= 2005, ]
-level &lt;- function(isced, year) {
-  adults_abroad$values[adults_abroad$isced11 == isced &amp; adults_abroad$time == year]
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb19"><pre><code class="language-r">education_names&lt;-c("ED5-8"="Higher education","ED3_4"="Upper secondary",
+                   "ED0-2"="At most lower secondary")
+education_colors&lt;-c("ED5-8"=greek_red,"ED3_4"=gray,"ED0-2"=dark_gray)
+adults_abroad&lt;-born_abroad[born_abroad$age=="Y20-64"&amp;born_abroad$time&gt;=2005,]
+level&lt;-function(isced,year) {
+  result&lt;-adults_abroad$values[adults_abroad$isced11==isced&amp;adults_abroad$time==year]
+  return(result)
 }
-edu_latest &lt;- max(adults_abroad$time)
+edu_latest&lt;-max(adults_abroad$time)
 # the share with higher education: abroad, of those whose education is known; in Greece, as Eurostat
 # publishes it
-working_age &lt;- born_abroad[born_abroad$age == "Y15-64" &amp; born_abroad$time &gt;= 2005, ]
-known &lt;- working_age[working_age$isced11 %in% names(education_names), ]
-share &lt;- aggregate(values ~ time, known, sum)
-names(share) &lt;- c("year", "known")
-share$abroad &lt;- 100 * by_year(known[known$isced11 == "ED5-8", ], share$year) / share$known
-share$home &lt;- by_year(born_home[born_home$isced11 == "ED5-8", ], share$year)
-share &lt;- share[!is.na(share$home), ]
-behind &lt;- share$year[share$abroad &lt;= share$home]
-ahead_since &lt;- max(behind) + 1
-first_share &lt;- min(share$year)
-last_share &lt;- max(share$year)
-higher &lt;- function(where, year) share[[where]][share$year == year]</code></pre></div></div>
+working_age&lt;-born_abroad[born_abroad$age=="Y15-64"&amp;born_abroad$time&gt;=2005,]
+known&lt;-working_age[working_age$isced11%in%names(education_names),]
+share&lt;-aggregate(values~time,known,sum)
+names(share)&lt;-c("year","known")
+share$abroad&lt;-100*by_year(known[known$isced11=="ED5-8",],share$year)/share$known
+share$home&lt;-by_year(born_home[born_home$isced11=="ED5-8",],share$year)
+share&lt;-share[!is.na(share$home),]
+behind&lt;-share$year[share$abroad&lt;=share$home]
+ahead_since&lt;-max(behind)+1
+first_share&lt;-min(share$year)
+last_share&lt;-max(share$year)
+higher&lt;-function(where,year) {
+  result&lt;-share[[where]][share$year==year]
+  return(result)
+}</code></pre></div></div>
 </details>
 </div>
 <p><strong>Partly. The people born in Greece who live elsewhere in Europe used to have less education than those at home; now they have more, and many more of them have a degree.</strong></p>
@@ -8616,30 +8350,19 @@ higher &lt;- function(where, year) share[[where]][share$year == year]</code></pr
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">p &lt;- plot_ly()
-for (k in names(education_names)) {
-  p &lt;- add_trace(
-    p,
-    data = adults_abroad[adults_abroad$isced11 == k, ],
-    x = ~time,
-    y = ~values,
-    type = "scatter",
-    mode = "lines+markers",
-    name = education_names[[k]],
-    line = list(color = education_colors[[k]], width = if (k == "ED5-8") 3 else 2),
-    marker = list(color = education_colors[[k]]),
-    hovertemplate = paste0("%{x}: %{y:.1f} thousand&lt;extra&gt;", education_names[[k]], "&lt;/extra&gt;")
-  )
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb20"><pre><code class="language-r">p&lt;-plot_ly()
+for(k in names(education_names)) {
+  p&lt;-add_trace(p,data=adults_abroad[adults_abroad$isced11==k,],x=~time,y=~values,type="scatter",
+               mode="lines+markers",name=education_names[[k]],
+               line=list(color=education_colors[[k]],width=if(k=="ED5-8") 3 else 2),
+               marker=list(color=education_colors[[k]]),
+               hovertemplate=paste0("%{x}: %{y:.1f} thousand&lt;extra&gt;",education_names[[k]],
+                                    "&lt;/extra&gt;"))
 }
 p %&gt;%
-  chart(
-    "Greek-born aged 20 to 64 in other EU and EFTA countries",
-    paste("Eurostat, lfst_lmbpcobed (Labour Force Survey), by education.", shaded),
-    "Thousands",
-    y_axis = list(rangemode = "tozero"),
-    shapes = list(rescue_band),
-    legend = legend_top
-  )</code></pre></div></div>
+  chart("Greek-born aged 20 to 64 in other EU and EFTA countries",
+        paste("Eurostat, lfst_lmbpcobed (Labour Force Survey), by education.",shaded),"Thousands",
+        y_axis=list(rangemode="tozero"),shapes=list(rescue_band),legend=legend_top)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Greek-born aged 20 to 64 in other EU and EFTA countries</a></p>
@@ -8649,32 +8372,17 @@ p %&gt;%
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre><code class="language-r">plot_ly(
-  share,
-  x = ~year,
-  y = ~abroad,
-  type = "scatter",
-  mode = "lines+markers",
-  name = "Living in another EU or EFTA country",
-  line = list(color = greek_red, width = 3),
-  marker = list(color = greek_red),
-  hovertemplate = "%{x}: %{y:.1f}%&lt;extra&gt;Living abroad&lt;/extra&gt;"
-) %&gt;%
-  add_trace(
-    y = ~home,
-    name = "Living in Greece",
-    line = list(color = blue, width = 3),
-    marker = list(color = blue),
-    hovertemplate = "%{x}: %{y:.1f}%&lt;extra&gt;Living in Greece&lt;/extra&gt;"
-  ) %&gt;%
-  chart(
-    "Born in Greece, aged 15 to 64: share with higher education",
-    paste("Eurostat, lfst_lmbpcobed and edat_lfs_9912 (Labour Force Survey).", shaded),
-    "% of the age group",
-    y_axis = list(rangemode = "tozero", ticksuffix = "%"),
-    shapes = list(rescue_band),
-    legend = legend_top
-  )</code></pre></div></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb21"><pre><code class="language-r">plot_ly(share,x=~year,y=~abroad,type="scatter",mode="lines+markers",
+        name="Living in another EU or EFTA country",line=list(color=greek_red,width=3),
+        marker=list(color=greek_red),
+        hovertemplate="%{x}: %{y:.1f}%&lt;extra&gt;Living abroad&lt;/extra&gt;") %&gt;%
+  add_trace(y=~home,name="Living in Greece",line=list(color=blue,width=3),
+            marker=list(color=blue),
+            hovertemplate="%{x}: %{y:.1f}%&lt;extra&gt;Living in Greece&lt;/extra&gt;") %&gt;%
+  chart("Born in Greece, aged 15 to 64: share with higher education",
+        paste("Eurostat, lfst_lmbpcobed and edat_lfs_9912 (Labour Force Survey).",shaded),
+        "% of the age group",y_axis=list(rangemode="tozero",ticksuffix="%"),
+        shapes=list(rescue_band),legend=legend_top)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
 <p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_EMIGRATION.html">Interactive chart: Born in Greece, aged 15 to 64: share with higher education</a></p>
@@ -8695,7 +8403,7 @@ p %&gt;%
 <ol type="1">
 <li><strong>The crisis drove a wave of emigration.</strong> By ELSTAT’s estimates, 1,018,000 people left Greece in the years of the rescue loans, 527,000 of them Greek citizens. In 2012, 12.2 of every 1,000 people who lived in Greece left.</li>
 <li><strong>They were young, and many were men.</strong> In 2012, 44 of every 1,000 men aged 25 to 29 left.</li>
-<li><strong>Germany took the most</strong>: 52% of the Greek citizens counted arriving in Europe from 2014 to 2024. For 46% of those who left, the figures do not say where they went.</li>
+<li><strong>Germany took the most</strong>: 51% of the Greek citizens counted arriving in Europe from 2014 to 2024. For 45% of those who left, the figures do not say where they went.</li>
 <li><strong>The flow has turned, a little.</strong> Since 2023, more Greek citizens come to Greece than leave it, and in 2024 more Greek citizens left Germany than moved there. But 29,012 more Greek citizens in 2023 and 2024 make up only 9% of the 328,000 lost from 2010 to 2022.</li>
 <li><strong>It was partly a brain drain.</strong> The people born in Greece with higher education who live elsewhere in the EU and EFTA are 2.8 times as many as in 2010, and those abroad now have more education than those at home.</li>
 </ol>
