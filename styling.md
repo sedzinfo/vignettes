@@ -136,10 +136,10 @@ Done, checked and copied here:
 - [x] SEA_ICE: the time series is plotly; the two maps stay ggplot for now (see the question below)
 - [x] SEA_ICE_TEMP: base R instead of dplyr and tidyr, unused packages out (dplyr, tidyr, lubridate, reshape, rnoaa); the two GIFs stay ggplot. The spiral's data were checked object by object, and both GIFs frame by frame. A full render takes about 3 minutes here, not the 1–2 hours the page mentions
 - [x] AIRPORT_WEATHER: base R (plyr, dplyr and lubridate gone) and plotly (ggplot2 and ggfortify gone). The daily band is a bar for each day, from its lowest to its highest temperature, coloured by the highest; the monthly band shows the highest temperatures as coloured points; the heatmaps keep a value in each cell; "All four together" and the decomposition are stacked plotly panels. The page could not run since early October because of `plot_multiplot()` (fixed, see below), and now no longer uses it
+- [x] WORLD_FLOODS: no dplyr or ggplot2 left; text, tables and the two plotly charts identical; the deaths panels, the season calendar and the yearly counts are plotly (two years that tie for the most both stay red, as before); a comment that said 10,000 km² now says 25,000, as the code does
 
 To do, in this order:
 
-- [ ] WORLD_FLOODS
 - [ ] WORLD_TORNADOES
 - [ ] ATHENS_HEAT
 - [ ] GREEK_WILDFIRES
