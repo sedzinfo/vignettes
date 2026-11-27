@@ -15,6 +15,18 @@ The pages of `quarto/illustration/` (the "data stories" site) are being rewritte
 - **An expression that repeats is named once**: `from_now<-xy_now[seq(1,nrow(xy_now),by=2),]`.
 - **Comments** are lower case and say what a step is for. A comment of several lines is wrapped as one paragraph.
 - **Chains:** `%>%` for plotly, with the next steps indented by two. ggplot layers end their line with `+`, one layer to a line. No `|>`.
+- **One-statement `if` without braces:** the statement goes on the next line, indented by two.
+- **The setup chunk** (hidden on the page) in one compact form, followed by the page's own lines:
+
+  ```r
+  directory<-""
+  if(rstudioapi::isAvailable())
+    directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+  source(paste0(directory,"R/code_options.R"))
+  ```
+
+  Pages restyled before this rule get it in one batch when all pages are done (a re-render pulls fresh data).
+- **Code shown to readers but not run** (a plain code block, a chunk with `eval=FALSE`) follows the same style, and stays in step with the code it stands for.
 - **Kept as they are:** chunk labels (they name the figure files in `_freeze/`), `#| fig-alt` lines, and code quoted from someone else (efg's script in the colour chart).
 
 From the earthquakes page (the chart shortened):
@@ -114,15 +126,14 @@ Done, checked and copied here:
 - [x] WORLD_TSUNAMIS: NOAA's pages arrive in the order in which they finish and are now put in page order, so the map draws its points in the same order on every render
 - [x] WORLD_WILDFIRES: the trend chart (eight panels, one y scale for all, as before) and the season calendar are plotly; the calendar's title is shorter and its subtitle is now the legend's title; the panels show the change with a minus sign (−) where the ggplot font needed a dash (–)
 
+- [x] FERTILITY, EURO_CRISIS, GREECE_SINCE_2000: dplyr and tidyr gone; output identical (these read local data files); the reader's "another country" snippet of GREECE_SINCE_2000 is base R too
+
 To do, in this order:
 
 - [ ] WORLD_FLOODS
 - [ ] WORLD_TORNADOES
 - [ ] ATHENS_HEAT
 - [ ] GREEK_WILDFIRES
-- [ ] FERTILITY
-- [ ] EURO_CRISIS
-- [ ] GREECE_SINCE_2000
 - [ ] GREEK_HOUSING
 - [ ] GREEK_WAGES_PRICES
 - [ ] EU_SALARY
