@@ -138,10 +138,10 @@ Done, checked and copied here:
 - [x] AIRPORT_WEATHER: base R (plyr, dplyr and lubridate gone) and plotly (ggplot2 and ggfortify gone). The daily band is a bar for each day, from its lowest to its highest temperature, coloured by the highest; the monthly band shows the highest temperatures as coloured points; the heatmaps keep a value in each cell; "All four together" and the decomposition are stacked plotly panels. The page could not run since early October because of `plot_multiplot()` (fixed, see below), and now no longer uses it
 - [x] WORLD_FLOODS: no dplyr or ggplot2 left; text, tables and the two plotly charts identical; the deaths panels, the season calendar and the yearly counts are plotly (two years that tie for the most both stay red, as before); a comment that said 10,000 km² now says 25,000, as the code does
 - [x] WORLD_TORNADOES: no dplyr or ggplot2 left; text, five tables and the three plotly charts identical; the calendar of the divisions, the hours of the day, the deaths of each year and the four trend panels are plotly; six variables that the page computed but never used are gone (`strong_states`, `deadliest_day`, `deadliest_rating`, `unrated_modern`, `canada_provinces`, `estimated`)
+- [x] ATHENS_HEAT: no dplyr or ggplot2 left; text and all tables identical; the seven charts (stripes, the station against ERA5-Land, hot days, tropical nights, the calendar of every day, the season curves and the heatwaves) are plotly; three functions that were defined inside other functions are now top-level (`reported`, `day_number`, `month_word`)
 
 To do, in this order:
 
-- [ ] ATHENS_HEAT
 - [ ] GREEK_WILDFIRES
 
 Open questions:
