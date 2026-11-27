@@ -5,8 +5,10 @@ author: ""
 ---
 
 ```{r setup, include=FALSE}
-directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
-source(paste0(directory, "R/code_options.R"))
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
 ```
 
 ## Overview
@@ -23,31 +25,19 @@ This document reproduces three climate visualisations using real, open-access da
 Install missing packages:
 
 ```{r install, eval=FALSE}
-# install.packages(c("sf", "rnaturalearth", "ggplot2", "highcharter",
-#                    "gifski", "dplyr", "tidyr", "lubridate", "rnoaa",
-#                    "reshape", "viridis"))
-# remotes::install_github("ropensci/rnoaa")
+# install.packages(c("sf", "rnaturalearth", "rnaturalearthdata", "ggplot2", "gifski"))
 ```
 
 ## Packages
 
 ```{r packages}
-# Spatial
+# spatial
 library(sf)
 library(rnaturalearth)
 
-# Plotting
+# plotting
 library(ggplot2)
 library(gifski)
-
-# Data wrangling
-library(dplyr)
-library(tidyr)
-library(lubridate)
-library(reshape)
-
-# Weather data
-library(rnoaa)
 ```
 
 
@@ -69,38 +59,37 @@ https://noaadata.apps.nsidc.org/NOAA/G02135/north/monthly/shapefiles/shp_extent/
 ### Download helper
 
 ```{r ice_fetch}
-sf::sf_use_s2(TRUE)   # spherical geometry needed for polar projections
+sf::sf_use_s2(TRUE) # spherical geometry needed for polar projections
 
-month_dirs <- c("01_Jan","02_Feb","03_Mar","04_Apr","05_May","06_Jun",
-                "07_Jul","08_Aug","09_Sep","10_Oct","11_Nov","12_Dec")
+month_dirs<-c("01_Jan","02_Feb","03_Mar","04_Apr","05_May","06_Jun","07_Jul","08_Aug","09_Sep",
+              "10_Oct","11_Nov","12_Dec")
 
-fetch_ice_extent <- function(year, month = "09", pole = "N",
-                             tmpdir = file.path(tempdir(), "nsidc_ice")) {
-  dir.create(tmpdir, showWarnings = FALSE)
-  mm       <- sprintf("%02d", as.integer(month))
-  yymm     <- paste0(year, mm)
-  pole_dir <- ifelse(pole == "N", "north", "south")
-  mon_dir  <- month_dirs[as.integer(mm)]
+fetch_ice_extent<-function(year,month="09",pole="N",tmpdir=file.path(tempdir(),"nsidc_ice")) {
+  dir.create(tmpdir,showWarnings=FALSE)
+  mm<-sprintf("%02d",as.integer(month))
+  yymm<-paste0(year,mm)
+  pole_dir<-ifelse(pole=="N","north","south")
+  mon_dir<-month_dirs[as.integer(mm)]
 
-  url <- paste0(
-    "https://noaadata.apps.nsidc.org/NOAA/G02135/",
-    pole_dir, "/monthly/shapefiles/shp_extent/", mon_dir, "/",
-    "extent_", pole, "_", yymm, "_polygon_v4.0.zip"
-  )
+  url<-paste0("https://noaadata.apps.nsidc.org/NOAA/G02135/",pole_dir,
+              "/monthly/shapefiles/shp_extent/",mon_dir,"/","extent_",pole,"_",yymm,
+              "_polygon_v4.0.zip")
 
-  zip_path <- file.path(tmpdir, paste0("ice_", pole, "_", yymm, ".zip"))
-  if (!file.exists(zip_path) || file.size(zip_path) < 1000)
-    tryCatch(download.file(url, zip_path, quiet = TRUE, mode = "wb"),
-             error = function(e) NULL)
+  zip_path<-file.path(tmpdir,paste0("ice_",pole,"_",yymm,".zip"))
+  if(!file.exists(zip_path)||file.size(zip_path)<1000)
+    tryCatch(download.file(url,zip_path,quiet=TRUE,mode="wb"),error=function(e) NULL)
 
-  if (!file.exists(zip_path) || file.size(zip_path) < 1000) return(NULL)
+  if(!file.exists(zip_path)||file.size(zip_path)<1000)
+    return(NULL)
 
-  exdir <- file.path(tmpdir, paste0("ice_", pole, "_", yymm))
-  suppressWarnings(unzip(zip_path, exdir = exdir, overwrite = FALSE))
-  shp <- list.files(exdir, "\\.shp$", full.names = TRUE)[1]
-  if (is.na(shp)) return(NULL)
+  exdir<-file.path(tmpdir,paste0("ice_",pole,"_",yymm))
+  suppressWarnings(unzip(zip_path,exdir=exdir,overwrite=FALSE))
+  shp<-list.files(exdir,"\\.shp$",full.names=TRUE)[1]
+  if(is.na(shp))
+    return(NULL)
 
-  tryCatch(sf::st_read(shp, quiet = TRUE), error = function(e) NULL)
+  result<-tryCatch(sf::st_read(shp,quiet=TRUE),error=function(e) NULL)
+  return(result)
 }
 ```
 
@@ -109,23 +98,20 @@ fetch_ice_extent <- function(year, month = "09", pole = "N",
 These objects are computed once and reused for every frame. The world basemap and the circular clip boundary never change between years — only the ice extent polygon does.
 
 ```{r ice_base}
-crs_polar <- "+proj=stere +lat_0=90 +lat_ts=70 +lon_0=0 +datum=WGS84 +units=m"
+crs_polar<-"+proj=stere +lat_0=90 +lat_ts=70 +lon_0=0 +datum=WGS84 +units=m"
 
-world_proj <- sf::st_transform(
-  ne_countries(scale = "medium", returnclass = "sf"), crs_polar
-)
+world_proj<-sf::st_transform(ne_countries(scale="medium",returnclass="sf"),crs_polar)
 
 # circular clip: 5.5 million metres from the pole (~55°N+)
-clip_circle <- sf::st_buffer(
-  sf::st_sfc(sf::st_point(c(0, 90)), crs = 4326) |> sf::st_transform(crs_polar),
-  dist = 5.5e6
-)
+clip_circle<-sf::st_buffer(sf::st_transform(sf::st_sfc(sf::st_point(c(0,90)),crs=4326),crs_polar),
+                           dist=5.5e6)
 
-world_clip <- sf::st_intersection(sf::st_make_valid(world_proj), clip_circle)
+world_clip<-sf::st_intersection(sf::st_make_valid(world_proj),clip_circle)
 
-clip_year <- function(shp) {
-  proj <- sf::st_transform(shp, crs_polar) |> sf::st_make_valid()
-  tryCatch(sf::st_intersection(proj, clip_circle), error = function(e) NULL)
+clip_year<-function(shp) {
+  proj<-sf::st_make_valid(sf::st_transform(shp,crs_polar))
+  result<-tryCatch(sf::st_intersection(proj,clip_circle),error=function(e) NULL)
+  return(result)
 }
 ```
 
@@ -138,8 +124,8 @@ clip_year <- function(shp) {
 The 1979 September extent — the earliest year in the NSIDC record — is drawn as a red outline on every frame. It acts as a fixed reference so viewers can immediately see the cumulative loss without needing to compare frames mentally.
 
 ```{r ice_ref}
-raw_1979 <- fetch_ice_extent(1979)
-ice_1979 <- if (!is.null(raw_1979)) clip_year(raw_1979) else NULL
+raw_1979<-fetch_ice_extent(1979)
+ice_1979<-if(!is.null(raw_1979)) clip_year(raw_1979) else NULL
 ```
 
 ### Extent values from NSIDC CSV
@@ -147,10 +133,8 @@ ice_1979 <- if (!is.null(raw_1979)) clip_year(raw_1979) else NULL
 The shapefile does not contain the area value as a label-ready number. NSIDC publishes a companion CSV with the monthly extent in million km².
 
 ```{r ice_csv}
-areas_csv <- read.csv(
-  "https://noaadata.apps.nsidc.org/NOAA/G02135/north/monthly/data/N_09_extent_v4.0.csv",
-  strip.white = TRUE
-)
+areas_csv<-read.csv(paste0("https://noaadata.apps.nsidc.org/NOAA/G02135/north/monthly/data/",
+                           "N_09_extent_v4.0.csv"),strip.white=TRUE)
 head(areas_csv)
 ```
 
@@ -161,63 +145,64 @@ Each year is rendered as an independent ggplot and saved to PNG. `gifski` then s
 Processing years independently — rather than binding all shapefiles into one `sf` object — avoids CRS incompatibility errors. NSIDC shapefiles from different years may carry slightly different WKT representations of the same projection, which causes `rbind` to fail. The per-year approach sidesteps the issue entirely.
 
 ```{r ice_loop}
-years_all  <- 1979:2026
-frames_dir <- file.path(tempdir(), "arctic_frames")
-dir.create(frames_dir, showWarnings = FALSE)
+years_all<-1979:2026
+frames_dir<-file.path(tempdir(),"arctic_frames")
+dir.create(frames_dir,showWarnings=FALSE)
 
-plots <- list()
+plots<-list()
 
-for (yr in years_all) {
-  raw <- fetch_ice_extent(yr)
-  if (is.null(raw)) { message("skip ", yr); next }
+for(yr in years_all) {
+  raw<-fetch_ice_extent(yr)
+  if(is.null(raw)) {
+    message("skip ",yr)
+    next
+  }
 
-  ice_yr <- clip_year(raw)
-  if (is.null(ice_yr) || nrow(ice_yr) == 0) { message("skip ", yr); next }
+  ice_yr<-clip_year(raw)
+  if(is.null(ice_yr)||nrow(ice_yr)==0) {
+    message("skip ",yr)
+    next
+  }
 
-  area     <- areas_csv$extent[trimws(as.character(areas_csv$year)) == as.character(yr)]
-  area_lbl <- if (length(area) && !is.na(area[1])) sprintf("%.2f M km²", area[1]) else ""
+  area<-areas_csv$extent[trimws(as.character(areas_csv$year))==as.character(yr)]
+  area_lbl<-if(length(area)&&!is.na(area[1])) sprintf("%.2f M km²",area[1]) else ""
 
-  p <- ggplot() +
-    geom_sf(data = clip_circle, fill = "#1a3a5c", color = NA) +
-    { if (!is.null(ice_1979))
-        geom_sf(data = ice_1979, fill = NA, color = "#FF5252",
-                linewidth = 0.9, alpha = 0.75) } +
-    geom_sf(data = ice_yr,     fill = "#E3F4FF", color = "#90CAF9", linewidth = 0.1) +
-    geom_sf(data = world_clip, fill = "#5D4037", color = "#3E2723", linewidth = 0.2) +
-    labs(title    = paste("Arctic Sea Ice — September", yr),
-         subtitle = paste0(area_lbl, "   |   red outline = 1979 extent"),
-         caption  = "Source: NSIDC Sea Ice Index v4.0") +
-    theme_void(base_size = 13) +
-    theme(
-      plot.background = element_rect(fill = "#0D1B2A", color = NA),
-      plot.title    = element_text(color = "white",  face = "bold", size = 18,
-                                   hjust = 0.5, margin = margin(14, 0, 4, 0)),
-      plot.subtitle = element_text(color = "#90CAF9", size = 10,
-                                   hjust = 0.5, margin = margin(0, 0, 8, 0)),
-      plot.caption  = element_text(color = "#546E7A", size = 7.5,
-                                   hjust = 1,  margin = margin(6, 10, 8, 0)),
-      plot.margin   = margin(10, 10, 10, 10)
-    )
+  p<-ggplot()+
+    geom_sf(data=clip_circle,fill="#1a3a5c",color=NA)+
+    {
+      if(!is.null(ice_1979))
+        geom_sf(data=ice_1979,fill=NA,color="#FF5252",linewidth=0.9,alpha=0.75)
+    }+
+    geom_sf(data=ice_yr,fill="#E3F4FF",color="#90CAF9",linewidth=0.1)+
+    geom_sf(data=world_clip,fill="#5D4037",color="#3E2723",linewidth=0.2)+
+    labs(title=paste("Arctic Sea Ice — September",yr),
+         subtitle=paste0(area_lbl,"   |   red outline = 1979 extent"),
+         caption="Source: NSIDC Sea Ice Index v4.0")+
+    theme_void(base_size=13)+
+    theme(plot.background=element_rect(fill="#0D1B2A",color=NA),
+          plot.title=element_text(color="white",face="bold",size=18,hjust=0.5,
+                                  margin=margin(14,0,4,0)),
+          plot.subtitle=element_text(color="#90CAF9",size=10,hjust=0.5,margin=margin(0,0,8,0)),
+          plot.caption=element_text(color="#546E7A",size=7.5,hjust=1,margin=margin(6,10,8,0)),
+          plot.margin=margin(10,10,10,10))
 
-  plots[[as.character(yr)]] <- p
-  message("frame ", yr, " ready")
+  plots[[as.character(yr)]]<-p
+  message("frame ",yr," ready")
 }
 ```
 
 ### Stitch into GIF
 
 ```{r ice_gif}
-dir.create(frames_dir, showWarnings = FALSE, recursive = TRUE)
-frame_paths <- character(length(plots))
-for (i in seq_along(plots)) {
-  path <- file.path(frames_dir, sprintf("frame_%04d.png", i))
-  ggsave(path, plots[[i]], width = 10, height = 10, dpi = 600, bg = "#0D1B2A")
-  frame_paths[i] <- path
+dir.create(frames_dir,showWarnings=FALSE,recursive=TRUE)
+frame_paths<-character(length(plots))
+for(i in seq_along(plots)) {
+  path<-file.path(frames_dir,sprintf("frame_%04d.png",i))
+  ggsave(path,plots[[i]],width=10,height=10,dpi=600,bg="#0D1B2A")
+  frame_paths[i]<-path
 }
 
-gifski::gifski(frame_paths,
-               gif_file = "arctic_ice_animated.gif",
-               width = 800, height = 800, delay = 1)
+gifski::gifski(frame_paths,gif_file="arctic_ice_animated.gif",width=800,height=800,delay=1)
 ```
 
 ```{r ice_gif_show, echo=FALSE, fig.width=6, fig.height=6}
@@ -238,28 +223,27 @@ Each frame is a ggplot saved to PNG; `gifski` stitches the PNGs into a GIF. This
 
 ### Prepare data
 
-The CSV has one row per year and one column per month. `pivot_longer` reshapes it to long format (one row per year-month), and `match(month, month.abb)` converts the month abbreviation to a number 1–12. January is then repeated as month 13 to close the spiral loop — without this, the path from December back to January leaves a visible gap.
+The CSV has one row per year and one column per month. Reading the month columns across each row (`t()` turns the table, so that its values come out year by year, January to December) gives the long format, one row per year-month, and `match(month, month.abb)` converts the month abbreviation to a number 1–12. January is then repeated as month 13 to close the spiral loop — without this, the path from December back to January leaves a visible gap.
 
 ```{r spiral_data}
-df_nasa_raw<-read.csv("https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv", header = TRUE, stringsAsFactors = FALSE, na.strings = "***", skip = 1)
-df_long <- df_nasa_raw[, c("Year", month.abb)] |>
-  pivot_longer(cols = all_of(month.abb), names_to = "month", values_to = "temp") |>
-  mutate(
-    temp      = as.numeric(temp),
-    month_num = match(month, month.abb)
-  ) |>
-  filter(!is.na(temp), Year >= 1880)
+df_nasa_raw<-read.csv("https://data.giss.nasa.gov/gistemp/tabledata_v4/GLB.Ts+dSST.csv",header=TRUE,
+                      stringsAsFactors=FALSE,na.strings="***",skip=1)
+# one row for each year and month: read across each row of the table, January to December
+monthly<-df_nasa_raw[,c("Year",month.abb)]
+df_long<-data.frame(Year=rep(monthly$Year,each=12),
+                    month=rep(month.abb,times=nrow(monthly)),
+                    temp=as.numeric(t(monthly[,month.abb])))
+df_long$month_num<-match(df_long$month,month.abb)
+df_long<-df_long[!is.na(df_long$temp)&df_long$Year>=1880,]
 
-years   <- sort(unique(df_long$Year))
-n_years <- length(years)
+years<-sort(unique(df_long$Year))
+n_years<-length(years)
 
 # repeat January as month 13 to close the loop
-closed <- df_long |>
-  group_by(Year) |>
-  arrange(month_num) |>
-  group_modify(~ bind_rows(.x, filter(.x, month_num == 1) |>
-                                  mutate(month_num = 13))) |>
-  ungroup()
+january<-df_long[df_long$month_num==1,]
+january$month_num<-13
+closed<-rbind(df_long,january)
+closed<-closed[order(closed$Year,closed$month_num),]
 ```
 
 ### Reference geometry
@@ -272,23 +256,18 @@ Three static elements appear on every frame and never change:
 
 ```{r spiral_ref}
 # Paris Agreement target circles
-circle_df <- expand.grid(
-  month_num = seq(1, 13, length.out = 200),
-  r         = c(0, 1.5, 2.0)
-)
+circle_df<-expand.grid(month_num=seq(1,13,length.out=200),r=c(0,1.5,2.0))
 
 # month label positions
-month_labels <- data.frame(month_num = 1:12, label = month.abb)
+month_labels<-data.frame(month_num=1:12,label=month.abb)
 
-temp_lim <- c(-1.0, 1.6)
-label_r  <- 1.85
+temp_lim<-c(-1.0,1.6)
+label_r<-1.85
 
 # radial spokes
-spokes_df <- data.frame(
-  month_num = rep(1:12, each = 2),
-  temp      = rep(c(temp_lim[1], label_r - 0.05), 12),
-  grp       = rep(1:12, each = 2)
-)
+spokes_df<-data.frame(month_num=rep(1:12,each=2),
+                      temp=rep(c(temp_lim[1],label_r-0.05),12),
+                      grp=rep(1:12,each=2))
 ```
 
 ### Frame loop
@@ -301,66 +280,50 @@ For each year, two data subsets are drawn:
 The `yr_idx` column (year index / total years) maps each past year to a position in the 0–1 colour range, ensuring consistent colouring across all frames.
 
 ```{r spiral_loop, fig.width=6, fig.height=6}
-frames_dir  <- file.path(tempdir(), "spiral_frames")
-dir.create(frames_dir, showWarnings = FALSE, recursive = TRUE)
-frame_paths <- c()
+frames_dir<-file.path(tempdir(),"spiral_frames")
+dir.create(frames_dir,showWarnings=FALSE,recursive=TRUE)
+frame_paths<-c()
 
-for (i in seq_along(years)) {
-  yr           <- years[i]
-  years_so_far <- years[seq_len(i)]
+for(i in seq_along(years)) {
+  yr<-years[i]
+  years_so_far<-years[seq_len(i)]
 
-  past <- closed |>
-    filter(Year %in% years_so_far, Year != yr) |>
-    mutate(yr_idx = match(Year, years) / n_years)
+  past<-closed[closed$Year%in%years_so_far&closed$Year!=yr,]
+  past$yr_idx<-match(past$Year,years)/n_years
 
-  curr <- closed |> filter(Year == yr)
+  curr<-closed[closed$Year==yr,]
 
-  p <- ggplot() +
-    geom_path(data = spokes_df,
-              aes(x = month_num, y = temp, group = grp),
-              color = "gray25", linewidth = 0.25) +
-    geom_path(data = circle_df,
-              aes(x = month_num, y = r, group = r),
-              color = "gray30", linewidth = 0.35, linetype = "dashed") +
-    annotate("text", x = 0.5, y = c(0, 1.5, 2.0) + 0.04,
-             label = c("0°C", "1.5°C", "2°C"),
-             color = "gray50", size = 2.8, hjust = 1) +
-    geom_path(data = past,
-              aes(x = month_num, y = temp, group = Year, color = yr_idx),
-              linewidth = 0.4, alpha = 0.7) +
-    scale_color_viridis_c(option = "B", limits = c(0, 1), guide = "none") +
-    geom_path(data = curr,
-              aes(x = month_num, y = temp),
-              color = "white", linewidth = 1.6, alpha = 0.95) +
-    geom_text(data = month_labels,
-              aes(x = month_num, y = label_r, label = label),
-              inherit.aes = FALSE, color = "gray70", size = 3.5, fontface = "bold") +
-    coord_polar(theta = "x", start = -pi / 6, clip = "off") +
-    scale_x_continuous(limits = c(1, 13), breaks = 1:12, labels = NULL) +
-    scale_y_continuous(limits = c(temp_lim[1], label_r + 0.1)) +
-    labs(title   = as.character(yr),
-         caption = "NASA GISS Surface Temperature Analysis v4  |  Anomaly vs 1951-1980 baseline") +
-    theme_void(base_size = 12) +
-    theme(
-      plot.background  = element_rect(fill = "#050510", color = NA),
-      panel.background = element_rect(fill = "#050510", color = NA),
-      plot.title   = element_text(color = "white", face = "bold", size = 38,
-                                  hjust = 0.5, margin = margin(16, 0, 0, 0)),
-      plot.caption = element_text(color = "gray40", size = 7.5, hjust = 0.5,
-                                  margin = margin(0, 0, 12, 0)),
-      plot.margin  = margin(10, 10, 10, 10)
-    )
+  p<-ggplot()+
+    geom_path(data=spokes_df,aes(x=month_num,y=temp,group=grp),color="gray25",linewidth=0.25)+
+    geom_path(data=circle_df,aes(x=month_num,y=r,group=r),color="gray30",linewidth=0.35,
+              linetype="dashed")+
+    annotate("text",x=0.5,y=c(0,1.5,2.0)+0.04,label=c("0°C","1.5°C","2°C"),color="gray50",size=2.8,
+             hjust=1)+
+    geom_path(data=past,aes(x=month_num,y=temp,group=Year,color=yr_idx),linewidth=0.4,alpha=0.7)+
+    scale_color_viridis_c(option="B",limits=c(0,1),guide="none")+
+    geom_path(data=curr,aes(x=month_num,y=temp),color="white",linewidth=1.6,alpha=0.95)+
+    geom_text(data=month_labels,aes(x=month_num,y=label_r,label=label),inherit.aes=FALSE,
+              color="gray70",size=3.5,fontface="bold")+
+    coord_polar(theta="x",start=-pi/6,clip="off")+
+    scale_x_continuous(limits=c(1,13),breaks=1:12,labels=NULL)+
+    scale_y_continuous(limits=c(temp_lim[1],label_r+0.1))+
+    labs(title=as.character(yr),
+         caption="NASA GISS Surface Temperature Analysis v4  |  Anomaly vs 1951-1980 baseline")+
+    theme_void(base_size=12)+
+    theme(plot.background=element_rect(fill="#050510",color=NA),
+          panel.background=element_rect(fill="#050510",color=NA),
+          plot.title=element_text(color="white",face="bold",size=38,hjust=0.5,
+                                  margin=margin(16,0,0,0)),
+          plot.caption=element_text(color="gray40",size=7.5,hjust=0.5,margin=margin(0,0,12,0)),
+          plot.margin=margin(10,10,10,10))
 
-  path <- file.path(frames_dir, sprintf("frame_%04d.png", i))
-  ggsave(path, p, width = 1800/150, height = 1900/150, dpi = 150, bg = "#050510")
-  frame_paths <- c(frame_paths, path)
-  message("frame ", i, "/", n_years, "  (", yr, ")")
+  path<-file.path(frames_dir,sprintf("frame_%04d.png",i))
+  ggsave(path,p,width=1800/150,height=1900/150,dpi=150,bg="#050510")
+  frame_paths<-c(frame_paths,path)
+  message("frame ",i,"/",n_years,"  (",yr,")")
 }
 
-gifski::gifski(frame_paths,
-               gif_file = "climate_spiral.gif",
-               width = 800, height = 800,
-               delay = 0.1)
+gifski::gifski(frame_paths,gif_file="climate_spiral.gif",width=800,height=800,delay=0.1)
 ```
 
 ```{r spiral_show, echo=FALSE, fig.width=6, fig.height=6}

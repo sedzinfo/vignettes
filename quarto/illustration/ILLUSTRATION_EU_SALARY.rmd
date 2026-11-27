@@ -5,8 +5,10 @@ author: ""
 ---
 
 ```{r setup, include=FALSE}
-directory<-if (rstudioapi::isAvailable()) paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/") else ""
-source(paste0(directory, "R/code_options.R"))
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
 ```
 
 ## What is this?
@@ -18,17 +20,14 @@ Eurostat publishes yearly **average full-time adjusted salaries** (`nama_10_fte`
 ## Packages
 
 ```{r packages}
-# install.packages(c("dplyr", "tidyr", "countrycode", "plotly",
-#                     "eurostat", "gganimate", "gifski", "scales", "ragg"))
+# install.packages(c("countrycode", "plotly", "eurostat", "gganimate", "gifski", "scales", "ragg"))
 
-library(dplyr)
-library(tidyr)
-library(countrycode)  # geo codes -> country names / ISO codes
-library(plotly)       # interactive charts
-library(eurostat)     # Eurostat data API
-library(gganimate)    # animation
-library(gifski)       # GIF renderer
-library(scales)       # axis formatting
+library(countrycode) # geo codes -> country names / ISO codes
+library(plotly) # interactive charts
+library(eurostat) # Eurostat data API
+library(gganimate) # animation
+library(gifski) # GIF renderer
+library(scales) # axis formatting
 ```
 
 ---
@@ -38,26 +37,26 @@ library(scales)       # axis formatting
 `get_eurostat()` downloads the raw dataset table by its Eurostat code. We keep only country-level rows (dropping the `EU27_2020` and `EA20` aggregates), derive a plain-language country name and ISO code with `countrycode`, and rank countries by salary within each year.
 
 ```{r data}
-df_eusalary <- get_eurostat("nama_10_fte", filters = list(unit = "EUR"))
-df_eusalary <- df_eusalary[!df_eusalary$geo %in% c("EU27_2020", "EA20"), ]
+df_eusalary<-get_eurostat("nama_10_fte",filters=list(unit="EUR"))
+df_eusalary<-df_eusalary[!df_eusalary$geo%in%c("EU27_2020","EA20"),]
 
-df_eusalary$year    <- lubridate::year(df_eusalary$time)
-df_eusalary$country <- countrycode(df_eusalary$geo, origin = "eurostat", destination = "country.name")
-df_eusalary$iso     <- countrycode(df_eusalary$geo, origin = "eurostat", destination = "iso2c")
+df_eusalary$year<-as.numeric(format(df_eusalary$time,"%Y"))
+df_eusalary$country<-countrycode(df_eusalary$geo,origin="eurostat",destination="country.name")
+df_eusalary$iso<-countrycode(df_eusalary$geo,origin="eurostat",destination="iso2c")
 
-df_eusalary$rank  <- NA
-df_eusalary$color <- NA
-for (i in unique(df_eusalary$year)) {
-  df_eusalary[df_eusalary$year %in% i, "rank"] <-
-    rank(-df_eusalary[df_eusalary$year %in% i, "values"], ties.method = "min")
+df_eusalary$rank<-NA
+df_eusalary$color<-NA
+for(i in unique(df_eusalary$year)) {
+  in_year<-df_eusalary$year%in%i
+  df_eusalary[in_year,"rank"]<-rank(-df_eusalary[in_year,"values"],ties.method="min")
 }
 
-df_eusalary[df_eusalary$country %in% "Greece", "color"]  <- "#E74C3C"
-df_eusalary[!df_eusalary$country %in% "Greece", "color"] <- "#B3B3B3"
+df_eusalary[df_eusalary$country%in%"Greece","color"]<-"#E74C3C"
+df_eusalary[!df_eusalary$country%in%"Greece","color"]<-"#B3B3B3"
 
-title <- "Average full time adjusted salary [nama_10_fte]"
+title<-"Average full time adjusted salary [nama_10_fte]"
 
-head(df_eusalary[, c("country", "year", "values", "rank")], 12)
+head(df_eusalary[,c("country","year","values","rank")],12)
 ```
 
 Each row is one country in one year, with:
@@ -79,31 +78,17 @@ Each row is one country in one year, with:
 A line per country lets you trace how each economy moved over time, and hovering reveals the exact value.
 
 ```{r timeseries}
-colors <- c("#e6194b", "#3cb44b", "#ffe119", "#0082c8", "#f58231", "#911eb4", "#46f0f0",
-            "#f032e6", "#d2f53c", "#fabebe", "#008080", "#e6beff", "#aa6e28", "#fffac8",
-            "#800000", "#aaffc3", "#808000", "#ffd8b1", "#000080", "#808080", "#ffffff",
-            "#000000")
+colors<-c("#e6194b","#3cb44b","#ffe119","#0082c8","#f58231","#911eb4","#46f0f0","#f032e6","#d2f53c",
+          "#fabebe","#008080","#e6beff","#aa6e28","#fffac8","#800000","#aaffc3","#808000","#ffd8b1",
+          "#000080","#808080","#ffffff","#000000")
 
-plot_ly(df_eusalary[df_eusalary$values > 0, ],
-        x = ~year,
-        y = ~values,
-        color = ~country,
-        mode = "lines+markers",
-        type = "scatter",
-        text = ~paste("Year:", year,
-                      "<br>Value:", values,
-                      "<br>Country Name:", country),
-        hoverinfo = "text",
-        colors = colors,
-        showlegend = TRUE,
-        marker = list(size = 8)) %>%
-  plotly::layout(title = "",
-                 autosize = TRUE,
-                 margin = list(l = 50, r = 50, b = 50, t = 50, pad = 0),
-                 legend = list(orientation = "vertical", xanchor = "right", x = 30, y = 1),
-                 xaxis = list(title = "Year", tickangle = -90),
-                 yaxis = list(title = ""),
-                 font = list(size = 20, color = "#404040", weight = "bold"))
+plot_ly(df_eusalary[df_eusalary$values>0,],x=~year,y=~values,color=~country,mode="lines+markers",
+        type="scatter",text=~paste("Year:",year,"<br>Value:",values,"<br>Country Name:",country),
+        hoverinfo="text",colors=colors,showlegend=TRUE,marker=list(size=8)) %>%
+  plotly::layout(title="",autosize=TRUE,margin=list(l=50,r=50,b=50,t=50,pad=0),
+                 legend=list(orientation="vertical",xanchor="right",x=30,y=1),
+                 xaxis=list(title="Year",tickangle=-90),yaxis=list(title=""),
+                 font=list(size=20,color="#404040",weight="bold"))
 ```
 
 ### Step 2 — animated bar chart
@@ -111,32 +96,12 @@ plot_ly(df_eusalary[df_eusalary$values > 0, ],
 Sliding a `frame` argument to `plot_ly` turns a static bar chart into a play/pause animation stepping through each year.
 
 ```{r animated_bar}
-plot_ly(df_eusalary,
-        x = ~country,
-        y = ~values,
-        frame = ~year,
-        ids = ~country,
-        type = "bar",
-        text = ~paste("Year:", year,
-                      "<br>Value:", values,
-                      "<br>Country:", country),
-        hoverinfo = "text",
-        colors = colors,
-        showlegend = FALSE) %>%
-  layout(
-    title  = title,
-    xaxis  = list(title = "", tickangle = -90),
-    yaxis  = list(title = "Euro"),
-    font   = list(size = 20, color = "#404040", weight = "bold"),
-    margin = list(l = 50, r = 50, b = 200, t = 100)
-  ) %>%
-  animation_opts(
-    frame = 500,
-    transition = 500,
-    easing = "linear",
-    redraw = FALSE,
-    mode = "immediate"
-  )
+plot_ly(df_eusalary,x=~country,y=~values,frame=~year,ids=~country,type="bar",
+        text=~paste("Year:",year,"<br>Value:",values,"<br>Country:",country),hoverinfo="text",
+        colors=colors,showlegend=FALSE) %>%
+  layout(title=title,xaxis=list(title="",tickangle=-90),yaxis=list(title="Euro"),
+         font=list(size=20,color="#404040",weight="bold"),margin=list(l=50,r=50,b=200,t=100)) %>%
+  animation_opts(frame=500,transition=500,easing="linear",redraw=FALSE,mode="immediate")
 ```
 
 ### Step 3 — bar chart race, ranked
@@ -145,40 +110,15 @@ Instead of plotting by country name, we plot by `rank`, so the bars physically r
 
 ```{r bar_race}
 plot_ly() %>%
-  add_bars(
-    data         = df_eusalary[df_eusalary$color == "#B3B3B3", ],
-    x            = ~rank,
-    y            = ~values,
-    frame        = ~year,
-    ids          = ~rank,
-    marker       = list(color = "#B3B3B3"),
-    text         = ~country,
-    hoverinfo    = "text",
-    textposition = "outside",
-    textangle    = 90,
-    showlegend   = FALSE
-  ) %>%
-  add_bars(
-    data         = df_eusalary[df_eusalary$color %in% "#E74C3C", ],
-    x            = ~rank,
-    y            = ~values,
-    frame        = ~year,
-    ids          = ~rank,
-    marker       = list(color = "#E74C3C"),
-    text         = ~country,
-    hoverinfo    = "text",
-    textposition = "outside",
-    textangle    = 90,
-    showlegend   = FALSE
-  ) %>%
-  layout(
-    xaxis  = list(title = "Rank", tickmode = "array"),
-    yaxis  = list(title = "Euro"),
-    title  = title,
-    margin = list(l = 50, r = 50, b = 200, t = 100),
-    font   = list(size = 20, color = "#404040", weight = "bold")
-  ) %>%
-  animation_opts(frame = 1000, transition = 0, easing = "linear", redraw = TRUE)
+  add_bars(data=df_eusalary[df_eusalary$color=="#B3B3B3",],x=~rank,y=~values,frame=~year,ids=~rank,
+           marker=list(color="#B3B3B3"),text=~country,hoverinfo="text",textposition="outside",
+           textangle=90,showlegend=FALSE) %>%
+  add_bars(data=df_eusalary[df_eusalary$color%in%"#E74C3C",],x=~rank,y=~values,frame=~year,
+           ids=~rank,marker=list(color="#E74C3C"),text=~country,hoverinfo="text",
+           textposition="outside",textangle=90,showlegend=FALSE) %>%
+  layout(xaxis=list(title="Rank",tickmode="array"),yaxis=list(title="Euro"),title=title,
+         margin=list(l=50,r=50,b=200,t=100),font=list(size=20,color="#404040",weight="bold")) %>%
+  animation_opts(frame=1000,transition=0,easing="linear",redraw=TRUE)
 ```
 
 ### Step 4 — dark themed GIF with `gganimate`
@@ -186,66 +126,40 @@ plot_ly() %>%
 The interactive versions above are great for exploring in a browser, but a rendered GIF is easier to share. `ggplot2` + `gganimate` recreates the same ranked race as a horizontal bar chart with a dark background, country labels, and a large year watermark.
 
 ```{r gif, eval=TRUE}
-p <- ggplot(df_eusalary, aes(x = rank, y = values, fill = color, group = country)) +
-  geom_col(width = 0.85, show.legend = FALSE) +
-  geom_text(aes(y = 0, label = country, color = color),
-            hjust = 1, nudge_y = -400,
-            size = 3.8, fontface = "bold", show.legend = FALSE) +
-  geom_text(aes(label = comma(values, accuracy = 1)),
-            hjust = 0, nudge_y = 400,
-            color = "gray80", size = 3.2) +
-  scale_fill_identity() +
-  scale_color_identity() +
-  scale_x_reverse(breaks = NULL) +
-  scale_y_continuous(
-    labels = comma,
-    breaks = seq(0, 100000, by = 20000),
-    limits = c(-8000, NA),
-    expand = expansion(mult = c(0, 0.08))
-  ) +
-  geom_text(
-    data = df_eusalary %>% dplyr::distinct(year),
-    aes(x = 23, y = 85000, label = year),
-    inherit.aes = FALSE,
-    hjust = 1, vjust = 1,
-    size = 20, color = "white", alpha = 0.15,
-    fontface = "bold"
-  ) +
-  coord_flip(clip = "off") +
-  labs(title   = title,
-       x       = NULL,
-       y       = "Euros",
-       caption = "Source: Eurostat  |  Greece highlighted in red") +
-  theme_minimal(base_size = 10) +
-  theme(
-    plot.background    = element_rect(fill = "#0F1923", color = NA),
-    panel.background   = element_rect(fill = "#0F1923", color = NA),
-    panel.grid.major.x = element_line(color = "#1E2D3D", linewidth = 0.4),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor   = element_blank(),
-    panel.grid.minor.x = element_line(color = "#1E2D3D", linewidth = 0.4),
-    axis.text.x   = element_text(color = "#90A4AE", size = 10),
-    axis.text.y   = element_blank(),
-    plot.title    = element_text(color = "white", face = "bold", size = 10,
-                                  margin = margin(12, 0, 2, 0)),
-    plot.subtitle = element_text(color = "gray80", face = "bold", size = 10,
-                                  hjust = 0.98,
-                                  margin = margin(0, 0, 6, 0)),
-    plot.caption  = element_text(color = "#546E7A", size = 8, hjust = 1,
-                                  margin = margin(8, 0, 8, 0)),
-    plot.margin   = margin(10, 30, 10, 120)) +
-  transition_states(year, transition_length = 0, state_length = 5) +
+p<-ggplot(df_eusalary,aes(x=rank,y=values,fill=color,group=country))+
+  geom_col(width=0.85,show.legend=FALSE)+
+  geom_text(aes(y=0,label=country,color=color),hjust=1,nudge_y=-400,size=3.8,fontface="bold",
+            show.legend=FALSE)+
+  geom_text(aes(label=comma(values,accuracy=1)),hjust=0,nudge_y=400,color="gray80",size=3.2)+
+  scale_fill_identity()+
+  scale_color_identity()+
+  scale_x_reverse(breaks=NULL)+
+  scale_y_continuous(labels=comma,breaks=seq(0,100000,by=20000),limits=c(-8000,NA),
+                     expand=expansion(mult=c(0,0.08)))+
+  geom_text(data=unique(df_eusalary["year"]),aes(x=23,y=85000,label=year),inherit.aes=FALSE,hjust=1,
+            vjust=1,size=20,color="white",alpha=0.15,fontface="bold")+
+  coord_flip(clip="off")+
+  labs(title=title,x=NULL,y="Euros",caption="Source: Eurostat  |  Greece highlighted in red")+
+  theme_minimal(base_size=10)+
+  theme(plot.background=element_rect(fill="#0F1923",color=NA),
+        panel.background=element_rect(fill="#0F1923",color=NA),
+        panel.grid.major.x=element_line(color="#1E2D3D",linewidth=0.4),
+        panel.grid.major.y=element_blank(),
+        panel.grid.minor=element_blank(),
+        panel.grid.minor.x=element_line(color="#1E2D3D",linewidth=0.4),
+        axis.text.x=element_text(color="#90A4AE",size=10),
+        axis.text.y=element_blank(),
+        plot.title=element_text(color="white",face="bold",size=10,margin=margin(12,0,2,0)),
+        plot.subtitle=element_text(color="gray80",face="bold",size=10,hjust=0.98,
+                                   margin=margin(0,0,6,0)),
+        plot.caption=element_text(color="#546E7A",size=8,hjust=1,margin=margin(8,0,8,0)),
+        plot.margin=margin(10,30,10,120))+
+  transition_states(year,transition_length=0,state_length=5)+
   ease_aes("cubic-in-out")
 
-animate(p,
-        nframes  = 100,
-        fps      = 10,
-        duration = 20,
-        width    = 900,
-        height   = 800,
-        units    = "px",
-        res      = 100,   # set explicitly: when knitting, gganimate otherwise uses the chunk dpi (300 x retina 2)
-        renderer = gifski_renderer(paste0(directory,"eu_salary_race.gif")))
+# res is set explicitly: when knitting, gganimate otherwise uses the chunk dpi (300 x retina 2)
+animate(p,nframes=100,fps=10,duration=20,width=900,height=800,units="px",res=100,
+        renderer=gifski_renderer(paste0(directory,"eu_salary_race.gif")))
 ```
 
 > **Note:** rendering the GIF takes a couple of minutes and requires an internet connection to reach the Eurostat API. The GIF is written to the working directory (`getwd()`).
@@ -265,22 +179,22 @@ animate(p,
 ### Highlight a different country
 
 ```{r custom_highlight, eval=FALSE}
-df_eusalary[df_eusalary$country %in% "Portugal", "color"]  <- "#E74C3C"
-df_eusalary[!df_eusalary$country %in% "Portugal", "color"] <- "#B3B3B3"
+df_eusalary[df_eusalary$country%in%"Portugal","color"]<-"#E74C3C"
+df_eusalary[!df_eusalary$country%in%"Portugal","color"]<-"#B3B3B3"
 ```
 
 ### Change the animation speed
 
 ```{r custom_speed, eval=FALSE}
-animate(p, nframes = 50, fps = 5, duration = 10, ...)   # faster / shorter
-animate(p, nframes = 200, fps = 20, duration = 30, ...) # smoother / longer
+animate(p,nframes=50,fps=5,duration=10,...) # faster / shorter
+animate(p,nframes=200,fps=20,duration=30,...) # smoother / longer
 ```
 
 ### Save as MP4 instead of GIF
 
 ```{r custom_mp4, eval=FALSE}
 # install.packages("av")
-animate(p, renderer = av_renderer("eu_salary_race.mp4"), fps = 24, width = 1280, height = 720)
+animate(p,renderer=av_renderer("eu_salary_race.mp4"),fps=24,width=1280,height=720)
 ```
 
 ---

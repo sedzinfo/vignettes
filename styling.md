@@ -127,6 +127,13 @@ Done, checked and copied here:
 - [x] WORLD_WILDFIRES: the trend chart (eight panels, one y scale for all, as before) and the season calendar are plotly; the calendar's title is shorter and its subtitle is now the legend's title; the panels show the change with a minus sign (−) where the ggplot font needed a dash (–)
 
 - [x] FERTILITY, EURO_CRISIS, GREECE_SINCE_2000: dplyr and tidyr gone; output identical (these read local data files); the reader's "another country" snippet of GREECE_SINCE_2000 is base R too
+- [x] GREEK_HOUSING, EU_SALARY: dplyr and tidyr gone, the GIFs stay ggplot; output identical, GIFs frame by frame. `eu_salary_race.gif` (tracked, linked directly) has two more years of Eurostat data than the committed one
+- [x] GREEK_WAGES_PRICES: charts and GIFs identical; the first table now prints as a data frame (dplyr's `group_by()` had made it a tibble), with the same values
+- [x] CLIMATE_HIGHCHARTER: highcharter kept; dplyr, tidyr, reshape, stringr and lubridate replaced by base R; output identical
+- [x] ILLUSIONS: only the setup chunk; the drawings are quoted code ("not written by me") and stay as they are
+- [x] SEA_ICE: the time series is plotly; the two maps stay ggplot for now (see the question below)
+- [x] SEA_ICE_TEMP: base R instead of dplyr and tidyr, unused packages out (dplyr, tidyr, lubridate, reshape, rnoaa); the two GIFs stay ggplot. The spiral's data were checked object by object, and both GIFs frame by frame. A full render takes about 3 minutes here, not the 1–2 hours the page mentions
+- [ ] AIRPORT_WEATHER: data handling in base R (plyr, dplyr and lubridate gone), checked in the worktree but not rendered or copied: the page cannot run at all at the moment, main's version neither (see the questions below)
 
 To do, in this order:
 
@@ -134,11 +141,9 @@ To do, in this order:
 - [ ] WORLD_TORNADOES
 - [ ] ATHENS_HEAT
 - [ ] GREEK_WILDFIRES
-- [ ] GREEK_HOUSING
-- [ ] GREEK_WAGES_PRICES
-- [ ] EU_SALARY
-- [ ] AIRPORT_WEATHER
-- [ ] SEA_ICE
-- [ ] SEA_ICE_TEMP
-- [ ] CLIMATE_HIGHCHARTER (keeps highcharter)
-- [ ] ILLUSIONS (already close to the style)
+
+Open questions:
+
+- **SEA_ICE maps:** sf polygons in a polar projection, in twelve panels. As plotly they would add megabytes of coordinates to the page, so they are still ggplot. Keep them as an exception?
+- **`plot_multiplot()` in `R/code_rwf.R`:** it calls `viewport()` and `grid.layout()` without `grid::`. In the rwf package that works, because the package imports them from grid; in the copy that the pages source, nothing does, so AIRPORT_WEATHER's "All four together" chart stops the page. It has been so since `R/code_rwf.R` was refreshed in early October (the page last ran on 3 October). Fix it in rwf (`grid::viewport()`, `grid::grid.layout()`) and refresh the copy, or attach grid on the page?
+- **AIRPORT_WEATHER charts:** the daily and monthly ribbons change colour along the ribbon, which plotly cannot draw, and the page's text teaches these ggplot charts. Keep ggplot here, or redraw them in plotly (plain ribbons with a coloured line of points, plotly heatmaps and panels) and rewrite the text around them?
