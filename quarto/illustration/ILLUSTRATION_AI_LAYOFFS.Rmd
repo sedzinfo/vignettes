@@ -174,8 +174,8 @@ last<-ai_2026[nrow(ai_2026),]
 
 ```{r ai_years}
 plot_ly(challenger,x=~factor(period,levels=period),y=~ai,type="bar",marker=list(color=blue),
-        text=~paste0(thousands(ai),"<br>",percent(share,1)," of all cuts"),
-        textposition="outside",cliponaxis=FALSE,textfont=list(color=dark_gray),
+        text=~paste0(thousands(ai),"<br>",percent(share,1)," of all cuts"),textposition="outside",
+        cliponaxis=FALSE,textfont=list(color=dark_gray),
         hovertemplate="%{x}: %{y:,} job cuts<extra></extra>") %>%
   chart("Job cuts for which US employers cited AI","Challenger, Gray & Christmas, job cuts reports",
         y_axis=list(range=c(0,max(challenger$ai)*1.25),tickformat=","),bargap=0.45)
@@ -215,10 +215,10 @@ plot_ly() %>%
             hovertemplate="%{x|%B %Y}: %{y:.1f}% of employment<extra>Hires</extra>") %>%
   add_lines(data=layoffs_rate,x=~date,y=~value,name="Layoffs and discharges",
             line=list(color=red,width=2),
-            hovertemplate=paste0("%{x|%B %Y}: %{y:.1f}% of ","employment<extra>Layoffs and ",
+            hovertemplate=paste0("%{x|%B %Y}: %{y:.1f}% of employment<extra>Layoffs and ",
                                  "discharges</extra>")) %>%
   chart("US hires and layoffs in a month, % of employment",
-        paste0("US Bureau of Labor Statistics, JOLTS, via ","FRED (JTSHIR, JTSLDR)"),
+        "US Bureau of Labor Statistics, JOLTS, via FRED (JTSHIR, JTSLDR)",
         y_axis=list(ticksuffix="%",rangemode="tozero"),legend=legend_top,
         shapes=list(list(type="line",x0=chatgpt,x1=chatgpt,y0=0,y1=1,yref="paper",
                          line=list(color=dark_gray,width=1,dash="dot"))),
@@ -231,17 +231,15 @@ plot_ly() %>%
 ```{r ai_share}
 # the AI cuts per month against the layoffs and discharges per month, over the months of each period
 # that JOLTS has published
-challenger$layoffs<-sapply(seq_len(nrow(challenger)),
-                           function(i) {
+challenger$layoffs<-sapply(seq_len(nrow(challenger)),function(i) {
   1000*mean(layoffs$value[layoffs$date>=challenger$from[i]&layoffs$date<=challenger$to[i]])
 })
 challenger$of_layoffs<-100*(challenger$ai/challenger$months)/challenger$layoffs
-plot_ly(challenger,x=~factor(period,levels=period),y=~of_layoffs,type="bar",
-        marker=list(color=blue),text=~percent(of_layoffs,2),textposition="outside",
-        cliponaxis=FALSE,textfont=list(color=dark_gray),
-        hovertemplate="%{x}: %{y:.2f}%<extra></extra>") %>%
-  chart(paste0("Job cuts citing AI, % of all layoffs and ","discharges in the US"),
-        paste0("Challenger, Gray & Christmas; BLS, JOLTS, ","via FRED (JTSLDL)"),
+plot_ly(challenger,x=~factor(period,levels=period),y=~of_layoffs,type="bar",marker=list(color=blue),
+        text=~percent(of_layoffs,2),textposition="outside",cliponaxis=FALSE,
+        textfont=list(color=dark_gray),hovertemplate="%{x}: %{y:.2f}%<extra></extra>") %>%
+  chart("Job cuts citing AI, % of all layoffs and discharges in the US",
+        "Challenger, Gray & Christmas; BLS, JOLTS, via FRED (JTSLDL)",
         y_axis=list(ticksuffix="%",range=c(0,max(challenger$of_layoffs)*1.25)),bargap=0.45)
 ```
 
@@ -260,7 +258,7 @@ answers(roles_back,"Roles cut and then filled again, % of HR professionals",
 **And fast.** Of the organisations that filled the roles again, `r percent(time_back$share[1]+time_back$share[2],1)` did so within six months of the cuts, `r percent(time_back$share[1],1)` within three.
 
 ```{r time_back, fig.height = 3.8}
-answers(time_back,paste0("Time until the roles were filled again, % of ","HR professionals"),
+answers(time_back,"Time until the roles were filled again, % of HR professionals",
         "Careerminds, survey of 600 HR professionals, February 2026")
 ```
 
@@ -294,9 +292,8 @@ With these assumptions the cut costs `r one(one_off)` months of pay once, and sa
 
 ```{r model_chart}
 plot_ly(saving,x=~months,y=~net,type="scatter",mode="lines",line=list(color=blue,width=2),
-        hovertemplate=paste0("Filled again after %{x} months: %{y:.1f} ",
-                             "months of pay<extra></extra>")) %>%
-  chart(paste0("What a job cut saves, by the months until ","the job is filled again"),
+        hovertemplate="Filled again after %{x} months: %{y:.1f} months of pay<extra></extra>") %>%
+  chart("What a job cut saves, by the months until the job is filled again",
         "the assumptions of the model above",y_title="Months of pay saved (net)",
         x_axis=list(title="Months until the job is filled again",dtick=3),
         y_axis=list(zeroline=TRUE,zerolinecolor=dark_gray),
@@ -305,12 +302,12 @@ plot_ly(saving,x=~months,y=~net,type="scatter",mode="lines",line=list(color=blue
         annotations=list(list(x=3,y=1,yref="paper",
                               text=paste0("Filled again within 6 months:<br>",
                                           percent(time_back$share[1]+time_back$share[2]),
-                                          " of the roles"),yanchor="top",showarrow=FALSE,
-                              font=list(size=11,color=dark_gray)),
+                                          " of the roles"),
+                              yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray)),
                          list(x=break_even,y=0,text=paste("Break-even:",one(break_even),"months"),
                               ax=70,ay=35,xanchor="left",arrowcolor=dark_gray,
-                              font=list(size=11,color=dark_gray))),margin=list(t=70,b=110),
-        note_y=-0.3)
+                              font=list(size=11,color=dark_gray))),
+        margin=list(t=70,b=110),note_y=-0.3)
 ```
 
 The model leaves out the costs that are hardest to count, and the next section shows that they can be the larger part: service that gets worse, overtime for the people who stayed, and knowledge that left with the people who were let go. In the Careerminds survey, `r percent(careerminds$lost_skills,1)` said that their organisation lost critical skills and expertise with the layoffs. It also leaves out the cheaper ways of filling a job again, with lower pay or in another country, which make the cut save more.
@@ -320,41 +317,35 @@ The model leaves out the costs that are hardest to count, and the next section s
 ```{r cases}
 cases<-data.frame(Company=c("Klarna (payments, Sweden)","Commonwealth Bank of Australia",
                             "Ford (cars, US)"),
-                  `What it did`=c(paste0("Stopped hiring anyone but engineers in ",
-                                         "December 2023. In February 2024 it said that ",
-                                         "its AI assistant was doing the work of 700 ",
-                                         "full-time customer service agents, most of ",
-                                         "whom worked for outside providers. Its staff ",
-                                         "fell from 5,441 in 2022 to 4,201 in 2023."),
-                                  paste0("In July 2025 it told the union that 45 ",
-                                         "customer service jobs were no longer needed, ",
-                                         "because a new AI voice bot had reduced the ","calls."),
-                                  paste0("Relied \"more and more on automated quality ",
-                                         "systems\" to find faults in its cars.")),
-                  `What happened`=c(paste0("In May 2025 its CEO said that cost had been ",
-                                           "\"a too predominant evaluation factor\" and ",
-                                           "the result was \"lower quality\". Klarna ",
-                                           "started hiring people for customer service ",
-                                           "again, and now says that human service will ",
-                                           "be \"a VIP thing\", while AI answers the ",
-                                           "simple questions."),
-                                    paste0("The union said that the calls had in fact ",
-                                           "increased, and that the staff were doing ",
-                                           "overtime and team leaders were answering ",
-                                           "phones. It took the case to the Fair Work ",
-                                           "Commission. In August 2025 the bank said ",
-                                           "that it had been wrong, apologised, and kept ",
-                                           "the jobs."),
-                                    paste0("In June 2026 it said that it had hired 350 ",
-                                           "veteran engineers, some of them former Ford ",
-                                           "employees and others from its suppliers, to ",
-                                           "find faults before parts reach the plant, to ",
-                                           "train younger engineers and to reprogram its ",
-                                           "AI tools. Ford keeps using AI.")),
+                  `What it did`=c(paste0("Stopped hiring anyone but engineers in December 2023. ",
+                                         "In February 2024 it said that its AI assistant was ",
+                                         "doing the work of 700 full-time customer service ",
+                                         "agents, most of whom worked for outside providers. ",
+                                         "Its staff fell from 5,441 in 2022 to 4,201 in 2023."),
+                                  paste0("In July 2025 it told the union that 45 customer service ",
+                                         "jobs were no longer needed, because a new AI voice bot ",
+                                         "had reduced the calls."),
+                                  paste0("Relied \"more and more on automated quality systems\" ",
+                                         "to find faults in its cars.")),
+                  `What happened`=c(paste0("In May 2025 its CEO said that cost had been \"a too ",
+                                           "predominant evaluation factor\" and the result was ",
+                                           "\"lower quality\". Klarna started hiring people for ",
+                                           "customer service again, and now says that human ",
+                                           "service will be \"a VIP thing\", while AI answers ",
+                                           "the simple questions."),
+                                    paste0("The union said that the calls had in fact increased, ",
+                                           "and that the staff were doing overtime and team ",
+                                           "leaders were answering phones. It took the case to ",
+                                           "the Fair Work Commission. In August 2025 the bank ",
+                                           "said that it had been wrong, apologised, ",
+                                           "and kept the jobs."),
+                                    paste0("In June 2026 it said that it had hired 350 veteran ",
+                                           "engineers, some of them former Ford employees and ",
+                                           "others from its suppliers, to find faults before ",
+                                           "parts reach the plant, to train younger engineers ",
+                                           "and to reprogram its AI tools. Ford keeps using AI.")),
                   check.names=FALSE)
-knitr::kable(cases,
-             caption=paste0("Companies that replaced people with AI and ",
-                            "then needed people again"))
+knitr::kable(cases,caption="Companies that replaced people with AI and then needed people again")
 ```
 
 The three cases are different from each other, and each is different from the headline "fired for AI, hired back":
@@ -372,22 +363,20 @@ surveys<-data.frame(Source=c("Orgvue","Careerminds","Gartner","Gartner","Forrest
                     Kind=c("Survey","Survey","Survey","Forecast","Forecast"),
                     `Who`=c("More than 1,000 business leaders","600 HR professionals",
                             "321 customer service and support leaders","Analysts","Analysts"),
-                    Finding=c(paste0("39% made people redundant because of AI, and ",
-                                     "55% of these say that they made the wrong ",
-                                     "decisions: about one in five of all."),
+                    Finding=c(paste0("39% made people redundant because of AI, ",
+                                     "and 55% of these say that they made the wrong decisions: ",
+                                     "about one in five of all."),
                               paste0("Only ",careerminds$repeat_unchanged,
-                                     paste0("% would make the same AI-driven layoffs ",
-                                            "again without changes.")),
-                              paste0("Only about 20% had reduced their number of ",
-                                     "customer service agents because of AI; most ",
-                                     "kept them stable."),
-                              paste0("By 2027, 50% of the companies that ",
-                                     "attributed a cut in headcount to AI will ",
-                                     "rehire staff to \"perform similar functions, ",
-                                     "but under different job titles\"."),
-                              paste0("\"Half of AI-attributed layoffs\" will be ",
-                                     "\"quietly reversed, with jobs returning ",
-                                     "offshore or at lower wages\".")),
+                                     "% would make the same AI-driven layoffs again ",
+                                     "without changes."),
+                              paste0("Only about 20% had reduced their number of customer service ",
+                                     "agents because of AI; most kept them stable."),
+                              paste0("By 2027, 50% of the companies that attributed a cut in ",
+                                     "headcount to AI will rehire staff to \"perform similar ",
+                                     "functions, but under different job titles\"."),
+                              paste0("\"Half of AI-attributed layoffs\" will be \"quietly ",
+                                     "reversed, with jobs returning offshore or ",
+                                     "at lower wages\".")),
                     check.names=FALSE)
 knitr::kable(surveys,caption="Surveys of employers and forecasts of analysts")
 ```

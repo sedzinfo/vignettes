@@ -14,7 +14,7 @@ directory <- if (rstudioapi::isAvailable()) {
 source(paste0(directory, "R/code_options.R"))
 # no knitr cache: the data are downloaded when the page is rendered, and the site keeps
 # what was rendered in _freeze/
-knitr::opts_chunk$set(cache = FALSE)
+knitr::opts_chunk$set(cache=FALSE)
 ```
 
 ## What is this?
@@ -46,9 +46,7 @@ The data come from three places, downloaded when the page is rendered:
 ## Packages
 
 ```{r packages}
-# install.packages(c("dplyr", "ggplot2", "plotly", "sf", "jsonlite"))
-library(dplyr)
-library(ggplot2)
+# install.packages(c("plotly", "sf", "jsonlite"))
 library(plotly)
 library(sf)
 library(jsonlite)
@@ -58,449 +56,370 @@ library(jsonlite)
 
 ```{r download}
 # only complete years: from 1 January of this year, the catalogue is incomplete
-last_year <- as.integer(format(Sys.Date(), "%Y")) - 1
+last_year<-as.integer(format(Sys.Date(),"%Y"))-1
 # the USGS catalogue as a table: the earthquakes between two dates, of at least a magnitude
 # (a query returns 20,000 earthquakes at most, so the magnitude 5 and above come in pieces)
-usgs <- function(from, to, magnitude) {
-  read.csv(paste0(
-    "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
-    "&starttime=", from, "-01-01&endtime=", to, "-01-01",
-    "&minmagnitude=", magnitude, "&orderby=time-asc&limit=20000"
-  ))
+usgs<-function(from,to,magnitude) {
+  result<-read.csv(paste0("https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
+                          "&starttime=",from,"-01-01&endtime=",to,"-01-01","&minmagnitude=",
+                          magnitude,"&orderby=time-asc&limit=20000"))
+  return(result)
 }
 # magnitude 6 and above, since 1900
-big <- usgs(1900, last_year + 1, 6)
+big<-usgs(1900,last_year+1,6)
 # magnitude 5 and above, since 1973, eight years at a time
-starts <- seq(1973, last_year, by = 8)
-ends <- c(starts[-1], last_year + 1)
-middle <- do.call(rbind, Map(function(a, b) usgs(a, b, 5), starts, ends))
+starts<-seq(1973,last_year,by=8)
+ends<-c(starts[-1],last_year+1)
+middle<-do.call(rbind,Map(function(a,b) usgs(a,b,5),starts,ends))
 # the destructive earthquakes of NCEI, with deaths, since 1900, 200 to a page
-noaa_url <- "https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/earthquakes?minYear=1900&minDeaths=1"
-first_page <- fromJSON(noaa_url)
-deadly <- do.call(rbind, lapply(seq_len(first_page$totalPages), function(i) {
-  fromJSON(paste0(noaa_url, "&page=", i))$items[, c(
-    "year", "locationName", "country", "eqMagnitude", "deaths", "deathsTotal", "latitude", "longitude"
-  )]
+noaa_url<-paste0("https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/earthquakes",
+                 "?minYear=1900&minDeaths=1")
+first_page<-fromJSON(noaa_url)
+deadly<-do.call(rbind,lapply(seq_len(first_page$totalPages),function(i) {
+  fromJSON(paste0(noaa_url,"&page=",i))$items[,c("year","locationName","country","eqMagnitude",
+                                                 "deaths","deathsTotal","latitude","longitude")]
 }))
 # the plate boundaries (Bird 2003), and the countries (Natural Earth, 1:50 million)
-plates <- st_read(
-  "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json",
-  quiet = TRUE
-)
-land <- st_read(
-  "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
-  quiet = TRUE
-)[, c("NAME_LONG", "ADM0_A3", "CONTINENT")]
+plates<-st_read(paste0("https://raw.githubusercontent.com/fraxen/tectonicplates/master/",
+                       "GeoJSON/PB2002_boundaries.json"),quiet=TRUE)
+land<-st_read(paste0("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/",
+                     "geojson/ne_50m_admin_0_countries.geojson"),quiet=TRUE)
+land<-land[,c("NAME_LONG","ADM0_A3","CONTINENT")]
 ```
 
 ```{r chart_style}
-red <- "#d62728"
-gray <- "#bdbdbd"
-dark_gray <- "#6b6b6b" # also the colour of the notes
+red<-"#d62728"
+gray<-"#bdbdbd"
+dark_gray<-"#6b6b6b" # also the colour of the notes
 # the three depths, in order, whose neighbours were checked for colour blindness
-depth_colors <- c(Shallow = "#d97706", Intermediate = "#be123c", Deep = "#5b3fb5")
+depth_colors<-c(Shallow="#d97706",Intermediate="#be123c",Deep="#5b3fb5")
 # one hue, from light to dark, for amounts: the map of the countries
-blues <- c("#eff3ff", "#c6dbef", "#9ecae1", "#6baed6", "#3182bd", "#08519c", "#08306b")
+blues<-c("#eff3ff","#c6dbef","#9ecae1","#6baed6","#3182bd","#08519c","#08306b")
 
 # the source of a plotly chart, as a note under it, and the common layout
-chart <- function(
-  p,
-  title,
-  source,
-  y_title = "",
-  y_axis = list(),
-  x_axis = list(),
-  annotations = list(),
-  margin = list(t = 70, b = 90),
-  note_y = -0.16,
-  ...
-) {
-  note <- list(
-    text = paste("Source:", source),
-    xref = "paper",
-    yref = "paper",
-    x = 0,
-    y = note_y,
-    xanchor = "left",
-    yanchor = "top",
-    showarrow = FALSE,
-    font = list(size = 11, color = dark_gray)
-  )
-  layout(
-    p,
-    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    yaxis = c(list(title = y_title), y_axis),
-    xaxis = c(list(title = ""), x_axis),
-    margin = margin,
-    annotations = c(annotations, list(note)),
-    ...
-  ) |>
-    config(displaylogo = FALSE)
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),margin=margin,
+                 annotations=c(annotations,list(note)),...) %>%
+    config(displaylogo=FALSE)
+  return(result)
 }
-legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom")
-# the look of the ggplot charts
-theme_page <- function(base_size = 14) {
-  theme_minimal(base_size = base_size) +
-    theme(
-      plot.background = element_rect(fill = "white", colour = NA),
-      plot.title = element_text(face = "bold"),
-      plot.title.position = "plot",
-      plot.caption = element_text(colour = "grey40", size = rel(0.7), hjust = 0),
-      plot.caption.position = "plot",
-      legend.position = "top",
-      legend.justification = "left"
-    )
-}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
 
 # numbers in the text
-number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
-percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
-one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
-two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
-and_list <- function(x) {
-  if (length(x) < 2) {
+number<-function(x) {
+  result<-format(round(x),big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+percent<-function(x,digits=0) {
+  result<-paste0(format(round(x,digits),nsmall=digits,trim=TRUE),"%")
+  return(result)
+}
+one<-function(x) {
+  result<-format(round(x,1),nsmall=1,trim=TRUE)
+  return(result)
+}
+two<-function(x) {
+  result<-format(round(x,2),nsmall=2,trim=TRUE)
+  return(result)
+}
+and_list<-function(x) {
+  if(length(x)<2) {
     return(paste(x))
   }
-  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+  result<-paste(paste(head(x,-1),collapse=", "),"and",tail(x,1))
+  return(result)
 }
 # a rank test of a trend over the years: the chance, in 100, of a pattern as strong as this one
 # without a trend
-chance <- function(x, years) {
-  p <- cor.test(years, x, method = "kendall", exact = FALSE)$p.value
-  if (p < 0.01) "less than 1" else as.character(round(100 * p))
+chance<-function(x,years) {
+  p<-cor.test(years,x,method="kendall",exact=FALSE)$p.value
+  result<-if(p<0.01) "less than 1" else as.character(round(100*p))
+  return(result)
 }
 # the distance in kilometres between two points (longitude and latitude in degrees)
-distance_km <- function(lon1, lat1, lon2, lat2) {
-  r <- pi / 180
-  h <- sin((lat2 - lat1) * r / 2)^2 + cos(lat1 * r) * cos(lat2 * r) * sin((lon2 - lon1) * r / 2)^2
-  12742 * asin(sqrt(h))
+distance_km<-function(lon1,lat1,lon2,lat2) {
+  r<-pi/180
+  h<-sin((lat2-lat1)*r/2)^2+cos(lat1*r)*cos(lat2*r)*sin((lon2-lon1)*r/2)^2
+  result<-12742*asin(sqrt(h))
+  return(result)
 }
 ```
 
 ```{r prepare}
 # only earthquakes: the catalogue also holds explosions, and more
-all_types <- table(c(big$type, middle$type))
-n_blasts <- sum(all_types[names(all_types) == "nuclear explosion"])
-n_other <- sum(all_types[!names(all_types) %in% c("earthquake", "nuclear explosion")])
-quakes <- function(x) {
-  x <- x[x$type == "earthquake", ]
-  x$year <- as.integer(substr(x$time, 1, 4))
-  x
+all_types<-table(c(big$type,middle$type))
+n_blasts<-sum(all_types[names(all_types)=="nuclear explosion"])
+n_other<-sum(all_types[!names(all_types)%in%c("earthquake","nuclear explosion")])
+quakes<-function(x) {
+  x<-x[x$type=="earthquake",]
+  x$year<-as.integer(substr(x$time,1,4))
+  result<-x
+  return(result)
 }
-n_before <- nrow(big) + nrow(middle)
-big <- quakes(big)
-middle <- quakes(middle)
-magnitude_types <- sort(table(middle$magType), decreasing = TRUE)
+n_before<-nrow(big)+nrow(middle)
+big<-quakes(big)
+middle<-quakes(middle)
+magnitude_types<-sort(table(middle$magType),decreasing=TRUE)
 
 # the depth classes of the USGS
-depth_class <- function(depth) {
-  cut(depth, c(-Inf, 70, 300, Inf), labels = names(depth_colors), right = FALSE)
+depth_class<-function(depth) {
+  result<-cut(depth,c(-Inf,70,300,Inf),labels=names(depth_colors),right=FALSE)
+  return(result)
 }
-middle$depth_class <- depth_class(middle$depth)
-big$depth_class <- depth_class(big$depth)
+middle$depth_class<-depth_class(middle$depth)
+big$depth_class<-depth_class(big$depth)
 # depths that a location program sets when the data do not fix the depth (USGS: 10 and 33 km)
-fixed_depth <- mean(middle$depth %in% c(10, 33))
-other_depth <- max(table(middle$depth[!middle$depth %in% c(10, 33)])) / nrow(middle)
-above_sea <- sum(middle$depth < 0)
+fixed_depth<-mean(middle$depth%in%c(10,33))
+other_depth<-max(table(middle$depth[!middle$depth%in%c(10,33)]))/nrow(middle)
+above_sea<-sum(middle$depth<0)
 
 # each earthquake of magnitude 5 and above: the country it is in; or the nearest country, if the
-# sea is less than 200 km wide between the two; or nowhere. Planar geometry on longitude and latitude
-# is accurate enough to find the nearest country; the distance itself is then worked out on the globe.
+# sea is less than 200 km wide between the two; or nowhere. Planar geometry on longitude and
+# latitude is accurate enough to find the nearest country; the distance itself is then worked out
+# on the globe.
 sf_use_s2(FALSE)
-points <- st_as_sf(middle[, c("id", "longitude", "latitude")], coords = c("longitude", "latitude"), crs = 4326)
-inside <- st_intersects(points, land)
-on_land <- lengths(inside) > 0
-nearest <- st_nearest_feature(points[!on_land, ], land)
-lines <- st_nearest_points(points[!on_land, ], land[nearest, ], pairwise = TRUE)
-ends_xy <- st_coordinates(st_cast(lines, "POINT"))
-from_xy <- ends_xy[seq(1, nrow(ends_xy), by = 2), ]
-to_xy <- ends_xy[seq(2, nrow(ends_xy), by = 2), ]
-offshore_km <- distance_km(from_xy[, 1], from_xy[, 2], to_xy[, 1], to_xy[, 2])
-middle$place_index <- NA_integer_
-middle$place_index[on_land] <- vapply(inside[on_land], `[`, 1L, 1L)
-reach <- 200
-middle$place_index[!on_land][offshore_km <= reach] <- nearest[offshore_km <= reach]
-land$NAME_LONG[land$NAME_LONG == "Russian Federation"] <- "Russia"
-land$NAME_LONG[land$NAME_LONG == "South Georgia and the Islands"] <- "South Georgia"
-middle$country <- land$NAME_LONG[middle$place_index]
-middle$code <- land$ADM0_A3[middle$place_index]
-middle$continent <- land$CONTINENT[middle$place_index]
+points<-st_as_sf(middle[,c("id","longitude","latitude")],coords=c("longitude","latitude"),crs=4326)
+inside<-st_intersects(points,land)
+on_land<-lengths(inside)>0
+nearest<-st_nearest_feature(points[!on_land,],land)
+lines<-st_nearest_points(points[!on_land,],land[nearest,],pairwise=TRUE)
+ends_xy<-st_coordinates(st_cast(lines,"POINT"))
+from_xy<-ends_xy[seq(1,nrow(ends_xy),by=2),]
+to_xy<-ends_xy[seq(2,nrow(ends_xy),by=2),]
+offshore_km<-distance_km(from_xy[,1],from_xy[,2],to_xy[,1],to_xy[,2])
+middle$place_index<-NA_integer_
+middle$place_index[on_land]<-vapply(inside[on_land],`[`,1L,1L)
+reach<-200
+middle$place_index[!on_land][offshore_km<=reach]<-nearest[offshore_km<=reach]
+land$NAME_LONG[land$NAME_LONG=="Russian Federation"]<-"Russia"
+land$NAME_LONG[land$NAME_LONG=="South Georgia and the Islands"]<-"South Georgia"
+middle$country<-land$NAME_LONG[middle$place_index]
+middle$code<-land$ADM0_A3[middle$place_index]
+middle$continent<-land$CONTINENT[middle$place_index]
 
 # each earthquake of magnitude 6 and above since 1973: its distance from the nearest plate boundary
-big_now <- big[big$year >= 1973, ]
-points_now <- st_as_sf(big_now[, c("id", "longitude", "latitude")], coords = c("longitude", "latitude"), crs = 4326)
-near_boundary <- st_nearest_feature(points_now, plates)
-lines_now <- st_nearest_points(points_now, plates[near_boundary, ], pairwise = TRUE)
-xy_now <- st_coordinates(st_cast(lines_now, "POINT"))
-big_now$boundary_km <- distance_km(
-  xy_now[seq(1, nrow(xy_now), by = 2), 1], xy_now[seq(1, nrow(xy_now), by = 2), 2],
-  xy_now[seq(2, nrow(xy_now), by = 2), 1], xy_now[seq(2, nrow(xy_now), by = 2), 2]
-)
-# the same distance for points spread evenly over the globe: how much of the world is near a boundary
+big_now<-big[big$year>=1973,]
+points_now<-st_as_sf(big_now[,c("id","longitude","latitude")],coords=c("longitude","latitude"),
+                     crs=4326)
+near_boundary<-st_nearest_feature(points_now,plates)
+lines_now<-st_nearest_points(points_now,plates[near_boundary,],pairwise=TRUE)
+xy_now<-st_coordinates(st_cast(lines_now,"POINT"))
+from_now<-xy_now[seq(1,nrow(xy_now),by=2),]
+to_now<-xy_now[seq(2,nrow(xy_now),by=2),]
+big_now$boundary_km<-distance_km(from_now[,1],from_now[,2],to_now[,1],to_now[,2])
+# the same distance for points spread evenly over the globe: how much of the world is near a
+# boundary
 set.seed(2026)
-n_random <- 4000
-random_points <- st_as_sf(
-  data.frame(lon = runif(n_random, -180, 180), lat = asin(runif(n_random, -1, 1)) * 180 / pi),
-  coords = c("lon", "lat"),
-  crs = 4326
-)
-near_random <- st_nearest_feature(random_points, plates)
-lines_random <- st_cast(st_nearest_points(random_points, plates[near_random, ], pairwise = TRUE), "POINT")
-xy_random <- st_coordinates(lines_random)
-random_km <- distance_km(
-  xy_random[seq(1, nrow(xy_random), by = 2), 1], xy_random[seq(1, nrow(xy_random), by = 2), 2],
-  xy_random[seq(2, nrow(xy_random), by = 2), 1], xy_random[seq(2, nrow(xy_random), by = 2), 2]
-)
+n_random<-4000
+random_points<-st_as_sf(data.frame(lon=runif(n_random,-180,180),
+                                   lat=asin(runif(n_random,-1,1))*180/pi),
+                        coords=c("lon","lat"),crs=4326)
+near_random<-st_nearest_feature(random_points,plates)
+lines_random<-st_cast(st_nearest_points(random_points,plates[near_random,],pairwise=TRUE),"POINT")
+xy_random<-st_coordinates(lines_random)
+from_random<-xy_random[seq(1,nrow(xy_random),by=2),]
+to_random<-xy_random[seq(2,nrow(xy_random),by=2),]
+random_km<-distance_km(from_random[,1],from_random[,2],to_random[,1],to_random[,2])
 sf_use_s2(TRUE)
 
 # the deaths: the NCEI total where it has one
-deadly$deaths_all <- ifelse(is.na(deadly$deathsTotal), deadly$deaths, deadly$deathsTotal)
-deadly <- deadly[!is.na(deadly$deaths_all) & deadly$year <= last_year, ]
-deadly$name <- ifelse(deadly$country == "USA", "United States", tools::toTitleCase(tolower(deadly$country)))
+deadly$deaths_all<-ifelse(is.na(deadly$deathsTotal),deadly$deaths,deadly$deathsTotal)
+deadly<-deadly[!is.na(deadly$deaths_all)&deadly$year<=last_year,]
+deadly$name<-ifelse(deadly$country=="USA","United States",
+                    tools::toTitleCase(tolower(deadly$country)))
 # the place as NCEI writes it, in words: the parts between colons, without compass points
-place_text <- function(x) {
-  parts <- strsplit(tolower(x), "\\s*:\\s*")
-  vapply(parts, function(p) {
-    p <- trimws(p)
-    paste(tools::toTitleCase(p[!p %in% c("n", "s", "e", "w", "ne", "nw", "se", "sw", "")]), collapse = ", ")
-  }, "")
+place_text<-function(x) {
+  parts<-strsplit(tolower(x),"\\s*:\\s*")
+  result<-vapply(parts,function(p) {
+    p<-trimws(p)
+    paste(tools::toTitleCase(p[!p%in%c("n","s","e","w","ne","nw","se","sw","")]),collapse=", ")
+  },"")
+  return(result)
 }
-deadly$place <- place_text(deadly$locationName)
+deadly$place<-place_text(deadly$locationName)
 ```
 
-**Only earthquakes.** The catalogue also holds explosions, mine collapses and landslides. Of the `r number(n_before)` events that the two downloads found, `r number(n_blasts)` were nuclear explosions and `r number(n_other)` were other things (an explosion, a rock burst, a volcanic eruption and so on). The page uses the other `r number(nrow(big) + nrow(middle))`, labelled earthquakes. `r number(nrow(big))` of them are magnitude 6 and above since 1900 and `r number(nrow(middle))` magnitude 5 and above since 1973, and the second group includes most of the first from 1973 on.
+**Only earthquakes.** The catalogue also holds explosions, mine collapses and landslides. Of the `r number(n_before)` events that the two downloads found, `r number(n_blasts)` were nuclear explosions and `r number(n_other)` were other things (an explosion, a rock burst, a volcanic eruption and so on). The page uses the other `r number(nrow(big)+nrow(middle))`, labelled earthquakes. `r number(nrow(big))` of them are magnitude 6 and above since 1900 and `r number(nrow(middle))` magnitude 5 and above since 1973, and the second group includes most of the first from 1973 on.
 
 **Only whole years.** The page stops at the end of `r last_year`, so that every year counts in full.
 
-**Many magnitudes.** The catalogue gives each earthquake the magnitude that its source chose, of several kinds: from 1973 on, `r percent(100 * unname(magnitude_types["mb"]) / nrow(middle))` of the magnitude 5 and above are of the kind called mb, and the others are of kinds such as Mw (the moment magnitude, the one that scientists prefer for large earthquakes). Section 5 shows what that means for counting earthquakes over the years.
+**Many magnitudes.** The catalogue gives each earthquake the magnitude that its source chose, of several kinds: from 1973 on, `r percent(100*unname(magnitude_types["mb"])/nrow(middle))` of the magnitude 5 and above are of the kind called mb, and the others are of kinds such as Mw (the moment magnitude, the one that scientists prefer for large earthquakes). Section 5 shows what that means for counting earthquakes over the years.
 
-**Which country?** The catalogue's place is a piece of text, not a country code, so each earthquake of magnitude 5 and above is placed on the map of the countries. Only `r percent(100 * mean(on_land))` fall inside a country: the rest happen under the sea. An earthquake at sea is given to the nearest country when it is within `r reach` km of its coast (`r percent(100 * mean(!on_land & !is.na(middle$country)))` of all of them); the other `r percent(100 * mean(is.na(middle$country)))`, in the open sea, belong to no country. Countries are those of Natural Earth, which counts overseas territories (Puerto Rico, Guam) as places of their own, and a country's earthquakes are the ones under it and near it.
+**Which country?** The catalogue's place is a piece of text, not a country code, so each earthquake of magnitude 5 and above is placed on the map of the countries. Only `r percent(100*mean(on_land))` fall inside a country: the rest happen under the sea. An earthquake at sea is given to the nearest country when it is within `r reach` km of its coast (`r percent(100*mean(!on_land&!is.na(middle$country)))` of all of them); the other `r percent(100*mean(is.na(middle$country)))`, in the open sea, belong to no country. Countries are those of Natural Earth, which counts overseas territories (Puerto Rico, Guam) as places of their own, and a country's earthquakes are the ones under it and near it.
 
-**The depth is the least certain number.** It is the least constrained of all the parameters of an earthquake, says the USGS, and where the data do not fix it, the location program sets a default, often 10 or 33 km ([ComCat](https://earthquake.usgs.gov/data/comcat/data-eventterms.php)). `r percent(100 * fixed_depth)` of the magnitude 5 and above have exactly 10 or 33 km (the next most common depth has `r percent(100 * other_depth)`), so the depths on this page are good for classes (shallow, intermediate, deep) and not for the exact kilometre. `r number(above_sea)` of them are negative, which means above the reference level that the source used.
+**The depth is the least certain number.** It is the least constrained of all the parameters of an earthquake, says the USGS, and where the data do not fix it, the location program sets a default, often 10 or 33 km ([ComCat](https://earthquake.usgs.gov/data/comcat/data-eventterms.php)). `r percent(100*fixed_depth)` of the magnitude 5 and above have exactly 10 or 33 km (the next most common depth has `r percent(100*other_depth)`), so the depths on this page are good for classes (shallow, intermediate, deep) and not for the exact kilometre. `r number(above_sea)` of them are negative, which means above the reference level that the source used.
 
 ---
 
 ## 1. Where in the world do the earthquakes strike?
 
 ```{r where_numbers}
-n_big <- nrow(big_now)
-within <- function(km) percent(100 * mean(big_now$boundary_km <= km))
-world_within <- function(km) percent(100 * mean(random_km <= km))
-places <- middle |>
-  filter(!is.na(country)) |>
-  group_by(country, code, continent) |>
-  summarise(n = n(), strong = sum(mag >= 6), .groups = "drop") |>
-  arrange(desc(n), country)
-n_years <- last_year - 1973 + 1
-n_places <- nrow(places)
-top <- head(places, 15)
-sea_share <- 100 * mean(is.na(middle$country))
-place_of <- function(name, column) places[[column]][places$country == name]
-rank_of <- function(name) match(name, places$country)
-# Europe: the continent of Natural Earth, without Russia (most of its earthquakes are in Kamchatka and
-# the Kuril Islands, in the east) and with Turkey, which Natural Earth puts in Asia, counted on its own
-europe <- places |>
-  filter(continent == "Europe", country != "Russia") |>
-  head(4)
+n_big<-nrow(big_now)
+within<-function(km) {
+  result<-percent(100*mean(big_now$boundary_km<=km))
+  return(result)
+}
+world_within<-function(km) {
+  result<-percent(100*mean(random_km<=km))
+  return(result)
+}
+# the earthquakes of each country, the most first (a key of the three columns keeps a missing code)
+on_land<-middle[!is.na(middle$country),]
+keys<-paste(on_land$country,on_land$code,on_land$continent,sep="|")
+places<-do.call(rbind,lapply(split(on_land,keys),function(x) {
+  data.frame(country=x$country[1],
+             code=x$code[1],
+             continent=x$continent[1],
+             n=nrow(x),
+             strong=sum(x$mag>=6))
+}))
+places<-places[order(-places$n,places$country,method="radix"),]
+rownames(places)<-NULL
+n_years<-last_year-1973+1
+n_places<-nrow(places)
+top<-head(places,15)
+sea_share<-100*mean(is.na(middle$country))
+place_of<-function(name,column) {
+  result<-places[[column]][places$country==name]
+  return(result)
+}
+rank_of<-function(name) {
+  result<-match(name,places$country)
+  return(result)
+}
+# Europe: the continent of Natural Earth, without Russia (most of its earthquakes are in Kamchatka
+# and the Kuril Islands, in the east) and with Turkey, which Natural Earth puts in Asia, counted
+# on its own
+europe<-head(places[which(places$continent=="Europe"&places$country!="Russia"),],4)
 ```
 
 **Along narrow belts, and mostly under the sea.** The `r number(n_big)` earthquakes of magnitude 6 and above from 1973 to `r last_year` do not fall at random: `r within(100)` of them are within 100 km of a plate boundary and `r within(300)` within 300 km. Of the surface of the globe, only `r world_within(100)` is within 100 km of a boundary and `r world_within(300)` within 300 km (worked out for `r number(n_random)` points spread evenly over the globe). Where plates meet, one slides under the other, or they grind side by side, and the rock breaks.
 
 ```{r map, fig.height = 5.6}
 # the plate boundaries as one line with gaps
-coords <- as.data.frame(st_coordinates(plates))
-gaps <- coords |>
-  group_by(L1) |>
-  group_modify(~ bind_rows(.x[, c("X", "Y")], data.frame(X = NA, Y = NA)))
-shown <- big_now
-shown$text <- paste0("M", format(shown$mag, nsmall = 1), ", ", shown$year, ", ", round(shown$depth), " km deep")
-p <- plot_ly() |>
-  add_trace(
-    type = "scattergeo",
-    mode = "lines",
-    lon = round(gaps$X, 2),
-    lat = round(gaps$Y, 2),
-    line = list(color = dark_gray, width = 0.8),
-    name = "Plate boundaries",
-    hoverinfo = "skip"
-  )
-for (k in names(depth_colors)) {
-  x <- shown[shown$depth_class == k, ]
-  p <- add_trace(
-    p,
-    type = "scattergeo",
-    mode = "markers",
-    lon = x$longitude,
-    lat = x$latitude,
-    text = x$text,
-    hoverinfo = "text",
-    name = paste0(k, " (", ifelse(k == "Shallow", "under 70 km", ifelse(k == "Deep", "300 km or more", "70–300 km")), ")"),
-    marker = list(color = depth_colors[[k]], size = 4.5, opacity = 0.75, line = list(width = 0))
-  )
+coords<-as.data.frame(st_coordinates(plates))
+gaps<-do.call(rbind,lapply(split(coords[,c("X","Y")],coords$L1),function(x) {
+  rbind(x,data.frame(X=NA,Y=NA))
+}))
+shown<-big_now
+shown$text<-paste0("M",format(shown$mag,nsmall=1),", ",shown$year,", ",round(shown$depth),
+                   " km deep")
+p<-plot_ly() %>%
+  add_trace(type="scattergeo",mode="lines",lon=round(gaps$X,2),lat=round(gaps$Y,2),
+            line=list(color=dark_gray,width=0.8),name="Plate boundaries",hoverinfo="skip")
+depth_ranges<-c(Shallow="under 70 km",Intermediate="70–300 km",Deep="300 km or more")
+for(k in names(depth_colors)) {
+  x<-shown[shown$depth_class==k,]
+  p<-add_trace(p,type="scattergeo",mode="markers",lon=x$longitude,lat=x$latitude,text=x$text,
+               hoverinfo="text",name=paste0(k," (",depth_ranges[[k]],")"),
+               marker=list(color=depth_colors[[k]],size=4.5,opacity=0.75,line=list(width=0)))
 }
-p |>
-  chart(
-    paste0("Earthquakes of magnitude 6 and above, 1973–", last_year),
-    "USGS ComCat; plate boundaries: Bird (2003), via Ahlenius/Nordpil; countries: Natural Earth.",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = TRUE,
-      coastlinecolor = "#cccccc",
-      showland = TRUE,
-      landcolor = "#f0f0f0",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-65, 85))
-    ),
-    legend = list(orientation = "h", x = 0, y = 1.0, yanchor = "bottom"),
-    margin = list(t = 80, b = 40, l = 0, r = 0),
-    note_y = -0.02
-  )
+p %>%
+  chart(paste0("Earthquakes of magnitude 6 and above, 1973–",last_year),
+        paste0("USGS ComCat; plate boundaries: Bird (2003), ",
+               "via Ahlenius/Nordpil; countries: Natural Earth."),
+        geo=list(showframe=FALSE,showcoastlines=TRUE,coastlinecolor="#cccccc",showland=TRUE,
+                 landcolor="#f0f0f0",projection=list(type="natural earth"),
+                 lataxis=list(range=c(-65,85))),
+        legend=list(orientation="h",x=0,y=1.0,yanchor="bottom"),margin=list(t=80,b=40,l=0,r=0),
+        note_y=-0.02)
 ```
 
-**`r top$country[1]` leads, then `r top$country[2]` and `r top$country[3]`.** Counting every earthquake of magnitude 5 and above from 1973 to `r last_year` under a country or within `r reach` km of its coast, `r top$country[1]` had `r number(top$n[1])`, `r top$country[2]` `r number(top$n[2])` and `r top$country[3]` `r number(top$n[3])`: `r one(top$n[1] / n_years)`, `r one(top$n[2] / n_years)` and `r one(top$n[3] / n_years)` a year. `r percent(sea_share)` of all the earthquakes of this size were farther than `r reach` km from any country.
+**`r top$country[1]` leads, then `r top$country[2]` and `r top$country[3]`.** Counting every earthquake of magnitude 5 and above from 1973 to `r last_year` under a country or within `r reach` km of its coast, `r top$country[1]` had `r number(top$n[1])`, `r top$country[2]` `r number(top$n[2])` and `r top$country[3]` `r number(top$n[3])`: `r one(top$n[1]/n_years)`, `r one(top$n[2]/n_years)` and `r one(top$n[3]/n_years)` a year. `r percent(sea_share)` of all the earthquakes of this size were farther than `r reach` km from any country.
 
 ```{r top_chart, fig.height = 4.8}
-bars <- top[order(top$n), ]
-bars$country <- factor(bars$country, levels = bars$country)
-plot_ly(
-  bars,
-  x = ~n,
-  y = ~country,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(bars$strong == max(bars$strong), red, gray)),
-  text = ~ number(n),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x} earthquakes, of which %{customdata} of magnitude 6 and above<extra></extra>",
-  customdata = ~strong,
-  showlegend = FALSE
-) |>
-  chart(
-    paste0("Most earthquakes of magnitude 5+, ", 1973, "–", last_year),
-    "USGS ComCat; countries: Natural Earth. Red: the most of magnitude 6 and above.",
-    x_axis = list(range = c(0, 1.25 * max(bars$n)), showgrid = FALSE),
-    margin = list(l = 160, t = 70, b = 60, r = 20),
-    note_y = -0.1
-  )
+bars<-top[order(top$n),]
+bars$country<-factor(bars$country,levels=bars$country)
+plot_ly(bars,x=~n,y=~country,type="bar",orientation="h",
+        marker=list(color=ifelse(bars$strong==max(bars$strong),red,gray)),text=~number(n),
+        textposition="outside",cliponaxis=FALSE,
+        hovertemplate=paste0("%{y}: %{x} earthquakes, of which %{customdata} of magnitude ",
+                             "6 and above<extra></extra>"),
+        customdata=~strong,showlegend=FALSE) %>%
+  chart(paste0("Most earthquakes of magnitude 5+, ",1973,"–",last_year),
+        "USGS ComCat; countries: Natural Earth. Red: the most of magnitude 6 and above.",
+        x_axis=list(range=c(0,1.25*max(bars$n)),showgrid=FALSE),margin=list(l=160,t=70,b=60,r=20),
+        note_y=-0.1)
 ```
 
 ```{r country_map, fig.height = 5.2}
-on_map <- places[places$code %in% land$ADM0_A3, ]
-classes <- c(1, 10, 50, 100, 500, 1000, Inf)
-class_names <- c("1–9", "10–49", "50–99", "100–499", "500–999", "1,000+")
-on_map$class <- as.integer(cut(on_map$n, classes, right = FALSE))
-steps <- do.call(c, lapply(seq_along(class_names), function(i) {
-  list(list((i - 1) / 6, blues[i + 1]), list(i / 6, blues[i + 1]))
+on_map<-places[places$code%in%land$ADM0_A3,]
+classes<-c(1,10,50,100,500,1000,Inf)
+class_names<-c("1–9","10–49","50–99","100–499","500–999","1,000+")
+on_map$class<-as.integer(cut(on_map$n,classes,right=FALSE))
+steps<-do.call(c,lapply(seq_along(class_names),function(i) {
+  list(list((i-1)/6,blues[i+1]),list(i/6,blues[i+1]))
 }))
-plot_ly(
-  on_map,
-  type = "choropleth",
-  locations = ~code,
-  z = ~class,
-  zmin = 0.5,
-  zmax = 6.5,
-  colorscale = steps,
-  marker = list(line = list(color = "white", width = 0.3)),
-  text = ~ paste0(country, ": ", number(n), " earthquakes of magnitude 5+<br>", strong, " of magnitude 6+"),
-  hoverinfo = "text",
-  colorbar = list(
-    title = list(text = "Earthquakes of magnitude 5+", side = "top"),
-    orientation = "h",
-    x = 0.5,
-    xanchor = "center",
-    y = -0.02,
-    yanchor = "top",
-    tickvals = 1:6,
-    ticktext = class_names,
-    len = 0.95,
-    thickness = 14,
-    tickangle = 0,
-    tickfont = list(size = 10)
-  )
-) |>
-  chart(
-    paste0("Earthquakes of magnitude 5+ by country, ", 1973, "–", last_year),
-    "USGS ComCat; countries: Natural Earth. Under the country or within 200 km of its coast. Grey: none.",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = FALSE,
-      showland = TRUE,
-      landcolor = "#e8e8e8",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-57, 85))
-    ),
-    margin = list(t = 50, b = 130, l = 0, r = 0),
-    note_y = -0.27
-  )
+plot_ly(on_map,type="choropleth",locations=~code,z=~class,zmin=0.5,zmax=6.5,colorscale=steps,
+        marker=list(line=list(color="white",width=0.3)),
+        text=~paste0(country,": ",number(n)," earthquakes of magnitude 5+<br>",strong,
+                     " of magnitude 6+"),
+        hoverinfo="text",
+        colorbar=list(title=list(text="Earthquakes of magnitude 5+",side="top"),orientation="h",
+                      x=0.5,xanchor="center",y=-0.02,yanchor="top",tickvals=1:6,
+                      ticktext=class_names,len=0.95,thickness=14,tickangle=0,
+                      tickfont=list(size=10))) %>%
+  chart(paste0("Earthquakes of magnitude 5+ by country, ",1973,"–",last_year),
+        paste0("USGS ComCat; countries: Natural Earth. ",
+               "Under the country or within 200 km of its coast. Grey: none."),
+        geo=list(showframe=FALSE,showcoastlines=FALSE,showland=TRUE,landcolor="#e8e8e8",
+                 projection=list(type="natural earth"),lataxis=list(range=c(-57,85))),
+        margin=list(t=50,b=130,l=0,r=0),note_y=-0.27)
 ```
 
 ```{r europe_numbers}
-turkey <- "Turkey"
-greece <- "Greece"
-europe_list <- paste0(europe$country, " (", number(europe$n), ")")
-greece_strong <- place_of(greece, "strong")
+turkey<-"Turkey"
+greece<-"Greece"
+europe_list<-paste0(europe$country," (",number(europe$n),")")
+greece_strong<-place_of(greece,"strong")
 ```
 
-**In Europe, `r europe$country[1]` comes first.** In `r n_places` countries and territories with at least one earthquake of magnitude 5 and above, Greece is number `r rank_of(greece)`: `r number(place_of(greece, "n"))` earthquakes since 1973, `r greece_strong` of magnitude 6 and above, `r one(place_of(greece, "n") / n_years)` a year. Without Russia, the four European countries with the most are `r and_list(europe_list)`. Turkey, which Natural Earth places in Asia, is number `r rank_of(turkey)` with `r number(place_of(turkey, "n"))`.
+**In Europe, `r europe$country[1]` comes first.** In `r n_places` countries and territories with at least one earthquake of magnitude 5 and above, Greece is number `r rank_of(greece)`: `r number(place_of(greece,"n"))` earthquakes since 1973, `r greece_strong` of magnitude 6 and above, `r one(place_of(greece,"n")/n_years)` a year. Without Russia, the four European countries with the most are `r and_list(europe_list)`. Turkey, which Natural Earth places in Asia, is number `r rank_of(turkey)` with `r number(place_of(turkey,"n"))`.
 
 ---
 
 ## 2. How often, and how strong?
 
 ```{r strength_numbers}
-modern <- 1990
+modern<-1990
 # the magnitude classes: the lower end and the name
-classes_m <- list(
-  "5–5.9" = c(5, 6),
-  "6–6.9" = c(6, 7),
-  "7–7.9" = c(7, 8),
-  "8 and above" = c(8, 11)
-)
-per_year <- sapply(classes_m, function(r) {
-  sum(middle$mag >= r[1] & middle$mag < r[2] & middle$year >= modern) / (last_year - modern + 1)
+classes_m<-list("5–5.9"=c(5,6),"6–6.9"=c(6,7),"7–7.9"=c(7,8),"8 and above"=c(8,11))
+per_year<-sapply(classes_m,function(r) {
+  sum(middle$mag>=r[1]&middle$mag<r[2]&middle$year>=modern)/(last_year-modern+1)
 })
-big_per_year <- sapply(classes_m[3:4], function(r) {
-  sum(big$mag >= r[1] & big$mag < r[2]) / (last_year - 1900 + 1)
+big_per_year<-sapply(classes_m[3:4],function(r) {
+  sum(big$mag>=r[1]&big$mag<r[2])/(last_year-1900+1)
 })
-largest <- big[order(-big$mag, big$time), ][1:10, ]
-largest$place_short <- sub("^[0-9.]+ km [A-Z]+ of ", "", largest$place)
-n8 <- sum(big$mag >= 8)
-n8_years <- big |>
-  filter(mag >= 8) |>
-  count(year)
+largest<-big[order(-big$mag,big$time),][1:10,]
+largest$place_short<-sub("^[0-9.]+ km [A-Z]+ of ","",largest$place)
+n8<-sum(big$mag>=8)
+strongest<-big[which(big$mag>=8),]
+n8_years<-aggregate(n~year,data.frame(year=strongest$year,n=1L),sum)
 ```
 
-**About `r number(round(per_year[1], -2))` a year of magnitude 5 and `r one(per_year[4])` of magnitude 8.** From `r modern` to `r last_year`, the catalogue records on average `r number(per_year[1])` earthquakes of magnitude 5 to 5.9 a year, `r number(per_year[2])` of magnitude 6 to 6.9, `r number(per_year[3])` of magnitude 7 to 7.9 and `r one(per_year[4])` of magnitude 8 and above. Each step up is rarer: `r one(per_year[1] / per_year[2])` times, `r one(per_year[2] / per_year[3])` times and `r one(per_year[3] / per_year[4])` times.
+**About `r number(round(per_year[1],-2))` a year of magnitude 5 and `r one(per_year[4])` of magnitude 8.** From `r modern` to `r last_year`, the catalogue records on average `r number(per_year[1])` earthquakes of magnitude 5 to 5.9 a year, `r number(per_year[2])` of magnitude 6 to 6.9, `r number(per_year[3])` of magnitude 7 to 7.9 and `r one(per_year[4])` of magnitude 8 and above. Each step up is rarer: `r one(per_year[1]/per_year[2])` times, `r one(per_year[2]/per_year[3])` times and `r one(per_year[3]/per_year[4])` times.
 
 ```{r strength_table}
-knitr::kable(
-  data.frame(
-    magnitude = names(per_year),
-    year = ifelse(per_year >= 10, number(per_year), one(per_year)),
-    month = one(per_year / 12),
-    week = two(per_year / 52)
-  ),
-  col.names = c("Magnitude", "A year", "A month", "A week"),
-  align = "lrrr",
-  row.names = FALSE
-)
+knitr::kable(data.frame(magnitude=names(per_year),
+                        year=ifelse(per_year>=10,number(per_year),one(per_year)),
+                        month=one(per_year/12),
+                        week=two(per_year/52)),
+             col.names=c("Magnitude","A year","A month","A week"),align="lrrr",row.names=FALSE)
 ```
 
-**The largest.** `r number(n8)` earthquakes of magnitude 8 and above since 1900, `r one(n8 / (last_year - 1900 + 1))` a year; the ten largest are in the table, with the magnitude that the catalogue gives them.
+**The largest.** `r number(n8)` earthquakes of magnitude 8 and above since 1900, `r one(n8/(last_year-1900+1))` a year; the ten largest are in the table, with the magnitude that the catalogue gives them.
 
 ```{r largest_table}
-knitr::kable(
-  data.frame(
-    place = largest$place_short,
-    year = substr(largest$time, 1, 4),
-    magnitude = one(largest$mag),
-    depth = round(largest$depth)
-  ),
-  col.names = c("Where (USGS)", "Year", "Magnitude", "Depth, km"),
-  align = "llrr",
-  row.names = FALSE
-)
+knitr::kable(data.frame(place=largest$place_short,
+                        year=substr(largest$time,1,4),
+                        magnitude=one(largest$mag),
+                        depth=round(largest$depth)),
+             col.names=c("Where (USGS)","Year","Magnitude","Depth, km"),align="llrr",
+             row.names=FALSE)
 ```
 
 ---
@@ -508,131 +427,107 @@ knitr::kable(
 ## 3. How deep are they?
 
 ```{r depth_numbers}
-share_of <- function(x, k) 100 * mean(x$depth_class == k)
-by_size <- list(
-  "5–5.9" = middle[middle$mag < 6, ],
-  "6–6.9" = middle[middle$mag >= 6 & middle$mag < 7, ],
-  "7 and above" = middle[middle$mag >= 7, ]
-)
-shares <- do.call(rbind, lapply(names(by_size), function(s) {
-  data.frame(size = s, k = names(depth_colors), share = sapply(names(depth_colors), function(k) share_of(by_size[[s]], k)))
+share_of<-function(x,k) {
+  result<-100*mean(x$depth_class==k)
+  return(result)
+}
+by_size<-list("5–5.9"=middle[middle$mag<6,],"6–6.9"=middle[middle$mag>=6&middle$mag<7,],
+              "7 and above"=middle[middle$mag>=7,])
+shares<-do.call(rbind,lapply(names(by_size),function(s) {
+  data.frame(size=s,
+             k=names(depth_colors),
+             share=sapply(names(depth_colors),function(k) share_of(by_size[[s]],k)))
 }))
-deep <- middle[middle$depth_class == "Deep", ]
-deep_places <- sort(table(deep$country), decreasing = TRUE)
-deepest <- middle[which.max(middle$depth), ]
-deep_share_n <- sum(deep$mag >= 7)
+deep<-middle[middle$depth_class=="Deep",]
+deep_places<-sort(table(deep$country),decreasing=TRUE)
+deepest<-middle[which.max(middle$depth),]
+deep_share_n<-sum(deep$mag>=7)
 ```
 
-**Nearly all of them are shallow.** `r percent(share_of(middle, "Shallow"))` of the earthquakes of magnitude 5 and above since 1973 began less than 70 km down, `r percent(share_of(middle, "Intermediate"))` between 70 and 300 km and `r percent(share_of(middle, "Deep"), 1)` below 300 km. Among those of magnitude 7 and above, `r percent(shares$share[shares$size == "7 and above" & shares$k == "Shallow"])` were shallow.
+**Nearly all of them are shallow.** `r percent(share_of(middle,"Shallow"))` of the earthquakes of magnitude 5 and above since 1973 began less than 70 km down, `r percent(share_of(middle,"Intermediate"))` between 70 and 300 km and `r percent(share_of(middle,"Deep"),1)` below 300 km. Among those of magnitude 7 and above, `r percent(shares$share[shares$size=="7 and above"&shares$k=="Shallow"])` were shallow.
 
 ```{r depth_chart, fig.height = 3.6}
-shares$size <- factor(shares$size, levels = rev(names(by_size)))
-shares$k <- factor(shares$k, levels = names(depth_colors))
-p <- plot_ly()
-for (k in names(depth_colors)) {
-  x <- shares[shares$k == k, ]
-  p <- add_bars(
-    p,
-    x = x$share,
-    y = x$size,
-    name = k,
-    orientation = "h",
-    marker = list(color = depth_colors[[k]], line = list(color = "white", width = 1.5)),
-    text = ifelse(x$share >= 10, percent(x$share), ""),
-    textposition = "inside",
-    insidetextanchor = "middle",
-    textfont = list(color = "white"),
-    hovertemplate = paste0("Magnitude %{y}: %{x:.1f}% ", tolower(k), "<extra></extra>")
-  )
+shares$size<-factor(shares$size,levels=rev(names(by_size)))
+shares$k<-factor(shares$k,levels=names(depth_colors))
+p<-plot_ly()
+for(k in names(depth_colors)) {
+  x<-shares[shares$k==k,]
+  p<-add_bars(p,x=x$share,y=x$size,name=k,orientation="h",
+              marker=list(color=depth_colors[[k]],line=list(color="white",width=1.5)),
+              text=ifelse(x$share>=10,percent(x$share),""),textposition="inside",
+              insidetextanchor="middle",textfont=list(color="white"),
+              hovertemplate=paste0("Magnitude %{y}: %{x:.1f}% ",tolower(k),"<extra></extra>"))
 }
-p |>
-  chart(
-    "How deep, % of the earthquakes of each size",
-    "USGS ComCat, 1973 on. Shallow: under 70 km; intermediate: 70–300 km; deep: 300 km or more.",
-    x_axis = list(range = c(0, 100), ticksuffix = "%", showgrid = FALSE),
-    y_axis = list(title = "Magnitude"),
-    barmode = "stack",
-    legend = c(legend_top, list(traceorder = "normal")),
-    uniformtext = list(minsize = 10, mode = "hide"),
-    margin = list(l = 110, t = 90, b = 70, r = 10),
-    note_y = -0.22
-  )
+p %>%
+  chart("How deep, % of the earthquakes of each size",
+        paste0("USGS ComCat, 1973 on. Shallow: under 70 km; ",
+               "intermediate: 70–300 km; deep: 300 km or more."),
+        x_axis=list(range=c(0,100),ticksuffix="%",showgrid=FALSE),y_axis=list(title="Magnitude"),
+        barmode="stack",legend=c(legend_top,list(traceorder="normal")),
+        uniformtext=list(minsize=10,mode="hide"),margin=list(l=110,t=90,b=70,r=10),note_y=-0.22)
 ```
 
-**The deep ones are in a few places.** `r number(nrow(deep))` earthquakes of magnitude 5 and above were deep, `r deep_share_n` of them of magnitude 7 and above. The countries (or the coasts) with the most were `r and_list(paste0(names(deep_places)[1:3], " (", number(deep_places[1:3]), ")"))`; `r percent(100 * mean(is.na(deep$country)))` were in the open sea. The deepest of all, of magnitude `r one(deepest$mag)`, was `r round(deepest$depth)` km down: `r deepest$place`, in `r substr(deepest$time, 1, 4)`.
+**The deep ones are in a few places.** `r number(nrow(deep))` earthquakes of magnitude 5 and above were deep, `r deep_share_n` of them of magnitude 7 and above. The countries (or the coasts) with the most were `r and_list(paste0(names(deep_places)[1:3]," (",number(deep_places[1:3]),")"))`; `r percent(100*mean(is.na(deep$country)))` were in the open sea. The deepest of all, of magnitude `r one(deepest$mag)`, was `r round(deepest$depth)` km down: `r deepest$place`, in `r substr(deepest$time,1,4)`.
 
 ---
 
 ## 4. Which were the deadliest?
 
 ```{r deaths_numbers}
-worst <- deadly[order(-deadly$deaths_all), ] |> head(10)
-worst_n <- nrow(deadly)
-total_deaths <- sum(deadly$deaths_all)
-deaths_by_country <- deadly |>
-  group_by(name) |>
-  summarise(deaths = sum(deaths_all), n = n(), .groups = "drop") |>
-  arrange(desc(deaths))
-top10_share <- 100 * sum(worst$deaths_all) / total_deaths
-top_c <- head(deaths_by_country, 10)
-since <- min(deadly$year)
-n_over_10k <- sum(deadly$deaths_all >= 10000)
-n_below_7 <- mean(deadly$eqMagnitude[!is.na(deadly$eqMagnitude)] < 7)
-# the ten largest earthquakes of section 2: the deaths of the earthquake of the same year within 500 km
-largest_deaths <- sapply(seq_len(nrow(largest)), function(i) {
-  near <- deadly$year == as.integer(substr(largest$time[i], 1, 4)) &
-    distance_km(largest$longitude[i], largest$latitude[i], deadly$longitude, deadly$latitude) <= 500
-  near[is.na(near)] <- FALSE
-  if (any(near)) max(deadly$deaths_all[near]) else 0
+worst<-head(deadly[order(-deadly$deaths_all),],10)
+worst_n<-nrow(deadly)
+total_deaths<-sum(deadly$deaths_all)
+# the deaths of each country, the most first
+country_groups<-split(deadly,addNA(factor(deadly$name),ifany=TRUE))
+deaths_by_country<-do.call(rbind,lapply(country_groups,function(x) {
+  data.frame(name=x$name[1],deaths=sum(x$deaths_all),n=nrow(x))
+}))
+deaths_by_country<-deaths_by_country[order(-deaths_by_country$deaths,deaths_by_country$name,
+                                           method="radix"),]
+rownames(deaths_by_country)<-NULL
+top10_share<-100*sum(worst$deaths_all)/total_deaths
+top_c<-head(deaths_by_country,10)
+since<-min(deadly$year)
+n_over_10k<-sum(deadly$deaths_all>=10000)
+n_below_7<-mean(deadly$eqMagnitude[!is.na(deadly$eqMagnitude)]<7)
+# the ten largest earthquakes of section 2: the deaths of the earthquake of the same year within
+# 500 km
+largest_deaths<-sapply(seq_len(nrow(largest)),function(i) {
+  near<-deadly$year==as.integer(substr(largest$time[i],1,4))&
+        distance_km(largest$longitude[i],largest$latitude[i],deadly$longitude,deadly$latitude)<=500
+  near[is.na(near)]<-FALSE
+  if(any(near)) max(deadly$deaths_all[near]) else 0
 })
 # the events where the NCEI total differs from its deaths, and the largest example
-all_rows <- deadly[!is.na(deadly$deaths) & !is.na(deadly$deathsTotal) & deadly$deathsTotal > deadly$deaths, ]
-example <- all_rows[which.max(all_rows$deathsTotal - all_rows$deaths), ]
+all_rows<-deadly[!is.na(deadly$deaths)&!is.na(deadly$deathsTotal)&deadly$deathsTotal>deadly$deaths,]
+example<-all_rows[which.max(all_rows$deathsTotal-all_rows$deaths),]
 ```
 
 **A few earthquakes account for most of the deaths.** NCEI lists `r number(worst_n)` earthquakes since `r since` with a recorded number of deaths, `r number(total_deaths)` in all. The ten deadliest killed `r number(sum(worst$deaths_all))` of them, `r percent(top10_share)`, and `r n_over_10k` killed 10,000 or more.
 
 ```{r worst_table}
-knitr::kable(
-  data.frame(
-    year = worst$year,
-    place = worst$place,
-    magnitude = ifelse(is.na(worst$eqMagnitude), "", one(worst$eqMagnitude)),
-    deaths = number(worst$deaths_all)
-  ),
-  col.names = c("Year", "Where (NCEI)", "Magnitude", "Deaths"),
-  align = "llrr",
-  row.names = FALSE
-)
+knitr::kable(data.frame(year=worst$year,
+                        place=worst$place,
+                        magnitude=ifelse(is.na(worst$eqMagnitude),"",one(worst$eqMagnitude)),
+                        deaths=number(worst$deaths_all)),
+             col.names=c("Year","Where (NCEI)","Magnitude","Deaths"),align="llrr",row.names=FALSE)
 ```
 
 ```{r deaths_chart, fig.height = 4.6}
-bars <- top_c[order(top_c$deaths), ]
-bars$name <- factor(bars$name, levels = bars$name)
-plot_ly(
-  bars,
-  x = ~deaths,
-  y = ~name,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(bars$deaths == max(bars$deaths), red, gray)),
-  text = ~ number(deaths),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:,.0f} deaths in %{customdata} earthquakes<extra></extra>",
-  customdata = ~n,
-  showlegend = FALSE
-) |>
-  chart(
-    paste0("Deaths in earthquakes since ", since, ", 10 countries"),
-    "NCEI Significant Earthquake Database. Deaths as recorded, in the country that NCEI names.",
-    x_axis = list(range = c(0, 1.3 * max(bars$deaths)), showgrid = FALSE),
-    margin = list(l = 120, t = 70, b = 60, r = 20),
-    note_y = -0.1
-  )
+bars<-top_c[order(top_c$deaths),]
+bars$name<-factor(bars$name,levels=bars$name)
+plot_ly(bars,x=~deaths,y=~name,type="bar",orientation="h",
+        marker=list(color=ifelse(bars$deaths==max(bars$deaths),red,gray)),text=~number(deaths),
+        textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:,.0f} deaths in %{customdata} earthquakes<extra></extra>",
+        customdata=~n,showlegend=FALSE) %>%
+  chart(paste0("Deaths in earthquakes since ",since,", 10 countries"),
+        "NCEI Significant Earthquake Database. Deaths as recorded, in the country that NCEI names.",
+        x_axis=list(range=c(0,1.3*max(bars$deaths)),showgrid=FALSE),
+        margin=list(l=120,t=70,b=60,r=20),note_y=-0.1)
 ```
 
-**Not the strongest earthquakes.** The ten deadliest were of magnitude `r one(min(worst$eqMagnitude, na.rm = TRUE))` to `r one(max(worst$eqMagnitude, na.rm = TRUE))`. Of the ten largest earthquakes of section 2, `r sum(largest_deaths >= 1000)` killed 1,000 or more people (by NCEI's list), and `r sum(largest_deaths == 0)` have no deaths in it. Of the `r number(sum(!is.na(deadly$eqMagnitude)))` earthquakes in NCEI's list with a magnitude, `r percent(100 * n_below_7)` were below magnitude 7. How many die depends on where the earthquake strikes, who lives there and how they build, as well as on the magnitude, and the data here cannot separate those.
+**Not the strongest earthquakes.** The ten deadliest were of magnitude `r one(min(worst$eqMagnitude,na.rm=TRUE))` to `r one(max(worst$eqMagnitude,na.rm=TRUE))`. Of the ten largest earthquakes of section 2, `r sum(largest_deaths>=1000)` killed 1,000 or more people (by NCEI's list), and `r sum(largest_deaths==0)` have no deaths in it. Of the `r number(sum(!is.na(deadly$eqMagnitude)))` earthquakes in NCEI's list with a magnitude, `r percent(100*n_below_7)` were below magnitude 7. How many die depends on where the earthquake strikes, who lives there and how they build, as well as on the magnitude, and the data here cannot separate those.
 
 **Which deaths?** NCEI gives two figures: the deaths and a total. They differ for `r nrow(all_rows)` earthquakes since 1900, and the largest difference is the `r example$year` earthquake (`r example$place`): `r number(example$deaths)` deaths and `r number(example$deathsTotal)` in total, with a tsunami linked to it in the database. The page uses the total where there is one.
 
@@ -641,116 +536,102 @@ plot_ly(
 ## 5. Are there more of them than there used to be?
 
 ```{r trend_numbers}
-years_big <- 1900:last_year
-count_by_year <- function(x, lo, years) {
-  tab <- table(factor(x$year[x$mag >= lo], levels = years))
-  data.frame(year = years, n = as.integer(tab))
+years_big<-1900:last_year
+count_by_year<-function(x,lo,years) {
+  tab<-table(factor(x$year[x$mag>=lo],levels=years))
+  result<-data.frame(year=years,n=as.integer(tab))
+  return(result)
 }
-m7 <- count_by_year(big, 7, 1900:last_year)
-m6 <- count_by_year(big, 6, 1900:last_year)
-m6_modern <- m6[m6$year >= 1973, ]
-m5 <- count_by_year(middle, 5, 1973:last_year)
+m7<-count_by_year(big,7,1900:last_year)
+m6<-count_by_year(big,6,1900:last_year)
+m6_modern<-m6[m6$year>=1973,]
+m5<-count_by_year(middle,5,1973:last_year)
 # the year after which the yearly counts of magnitude 6 and above are on another level (the split
 # of the years that leaves the least spread within the two parts)
-split_cost <- sapply(1976:(last_year - 3), function(y) {
-  a <- m6_modern$n[m6_modern$year < y]
-  b <- m6_modern$n[m6_modern$year >= y]
-  sum((a - mean(a))^2) + sum((b - mean(b))^2)
+split_cost<-sapply(1976:(last_year-3),function(y) {
+  a<-m6_modern$n[m6_modern$year<y]
+  b<-m6_modern$n[m6_modern$year>=y]
+  sum((a-mean(a))^2)+sum((b-mean(b))^2)
 })
-step_year <- (1976:(last_year - 3))[which.min(split_cost)]
-before_step <- mean(m6_modern$n[m6_modern$year < step_year])
-after_step <- mean(m6_modern$n[m6_modern$year >= step_year])
-m6_first <- mean(m6$n[m6$year <= 1904])
-m6_next <- mean(m6$n[m6$year %in% 1905:1914])
-m7_first <- mean(m7$n[m7$year <= 1904])
-m7_all <- mean(m7$n)
-m7_periods <- c(
-  early = mean(m7$n[m7$year <= 1949]),
-  middle = mean(m7$n[m7$year %in% 1950:1989]),
-  late = mean(m7$n[m7$year >= 1990])
-)
-tests <- data.frame(
-  what = c("M7+", "M7+", "M6+", "M5+"),
-  from = c(1900, modern, step_year, step_year),
-  chance = c(
-    chance(m7$n, m7$year),
-    chance(m7$n[m7$year >= modern], m7$year[m7$year >= modern]),
-    chance(m6$n[m6$year >= step_year], m6$year[m6$year >= step_year]),
-    chance(m5$n[m5$year >= step_year], m5$year[m5$year >= step_year])
-  ),
-  stringsAsFactors = FALSE
-)
-means_of <- function(x, from, to) mean(x$n[x$year >= from & x$year <= to])
+step_year<-(1976:(last_year-3))[which.min(split_cost)]
+before_step<-mean(m6_modern$n[m6_modern$year<step_year])
+after_step<-mean(m6_modern$n[m6_modern$year>=step_year])
+m6_first<-mean(m6$n[m6$year<=1904])
+m6_next<-mean(m6$n[m6$year%in%1905:1914])
+m7_first<-mean(m7$n[m7$year<=1904])
+m7_all<-mean(m7$n)
+m7_periods<-c(early=mean(m7$n[m7$year<=1949]),middle=mean(m7$n[m7$year%in%1950:1989]),
+              late=mean(m7$n[m7$year>=1990]))
+tests<-data.frame(what=c("M7+","M7+","M6+","M5+"),
+                  from=c(1900,modern,step_year,step_year),
+                  chance=c(chance(m7$n,m7$year),
+                           chance(m7$n[m7$year>=modern],m7$year[m7$year>=modern]),
+                           chance(m6$n[m6$year>=step_year],m6$year[m6$year>=step_year]),
+                           chance(m5$n[m5$year>=step_year],m5$year[m5$year>=step_year])),
+                  stringsAsFactors=FALSE)
+means_of<-function(x,from,to) {
+  result<-mean(x$n[x$year>=from&x$year<=to])
+  return(result)
+}
 # one big earthquake brings its aftershocks: the Tohoku earthquake of 2011 and the following year
-in_2011 <- big[big$year == 2011, ]
-tohoku <- in_2011[which.max(in_2011$mag), ]
-tohoku_time <- as.POSIXct(tohoku$time, format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
-middle_time <- as.POSIXct(middle$time, format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
-after <- middle_time > tohoku_time & middle_time <= tohoku_time + 365 * 86400 &
-  distance_km(tohoku$longitude, tohoku$latitude, middle$longitude, middle$latitude) <= 500
-after_n <- sum(after)
-year_2011 <- m5$n[m5$year == 2011]
-peak_year <- m5$year[which.max(m5$n)]
+in_2011<-big[big$year==2011,]
+tohoku<-in_2011[which.max(in_2011$mag),]
+tohoku_time<-as.POSIXct(tohoku$time,format="%Y-%m-%dT%H:%M:%S",tz="UTC")
+middle_time<-as.POSIXct(middle$time,format="%Y-%m-%dT%H:%M:%S",tz="UTC")
+after<-middle_time>tohoku_time&middle_time<=tohoku_time+365*86400&
+       distance_km(tohoku$longitude,tohoku$latitude,middle$longitude,middle$latitude)<=500
+after_n<-sum(after)
+year_2011<-m5$n[m5$year==2011]
+peak_year<-m5$year[which.max(m5$n)]
 ```
 
 **No clear trend in the big ones; the smaller ones are counted in steps.** Earthquakes of magnitude 7 and above are the only ones that the catalogue seems to record in full since 1900 (see below). They averaged `r one(m7_periods[1])` a year from 1900 to 1949, `r one(m7_periods[2])` from 1950 to 1989 and `r one(m7_periods[3])` from `r modern` to `r last_year`: not a steady rise. From `r modern` on, a rank test finds no trend in them (the chance of a pattern as strong as this one without a trend is `r tests$chance[2]` in 100). Over all the years from 1900 the test leans slightly upwards (`r tests$chance[1]` in 100), because of the dip in the middle of the century; the page does not take that for a lasting rise, since magnitudes were worked out differently in each period.
 
-For the smaller earthquakes the catalogue is the problem, not the Earth. From 1900 to 1904 it holds `r one(m6_first)` earthquakes of magnitude 6 and above a year, and from 1905 to 1914 `r one(m6_next)`; for magnitude 7 and above the same years give `r one(m7_first)` and `r one(mean(m7$n[m7$year %in% 1905:1914]))`, so only the strongest were recorded in those years. Even from 1973 the counts of magnitude 6 and above are not on one level: they average `r one(before_step)` a year before `r step_year` and `r one(after_step)` from `r step_year` on, a step of `r percent(100 * (after_step / before_step - 1))`. The page does not know why the catalogue steps there. So the tests for magnitude 6 and above and for 5 and above start in `r step_year`, where the rank test finds no clear trend either (the last column):
+For the smaller earthquakes the catalogue is the problem, not the Earth. From 1900 to 1904 it holds `r one(m6_first)` earthquakes of magnitude 6 and above a year, and from 1905 to 1914 `r one(m6_next)`; for magnitude 7 and above the same years give `r one(m7_first)` and `r one(mean(m7$n[m7$year%in%1905:1914]))`, so only the strongest were recorded in those years. Even from 1973 the counts of magnitude 6 and above are not on one level: they average `r one(before_step)` a year before `r step_year` and `r one(after_step)` from `r step_year` on, a step of `r percent(100*(after_step/before_step-1))`. The page does not know why the catalogue steps there. So the tests for magnitude 6 and above and for 5 and above start in `r step_year`, where the rank test finds no clear trend either (the last column):
 
 ```{r trend_table}
-knitr::kable(
-  data.frame(
-    what = c("Magnitude 7 and above", "Magnitude 7 and above", "Magnitude 6 and above", "Magnitude 5 and above"),
-    from = paste0(tests$from, "–", last_year),
-    average = c(
-      one(means_of(m7, 1900, last_year)),
-      one(means_of(m7, modern, last_year)),
-      one(means_of(m6, step_year, last_year)),
-      number(means_of(m5, step_year, last_year))
-    ),
-    chance = tests$chance
-  ),
-  col.names = c("", "Years", "A year, on average", "By chance, in 100"),
-  align = "llrr",
-  row.names = FALSE
-)
+knitr::kable(data.frame(what=c("Magnitude 7 and above","Magnitude 7 and above",
+                               "Magnitude 6 and above","Magnitude 5 and above"),
+                        from=paste0(tests$from,"–",last_year),
+                        average=c(one(means_of(m7,1900,last_year)),
+                                  one(means_of(m7,modern,last_year)),
+                                  one(means_of(m6,step_year,last_year)),
+                                  number(means_of(m5,step_year,last_year))),
+                        chance=tests$chance),
+             col.names=c("","Years","A year, on average","By chance, in 100"),align="llrr",
+             row.names=FALSE)
 ```
 
-**Aftershocks can make a year.** A large earthquake is followed by many smaller ones, and a simple count does not tell them from new earthquakes. After the Tohoku earthquake in Japan (magnitude `r one(tohoku$mag)`, `r substr(tohoku$time, 1, 10)`), `r number(after_n)` earthquakes of magnitude 5 and above happened within 500 km in the following year, `r percent(100 * after_n / year_2011)` of the `r number(year_2011)` of the whole of 2011, and `r number(after_n)` is `r percent(100 * after_n / means_of(m5, step_year, last_year))` of the average year since `r step_year`. The year with the most of magnitude 5 and above was `r peak_year`, with `r number(max(m5$n))`.
+**Aftershocks can make a year.** A large earthquake is followed by many smaller ones, and a simple count does not tell them from new earthquakes. After the Tohoku earthquake in Japan (magnitude `r one(tohoku$mag)`, `r substr(tohoku$time,1,10)`), `r number(after_n)` earthquakes of magnitude 5 and above happened within 500 km in the following year, `r percent(100*after_n/year_2011)` of the `r number(year_2011)` of the whole of 2011, and `r number(after_n)` is `r percent(100*after_n/means_of(m5,step_year,last_year))` of the average year since `r step_year`. The year with the most of magnitude 5 and above was `r peak_year`, with `r number(max(m5$n))`.
 
 ```{r trend_chart, fig.height = 6.4}
 #| fig-alt: "Earthquakes of magnitude 7 and above since 1900, and of magnitude 6 and above and 5 and above since 1973, counted for each year"
-series <- rbind(
-  data.frame(panel = "Magnitude 7 and above, since 1900", year = m7$year, n = m7$n),
-  data.frame(panel = "Magnitude 6 and above, since 1973", year = m6_modern$year, n = m6_modern$n),
-  data.frame(panel = "Magnitude 5 and above, since 1973", year = m5$year, n = m5$n)
-)
-series$panel <- factor(series$panel, levels = unique(series$panel))
-step_lines <- data.frame(
-  panel = factor("Magnitude 6 and above, since 1973", levels = levels(series$panel)),
-  x = c(1973 - 0.4, step_year - 0.5),
-  xend = c(step_year - 0.5, last_year + 0.4),
-  y = c(before_step, after_step)
-)
-ggplot(series, aes(x = year, y = n)) +
-  geom_line(colour = dark_gray, linewidth = 0.5) +
-  geom_point(colour = dark_gray, size = 1) +
-  geom_segment(data = step_lines, aes(x = x, xend = xend, y = y, yend = y), colour = red, linewidth = 1.2) +
-  facet_wrap(~panel, ncol = 1, scales = "free") +
-  scale_x_continuous(breaks = seq(1900, 2020, 20)) +
-  scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.08))) +
-  labs(
-    title = "Earthquakes counted each year",
-    subtitle = paste0("Red: the average before and from ", step_year, ", for magnitude 6 and above"),
-    x = NULL,
-    y = NULL,
-    caption = "Data: USGS ComCat"
-  ) +
-  theme_page(13) +
-  theme(
-    panel.grid.minor = element_blank(),
-    strip.text = element_text(face = "bold", hjust = 0)
-  )
+# one panel: the earthquakes counted each year
+count_panel<-function(x,title) {
+  result<-plot_ly(x,x=~year,y=~n,type="scatter",mode="lines+markers",name=title,
+                  line=list(color=dark_gray,width=1),marker=list(color=dark_gray,size=4),
+                  hovertemplate=paste0("%{x}: %{y}<extra>",title,"</extra>"))
+  return(result)
+}
+titles<-c("Magnitude 7 and above, since 1900",
+          paste0("Magnitude 6 and above, since 1973; red: the average before and from ",step_year),
+          "Magnitude 5 and above, since 1973")
+middle_panel<-count_panel(m6_modern,titles[2]) %>%
+  add_segments(x=c(1973-0.4,step_year-0.5),xend=c(step_year-0.5,last_year+0.4),
+               y=c(before_step,after_step),yend=c(before_step,after_step),
+               line=list(color=red,width=3),name="Average",
+               hovertemplate="Average: %{y:.1f} a year<extra></extra>")
+p<-subplot(count_panel(m7,titles[1]),middle_panel,count_panel(m5,titles[3]),nrows=3,margin=0.07)
+# the title of each panel, above it
+domains<-plotly_build(p)$x$layout[c("yaxis","yaxis2","yaxis3")]
+panel_titles<-lapply(1:3,function(k) {
+  list(text=paste0("<b>",titles[k],"</b>"),x=0,xref="paper",y=domains[[k]]$domain[2],yref="paper",
+       xanchor="left",yanchor="bottom",showarrow=FALSE)
+})
+p %>%
+  chart("Earthquakes counted each year","USGS ComCat",y_axis=list(rangemode="tozero"),
+        annotations=panel_titles,showlegend=FALSE,margin=list(t=80,b=70),note_y=-0.08,
+        yaxis2=list(rangemode="tozero"),yaxis3=list(rangemode="tozero"))
 ```
 
 ---
@@ -758,9 +639,9 @@ ggplot(series, aes(x = year, y = n)) +
 ## So, what does it mean?
 
 1. **Earthquakes come in belts.** `r within(100)` of the `r number(n_big)` of magnitude 6 and above since 1973 struck within 100 km of a plate boundary, which is near only `r world_within(100)` of the surface of the globe. `r percent(sea_share)` of those of magnitude 5 and above were farther than `r reach` km from any country.
-2. **`r top$country[1]`, `r top$country[2]` and `r top$country[3]` have the most.** Greece is number `r rank_of(greece)` among `r n_places` countries and territories, and `r ifelse(europe$country[1] == greece, "the first", paste0("after ", europe$country[1]))` in Europe without Russia.
+2. **`r top$country[1]`, `r top$country[2]` and `r top$country[3]` have the most.** Greece is number `r rank_of(greece)` among `r n_places` countries and territories, and `r ifelse(europe$country[1]==greece,"the first",paste0("after ",europe$country[1]))` in Europe without Russia.
 3. **There are about `r one(per_year[4])` earthquakes of magnitude 8 a year and about `r number(per_year[3])` of magnitude 7**, and each step down in magnitude is several times as common.
-4. **Nearly all are shallow**, `r percent(share_of(middle, "Shallow"))` of those of magnitude 5 and above. The deaths come in a few events: the ten deadliest earthquakes killed `r percent(top10_share)` of the `r number(total_deaths)` recorded since `r since`.
+4. **Nearly all are shallow**, `r percent(share_of(middle,"Shallow"))` of those of magnitude 5 and above. The deaths come in a few events: the ten deadliest earthquakes killed `r percent(top10_share)` of the `r number(total_deaths)` recorded since `r since`.
 5. **There is no clear sign of more earthquakes in this catalogue.** From `r modern` on there is no trend in those of magnitude 7 and above; the smaller ones are counted in steps, and the page does not claim a trend for them.
 
 **What this does not show.** The catalogue is of the earthquakes that instruments record, and the earlier years of it are patchy for all but the strongest. The magnitude is of several kinds, and the depth is uncertain. The countries come from the places of the earthquakes, not from where the shaking was felt. The deaths are those NCEI recorded for its significant earthquakes: some counts are estimates, and the tsunamis that follow some earthquakes are not told apart here. And earthquakes of the same size do not do the same harm.
@@ -779,4 +660,4 @@ For the waves that some of these earthquakes send across the sea, see [Tsunamis]
 
 ---
 
-*Rendered with R `r getRversion()` · dplyr · ggplot2 · plotly · sf · jsonlite*
+*Rendered with R `r getRversion()` · plotly · sf · jsonlite*

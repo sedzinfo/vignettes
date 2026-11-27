@@ -163,7 +163,7 @@ chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotation
                 margin=list(t=70,b=90),note_y=-0.16,...) {
   note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
              yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
-  layout(p,
+  result<-layout(p,
     # at the top, so that a legend of two or three rows fits under it in a larger top margin
     title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
     yaxis=c(list(title=y_title),y_axis),
@@ -173,6 +173,7 @@ chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotation
     ...
   ) %>%
     config(displaylogo=FALSE)
+  return(result)
 }
 legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
 months<-factor(month.abb,levels=month.abb) # in this order on an axis
@@ -308,15 +309,15 @@ plot_ly(x=months,y=rownames(z),z=z,type="heatmap",colorscale=blues,xgap=2,ygap=2
         hovertemplate="%{x} %{y}: %{z:.1f} million nights<extra></extra>") %>%
   chart("Nights in Greece each month, million",
         paste0("Eurostat, tour_occ_nim, January 2009 to ",month.name[latest_month]," ",latest_year,
-               "; blank: no data"),y_axis=list(type="category",autorange="reversed"),note_y=-0.08)
+               "; blank: no data"),
+        y_axis=list(type="category",autorange="reversed"),note_y=-0.08)
 ```
 
 ```{r season_eu_numbers}
 season<-monthly[monthly$year==full_year,]
 complete<-names(which(table(season$geo)==12))
 by_season<-data.frame(geo=complete,name=eu_name[complete])
-by_season$share<-sapply(complete,
-                        function(k) {
+by_season$share<-sapply(complete,function(k) {
   x<-season[season$geo==k,]
   100*sum(x$values[x$month%in%summer])/sum(x$values)
 })
@@ -377,8 +378,7 @@ summer_of<-function(geo) {
 
 ```{r regions}
 by_region$million_nights<-by_region$nights/1e6
-ranking_bars(by_region,"million_nights","",
-             function(x) {
+ranking_bars(by_region,"million_nights","",function(x) {
     paste0(x$name,": ",million(x$nights)," nights, ",round(x$per_person,1)," per inhabitant, ",
            percent(x$foreign)," from abroad")
   },colors=function(x) ifelse(x$geo%in%islands,blue,gray)) %>%
@@ -515,8 +515,7 @@ p %>%
                "visitors from the other EU countries; own ","calculation"),
         x_axis=list(range=c(0,1.15*max(costs$per_trip))),barmode="stack",
         legend=c(legend_top,traceorder="normal"),margin=list(l=110,t=100,b=90),
-        annotations=lapply(seq_len(nrow(costs)),
-                           function(k) {
+        annotations=lapply(seq_len(nrow(costs)),function(k) {
     list(x=costs$per_trip[k],y=labels[k],text=euros(costs$per_trip[k]),xanchor="left",xshift=4,
          showarrow=FALSE,font=list(color=dark_gray))
   }))
@@ -525,8 +524,7 @@ p %>%
 **`r if(match("EL",by_night)<=3) "Per night, too, Greece is among the dearest." else if(match("EL",by_night)>match("EL",by_trip)) "Per night, Greece is less dear." else "Per night, Greece is in the middle."`** Visitors stay long in Greece, `r one(cost("EL","length"))` nights a trip`r if(length(before_greece(by_length))) paste0(" (only in ",and_list(eu_name[before_greece(by_length)])," do they stay longer)") else ""`, so the cost of the flight is spread over more nights. A night of holiday in Greece costs them `r euros(cost("EL","per_night"))`, `r highest(match("EL",by_night))` of the `r nrow(costs)``r if(length(before_greece(by_night))) paste0(": ",and_list(paste0(eu_name[before_greece(by_night)]," (",euros(sapply(before_greece(by_night),cost,column="per_night")),")"))," cost more") else ""`.
 
 ```{r spending_night}
-ranking_bars(costs,"per_night","EL",
-             function(x) {
+ranking_bars(costs,"per_night","EL",function(x) {
     paste0(x$name,": ",euros(x$per_night)," a night, ",one(x$length)," nights a trip")
   }) %>%
   chart(paste0("What a night of holiday costs, ",survey_year,", euros"),
@@ -593,7 +591,7 @@ ahead_of_greece<-by_share[seq_len(match("EL",by_share)-1)]
 ```{r dependence_eu, fig.height = 9}
 ranking_bars(dependence,"share","EL",
              function(x) paste0(x$name,": ",percent(x$share,1)," of GDP, ",
-                    billion_euros(x$values_receipts))) %>%
+                                billion_euros(x$values_receipts))) %>%
   chart(paste0("What visitors from abroad spend, ",receipts_year,", % of GDP"),
         "Eurostat, bop_its6_det (travel, credit) and nama_10_gdp",margin=list(l=130,t=70,b=90),
         note_y=-0.1)
@@ -654,8 +652,8 @@ plot_ly(registered,x=~time,y=~values/1e6,type="scatter",mode="lines+markers",
             type="scatter",mode="lines+markers") %>%
   chart("Nights in Greece, million",
         paste0("Eurostat, tour_occ_ninat and tour_ce_omn12 ",
-               "(Airbnb, Booking, Expedia, Tripadvisor)"),"Million",y_axis=list(rangemode="tozero"),
-        legend=legend_top)
+               "(Airbnb, Booking, Expedia, Tripadvisor)"),
+        "Million",y_axis=list(rangemode="tozero"),legend=legend_top)
 ```
 
 **In Athens, `r round(platforms_per_100("EL30"))` nights on the platforms for every 100 in tourist accommodation.** That is what Attica had in `r stay_year`, `r if(length(more_than_attica)) paste("more than any other region except",and_list(more_than_attica)) else "more than any other region"`; the South Aegean had `r round(platforms_per_100("EL42"))` and Crete `r round(platforms_per_100("EL43"))`. Many of the flats let to visitors in Athens were once let to people who live there, which is one reason given for the rise of rents in the city; the story of [Greek housing](ILLUSTRATION_GREEK_HOUSING.Rmd) follows rents and house prices against incomes.
@@ -663,8 +661,8 @@ plot_ly(registered,x=~time,y=~values/1e6,type="scatter",mode="lines+markers",
 ```{r platforms_regions, fig.height = 7}
 x<-by_region[order(by_region$registered),]
 y<-factor(x$name,levels=x$name)
-plot_ly(y=y,x=x$registered/1e6,type="bar",orientation="h",
-        name="Hotels, rented rooms and campsites",marker=list(color=blue),
+plot_ly(y=y,x=x$registered/1e6,type="bar",orientation="h",name="Hotels, rented rooms and campsites",
+        marker=list(color=blue),
         hovertemplate=paste0("%{y}: %{x:.1f} million nights<extra>Tourist ",
                              "accommodation</extra>")) %>%
   add_trace(y=y,x=x$platforms/1e6,name="Booked through the platforms",marker=list(color=amber),
