@@ -51,6 +51,7 @@ plot_ly(bars,x=~deaths,y=~name,type="bar",orientation="h",
 - **Colour classes** on a map or calendar are a `colorscale` of steps with `zmin`/`zmax`, and a colour bar shows the class names (see the earthquake country map).
 - **Overlapping labels** are left out, as ggplot's `check_overlap` did. The point keeps its colour and its hover text.
 - **A package that is no longer used** comes out of `library()`, out of the install comment, and out of the footer (`*Rendered with R ... · plotly · sf*`).
+- **The PNG of a converted chart** stays in `_freeze/<page>/figure-html/` after the render, because Quarto does not remove it. Delete it once the freeze no longer refers to it.
 
 ## dplyr to base R
 
@@ -111,10 +112,10 @@ Done, checked and copied here:
 - [x] WORLD_EARTHQUAKES: the yearly counts are a plotly chart of three panels
 - [x] WORLD_VOLCANOES: the decade chart and the deaths timeline are plotly
 - [x] WORLD_TSUNAMIS: NOAA's pages arrive in the order in which they finish and are now put in page order, so the map draws its points in the same order on every render
+- [x] WORLD_WILDFIRES: the trend chart (eight panels, one y scale for all, as before) and the season calendar are plotly; the calendar's title is shorter and its subtitle is now the legend's title; the panels show the change with a minus sign (−) where the ggplot font needed a dash (–)
 
 To do, in this order:
 
-- [ ] WORLD_WILDFIRES
 - [ ] WORLD_FLOODS
 - [ ] WORLD_TORNADOES
 - [ ] ATHENS_HEAT
@@ -130,7 +131,3 @@ To do, in this order:
 - [ ] SEA_ICE_TEMP
 - [ ] CLIMATE_HIGHCHARTER (keeps highcharter)
 - [ ] ILLUSIONS (already close to the style)
-
-Small leftovers on finished pages:
-
-- GREEK_EMIGRATION, NATURAL_DISASTERS, WORLD_EARTHQUAKES: `result<-x` followed by `return(result)` should read `return(x)`.
