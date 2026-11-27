@@ -14,7 +14,7 @@ directory <- if (rstudioapi::isAvailable()) {
 source(paste0(directory, "R/code_options.R"))
 # no knitr cache: the data are downloaded when the page is rendered, and the site keeps
 # what was rendered in _freeze/
-knitr::opts_chunk$set(cache = FALSE)
+knitr::opts_chunk$set(cache=FALSE)
 ```
 
 ## What is this?
@@ -42,9 +42,7 @@ The data are downloaded when the page is rendered:
 ## Packages
 
 ```{r packages}
-# install.packages(c("dplyr", "ggplot2", "plotly", "sf"))
-library(dplyr)
-library(ggplot2)
+# install.packages(c("plotly", "sf"))
 library(plotly)
 library(sf)
 ```
@@ -53,228 +51,184 @@ library(sf)
 
 ```{r download}
 # a chart of Our World in Data as a table: one row for each country or region and each year
-owid <- function(chart) {
-  read.csv(paste0(
-    "https://ourworldindata.org/grapher/",
-    chart,
-    ".csv?v=1&csvType=full&useColumnShortNames=true"
-  ))
+owid<-function(chart) {
+  result<-read.csv(paste0("https://ourworldindata.org/grapher/",chart,
+                          ".csv?v=1&csvType=full&useColumnShortNames=true"))
+  return(result)
 }
 # EM-DAT: the people killed and affected in each country each year, by kind of disaster, and the
 # disasters recorded in the world each year, by kind
-deaths <- owid("natural-disasters-deaths")
-affected <- owid("natural-disasters-people-affected")
-events <- owid("number-of-natural-disaster-events")
-population <- owid("population")
-continents <- owid("continents-according-to-our-world-in-data")
+deaths<-owid("natural-disasters-deaths")
+affected<-owid("natural-disasters-people-affected")
+events<-owid("number-of-natural-disaster-events")
+population<-owid("population")
+continents<-owid("continents-according-to-our-world-in-data")
 
 # the earthquakes of magnitude 7 or more since 1900 (USGS)
-quakes <- read.csv(paste0(
-  "https://earthquake.usgs.gov/fdsnws/event/1/query?format=csv",
-  "&starttime=1900-01-01&minmagnitude=7&orderby=time-asc"
-))
+quakes<-read.csv(paste0(paste0("https://earthquake.usgs.gov/fdsnws/event/1/qu","ery?format=csv"),
+                        "&starttime=1900-01-01&minmagnitude=7&orderby=time-asc"))
 # the volcanoes that have erupted in the last 12,000 years (Smithsonian); the geological summary of
 # each volcano has line breaks inside its quotes, which read.csv reads correctly
-volcanoes <- read.csv(paste0(
-  "https://webservices.volcano.si.edu/geoserver/GVP-VOTW/ows?service=WFS&version=2.0.0",
-  "&request=GetFeature&typeName=GVP-VOTW:Smithsonian_VOTW_Holocene_Volcanoes&outputFormat=csv"
-))
+volcanoes<-read.csv(paste0(paste0("https://webservices.volcano.si.edu/geoserver/",
+                                  "GVP-VOTW/ows?service=WFS&version=2.0.0"),
+                           paste0("&request=GetFeature&typeName=GVP-VOTW:Smithso",
+                                  "nian_VOTW_Holocene_Volcanoes&outputFormat=csv")))
 # the boundaries of the tectonic plates (Bird 2003, as GeoJSON)
-plates <- st_read(
-  "https://raw.githubusercontent.com/fraxen/tectonicplates/master/GeoJSON/PB2002_boundaries.json",
-  quiet = TRUE
-)
+plates<-st_read(paste0("https://raw.githubusercontent.com/fraxen/tect",
+                       "onicplates/master/GeoJSON/PB2002_boundaries.j","son"),quiet=TRUE)
 ```
 
 ```{r tidy}
 # the kinds of disaster: the columns of EM-DAT's tables, their names in its table of events, and
 # their names on this page
-kinds <- data.frame(
-  key = c(
-    "flood",
-    "extreme_temperature",
-    "extreme_weather",
-    "drought",
-    "earthquake",
-    "volcanic_activity",
-    "landslide",
-    "wildfire"
-  ),
-  event_name = c(
-    "Flood",
-    "Extreme temperature",
-    "Extreme weather",
-    "Drought",
-    "Earthquake",
-    "Volcanic activity",
-    "Landslide",
-    "Wildfire"
-  ),
-  label = c(
-    "Flood",
-    "Extreme temperature",
-    "Storm",
-    "Drought",
-    "Earthquake",
-    "Volcano",
-    "Landslide",
-    "Wildfire"
-  )
-)
+kinds<-data.frame(key=c("flood","extreme_temperature","extreme_weather","drought","earthquake",
+                        "volcanic_activity","landslide","wildfire"),
+                  event_name=c("Flood","Extreme temperature","Extreme weather","Drought",
+                               "Earthquake","Volcanic activity","Landslide","Wildfire"),
+                  label=c("Flood","Extreme temperature","Storm","Drought","Earthquake","Volcano",
+                          "Landslide","Wildfire"))
 # the charts with colours show the five deadliest kinds and put the other three together
-kinds$group <- ifelse(kinds$key %in% c("volcanic_activity", "landslide", "wildfire"), "Other", kinds$label)
-group_levels <- c("Flood", "Extreme temperature", "Storm", "Drought", "Earthquake", "Other")
-label_of <- setNames(kinds$label, kinds$key)
-group_of <- setNames(kinds$group, kinds$key)
+kinds$group<-ifelse(kinds$key%in%c("volcanic_activity","landslide","wildfire"),"Other",kinds$label)
+group_levels<-c("Flood","Extreme temperature","Storm","Drought","Earthquake","Other")
+label_of<-setNames(kinds$label,kinds$key)
+group_of<-setNames(kinds$group,kinds$key)
 
-# a table of EM-DAT with one row for each place, year and kind; a year without a recorded disaster of
+# a table of EM-DAT with one row for each place, year and kind; a year without a recorded disaster
+# of
 # a kind has no value there, which means that none was recorded: zero
-to_long <- function(x, prefix) {
-  y <- do.call(rbind, lapply(kinds$key, function(k) {
-    data.frame(entity = x$entity, code = x$code, year = x$year, kind = k, value = x[[paste0(prefix, k, "_yearly")]])
+to_long<-function(x,prefix) {
+  y<-do.call(rbind,
+             lapply(kinds$key,
+                    function(k) {
+    data.frame(entity=x$entity,
+               code=x$code,
+               year=x$year,
+               kind=k,
+               value=x[[paste0(prefix,k,"_yearly")]])
   }))
-  y$value[is.na(y$value)] <- 0
-  y
+  y$value[is.na(y$value)]<-0
+  result<-y
+  return(result)
 }
-dead <- to_long(deaths, "total_dead_")
-hit <- to_long(affected, "total_affected_")
-first_year <- min(dead$year)
-last_year <- max(dead$year)
-recent <- 2000:last_year
+dead<-to_long(deaths,"total_dead_")
+hit<-to_long(affected,"total_affected_")
+first_year<-min(dead$year)
+last_year<-max(dead$year)
+recent<-2000:last_year
 
 # the countries: rows with a code that Our World in Data puts on a continent (its regions have no
 # code, or one that starts with OWID_)
-country_codes <- continents$code[nzchar(continents$code)]
-continent_of <- setNames(continents$owid_region, continents$code)
+country_codes<-continents$code[nzchar(continents$code)]
+continent_of<-setNames(continents$owid_region,continents$code)
 
 # the population of each place and year; the data end in 2023, and the years after it take the
 # population of 2023
-names(population)[names(population) == "population_historical"] <- "people"
-last_population <- max(population$year)
-carried <- do.call(rbind, lapply((last_population + 1):last_year, function(y) {
-  transform(population[population$year == last_population, ], year = y)
+names(population)[names(population)=="population_historical"]<-"people"
+last_population<-max(population$year)
+carried<-do.call(rbind,
+                 lapply((last_population+1):last_year,
+                        function(y) {
+  transform(population[population$year==last_population,],year=y)
 }))
-population <- rbind(population[population$year >= first_year, ], carried)
+population<-rbind(population[population$year>=first_year,],carried)
 ```
 
 ```{r chart_style}
-red <- "#d62728"
-gray <- "#bdbdbd"
-dark_gray <- "#6b6b6b" # also the colour of the notes
+red<-"#d62728"
+gray<-"#bdbdbd"
+dark_gray<-"#6b6b6b" # also the colour of the notes
 # the kinds of disaster, in the order of the stacked bars: the first five colours of a palette whose
 # neighbours were checked for colour blindness, and grey for the rest
-group_colors <- c(
-  Flood = "#2a78d6",
-  "Extreme temperature" = "#eb6834",
-  Storm = "#1baf7a",
-  Drought = "#eda100",
-  Earthquake = "#e87ba4",
-  Other = "#bdbdbd"
-)
+group_colors<-c(Flood="#2a78d6","Extreme temperature"="#eb6834",Storm="#1baf7a",Drought="#eda100",
+                Earthquake="#e87ba4",Other="#bdbdbd")
 # one hue, from light to dark, for the deaths per person on the map
-reds <- c("#fee5d9", "#fcbba1", "#fc9272", "#fb6a4a", "#ef3b2c", "#cb181d", "#99000d")
+reds<-c("#fee5d9","#fcbba1","#fc9272","#fb6a4a","#ef3b2c","#cb181d","#99000d")
 
 # the source of a plotly chart, as a note under it, and the common layout
-chart <- function(
-  p,
-  title,
-  source,
-  y_title = "",
-  y_axis = list(),
-  x_axis = list(),
-  annotations = list(),
-  margin = list(t = 70, b = 90),
-  note_y = -0.16,
-  ...
-) {
-  note <- list(
-    text = paste("Source:", source),
-    xref = "paper",
-    yref = "paper",
-    x = 0,
-    y = note_y,
-    xanchor = "left",
-    yanchor = "top",
-    showarrow = FALSE,
-    font = list(size = 11, color = dark_gray)
-  )
-  layout(
-    p,
-    title = list(text = title, x = 0.02, xanchor = "left", y = 0.97, yanchor = "top"),
-    yaxis = c(list(title = y_title), y_axis),
-    xaxis = c(list(title = ""), x_axis),
-    margin = margin,
-    annotations = c(annotations, list(note)),
-    ...
-  ) |>
-    config(displaylogo = FALSE)
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),
+                 margin=margin,annotations=c(annotations,list(note)),...) %>%
+    config(displaylogo=FALSE)
+  return(result)
 }
-legend_top <- list(orientation = "h", x = 0, y = 1.02, yanchor = "bottom", traceorder = "normal")
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom",traceorder="normal")
 
 # numbers in the text
-number <- function(x) format(round(x), big.mark = ",", scientific = FALSE, trim = TRUE)
-percent <- function(x, digits = 0) paste0(format(round(x, digits), nsmall = digits, trim = TRUE), "%")
-one <- function(x) format(round(x, 1), nsmall = 1, trim = TRUE)
-two <- function(x) format(round(x, 2), nsmall = 2, trim = TRUE)
-thousand <- function(x) number(x / 1000)
-and_list <- function(x) {
-  if (length(x) < 2) {
+number<-function(x) {
+  result<-format(round(x),big.mark=",",scientific=FALSE,trim=TRUE)
+  return(result)
+}
+percent<-function(x,digits=0) {
+  result<-paste0(format(round(x,digits),nsmall=digits,trim=TRUE),"%")
+  return(result)
+}
+one<-function(x) {
+  result<-format(round(x,1),nsmall=1,trim=TRUE)
+  return(result)
+}
+two<-function(x) {
+  result<-format(round(x,2),nsmall=2,trim=TRUE)
+  return(result)
+}
+thousand<-function(x) {
+  result<-number(x/1000)
+  return(result)
+}
+and_list<-function(x) {
+  if(length(x)<2) {
     return(paste(x))
   }
-  paste(paste(head(x, -1), collapse = ", "), "and", tail(x, 1))
+  result<-paste(paste(head(x,-1),collapse=", "),"and",tail(x,1))
+  return(result)
 }
 # country names that take "the" in a sentence
-with_the <- function(x) {
-  ifelse(
-    x %in% c("Democratic Republic of Congo", "Central African Republic", "United States", "Philippines"),
-    paste("the", x),
-    x
-  )
+with_the<-function(x) {
+  result<-ifelse(x%in%
+                 c("Democratic Republic of Congo","Central African Republic","United States",
+                   "Philippines"),paste("the",x),x)
+  return(result)
 }
 ```
 
-**More disasters are recorded than before, which is not the same as more happening.** EM-DAT recorded `r events$n_events[events$entity == "All disasters" & events$year == 1900]` disasters in 1900, `r events$n_events[events$entity == "All disasters" & events$year == 1970]` in 1970 and `r events$n_events[events$entity == "All disasters" & events$year == 2000]` in 2000, and since 2000 between `r min(events$n_events[events$entity == "All disasters" & events$year %in% recent])` and `r max(events$n_events[events$entity == "All disasters" & events$year %in% recent])` a year. Our World in Data warns that "the historical increase largely reflects improvements in data reporting" ([Our World in Data](https://ourworldindata.org/grapher/number-of-natural-disaster-events)), so this page counts disasters only from 2000. Deaths are another matter: the great disasters of the past were recorded too, and the page follows deaths since `r first_year`.
+**More disasters are recorded than before, which is not the same as more happening.** EM-DAT recorded `r events$n_events[events$entity=="All disasters"&events$year==1900]` disasters in 1900, `r events$n_events[events$entity=="All disasters"&events$year==1970]` in 1970 and `r events$n_events[events$entity=="All disasters"&events$year==2000]` in 2000, and since 2000 between `r min(events$n_events[events$entity=="All disasters"&events$year%in%recent])` and `r max(events$n_events[events$entity=="All disasters"&events$year%in%recent])` a year. Our World in Data warns that "the historical increase largely reflects improvements in data reporting" ([Our World in Data](https://ourworldindata.org/grapher/number-of-natural-disaster-events)), so this page counts disasters only from 2000. Deaths are another matter: the great disasters of the past were recorded too, and the page follows deaths since `r first_year`.
 
-**The population** of each country comes up to `r last_population`; for `r last_population + 1`–`r last_year` the page uses that of `r last_population`.
+**The population** of each country comes up to `r last_population`; for `r last_population+1`–`r last_year` the page uses that of `r last_population`.
 
 ---
 
 ## 1. Which disasters happen most often?
 
 ```{r often_numbers}
-per_year <- sapply(kinds$event_name, function(k) {
-  sum(events$n_events[events$entity == k & events$year %in% recent]) / length(recent)
+per_year<-sapply(kinds$event_name,
+                 function(k) {
+  sum(events$n_events[events$entity==k&events$year%in%recent])/length(recent)
 })
-often <- data.frame(label = kinds$label, per_year = per_year)
-often <- often[order(-often$per_year), ]
-all_per_year <- mean(events$n_events[events$entity == "All disasters" & events$year %in% recent])
-of_often <- function(label) often$per_year[often$label == label]
+often<-data.frame(label=kinds$label,per_year=per_year)
+often<-often[order(-often$per_year),]
+all_per_year<-mean(events$n_events[events$entity=="All disasters"&events$year%in%recent])
+of_often<-function(label) {
+  result<-often$per_year[often$label==label]
+  return(result)
+}
 ```
 
-**Floods, then storms.** Since 2000, EM-DAT has recorded `r round(all_per_year)` disasters a year: `r round(of_often("Flood"))` floods and `r round(of_often("Storm"))` storms, `r percent(100 * (of_often("Flood") + of_often("Storm")) / all_per_year)` of them. Earthquakes, droughts and extreme temperatures come next, `r round(of_often("Earthquake"))`, `r round(of_often("Drought"))` and `r round(of_often("Extreme temperature"))` a year, then landslides (`r round(of_often("Landslide"))`), wildfires (`r round(of_often("Wildfire"))`) and volcanic eruptions (`r round(of_often("Volcano"))`).
+**Floods, then storms.** Since 2000, EM-DAT has recorded `r round(all_per_year)` disasters a year: `r round(of_often("Flood"))` floods and `r round(of_often("Storm"))` storms, `r percent(100*(of_often("Flood")+of_often("Storm"))/all_per_year)` of them. Earthquakes, droughts and extreme temperatures come next, `r round(of_often("Earthquake"))`, `r round(of_often("Drought"))` and `r round(of_often("Extreme temperature"))` a year, then landslides (`r round(of_often("Landslide"))`), wildfires (`r round(of_often("Wildfire"))`) and volcanic eruptions (`r round(of_often("Volcano"))`).
 
 ```{r often_chart, fig.height = 4.2}
-often$label <- factor(often$label, levels = rev(often$label))
-plot_ly(
-  often,
-  x = ~per_year,
-  y = ~label,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(often$label %in% c("Flood", "Storm"), red, gray)),
-  text = ~ round(per_year),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:.0f} a year<extra></extra>",
-  showlegend = FALSE
-) |>
-  chart(
-    paste0("Disasters recorded a year, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE, range = c(0, 1.15 * max(often$per_year))),
-    margin = list(l = 140, t = 60, b = 50, r = 20),
-    note_y = -0.08
-  )
+often$label<-factor(often$label,levels=rev(often$label))
+plot_ly(often,x=~per_year,y=~label,type="bar",orientation="h",
+        marker=list(color=ifelse(often$label%in%c("Flood","Storm"),red,gray)),
+        text=~round(per_year),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.0f} a year<extra></extra>",showlegend=FALSE) %>%
+  chart(paste0("Disasters recorded a year, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(showticklabels=FALSE,showgrid=FALSE,zeroline=FALSE,
+                    range=c(0,1.15*max(often$per_year))),margin=list(l=140,t=60,b=50,r=20),
+        note_y=-0.08)
 ```
 
 ---
@@ -282,84 +236,76 @@ plot_ly(
 ## 2. Which kill the most, and has that changed?
 
 ```{r deadly_numbers}
-world_dead <- dead[dead$entity == "World", ]
-since_2000 <- world_dead[world_dead$year %in% recent, ] |>
-  group_by(kind) |>
-  summarise(deaths = sum(value)) |>
-  arrange(desc(deaths))
-of_since <- function(k) since_2000$deaths[since_2000$kind == k]
-all_since <- sum(since_2000$deaths)
+world_dead<-dead[dead$entity=="World",]
+# the deaths of each kind since 2000, the most first
+since_2000<-aggregate(value~kind,world_dead[world_dead$year%in%recent,],sum)
+names(since_2000)[2]<-"deaths"
+since_2000<-since_2000[order(-since_2000$deaths),]
+of_since<-function(k) {
+  result<-since_2000$deaths[since_2000$kind==k]
+  return(result)
+}
+all_since<-sum(since_2000$deaths)
 
 # deaths a year per 100,000 people in the world, by decade and kind
-world_people <- population[population$entity == "World", c("year", "people")]
-decades <- world_dead |>
-  inner_join(world_people, by = "year") |>
-  mutate(decade = 10 * (year %/% 10), group = group_of[kind]) |>
-  group_by(decade) |>
-  mutate(person_years = sum(people[kind == kinds$key[1]])) |>
-  group_by(decade, group) |>
-  summarise(rate = 1e5 * sum(value) / first(person_years), .groups = "drop")
-decade_total <- decades |>
-  group_by(decade) |>
-  summarise(rate = sum(rate))
-worst_decade <- decade_total$decade[which.max(decade_total$rate)]
-rate_of <- function(d) decade_total$rate[decade_total$decade == d]
-last_decade <- max(decade_total$decade)
+world_people<-population[population$entity=="World",c("year","people")]
+decades<-merge(world_dead,world_people,by="year")
+decades$decade<-10*(decades$year%/%10)
+decades$group<-group_of[decades$kind]
+# the people of each decade, each year counted once (in the rows of one kind)
+one_kind<-decades[decades$kind==kinds$key[1],]
+person_years<-tapply(one_kind$people,one_kind$decade,sum)
+decades<-aggregate(value~decade+group,decades,sum)
+decades$rate<-1e5*decades$value/person_years[as.character(decades$decade)]
+decades<-decades[order(decades$decade,decades$group,method="radix"),c("decade","group","rate")]
+rownames(decades)<-NULL
+decade_total<-aggregate(rate~decade,decades,sum)
+worst_decade<-decade_total$decade[which.max(decade_total$rate)]
+rate_of<-function(d) {
+  result<-decade_total$rate[decade_total$decade==d]
+  return(result)
+}
+last_decade<-max(decade_total$decade)
 
 # the deadliest years of single countries: since 1900 and since 2000
-country_dead <- dead[dead$code %in% country_codes, ]
-worst_ever <- country_dead |>
-  group_by(entity, year) |>
-  slice_max(value, n = 1, with_ties = FALSE) |>
-  ungroup() |>
-  arrange(desc(value))
-worst_recent <- worst_ever[worst_ever$year %in% recent, ]
+country_dead<-dead[dead$code%in%country_codes,]
+# the deadliest kind of each country and year, the deadliest first
+place_years<-split(country_dead,list(country_dead$entity,country_dead$year),drop=TRUE)
+worst_ever<-do.call(rbind,lapply(place_years,function(x) x[which.max(x$value),]))
+worst_ever<-worst_ever[order(-worst_ever$value,worst_ever$entity,worst_ever$year,method="radix"),]
+rownames(worst_ever)<-NULL
+worst_recent<-worst_ever[worst_ever$year%in%recent,]
 ```
 
 **Since 2000, earthquakes.** Disasters killed `r thousand(all_since)` thousand people from 2000 to `r last_year`: `r thousand(of_since("earthquake"))` thousand in earthquakes and the tsunamis they caused, `r thousand(of_since("extreme_temperature"))` thousand in heatwaves and cold, `r thousand(of_since("extreme_weather"))` thousand in storms and `r thousand(of_since("flood"))` thousand in floods. A few events make most of these numbers. The deadliest years of single countries since 2000:
 
 ```{r deadly_table}
-knitr::kable(
-  data.frame(
-    country = worst_recent$entity[1:10],
-    year = worst_recent$year[1:10],
-    kind = label_of[worst_recent$kind[1:10]],
-    deaths = number(worst_recent$value[1:10])
-  ),
-  col.names = c("Country", "Year", "Kind", "Deaths"),
-  align = "llll",
-  row.names = FALSE
-)
+knitr::kable(data.frame(country=worst_recent$entity[1:10],
+                        year=worst_recent$year[1:10],
+                        kind=label_of[worst_recent$kind[1:10]],
+                        deaths=number(worst_recent$value[1:10])),
+             col.names=c("Country","Year","Kind","Deaths"),align="llll",row.names=FALSE)
 ```
 
-**Over the century, far fewer.** In the `r worst_decade`s, disasters killed `r one(rate_of(worst_decade))` people a year for every 100,000 people in the world; in the `r last_decade`s so far, `r two(rate_of(last_decade))`. The deadliest years ever recorded in one country were `r with_the(worst_ever$entity[1])` in `r worst_ever$year[1]` (`r tolower(label_of[worst_ever$kind[1]])`, `r number(worst_ever$value[1])` dead), `r with_the(worst_ever$entity[2])` in `r worst_ever$year[2]` (`r tolower(label_of[worst_ever$kind[2]])`, `r number(worst_ever$value[2])`) and `r with_the(worst_ever$entity[3])` in `r worst_ever$year[3]` (`r tolower(label_of[worst_ever$kind[3]])`, `r number(worst_ever$value[3])`). The last year in which disasters killed a million people or more in a single country was `r max(worst_ever$year[worst_ever$value >= 1e6])`.
+**Over the century, far fewer.** In the `r worst_decade`s, disasters killed `r one(rate_of(worst_decade))` people a year for every 100,000 people in the world; in the `r last_decade`s so far, `r two(rate_of(last_decade))`. The deadliest years ever recorded in one country were `r with_the(worst_ever$entity[1])` in `r worst_ever$year[1]` (`r tolower(label_of[worst_ever$kind[1]])`, `r number(worst_ever$value[1])` dead), `r with_the(worst_ever$entity[2])` in `r worst_ever$year[2]` (`r tolower(label_of[worst_ever$kind[2]])`, `r number(worst_ever$value[2])`) and `r with_the(worst_ever$entity[3])` in `r worst_ever$year[3]` (`r tolower(label_of[worst_ever$kind[3]])`, `r number(worst_ever$value[3])`). The last year in which disasters killed a million people or more in a single country was `r max(worst_ever$year[worst_ever$value>=1e6])`.
 
 ```{r deadly_chart, fig.height = 5}
-decades$group <- factor(decades$group, levels = group_levels)
-decades$label <- paste0(decades$decade, "s")
-p <- plot_ly()
-for (g in group_levels) {
-  x <- decades[decades$group == g, ]
-  p <- add_bars(
-    p,
-    data = x,
-    x = ~label,
-    y = ~rate,
-    name = g,
-    marker = list(color = group_colors[[g]], line = list(color = "white", width = 1)),
-    hovertemplate = paste0("%{x}, ", tolower(g), ": %{y:.2f} a year per 100,000<extra></extra>")
-  )
+decades$group<-factor(decades$group,levels=group_levels)
+decades$label<-paste0(decades$decade,"s")
+p<-plot_ly()
+for(g in group_levels) {
+  x<-decades[decades$group==g,]
+  p<-add_bars(p,data=x,x=~label,y=~rate,name=g,
+              marker=list(color=group_colors[[g]],line=list(color="white",width=1)),
+              hovertemplate=paste0("%{x}, ",tolower(g),
+                                   ": %{y:.2f} a year per 100,000<extra></extra>"))
 }
-p |>
-  chart(
-    "Disaster deaths a year per 100,000 people, by decade",
-    paste0("EM-DAT, CRED / UCLouvain; population: HYDE, Gapminder, UN; via Our World in Data. 2020s: 2020–", last_year, "."),
-    "Deaths a year per 100,000",
-    barmode = "stack",
-    legend = legend_top,
-    margin = list(t = 110, b = 80, l = 60, r = 10),
-    note_y = -0.14
-  )
+p %>%
+  chart("Disaster deaths a year per 100,000 people, by decade",
+        paste0(paste0("EM-DAT, CRED / UCLouvain; population: HYDE, ",
+                      "Gapminder, UN; via Our World in Data. 2020s: ","2020–"),last_year,"."),
+        "Deaths a year per 100,000",barmode="stack",legend=legend_top,
+        margin=list(t=110,b=80,l=60,r=10),note_y=-0.14)
 ```
 
 ---
@@ -367,38 +313,33 @@ p |>
 ## 3. Which affect the most people?
 
 ```{r affected_numbers}
-affected_since <- hit[hit$entity == "World" & hit$year %in% recent, ] |>
-  group_by(kind) |>
-  summarise(people = sum(value)) |>
-  arrange(desc(people))
-of_affected <- function(k) affected_since$people[affected_since$kind == k]
-billion <- function(x) one(x / 1e9)
+affected_since<-aggregate(value~kind,hit[hit$entity=="World"&hit$year%in%recent,],sum)
+names(affected_since)[2]<-"people"
+affected_since<-affected_since[order(-affected_since$people),]
+of_affected<-function(k) {
+  result<-affected_since$people[affected_since$kind==k]
+  return(result)
+}
+billion<-function(x) {
+  result<-one(x/1e9)
+  return(result)
+}
 ```
 
-**Floods and droughts.** From 2000 to `r last_year`, EM-DAT counted `r billion(of_affected("flood"))` billion people affected by floods, `r billion(of_affected("drought"))` billion by droughts and `r billion(of_affected("extreme_weather"))` billion by storms; earthquakes affected `r number(of_affected("earthquake") / 1e6)` million. These are not different people: someone hit by a flood in 2010 and again in 2020 is counted twice. EM-DAT counts as affected the people who needed immediate help, together with the injured and the homeless ([EM-DAT, definitions](https://doc.emdat.be/docs/data-structure-and-content/general-definitions-and-concepts/)).
+**Floods and droughts.** From 2000 to `r last_year`, EM-DAT counted `r billion(of_affected("flood"))` billion people affected by floods, `r billion(of_affected("drought"))` billion by droughts and `r billion(of_affected("extreme_weather"))` billion by storms; earthquakes affected `r number(of_affected("earthquake")/1e6)` million. These are not different people: someone hit by a flood in 2010 and again in 2020 is counted twice. EM-DAT counts as affected the people who needed immediate help, together with the injured and the homeless ([EM-DAT, definitions](https://doc.emdat.be/docs/data-structure-and-content/general-definitions-and-concepts/)).
 
 ```{r affected_chart, fig.height = 4.2}
-affected_since$label <- factor(label_of[affected_since$kind], levels = rev(label_of[affected_since$kind]))
-plot_ly(
-  affected_since,
-  x = ~ people / 1e6,
-  y = ~label,
-  type = "bar",
-  orientation = "h",
-  marker = list(color = ifelse(affected_since$kind %in% c("flood", "drought"), red, gray)),
-  text = ~ number(people / 1e6),
-  textposition = "outside",
-  cliponaxis = FALSE,
-  hovertemplate = "%{y}: %{x:,.0f} million<extra></extra>",
-  showlegend = FALSE
-) |>
-  chart(
-    paste0("People affected, millions, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(showticklabels = FALSE, showgrid = FALSE, zeroline = FALSE, range = c(0, 1.18 * max(affected_since$people) / 1e6)),
-    margin = list(l = 140, t = 60, b = 50, r = 20),
-    note_y = -0.08
-  )
+affected_since$label<-factor(label_of[affected_since$kind],
+                             levels=rev(label_of[affected_since$kind]))
+plot_ly(affected_since,x=~people/1e6,y=~label,type="bar",orientation="h",
+        marker=list(color=ifelse(affected_since$kind%in%c("flood","drought"),red,gray)),
+        text=~number(people/1e6),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:,.0f} million<extra></extra>",showlegend=FALSE) %>%
+  chart(paste0("People affected, millions, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(showticklabels=FALSE,showgrid=FALSE,zeroline=FALSE,
+                    range=c(0,1.18*max(affected_since$people)/1e6)),
+        margin=list(l=140,t=60,b=50,r=20),note_y=-0.08)
 ```
 
 ---
@@ -406,152 +347,128 @@ plot_ly(
 ## 4. Where do disasters kill the most?
 
 ```{r where_numbers}
-min_people <- 1e6 # countries with fewer people are left out of the rates: one event decides them
-country_rates <- country_dead[country_dead$year %in% recent, ] |>
-  group_by(code, entity, year) |>
-  summarise(deaths = sum(value), worst_kind = kind[which.max(value)], .groups = "drop") |>
-  inner_join(population[, c("code", "year", "people")], by = c("code", "year")) |>
-  group_by(code, entity) |>
-  summarise(
-    worst_year = year[which.max(deaths)],
-    worst_kind = worst_kind[which.max(deaths)],
-    rate = 1e5 * sum(deaths) / sum(people),
-    people_now = people[which.max(year)],
-    deaths = sum(deaths),
-    .groups = "drop"
-  )
-small <- country_rates[country_rates$people_now < min_people, ]
-country_rates <- country_rates[country_rates$people_now >= min_people, ] |>
-  arrange(desc(rate))
-top_rates <- head(country_rates, 5)
-world_rate <- 1e5 * sum(world_dead$value[world_dead$year %in% recent]) /
-  sum(world_people$people[world_people$year %in% recent])
+min_people<-1e6 # countries with fewer people are left out of the rates: one event decides them
+# the deaths of each country and year, and the kind that killed the most
+recent_dead<-country_dead[country_dead$year%in%recent,]
+recent_dead<-recent_dead[order(recent_dead$code,recent_dead$entity,recent_dead$year,method="radix"),
+                         ]
+per_year<-split(recent_dead,list(recent_dead$code,recent_dead$entity,recent_dead$year),drop=TRUE)
+yearly<-do.call(rbind,
+                lapply(per_year,
+                       function(x) {
+  data.frame(code=x$code[1],
+             entity=x$entity[1],
+             year=x$year[1],
+             deaths=sum(x$value),
+             worst_kind=x$kind[which.max(x$value)])
+}))
+yearly<-merge(yearly,population[,c("code","year","people")],by=c("code","year"))
+yearly<-yearly[order(yearly$code,yearly$entity,yearly$year,method="radix"),]
+# each country: its deadliest year and kind, its deaths a year per 100,000 people, its people now
+per_country<-split(yearly,list(yearly$code,yearly$entity),drop=TRUE)
+country_rates<-do.call(rbind,
+                       lapply(per_country,
+                              function(x) {
+  data.frame(code=x$code[1],
+             entity=x$entity[1],
+             worst_year=x$year[which.max(x$deaths)],
+             worst_kind=x$worst_kind[which.max(x$deaths)],
+             rate=1e5*sum(x$deaths)/sum(x$people),
+             people_now=x$people[which.max(x$year)],
+             deaths=sum(x$deaths))
+}))
+country_rates<-country_rates[order(country_rates$code,country_rates$entity,method="radix"),]
+rownames(country_rates)<-NULL
+small<-country_rates[country_rates$people_now<min_people,]
+country_rates<-country_rates[country_rates$people_now>=min_people,]
+country_rates<-country_rates[order(-country_rates$rate),]
+top_rates<-head(country_rates,5)
+world_rate<-1e5*sum(world_dead$value[world_dead$year%in%recent])/
+            sum(world_people$people[world_people$year%in%recent])
 
 # each continent: the deaths since 2000 by kind
-continent_dead <- dead[dead$entity %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania", "World") &
-  dead$year %in% recent, ] |>
-  mutate(group = group_of[kind]) |>
-  group_by(entity, group) |>
-  summarise(deaths = sum(value), .groups = "drop_last") |>
-  mutate(share = 100 * deaths / sum(deaths)) |>
-  ungroup()
-share_in <- function(place, g) continent_dead$share[continent_dead$entity == place & continent_dead$group == g]
+continents_world<-c("Africa","Asia","Europe","North America","South America","Oceania","World")
+continent_dead<-dead[dead$entity%in%continents_world&dead$year%in%recent,]
+continent_dead$group<-group_of[continent_dead$kind]
+continent_dead<-aggregate(value~entity+group,continent_dead,sum)
+names(continent_dead)[3]<-"deaths"
+continent_dead<-continent_dead[order(continent_dead$entity,continent_dead$group,method="radix"),]
+continent_dead$share<-100*continent_dead$deaths/
+                      ave(continent_dead$deaths,continent_dead$entity,FUN=sum)
+rownames(continent_dead)<-NULL
+share_in<-function(place,g) {
+  result<-continent_dead$share[continent_dead$entity==place&continent_dead$group==g]
+  return(result)
+}
 # the deadliest kind in each continent (of all eight kinds), as text
-plural <- c(
-  flood = "floods",
-  extreme_temperature = "heat and cold",
-  extreme_weather = "storms",
-  drought = "droughts",
-  earthquake = "earthquakes",
-  volcanic_activity = "volcanic eruptions",
-  landslide = "landslides",
-  wildfire = "wildfires"
-)
-killers <- dead[dead$entity %in% c("Africa", "Asia", "Europe", "North America", "South America", "Oceania") &
-  dead$year %in% recent, ] |>
-  group_by(entity, kind) |>
-  summarise(deaths = sum(value), .groups = "drop_last") |>
-  mutate(share = 100 * deaths / sum(deaths)) |>
-  slice_max(share, n = 1, with_ties = FALSE) |>
-  ungroup()
-killer_text <- and_list(paste0("in ", killers$entity, ", ", plural[killers$kind], " (", percent(killers$share), ")"))
-europe_heat <- dead[dead$entity == "Europe" & dead$kind == "extreme_temperature", ]
-heat_in <- function(year) europe_heat$value[europe_heat$year == year]
-greece <- country_dead[country_dead$entity == "Greece" & country_dead$year %in% recent, ]
-greece_heat <- greece[greece$kind == "extreme_temperature", ]
+plural<-c(flood="floods",extreme_temperature="heat and cold",extreme_weather="storms",
+          drought="droughts",earthquake="earthquakes",volcanic_activity="volcanic eruptions",
+          landslide="landslides",wildfire="wildfires")
+killers<-dead[dead$entity%in%continents_world[1:6]&dead$year%in%recent,]
+killers<-aggregate(value~entity+kind,killers,sum)
+names(killers)[3]<-"deaths"
+killers<-killers[order(killers$entity,killers$kind,method="radix"),]
+killers$share<-100*killers$deaths/ave(killers$deaths,killers$entity,FUN=sum)
+# the deadliest kind of each continent
+killers<-do.call(rbind,lapply(split(killers,killers$entity),function(x) x[which.max(x$share),]))
+rownames(killers)<-NULL
+killer_text<-and_list(paste0("in ",killers$entity,", ",plural[killers$kind]," (",
+                             percent(killers$share),")"))
+europe_heat<-dead[dead$entity=="Europe"&dead$kind=="extreme_temperature",]
+heat_in<-function(year) {
+  result<-europe_heat$value[europe_heat$year==year]
+  return(result)
+}
+greece<-country_dead[country_dead$entity=="Greece"&country_dead$year%in%recent,]
+greece_heat<-greece[greece$kind=="extreme_temperature",]
 ```
 
-**Where one event struck a country hard.** From 2000 to `r last_year`, disasters killed `r two(world_rate)` people a year for every 100,000 in the world. Among the countries of a million people or more, `r with_the(top_rates$entity[1])` lost `r one(top_rates$rate[1])` a year, almost all in its `r tolower(label_of[top_rates$worst_kind[1]])` of `r top_rates$worst_year[1]`; then `r and_list(paste0(with_the(top_rates$entity[2:5]), " (", one(top_rates$rate[2:5]), ", ", tolower(label_of[top_rates$worst_kind[2:5]]), " of ", top_rates$worst_year[2:5], ")"))`. The `r nrow(small)` places with fewer than a million people are left out of the rates and the map: on a small island, a single storm makes the rate enormous.
+**Where one event struck a country hard.** From 2000 to `r last_year`, disasters killed `r two(world_rate)` people a year for every 100,000 in the world. Among the countries of a million people or more, `r with_the(top_rates$entity[1])` lost `r one(top_rates$rate[1])` a year, almost all in its `r tolower(label_of[top_rates$worst_kind[1]])` of `r top_rates$worst_year[1]`; then `r and_list(paste0(with_the(top_rates$entity[2:5])," (",one(top_rates$rate[2:5]),", ",tolower(label_of[top_rates$worst_kind[2:5]])," of ",top_rates$worst_year[2:5],")"))`. The `r nrow(small)` places with fewer than a million people are left out of the rates and the map: on a small island, a single storm makes the rate enormous.
 
 ```{r map, fig.height = 5.2}
-classes <- c(0, 0.1, 0.5, 1, 2, 5, 10, Inf)
-class_names <- c("Under 0.1", "0.1–0.5", "0.5–1", "1–2", "2–5", "5–10", "10 or more")
-country_rates$class <- as.integer(cut(country_rates$rate, classes, right = FALSE))
-steps <- do.call(c, lapply(seq_along(reds), function(i) {
-  list(list((i - 1) / 7, reds[i]), list(i / 7, reds[i]))
-}))
-plot_ly(
-  country_rates,
-  type = "choropleth",
-  locations = ~code,
-  z = ~class,
-  zmin = 0.5,
-  zmax = 7.5,
-  colorscale = steps,
-  marker = list(line = list(color = "white", width = 0.3)),
-  text = ~ paste0(
-    entity,
-    ": ",
-    two(rate),
-    " deaths a year per 100,000<br>",
-    number(deaths),
-    " deaths in all; the worst year ",
-    worst_year,
-    " (",
-    tolower(label_of[worst_kind]),
-    ")"
-  ),
-  hoverinfo = "text",
-  colorbar = list(
-    title = list(text = "Deaths a year<br>per 100,000"),
-    tickvals = 1:7,
-    ticktext = class_names,
-    len = 0.8,
-    thickness = 14
-  )
-) |>
-  chart(
-    paste0("Disaster deaths per 100,000 people a year, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain; population: HYDE, Gapminder, UN; via Our World in Data. Grey: under a million people, or no data.",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = FALSE,
-      showland = TRUE,
-      landcolor = "#e8e8e8",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-57, 85))
-    ),
-    margin = list(t = 50, b = 40, l = 0, r = 0),
-    note_y = -0.02
-  )
+classes<-c(0,0.1,0.5,1,2,5,10,Inf)
+class_names<-c("Under 0.1","0.1–0.5","0.5–1","1–2","2–5","5–10","10 or more")
+country_rates$class<-as.integer(cut(country_rates$rate,classes,right=FALSE))
+steps<-do.call(c,
+               lapply(seq_along(reds),function(i) {list(list((i-1)/7,reds[i]),list(i/7,reds[i]))}))
+plot_ly(country_rates,type="choropleth",locations=~code,z=~class,zmin=0.5,zmax=7.5,
+        colorscale=steps,marker=list(line=list(color="white",width=0.3)),
+        text=~paste0(entity,": ",two(rate)," deaths a year per 100,000<br>",
+                     number(deaths)," deaths in all; the worst year ",worst_year,
+                     " (",tolower(label_of[worst_kind]),")"),
+        hoverinfo="text",
+        colorbar=list(title=list(text="Deaths a year<br>per 100,000"),tickvals=1:7,
+                      ticktext=class_names,len=0.8,thickness=14)) %>%
+  chart(paste0("Disaster deaths per 100,000 people a year, 2000–",last_year),
+        paste0("EM-DAT, CRED / UCLouvain; population: HYDE, ",
+               "Gapminder, UN; via Our World in Data. Grey: ",
+               "under a million people, or no data."),
+        geo=list(showframe=FALSE,showcoastlines=FALSE,showland=TRUE,landcolor="#e8e8e8",
+                 projection=list(type="natural earth"),lataxis=list(range=c(-57,85))),
+        margin=list(t=50,b=40,l=0,r=0),note_y=-0.02)
 ```
 
 **Each continent has its own killer.** Of the people killed by disasters since 2000, the most died, `r killer_text`.
 
-**In Europe, heat**, and its deaths are of another kind. For 2022 and 2023, EM-DAT's heat deaths in Europe, `r number(heat_in(2022))` and `r number(heat_in(2023))`, are almost exactly the heat-related deaths that epidemiologists estimated for those years, `r number(61672)` and `r number(47690)`, with statistical models of temperature and the deaths recorded in 35 countries ([Ballester et al. 2023](https://doi.org/10.1038/s41591-023-02419-z); [Gallo et al. 2024](https://doi.org/10.1038/s41591-024-03186-1)): estimates of the deaths that the heat added, not deaths counted one by one, as those of an earthquake are. In Greece, `r number(sum(greece_heat$value))` of the `r number(sum(greece$value))` disaster deaths since 2000 are such heat deaths, `r number(sum(greece_heat$value[greece_heat$year >= 2022]))` of them in the years from 2022 to `r last_year`; for the summer of 2022, the first study found the second highest rate of heat deaths in Europe in Greece, after Italy.
+**In Europe, heat**, and its deaths are of another kind. For 2022 and 2023, EM-DAT's heat deaths in Europe, `r number(heat_in(2022))` and `r number(heat_in(2023))`, are almost exactly the heat-related deaths that epidemiologists estimated for those years, `r number(61672)` and `r number(47690)`, with statistical models of temperature and the deaths recorded in 35 countries ([Ballester et al. 2023](https://doi.org/10.1038/s41591-023-02419-z); [Gallo et al. 2024](https://doi.org/10.1038/s41591-024-03186-1)): estimates of the deaths that the heat added, not deaths counted one by one, as those of an earthquake are. In Greece, `r number(sum(greece_heat$value))` of the `r number(sum(greece$value))` disaster deaths since 2000 are such heat deaths, `r number(sum(greece_heat$value[greece_heat$year>=2022]))` of them in the years from 2022 to `r last_year`; for the summer of 2022, the first study found the second highest rate of heat deaths in Europe in Greece, after Italy.
 
 ```{r continents_chart, fig.height = 4.8}
-rows <- c("World", "Africa", "Asia", "Europe", "North America", "South America", "Oceania")
-continent_dead$row <- factor(continent_dead$entity, levels = rev(rows))
-p <- plot_ly()
-for (g in group_levels) {
-  x <- continent_dead[continent_dead$group == g, ]
-  p <- add_bars(
-    p,
-    data = x,
-    x = ~share,
-    y = ~row,
-    name = g,
-    orientation = "h",
-    marker = list(color = group_colors[[g]], line = list(color = "white", width = 1.5)),
-    text = ~ ifelse(share >= 12, percent(share), ""),
-    textposition = "inside",
-    insidetextanchor = "middle",
-    textfont = list(color = "#1a1a1a"),
-    hovertemplate = paste0("%{y}: %{x:.1f}% of the deaths, ", tolower(g), "<extra></extra>")
-  )
+rows<-c("World","Africa","Asia","Europe","North America","South America","Oceania")
+continent_dead$row<-factor(continent_dead$entity,levels=rev(rows))
+p<-plot_ly()
+for(g in group_levels) {
+  x<-continent_dead[continent_dead$group==g,]
+  p<-add_bars(p,data=x,x=~share,y=~row,name=g,orientation="h",
+              marker=list(color=group_colors[[g]],line=list(color="white",width=1.5)),
+              text=~ifelse(share>=12,percent(share),""),textposition="inside",
+              insidetextanchor="middle",textfont=list(color="#1a1a1a"),
+              hovertemplate=paste0("%{y}: %{x:.1f}% of the deaths, ",tolower(g),"<extra></extra>"))
 }
-p |>
-  chart(
-    paste0("Disaster deaths by kind, % of each continent, 2000–", last_year),
-    "EM-DAT, CRED / UCLouvain, via Our World in Data.",
-    x_axis = list(range = c(0, 100), ticksuffix = "%", showgrid = FALSE),
-    barmode = "stack",
-    legend = legend_top,
-    uniformtext = list(minsize = 10, mode = "hide"),
-    margin = list(l = 120, t = 100, b = 70, r = 10),
-    note_y = -0.1
-  )
+p %>%
+  chart(paste0("Disaster deaths by kind, % of each continent, 2000–",last_year),
+        "EM-DAT, CRED / UCLouvain, via Our World in Data.",
+        x_axis=list(range=c(0,100),ticksuffix="%",showgrid=FALSE),barmode="stack",legend=legend_top,
+        uniformtext=list(minsize=10,mode="hide"),margin=list(l=120,t=100,b=70,r=10),note_y=-0.1)
 ```
 
 ---
@@ -560,120 +477,76 @@ p |>
 
 ```{r restless_numbers}
 sf_use_s2(TRUE)
-boundary <- st_union(st_geometry(plates))
-quake_points <- st_as_sf(quakes, coords = c("longitude", "latitude"), crs = 4326)
-erupted <- volcanoes[!is.na(volcanoes$Last_Eruption_Year) & volcanoes$Last_Eruption_Year >= 1900, ]
-volcano_points <- st_as_sf(erupted, coords = c("Longitude", "Latitude"), crs = 4326)
-quake_km <- as.numeric(st_distance(quake_points, boundary)) / 1000
-volcano_km <- as.numeric(st_distance(volcano_points, boundary)) / 1000
+boundary<-st_union(st_geometry(plates))
+quake_points<-st_as_sf(quakes,coords=c("longitude","latitude"),crs=4326)
+erupted<-volcanoes[!is.na(volcanoes$Last_Eruption_Year)&volcanoes$Last_Eruption_Year>=1900,]
+volcano_points<-st_as_sf(erupted,coords=c("Longitude","Latitude"),crs=4326)
+quake_km<-as.numeric(st_distance(quake_points,boundary))/1000
+volcano_km<-as.numeric(st_distance(volcano_points,boundary))/1000
 # how much of the Earth lies near a boundary: an even grid of points over the sphere (a Fibonacci
 # lattice), each measured like the earthquakes
-n_grid <- 60000
-i <- 0:(n_grid - 1)
-grid <- st_as_sf(
-  data.frame(
-    lon = ((i * 180 * (3 - sqrt(5))) %% 360) - 180,
-    lat = asin(-1 + 2 * (i + 0.5) / n_grid) * 180 / pi
-  ),
-  coords = c("lon", "lat"),
-  crs = 4326
-)
-grid_km <- as.numeric(st_distance(grid, boundary)) / 1000
-bands <- data.frame(km = c(100, 200, 300))
-bands$earth <- sapply(bands$km, function(k) 100 * mean(grid_km <= k))
-bands$quakes <- sapply(bands$km, function(k) 100 * mean(quake_km <= k))
-bands$volcanoes <- sapply(bands$km, function(k) 100 * mean(volcano_km <= k))
-in_band <- function(k, column) bands[[column]][bands$km == k]
+n_grid<-60000
+i<-0:(n_grid-1)
+grid<-st_as_sf(data.frame(lon=((i*180*(3-sqrt(5)))%%360)-180,lat=asin(-1+2*(i+0.5)/n_grid)*180/pi),
+               coords=c("lon","lat"),crs=4326)
+grid_km<-as.numeric(st_distance(grid,boundary))/1000
+bands<-data.frame(km=c(100,200,300))
+bands$earth<-sapply(bands$km,function(k) 100*mean(grid_km<=k))
+bands$quakes<-sapply(bands$km,function(k) 100*mean(quake_km<=k))
+bands$volcanoes<-sapply(bands$km,function(k) 100*mean(volcano_km<=k))
+in_band<-function(k,column) {
+  result<-bands[[column]][bands$km==k]
+  return(result)
+}
 ```
 
-**Along the edges of the plates.** The outer shell of the Earth is broken into plates that move against each other ([Bird 2003](https://doi.org/10.1029/2001GC000252)). The map shows the `r number(nrow(quakes))` earthquakes of magnitude 7 or more since 1900 and the `r nrow(erupted)` volcanoes that have erupted since 1900: they line the boundaries of the plates, above all around the Pacific Ocean. Within 300 km of a boundary, a band that covers `r percent(in_band(300, "earth"))` of the Earth's surface, lie `r percent(in_band(300, "quakes"))` of those earthquakes and `r percent(in_band(300, "volcanoes"))` of those volcanoes.
+**Along the edges of the plates.** The outer shell of the Earth is broken into plates that move against each other ([Bird 2003](https://doi.org/10.1029/2001GC000252)). The map shows the `r number(nrow(quakes))` earthquakes of magnitude 7 or more since 1900 and the `r nrow(erupted)` volcanoes that have erupted since 1900: they line the boundaries of the plates, above all around the Pacific Ocean. Within 300 km of a boundary, a band that covers `r percent(in_band(300,"earth"))` of the Earth's surface, lie `r percent(in_band(300,"quakes"))` of those earthquakes and `r percent(in_band(300,"volcanoes"))` of those volcanoes.
 
 ```{r restless_map, fig.height = 5.6}
 # the boundaries as one line, broken (NA) between their segments
-segments <- st_coordinates(plates)
-breaks <- c(which(diff(segments[, "L1"]) != 0), nrow(segments))
-lines_lon <- unlist(lapply(seq_along(breaks), function(k) {
-  from <- if (k == 1) 1 else breaks[k - 1] + 1
-  c(segments[from:breaks[k], "X"], NA)
+segments<-st_coordinates(plates)
+breaks<-c(which(diff(segments[,"L1"])!=0),nrow(segments))
+lines_lon<-unlist(lapply(seq_along(breaks),
+                         function(k) {
+  from<-if(k==1) 1 else breaks[k-1]+1
+  c(segments[from:breaks[k],"X"],NA)
 }))
-lines_lat <- unlist(lapply(seq_along(breaks), function(k) {
-  from <- if (k == 1) 1 else breaks[k - 1] + 1
-  c(segments[from:breaks[k], "Y"], NA)
+lines_lat<-unlist(lapply(seq_along(breaks),
+                         function(k) {
+  from<-if(k==1) 1 else breaks[k-1]+1
+  c(segments[from:breaks[k],"Y"],NA)
 }))
-plot_geo() |>
-  add_trace(
-    type = "scattergeo",
-    mode = "lines",
-    lon = lines_lon,
-    lat = lines_lat,
-    line = list(color = dark_gray, width = 1),
-    name = "Plate boundary",
-    hoverinfo = "skip"
-  ) |>
-  add_trace(
-    type = "scattergeo",
-    mode = "markers",
-    lon = quakes$longitude,
-    lat = quakes$latitude,
-    marker = list(
-      color = "#2a78d6",
-      size = 3 + 3 * (quakes$mag - 7),
-      opacity = 0.6,
-      line = list(color = "white", width = 0.5)
-    ),
-    name = "Earthquake, magnitude 7+",
-    text = paste0(quakes$place, "<br>", substr(quakes$time, 1, 10), ", magnitude ", quakes$mag),
-    hoverinfo = "text"
-  ) |>
-  add_trace(
-    type = "scattergeo",
-    mode = "markers",
-    lon = erupted$Longitude,
-    lat = erupted$Latitude,
-    marker = list(
-      color = "#eb6834",
-      symbol = "triangle-up",
-      size = 7,
-      line = list(color = "white", width = 0.5)
-    ),
-    name = "Volcano that erupted since 1900",
-    text = paste0(erupted$Volcano_Name, ", ", erupted$Country, "<br>last eruption ", erupted$Last_Eruption_Year),
-    hoverinfo = "text"
-  ) |>
-  chart(
-    "Big earthquakes and active volcanoes since 1900",
-    "USGS earthquake catalogue; Smithsonian, Global Volcanism Program; plate boundaries: Bird (2003).",
-    geo = list(
-      showframe = FALSE,
-      showcoastlines = TRUE,
-      coastlinecolor = "#c8c8c8",
-      showland = TRUE,
-      landcolor = "#f2f2f2",
-      projection = list(type = "natural earth"),
-      lataxis = list(range = c(-60, 85))
-    ),
-    legend = legend_top,
-    margin = list(t = 80, b = 40, l = 0, r = 0),
-    note_y = -0.02
-  )
+plot_geo() %>%
+  add_trace(type="scattergeo",mode="lines",lon=lines_lon,lat=lines_lat,
+            line=list(color=dark_gray,width=1),name="Plate boundary",hoverinfo="skip") %>%
+  add_trace(type="scattergeo",mode="markers",lon=quakes$longitude,lat=quakes$latitude,
+            marker=list(color="#2a78d6",size=3+3*(quakes$mag-7),opacity=0.6,
+                        line=list(color="white",width=0.5)),name="Earthquake, magnitude 7+",
+            text=paste0(quakes$place,"<br>",substr(quakes$time,1,10),", magnitude ",quakes$mag),
+            hoverinfo="text") %>%
+  add_trace(type="scattergeo",mode="markers",lon=erupted$Longitude,lat=erupted$Latitude,
+            marker=list(color="#eb6834",symbol="triangle-up",size=7,
+                        line=list(color="white",width=0.5)),
+            name="Volcano that erupted since 1900",
+            text=paste0(erupted$Volcano_Name,", ",erupted$Country,"<br>last eruption ",
+                        erupted$Last_Eruption_Year),hoverinfo="text") %>%
+  chart("Big earthquakes and active volcanoes since 1900",
+        paste0("USGS earthquake catalogue; Smithsonian, ",
+               "Global Volcanism Program; plate boundaries: ","Bird (2003)."),
+        geo=list(showframe=FALSE,showcoastlines=TRUE,coastlinecolor="#c8c8c8",showland=TRUE,
+                 landcolor="#f2f2f2",projection=list(type="natural earth"),
+                 lataxis=list(range=c(-60,85))),legend=legend_top,margin=list(t=80,b=40,l=0,r=0),
+        note_y=-0.02)
 ```
 
 ```{r bands_table}
-knitr::kable(
-  data.frame(
-    km = paste("Within", bands$km, "km"),
-    earth = percent(bands$earth),
-    quakes = percent(bands$quakes),
-    volcanoes = percent(bands$volcanoes)
-  ),
-  col.names = c(
-    "Distance from a plate boundary",
-    "Share of the Earth's surface",
-    "Earthquakes of magnitude 7+",
-    "Volcanoes that erupted since 1900"
-  ),
-  align = "lrrr"
-)
+knitr::kable(data.frame(km=paste("Within",bands$km,"km"),
+                        earth=percent(bands$earth),
+                        quakes=percent(bands$quakes),
+                        volcanoes=percent(bands$volcanoes)),
+             col.names=c("Distance from a plate boundary","Share of the Earth's surface",
+                         "Earthquakes of magnitude 7+","Volcanoes that erupted since 1900"),
+             align="lrrr")
 ```
 
 Earthquakes under the sea also cause most tsunamis. Each has a page of its own: [earthquakes](ILLUSTRATION_WORLD_EARTHQUAKES.html), [volcanoes](ILLUSTRATION_WORLD_VOLCANOES.html) and [tsunamis](ILLUSTRATION_WORLD_TSUNAMIS.html).

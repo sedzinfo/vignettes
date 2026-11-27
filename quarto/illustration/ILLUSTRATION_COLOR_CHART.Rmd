@@ -67,14 +67,15 @@ average is above the midpoint (127.5), the background is "light" so use black te
 otherwise use white text.
 
 ```{r contrast-function}
-SetTextContrastColor <- function(color) {
-  ifelse(mean(col2rgb(color)) > 127, "black", "white")
+get_contrast_color<-function(color) {
+  contrast<-ifelse(mean(col2rgb(color))>127,"black","white")
+  return(contrast)
 }
 
-SetTextContrastColor("white")
-SetTextContrastColor("black")
-SetTextContrastColor("red")
-SetTextContrastColor("yellow")
+get_contrast_color("white")
+get_contrast_color("black")
+get_contrast_color("red")
+get_contrast_color("yellow")
 ```
 
 This is a simplification — perceptual luminance weights green much more heavily
@@ -86,8 +87,8 @@ We precompute the contrast color for every entry in `colors()` once, so the
 plotting loops below can just look it up instead of recomputing it per rectangle:
 
 ```{r contrast-vector}
-TextContrastColor <- unlist(lapply(colors(), SetTextContrastColor))
-table(TextContrastColor)
+contrast_colors<-unlist(lapply(colors(),get_contrast_color))
+table(contrast_colors)
 ```
 
 # Chart 1a: colors in index order
@@ -95,29 +96,27 @@ table(TextContrastColor)
 The simplest chart just walks `colors()` in the order R returns it, laying out
 25 colors per row. Each rectangle is drawn with `rect()`, positioned by its
 row/column, filled with the color itself, and labeled with its numeric index
-(`SetTextContrastColor` decides whether that label is black or white).
+(`get_contrast_color` decides whether that label is black or white).
 
 ```{r chart-index-order, fig.height=11}
-colCount <- 25  # number of rectangles per row
-rowCount <- ceiling(length(colors()) / colCount)
+col_count<-25 # number of rectangles per row
+row_count<-ceiling(length(colors())/col_count)
 
-oldpar <- par(mar = c(1, 1, 2, 1))
+old_par<-par(mar=c(1,1,2,1))
 
-plot(c(1, colCount), c(0, rowCount), type = "n", ylab = "", xlab = "",
-     axes = FALSE, ylim = c(rowCount, 0))
+plot(c(1,col_count),c(0,row_count),type="n",ylab="",xlab="",axes=FALSE,ylim=c(row_count,0))
 title("R colors (index order)")
 
-for (j in 0:(rowCount - 1)) {
-  base <- j * colCount
-  remaining <- length(colors()) - base
-  RowSize <- ifelse(remaining < colCount, remaining, colCount)
-  rect((1:RowSize) - 0.5, j - 0.5, (1:RowSize) + 0.5, j + 0.5,
-       border = "black", col = colors()[base + (1:RowSize)])
-  text((1:RowSize), j, paste(base + (1:RowSize)), cex = 0.7,
-       col = TextContrastColor[base + (1:RowSize)])
+for(j in 0:(row_count-1)) {
+  base<-j*col_count
+  remaining<-length(colors())-base
+  row_size<-ifelse(remaining<col_count,remaining,col_count)
+  cells<-base+(1:row_size)
+  rect((1:row_size)-0.5,j-0.5,(1:row_size)+0.5,j+0.5,border="black",col=colors()[cells])
+  text((1:row_size),j,paste(cells),cex=0.7,col=contrast_colors[cells])
 }
 
-par(oldpar)
+par(old_par)
 ```
 
 Notice how little visual structure there is: R's `colors()` order is alphabetical
@@ -132,29 +131,26 @@ permutation of indices that achieves that sort, and we index into `colors()`
 with it.
 
 ```{r chart-hue-order, fig.height=11}
-RGBColors <- col2rgb(colors())
-HSVColors <- rgb2hsv(RGBColors[1, ], RGBColors[2, ], RGBColors[3, ], maxColorValue = 255)
-HueOrder <- order(HSVColors[1, ], HSVColors[2, ], HSVColors[3, ])
+rgb_colors<-col2rgb(colors())
+hsv_colors<-rgb2hsv(rgb_colors[1,],rgb_colors[2,],rgb_colors[3,],maxColorValue=255)
+hue_order<-order(hsv_colors[1,],hsv_colors[2,],hsv_colors[3,])
 
-oldpar <- par(mar = c(1, 1, 2, 1))
+old_par<-par(mar=c(1,1,2,1))
 
-plot(0, type = "n", ylab = "", xlab = "", axes = FALSE,
-     ylim = c(rowCount, 0), xlim = c(1, colCount))
+plot(0,type="n",ylab="",xlab="",axes=FALSE,ylim=c(row_count,0),xlim=c(1,col_count))
 title("R colors -- sorted by hue, saturation, value")
 
-for (j in 0:(rowCount - 1)) {
-  for (i in 1:colCount) {
-    k <- j * colCount + i
-    if (k <= length(colors())) {
-      rect(i - 0.5, j - 0.5, i + 0.5, j + 0.5,
-           border = "black", col = colors()[HueOrder[k]])
-      text(i, j, paste(HueOrder[k]), cex = 0.7,
-           col = TextContrastColor[HueOrder[k]])
+for(j in 0:(row_count-1)) {
+  for(i in 1:col_count) {
+    k<-j*col_count+i
+    if(k<=length(colors())) {
+      rect(i-0.5,j-0.5,i+0.5,j+0.5,border="black",col=colors()[hue_order[k]])
+      text(i,j,paste(hue_order[k]),cex=0.7,col=contrast_colors[hue_order[k]])
     }
   }
 }
 
-par(oldpar)
+par(old_par)
 ```
 
 The label in each cell is still the *original* index into `colors()` — so you can
@@ -168,13 +164,14 @@ tools) alongside the decimal RGB triplet (for R/plotting code). `sprintf()` buil
 both from `col2rgb()`'s output in one line:
 
 ```{r hex-and-decimal}
-GetColorHexAndDecimal <- function(color) {
-  c <- col2rgb(color)
-  sprintf("#%02X%02X%02X %3d %3d %3d", c[1], c[2], c[3], c[1], c[2], c[3])
+get_hex_decimal<-function(color) {
+  x<-col2rgb(color)
+  result<-sprintf("#%02X%02X%02X %3d %3d %3d",x[1],x[2],x[3],x[1],x[2],x[3])
+  return(result)
 }
 
-GetColorHexAndDecimal("yellow")
-GetColorHexAndDecimal("steelblue")
+get_hex_decimal("yellow")
+get_hex_decimal("steelblue")
 ```
 
 # Chart 2: paginated detail sheet (name + hex + decimal)
@@ -187,59 +184,49 @@ full paging loop that generates every page (this is what the original script
 writes across the multi-page PDF).
 
 ```{r chart-detail-page, fig.height=11}
-index <- paste(1:length(colors()))
-HexAndDec <- unlist(lapply(colors(), GetColorHexAndDecimal))
-PerColumn <- 50
-PerPage <- 2 * PerColumn
+index<-paste(1:length(colors()))
+hex_decimal<-unlist(lapply(colors(),get_hex_decimal))
+per_column<-50
+per_page<-2*per_column
 
-page <- 1
-oldpar <- par(mar = c(1, 1, 1, 1))
+page<-1
+old_par<-par(mar=c(1,1,1,1))
 
-plot(0, type = "n", ylab = "", xlab = "", axes = FALSE,
-     ylim = c(PerColumn, 0), xlim = c(0, 1))
+plot(0,type="n",ylab="",xlab="",axes=FALSE,ylim=c(per_column,0),xlim=c(0,1))
 title("R colors")
-mtext(paste("page", page), side = 1, adj = 1, line = -1)
+mtext(paste("page",page),side=1,adj=1,line=-1)
 
-base <- PerPage * (page - 1)
+base<-per_page*(page-1)
 
-# Column 1
-remaining <- length(colors()) - base
-ColumnSize <- ifelse(remaining < PerColumn, remaining, PerColumn)
-rect(0.00, 0:(ColumnSize - 1), 0.49, 1:ColumnSize,
-     border = "black", col = colors()[(base + 1):(base + ColumnSize)])
-text(0.045, 0.45 + (0:(ColumnSize - 1)), adj = 1, index[(base + 1):(base + ColumnSize)],
-     cex = 0.6, col = TextContrastColor[(base + 1):(base + ColumnSize)])
-text(0.06, 0.45 + (0:(ColumnSize - 1)), adj = 0, colors()[(base + 1):(base + ColumnSize)],
-     cex = 0.6, col = TextContrastColor[(base + 1):(base + ColumnSize)])
-save <- par(family = "mono")
-text(0.25, 0.45 + (0:(ColumnSize - 1)), adj = 0, HexAndDec[(base + 1):(base + ColumnSize)],
-     cex = 0.6, col = TextContrastColor[(base + 1):(base + ColumnSize)])
-par(save)
+# column 1: the colors of the page up to per_column
+remaining<-length(colors())-base
+column_size<-ifelse(remaining<per_column,remaining,per_column)
+cells<-(base+1):(base+column_size)
+rect(0.00,0:(column_size-1),0.49,1:column_size,border="black",col=colors()[cells])
+text(0.045,0.45+(0:(column_size-1)),adj=1,index[cells],cex=0.6,col=contrast_colors[cells])
+text(0.06,0.45+(0:(column_size-1)),adj=0,colors()[cells],cex=0.6,col=contrast_colors[cells])
+old_family<-par(family="mono")
+text(0.25,0.45+(0:(column_size-1)),adj=0,hex_decimal[cells],cex=0.6,col=contrast_colors[cells])
+par(old_family)
 
-# Column 2
-if (remaining > PerColumn) {
-  remaining2 <- remaining - PerColumn
-  ColumnSize2 <- ifelse(remaining2 < PerColumn, remaining2, PerColumn)
-  rect(0.51, 0:(ColumnSize2 - 1), 1.00, 1:ColumnSize2,
-       border = "black", col = colors()[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)])
-  text(0.545, 0.45 + (0:(ColumnSize2 - 1)), adj = 1,
-       index[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)],
-       cex = 0.6, col = TextContrastColor[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)])
-  text(0.56, 0.45 + (0:(ColumnSize2 - 1)), adj = 0,
-       colors()[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)],
-       cex = 0.6, col = TextContrastColor[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)])
-  save <- par(family = "mono")
-  text(0.75, 0.45 + (0:(ColumnSize2 - 1)), adj = 0,
-       HexAndDec[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)],
-       cex = 0.6, col = TextContrastColor[(base + PerColumn + 1):(base + PerColumn + ColumnSize2)])
-  par(save)
+# column 2: the rest of the page
+if(remaining>per_column) {
+  remaining2<-remaining-per_column
+  column_size2<-ifelse(remaining2<per_column,remaining2,per_column)
+  cells2<-(base+per_column+1):(base+per_column+column_size2)
+  rect(0.51,0:(column_size2-1),1.00,1:column_size2,border="black",col=colors()[cells2])
+  text(0.545,0.45+(0:(column_size2-1)),adj=1,index[cells2],cex=0.6,col=contrast_colors[cells2])
+  text(0.56,0.45+(0:(column_size2-1)),adj=0,colors()[cells2],cex=0.6,col=contrast_colors[cells2])
+  old_family<-par(family="mono")
+  text(0.75,0.45+(0:(column_size2-1)),adj=0,hex_decimal[cells2],cex=0.6,col=contrast_colors[cells2])
+  par(old_family)
 }
 
-par(oldpar)
+par(old_par)
 ```
 
 To generate *every* page (not just page 1) and get the full multi-page reference
-sheet, wrap that same block in a loop over `page in 1:ceiling(length(colors()) / PerPage)`
+sheet, wrap that same block in a loop over `page in 1:ceiling(length(colors())/per_page)`
 and, when knitting, either emit one PDF page per iteration or (for HTML) let each
 iteration produce its own plot — see the appendix for the loop as written in the
 original script.

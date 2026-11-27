@@ -20,13 +20,13 @@ This tutorial shows you how to recreate that chart in R using freely available p
 ## Packages
 
 ```{r packages}
-# install.packages(c("gapminder", "ggplot2", "gganimate", "gifski", "scales"))
+# install.packages(c("gapminder","ggplot2","gganimate","gifski","scales"))
 
-library(gapminder)   # the data
-library(ggplot2)     # plotting
-library(gganimate)   # animation
-library(gifski)      # GIF renderer
-library(scales)      # axis formatting
+library(gapminder) # the data
+library(ggplot2) # plotting
+library(gganimate) # animation
+library(gifski) # GIF renderer
+library(scales) # axis formatting
 
 data(gapminder)
 ```
@@ -39,7 +39,7 @@ The `gapminder` package ships with a clean, ready-to-use dataset. No downloading
 
 ```{r data}
 
-head(gapminder, 12)
+head(gapminder,12)
 
 ```
 
@@ -65,13 +65,12 @@ Each row is one country in one year, with:
 Start with a single year to get the layout right before adding animation.
 
 ```{r static}
-gapminder_2007 <- gapminder[gapminder$year == 2007, ]
+gapminder_2007<-gapminder[gapminder$year==2007,]
 
-ggplot(gapminder_2007,
-       aes(x = gdpPercap, y = lifeExp, size = pop, color = continent)) +
-  geom_point(alpha = 0.7) +
-  scale_x_log10() +
-  labs(title = "2007", x = "GDP per capita", y = "Life expectancy") +
+ggplot(gapminder_2007,aes(x=gdpPercap,y=lifeExp,size=pop,color=continent))+
+  geom_point(alpha=0.7)+
+  scale_x_log10()+
+  labs(title="2007",x="GDP per capita",y="Life expectancy")+
   theme_minimal()
 ```
 
@@ -82,15 +81,12 @@ Three things are already encoded: wealth (x), health (y), and population (bubble
 GDP per capita spans from ~$200 to ~$100,000. A **log scale** is essential — on a linear scale, poor countries are crushed into the left margin and you lose all the variation that matters.
 
 ```{r log_scale}
-ggplot(gapminder_2007,
-       aes(x = gdpPercap, y = lifeExp, size = pop, color = continent)) +
-  geom_point(alpha = 0.75) +
-  scale_x_log10(
-    breaks = c(500, 1000, 2000, 5000, 10000, 50000),
-    labels = label_dollar(scale_cut = cut_short_scale())
-  ) +
-  scale_size(range = c(2, 24), guide = "none") +
-  labs(title = "2007", x = "GDP per capita (log scale)", y = "Life expectancy") +
+ggplot(gapminder_2007,aes(x=gdpPercap,y=lifeExp,size=pop,color=continent))+
+  geom_point(alpha=0.75)+
+  scale_x_log10(breaks=c(500,1000,2000,5000,10000,50000),
+                labels=label_dollar(scale_cut=cut_short_scale()))+
+  scale_size(range=c(2,24),guide="none")+
+  labs(title="2007",x="GDP per capita (log scale)",y="Life expectancy")+
   theme_minimal()
 ```
 
@@ -99,73 +95,51 @@ ggplot(gapminder_2007,
 ### Step 3 — label the big ones
 
 ```{r labels}
-big_countries <- c("China", "India", "United States", "Brazil", "Nigeria")
+big_countries<-c("China","India","United States","Brazil","Nigeria")
+big_2007<-gapminder_2007[gapminder_2007$country%in%big_countries,]
 
-ggplot(gapminder_2007,
-       aes(x = gdpPercap, y = lifeExp, size = pop, color = continent)) +
-  geom_point(alpha = 0.75) +
-  geom_text(
-    data = \(d) d[d$country %in% big_countries, ],
-    aes(label = country),
-    size = 3.2, vjust = -1.1, show.legend = FALSE
-  ) +
-  scale_x_log10(
-    breaks = c(500, 1000, 2000, 5000, 10000, 50000),
-    labels = label_dollar(scale_cut = cut_short_scale())
-  ) +
-  scale_size(range = c(2, 24), guide = "none") +
-  labs(title = "2007", x = "GDP per capita (log scale)", y = "Life expectancy") +
+ggplot(gapminder_2007,aes(x=gdpPercap,y=lifeExp,size=pop,color=continent))+
+  geom_point(alpha=0.75)+
+  geom_text(data=big_2007,aes(label=country),size=3.2,vjust=-1.1,show.legend=FALSE)+
+  scale_x_log10(breaks=c(500,1000,2000,5000,10000,50000),
+                labels=label_dollar(scale_cut=cut_short_scale()))+
+  scale_size(range=c(2,24),guide="none")+
+  labs(title="2007",x="GDP per capita (log scale)",y="Life expectancy")+
   theme_minimal()
 ```
 
 ### Step 4 — dark theme + colors
 
 ```{r theme}
-continent_colors <- c(
-  Africa   = "#E74C3C",
-  Americas = "#F39C12",
-  Asia     = "#3498DB",
-  Europe   = "#2ECC71",
-  Oceania  = "#9B59B6"
-)
+continent_colors<-c(Africa="#E74C3C",
+                    Americas="#F39C12",
+                    Asia="#3498DB",
+                    Europe="#2ECC71",
+                    Oceania="#9B59B6")
 
-dark_theme <- theme_minimal(base_size = 13) +
-  theme(
-    plot.background  = element_rect(fill = "#0F1923", color = NA),
-    panel.background = element_rect(fill = "#0F1923", color = NA),
-    panel.grid.major = element_line(color = "#1E2D3D"),
-    panel.grid.minor = element_blank(),
-    text             = element_text(color = "white"),
-    axis.text        = element_text(color = "#90A4AE"),
-    legend.position  = "bottom",
-    legend.text      = element_text(size = 11),
-    plot.caption     = element_text(color = "#546E7A", size = 8, hjust = 1)
-  )
+dark_theme<-theme_minimal(base_size=13)+
+  theme(plot.background=element_rect(fill="#0F1923",color=NA),
+        panel.background=element_rect(fill="#0F1923",color=NA),
+        panel.grid.major=element_line(color="#1E2D3D"),
+        panel.grid.minor=element_blank(),
+        text=element_text(color="white"),
+        axis.text=element_text(color="#90A4AE"),
+        legend.position="bottom",
+        legend.text=element_text(size=11),
+        plot.caption=element_text(color="#546E7A",size=8,hjust=1))
 
-ggplot(gapminder_2007,
-       aes(x = gdpPercap, y = lifeExp, size = pop, color = continent)) +
-  geom_point(alpha = 0.75, stroke = 0.2) +
-  geom_text(
-    data = \(d) d[d$country %in% big_countries, ],
-    aes(label = country),
-    size = 3.2, vjust = -1.1, show.legend = FALSE
-  ) +
-  scale_x_log10(
-    breaks = c(500, 1000, 2000, 5000, 10000, 50000),
-    labels = label_dollar(scale_cut = cut_short_scale())
-  ) +
-  scale_size(range = c(2, 24), guide = "none") +
-  scale_color_manual(
-    values = continent_colors,
-    guide  = guide_legend(override.aes = list(size = 5))
-  ) +
-  labs(
-    title   = "2007",
-    x       = "GDP per capita (log scale)",
-    y       = "Life expectancy at birth",
-    color   = NULL,
-    caption = "Source: Gapminder  |  Bubble size = population"
-  ) +
+ggplot(gapminder_2007,aes(x=gdpPercap,y=lifeExp,size=pop,color=continent))+
+  geom_point(alpha=0.75,stroke=0.2)+
+  geom_text(data=big_2007,aes(label=country),size=3.2,vjust=-1.1,show.legend=FALSE)+
+  scale_x_log10(breaks=c(500,1000,2000,5000,10000,50000),
+                labels=label_dollar(scale_cut=cut_short_scale()))+
+  scale_size(range=c(2,24),guide="none")+
+  scale_color_manual(values=continent_colors,guide=guide_legend(override.aes=list(size=5)))+
+  labs(title="2007",
+       x="GDP per capita (log scale)",
+       y="Life expectancy at birth",
+       color=NULL,
+       caption="Source: Gapminder  |  Bubble size = population")+
   dark_theme
 ```
 
@@ -174,50 +148,29 @@ ggplot(gapminder_2007,
 `gganimate` extends ggplot2 with `transition_*` functions. `transition_time(year)` moves through the `year` variable. `shadow_mark()` leaves a faint ghost trail so you can see where countries have been.
 
 ```{r animate, eval=TRUE, cache=TRUE}
-p <- ggplot(gapminder,
-            aes(x = gdpPercap, y = lifeExp, size = pop, color = continent)) +
+# the labelled countries in every year
+big_all<-gapminder[gapminder$country%in%big_countries,]
 
-  geom_point(alpha = 0.75, stroke = 0.2) +
+p<-ggplot(gapminder,aes(x=gdpPercap,y=lifeExp,size=pop,color=continent))+
+  geom_point(alpha=0.75,stroke=0.2)+
+  geom_text(data=big_all,aes(label=country),size=3.2,vjust=-1.1,show.legend=FALSE)+
+  scale_x_log10(breaks=c(500,1000,2000,5000,10000,50000),
+                labels=label_dollar(scale_cut=cut_short_scale()))+
+  scale_size(range=c(2,24),guide="none")+
+  scale_color_manual(values=continent_colors,guide=guide_legend(override.aes=list(size=5)))+
+  labs(title="{as.integer(frame_time)}", # the magic: the year as the title
+       x="GDP per capita (log scale)",
+       y="Life expectancy at birth",
+       color=NULL,
+       caption="Source: Gapminder  |  Bubble size = population")+
+  dark_theme+
+  theme(plot.title=element_text(size=54,face="bold",hjust=0.5))+
+  transition_time(year)+ # animate over year
+  ease_aes("linear")+ # constant speed between frames
+  shadow_mark(alpha=0.06,size=0.4) # ghost trail
 
-  geom_text(
-    data = \(d) d[d$country %in% big_countries, ],
-    aes(label = country),
-    size = 3.2, vjust = -1.1, show.legend = FALSE
-  ) +
-
-  scale_x_log10(
-    breaks = c(500, 1000, 2000, 5000, 10000, 50000),
-    labels = label_dollar(scale_cut = cut_short_scale())
-  ) +
-  scale_size(range = c(2, 24), guide = "none") +
-  scale_color_manual(
-    values = continent_colors,
-    guide  = guide_legend(override.aes = list(size = 5))
-  ) +
-
-  labs(
-    title   = "{as.integer(frame_time)}",   # <-- the magic: year as title
-    x       = "GDP per capita (log scale)",
-    y       = "Life expectancy at birth",
-    color   = NULL,
-    caption = "Source: Gapminder  |  Bubble size = population"
-  ) +
-
-  dark_theme +
-  theme(plot.title = element_text(size = 54, face = "bold", hjust = 0.5)) +
-
-  transition_time(year) +      # animate over year
-  ease_aes("linear") +         # constant speed between frames
-  shadow_mark(alpha = 0.06, size = 0.4)   # ghost trail
-
-animate(p,
-        nframes  = 120,
-        fps      = 12,
-        width    = 900,
-        height   = 650,
-        units    = "px",
-        res      = 96,
-        renderer = gifski_renderer("gapminder.gif"))
+animate(p,nframes=120,fps=12,width=900,height=650,units="px",res=96,
+        renderer=gifski_renderer("gapminder.gif"))
 ```
 
 > **Note:** rendering takes ~1–2 minutes. The GIF will appear in your working directory (`getwd()`).
@@ -238,20 +191,21 @@ animate(p,
 ### Change which countries get labels
 
 ```{r custom_labels, eval=FALSE}
-big_countries <- c("China", "India", "United States", "Germany", "Japan")
+big_countries<-c("China","India","United States","Germany","Japan")
+big_all<-gapminder[gapminder$country%in%big_countries,]
 ```
 
 ### Change the speed
 
 ```{r custom_speed, eval=FALSE}
-animate(p, nframes = 60, fps = 6, ...)   # slower
-animate(p, nframes = 240, fps = 24, ...) # smoother
+animate(p,nframes=60,fps=6,...) # slower
+animate(p,nframes=240,fps=24,...) # smoother
 ```
 
 ### Filter to one continent
 
 ```{r custom_continent, eval=FALSE}
-gapminder_asia <- gapminder[gapminder$continent == "Asia", ]
+gapminder_asia<-gapminder[gapminder$continent=="Asia",]
 # then replace gapminder with gapminder_asia in the ggplot() call
 ```
 
@@ -259,7 +213,7 @@ gapminder_asia <- gapminder[gapminder$continent == "Asia", ]
 
 ```{r custom_mp4, eval=FALSE}
 # install.packages("av")
-animate(p, renderer = av_renderer("gapminder.mp4"), fps = 24, width = 1280, height = 720)
+animate(p,renderer=av_renderer("gapminder.mp4"),fps=24,width=1280,height=720)
 ```
 
 ---
