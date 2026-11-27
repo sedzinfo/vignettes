@@ -62,6 +62,8 @@ plot_ly(bars,x=~deaths,y=~name,type="bar",orientation="h",
 - **Panels** (`facet_wrap`) become `subplot()`. Each panel's title is an annotation placed from the domains in `plotly_build(p)$x$layout`.
 - **Colour classes** on a map or calendar are a `colorscale` of steps with `zmin`/`zmax`, and a colour bar shows the class names (see the earthquake country map).
 - **Overlapping labels** are left out, as ggplot's `check_overlap` did. The point keeps its colour and its hover text.
+- **A hover text for many points** is set with `style(hovertemplate=...)`: given to `plot_ly()`, plotly repeats it for every point (the decomposition of AIRPORT_WEATHER shrank from 3.1 MB to 0.8 MB). Pass the data as a data frame with formulas (`x=~date`), not as vectors, which plotly keeps a second copy of.
+- **A page with several plotly or highcharter charts** turns the knitr cache off (`knitr::opts_chunk$set(cache=FALSE)` in the setup chunk, as most pages do): when some chunks come from the cache and one runs again, the new chart can get the same id as a cached one, and then it does not draw.
 - **A package that is no longer used** comes out of `library()`, out of the install comment, and out of the footer (`*Rendered with R ... · plotly · sf*`).
 - **The PNG of a converted chart** stays in `_freeze/<page>/figure-html/` after the render, because Quarto does not remove it. Delete it once the freeze no longer refers to it.
 
@@ -133,7 +135,7 @@ Done, checked and copied here:
 - [x] ILLUSIONS: only the setup chunk; the drawings are quoted code ("not written by me") and stay as they are
 - [x] SEA_ICE: the time series is plotly; the two maps stay ggplot for now (see the question below)
 - [x] SEA_ICE_TEMP: base R instead of dplyr and tidyr, unused packages out (dplyr, tidyr, lubridate, reshape, rnoaa); the two GIFs stay ggplot. The spiral's data were checked object by object, and both GIFs frame by frame. A full render takes about 3 minutes here, not the 1–2 hours the page mentions
-- [ ] AIRPORT_WEATHER: data handling in base R (plyr, dplyr and lubridate gone), checked in the worktree but not rendered or copied: the page cannot run at all at the moment, main's version neither (see the questions below)
+- [x] AIRPORT_WEATHER: base R (plyr, dplyr and lubridate gone) and plotly (ggplot2 and ggfortify gone). The daily band is a bar for each day, from its lowest to its highest temperature, coloured by the highest; the monthly band shows the highest temperatures as coloured points; the heatmaps keep a value in each cell; "All four together" and the decomposition are stacked plotly panels. The page could not run since early October because of `plot_multiplot()` (fixed, see below), and now no longer uses it
 
 To do, in this order:
 
@@ -145,5 +147,5 @@ To do, in this order:
 Open questions:
 
 - **SEA_ICE maps:** sf polygons in a polar projection, in twelve panels. As plotly they would add megabytes of coordinates to the page, so they are still ggplot. Keep them as an exception?
-- **`plot_multiplot()` in `R/code_rwf.R`:** it calls `viewport()` and `grid.layout()` without `grid::`. In the rwf package that works, because the package imports them from grid; in the copy that the pages source, nothing does, so AIRPORT_WEATHER's "All four together" chart stops the page. It has been so since `R/code_rwf.R` was refreshed in early October (the page last ran on 3 October). Fix it in rwf (`grid::viewport()`, `grid::grid.layout()`) and refresh the copy, or attach grid on the page?
-- **AIRPORT_WEATHER charts:** the daily and monthly ribbons change colour along the ribbon, which plotly cannot draw, and the page's text teaches these ggplot charts. Keep ggplot here, or redraw them in plotly (plain ribbons with a coloured line of points, plotly heatmaps and panels) and rewrite the text around them?
+
+Fixed along the way: `plot_multiplot()` called `viewport()` and `grid.layout()` without `grid::`. Inside the rwf package that works (the package imports them), but in the copies of `R/code_rwf.R` that the pages source it stops the page. Fixed in rwf (`working_functions/FUNCTIONS_PLOT.R` and `rwf/R/FUNCTIONS_PLOT.R`, not committed there) and in the four copies here (illustration, example, validation, cat_irt_eap). EXAMPLE_GENERALIZED, EXAMPLE_LDA and VALIDATION_DESCRIPTIVES_OCEAN use it too and would have stopped the same way when run again.
