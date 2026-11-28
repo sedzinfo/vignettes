@@ -52,12 +52,15 @@ th, td {
    desktop and one on a phone. In index.qmd a card is a list item inside a ::: {.index-cards} div:
    a link with the classes {.card .site-card} that holds an optional image ({.card-img-top}, from
    quarto/<site>/thumbnails/, drawn by _shared/thumbnails.R), the title ({.card-title .h5}), the
-   question or subject ({.card-text}) and an optional footer ({.card-footer .text-muted .small}).
+   question or subject ({.card-text}) and a footer ({.card-footer .text-muted .small}), the grey
+   area at the bottom (the example site puts its data story there, with no text above it).
    Markdown cannot put the card-body div of the landing pages inside a link, so the title and the
    text carry its padding themselves. */
 .index-cards ul {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  // never more than two columns: a column is at least 16rem and at least half the width, so the
+  // site with a sidebar (cat_irt_eap), whose text column grows with the window, also shows two
+  grid-template-columns: repeat(auto-fill, minmax(max(16rem, calc((100% - 1.5rem) / 2)), 1fr));
   gap: 1.5rem;                                   // the gutter of the landing pages (g-4)
   list-style: none;
   padding-left: 0;
@@ -86,6 +89,11 @@ th, td {
 }
 .index-cards .card-footer {
   display: block;
+  margin-top: auto;                              // at the bottom also in a card with no text
+}
+/* a title followed by the footer alone (the example site) keeps the air of the card under it */
+.index-cards .card-title:has(+ .card-footer) {
+  padding-bottom: var(--bs-card-spacer-y);
 }
 /* the image fills the top of the card, cut to 16:10 around its centre */
 .index-cards .card-img-top {
