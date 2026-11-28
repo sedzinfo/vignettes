@@ -1,0 +1,310 @@
+---
+title: "Are Greek Roads Getting Safer? Road Deaths in Greece Since 1999"
+description: "Road deaths in Greece in Eurostat data since 1999: how far they fell, how Greece compares with the EU, why motorcyclists and young men die most, which regions are the most dangerous, and whether Greece can still halve its road deaths by 2030."
+author: ""
+---
+
+```{r setup, include=FALSE}
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
+```
+
+## What is this?
+
+Greek roads used to be among the most dangerous in Europe. This story asks how much safer they have become, with official data, in six questions:
+
+1. **How many people die on Greek roads?**
+2. **How does Greece compare with the EU?**
+3. **Who dies?**
+4. **Why young men?**
+5. **Where are the roads most dangerous?**
+6. **Will Greece halve its road deaths by 2030?**
+
+The data come from **Eurostat**, the statistical office of the EU, which collects the road deaths that the police of each country record: a road death is a person killed on the spot or within 30 days of a road accident. They are downloaded when the page is rendered, so a new render brings in the latest year.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat","plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values; the year as a number
+eurostat_values<-function(id,filters) {
+  x<-get_eurostat(id,filters=filters,time_format="num",cache=FALSE)
+  result<-as.data.frame(x[!is.na(x$values),])
+  return(result)
+}
+
+# people killed on the roads by age and sex, in number and per million inhabitants, for every
+# country of the EU
+killed<-eurostat_values("tran_sf_roadus",list(pers_cat="TOTAL",unit=c("NR","P_MHAB")))
+total<-killed[killed$sex=="T"&killed$age=="TOTAL",]
+deaths<-function(geo,year,unit="NR") {
+  result<-total$values[total$geo==geo&total$time==year&total$unit==unit]
+  return(result)
+}
+greece<-total[total$geo=="EL"&total$unit=="NR",]
+greece<-greece[order(greece$time),]
+first<-min(greece$time)
+last<-max(greece$time)
+eu_name<-c(setNames(eu_countries$name,eu_countries$code),EU27_2020="EU-27")
+rates<-total[total$unit=="P_MHAB"&total$time==last&total$geo%in%names(eu_name),]
+rates$name<-eu_name[rates$geo]
+countries<-rates[rates$geo!="EU27_2020",]
+countries<-countries[order(-countries$values),]
+rank<-match("EL",countries$geo)
+# the deaths per million people of an age group in the last year
+age_rate<-function(geo,age) {
+  result<-killed$values[killed$geo==geo&killed$sex=="T"&killed$age==age&
+                          killed$unit=="P_MHAB"&killed$time==last]
+  return(result)
+}
+
+# people killed by the vehicle they were in or on; the groups of the codes do not overlap, so they
+# add up to the total. Those killed outside a vehicle, mostly pedestrians, are "OTH"
+vehicles<-eurostat_values("tran_sf_roadve",list(geo=c("EL","EU27_2020"),unit="NR"))
+groups<-list(`Car occupants`="CAR",
+             `Motorcyclists and moped riders`=c("MOTO_2WH","MOTO_LE125","MOTO_GT125","MOTO_NSP",
+                                                "MOP"),
+             Cyclists=c("BIKE","EPAC"),
+             `Lorries and vans`=c("VG_LE3P5","VG_GT3P5","VEH_GD"),
+             `Pedestrians and others`=NA)
+# the deaths of each group, by country and year: the last group takes what the others leave
+by_group<-do.call(rbind,lapply(c("EL","EU27_2020"),function(geo) {
+  x<-vehicles[vehicles$geo==geo,]
+  do.call(rbind,lapply(sort(unique(x$time)),function(year) {
+    y<-x[x$time==year,]
+    all<-sum(y$values[y$vehicle=="TOTAL"])
+    counts<-sapply(groups[-length(groups)],function(codes) sum(y$values[y$vehicle%in%codes]))
+    data.frame(geo=geo,time=year,group=names(groups),
+               deaths=c(counts,all-sum(counts)),total=all)
+  }))
+}))
+recent<-by_group[by_group$time>last-5,]
+share<-function(geo,group) {
+  x<-recent[recent$geo==geo,]
+  result<-100*sum(x$deaths[x$group==group])/sum(x$deaths)
+  return(result)
+}
+motorcycles<-by_group[by_group$geo=="EL"&by_group$group=="Motorcyclists and moped riders",]
+cars<-by_group[by_group$geo=="EL"&by_group$group=="Car occupants",]
+riders_rose<-tail(motorcycles$deaths,1)>motorcycles$deaths[motorcycles$time==2019]
+
+# the deaths of each region of Greece per million inhabitants, the average of the last years
+regions<-eurostat_values("tran_r_acci",list(victim="KIL",unit="P_MHAB"))
+regions<-regions[substr(regions$geo,1,2)=="EL"&nchar(regions$geo)==4,]
+region_last<-max(regions$time)
+regions<-regions[regions$time>region_last-4,]
+# the rate of Greece as a whole over the same years
+greece_rate<-mean(total$values[total$geo=="EL"&total$unit=="P_MHAB"&
+                                 total$time%in%unique(regions$time)])
+```
+
+```{r chart_style}
+greek_red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#9e9e9e"
+dark_gray<-"#6b6b6b" # also the colour of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,
+                 title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),
+                 xaxis=c(list(title=""),x_axis),
+                 margin=margin,
+                 annotations=c(annotations,list(note)),
+                 ...) %>%
+    config(displaylogo=FALSE)
+  return(result)
+}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+
+# short labels of numbers
+number<-function(x) {
+  result<-format(round(x),big.mark=",",trim=TRUE)
+  return(result)
+}
+ordinal<-function(n) {
+  suffix<-ifelse(n%%100%in%11:13,"th",c("th","st","nd","rd",rep("th",6))[n%%10+1])
+  result<-paste0(n,suffix)
+  return(result)
+}
+```
+
+---
+
+## 1. How many people die on Greek roads?
+
+**`r round(100*(1-deaths("EL",last)/deaths("EL",first)))`% fewer than in `r first`.** In `r first`, `r number(deaths("EL",first))` people died on the roads of Greece; in `r last`, `r number(deaths("EL",last))`. Most of the fall came before 2015: part of it with the economic crisis, which took cars off the roads, and part with safer cars, better roads and more checks by the police. Since then the fall has slowed: `r number(deaths("EL",2015))` people died in 2015, `r number(deaths("EL",2020))` in 2020, when the pandemic emptied the roads, and `r number(deaths("EL",last))` in `r last`.
+
+```{r yearly}
+#| fig-alt: "Bar chart of the people killed on the roads of Greece each year since 1999, falling by two thirds, most of it before 2015"
+plot_ly(greece,x=~time,y=~values,type="bar",marker=list(color=greek_red),
+        hovertemplate="%{x}: %{y:,.0f} killed<extra></extra>") %>%
+  chart("People killed on Greek roads each year",
+        paste0("Eurostat, tran_sf_roadus, ",first,"–",last,
+               ": killed on the spot or within 30 days"),
+        "People killed")
+```
+
+---
+
+## 2. How does Greece compare with the EU?
+
+**Better than before, `r if(rank<=5) "but still among the worst" else "and no longer among the worst"`.** Counted per million inhabitants, `r round(deaths("EL",first,"P_MHAB"))` people died on Greek roads in `r first`, against `r round(deaths("EU27_2020",first,"P_MHAB"))` in the EU as a whole. In `r last` the figures were `r round(deaths("EL",last,"P_MHAB"))` and `r round(deaths("EU27_2020",last,"P_MHAB"))`: Greece had the `r ordinal(rank)` highest rate of the 27 countries`r if(rank>1) paste0(", after ",paste(countries$name[seq_len(rank-1)],collapse=" and "))`.
+
+```{r eu, fig.height = 9}
+#| fig-alt: "Horizontal bar chart of the road deaths per million inhabitants of each EU country in the latest year, with Greece in red near the top and the EU in blue"
+rates<-rates[order(rates$values),]
+plot_ly(rates,x=~values,y=~factor(name,levels=name),type="bar",orientation="h",
+        marker=list(color=ifelse(rates$geo=="EL",greek_red,
+                                 ifelse(rates$geo=="EU27_2020",blue,gray))),
+        text=~round(values),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.0f} killed per million inhabitants<extra></extra>") %>%
+  chart(paste0("Road deaths per million inhabitants, ",last),"Eurostat, tran_sf_roadus",
+        margin=list(l=130,t=70,b=90),note_y=-0.08)
+```
+
+```{r eu_trend}
+#| fig-alt: "Line chart of the road deaths per million inhabitants in Greece and in the EU since 1999, both falling, Greece always above the EU"
+trend<-total[total$unit=="P_MHAB"&total$geo%in%c("EL","EU27_2020"),]
+trend<-trend[order(trend$time),]
+plot_ly(trend[trend$geo=="EL",],x=~time,y=~values,type="scatter",mode="lines+markers",
+        name="Greece",line=list(color=greek_red,width=2),marker=list(color=greek_red,size=7),
+        hovertemplate="Greece: %{y:.0f}<extra></extra>") %>%
+  add_trace(data=trend[trend$geo=="EU27_2020",],name="EU-27",line=list(color=blue,width=2),
+            marker=list(color=blue,size=7),hovertemplate="EU-27: %{y:.0f}<extra></extra>") %>%
+  chart("Road deaths per million inhabitants","Eurostat, tran_sf_roadus","Killed per million",
+        hovermode="x unified",legend=legend_top,margin=list(t=100,b=90),
+        y_axis=list(rangemode="tozero"))
+```
+
+---
+
+## 3. Who dies?
+
+**More and more, motorcyclists.** In `r last-4`–`r last`, `r round(share("EL","Motorcyclists and moped riders"))`% of the people killed on Greek roads were riding a motorcycle or a moped, against `r round(share("EU27_2020","Motorcyclists and moped riders"))`% in the EU. Motorcycles are everywhere in Greece, for its mild weather, its narrow streets and its delivery riders; and a rider has no body of metal around them.
+
+```{r groups}
+#| fig-alt: "Horizontal bar chart of the shares of car occupants, motorcyclists, cyclists, lorry and van occupants and pedestrians among the people killed on the roads of Greece and of the EU in the last five years"
+shares<-aggregate(deaths~geo+group,recent,sum)
+shares$percent<-100*shares$deaths/ave(shares$deaths,shares$geo,FUN=sum)
+shares$group<-factor(shares$group,levels=rev(names(groups)))
+plot_ly(shares[shares$geo=="EL",],x=~percent,y=~group,type="bar",orientation="h",name="Greece",
+        marker=list(color=greek_red),text=~paste0(round(percent),"%"),textposition="outside",
+        cliponaxis=FALSE,hovertemplate="Greece, %{y}: %{x:.1f}%<extra></extra>") %>%
+  add_trace(data=shares[shares$geo=="EU27_2020",],name="EU-27",marker=list(color=blue),
+            hovertemplate="EU-27, %{y}: %{x:.1f}%<extra></extra>") %>%
+  chart(paste0("Who was killed on the roads, ",last-4,"–",last,", % of the deaths"),
+        "Eurostat, tran_sf_roadve: the vehicle that each person killed was in or on",
+        barmode="group",legend=legend_top,margin=list(l=210,t=100,b=90),
+        x_axis=list(range=c(0,1.2*max(shares$percent))))
+```
+
+The motorcyclists are also why the fall slowed. Since `r first`, the deaths of people in cars fell by `r round(100*(1-tail(cars$deaths,1)/cars$deaths[1]))`%, those of motorcyclists and moped riders by only `r round(100*(1-tail(motorcycles$deaths,1)/motorcycles$deaths[1]))`%; and since 2019 the riders killed went from `r motorcycles$deaths[motorcycles$time==2019]` to `r tail(motorcycles$deaths,1)`. In `r first` they were `r round(100*motorcycles$deaths[1]/motorcycles$total[1])`% of all road deaths in Greece, in `r last` `r round(100*tail(motorcycles$deaths,1)/tail(motorcycles$total,1))`%.
+
+```{r riders}
+#| fig-alt: "Line chart of the people killed in cars and on motorcycles or mopeds in Greece each year since 1999: the deaths in cars fall steeply, those on motorcycles much less"
+plot_ly(cars,x=~time,y=~deaths,type="scatter",mode="lines+markers",name="Car occupants",
+        line=list(color=dark_gray,width=2),marker=list(color=dark_gray,size=7),
+        hovertemplate="Car occupants: %{y:,.0f}<extra></extra>") %>%
+  add_trace(data=motorcycles,name="Motorcyclists and moped riders",
+            line=list(color=greek_red,width=2),marker=list(color=greek_red,size=7),
+            hovertemplate="Motorcyclists and moped riders: %{y:,.0f}<extra></extra>") %>%
+  chart("People killed in cars and on two wheels in Greece","Eurostat, tran_sf_roadve",
+        "People killed",hovermode="x unified",legend=legend_top,margin=list(t=100,b=90),
+        y_axis=list(rangemode="tozero"))
+```
+
+---
+
+## 4. Why young men?
+
+**Everywhere, the young and men are the most at risk on the roads: the young lack experience, and both take more risks; men also drive more.** `r round(100*sum(killed$values[killed$geo=="EL"&killed$sex=="M"&killed$age=="TOTAL"&killed$unit=="NR"&killed$time>last-5])/sum(total$values[total$geo=="EL"&total$unit=="NR"&total$time>last-5]))`% of the people killed on Greek roads in `r last-4`–`r last` were men. And counted per million people of each age, the young die most: in `r last`, `r round(age_rate("EL","Y18-24"))` people aged 18 to 24 died per million of their age in Greece, against `r round(age_rate("EU27_2020","Y18-24"))` in the EU.
+
+```{r ages}
+#| fig-alt: "Bar chart of the road deaths per million inhabitants of each age group in Greece and in the EU in the latest year, highest at 18 to 24 in Greece"
+ages<-c(Y_LT15="Under 15",`Y15-17`="15–17",`Y18-24`="18–24",`Y25-49`="25–49",
+        `Y50-64`="50–64",Y_GE65="65 and over")
+by_age<-killed[killed$sex=="T"&killed$unit=="P_MHAB"&killed$time==last&
+                 killed$geo%in%c("EL","EU27_2020")&killed$age%in%names(ages),]
+by_age$label<-factor(ages[by_age$age],levels=ages)
+plot_ly(by_age[by_age$geo=="EL",],x=~label,y=~values,type="bar",name="Greece",
+        marker=list(color=greek_red),hovertemplate="Greece, %{x}: %{y:.0f}<extra></extra>") %>%
+  add_trace(data=by_age[by_age$geo=="EU27_2020",],name="EU-27",marker=list(color=blue),
+            hovertemplate="EU-27, %{x}: %{y:.0f}<extra></extra>") %>%
+  chart(paste0("Road deaths per million people of each age, ",last),"Eurostat, tran_sf_roadus",
+        "Killed per million",barmode="group",legend=legend_top,margin=list(t=100,b=90))
+```
+
+---
+
+## 5. Where are the roads most dangerous?
+
+**On the islands and in the regions of long country roads; least in Attica.** Per million inhabitants, the average of `r region_last-3`–`r region_last`:
+
+```{r regions, fig.height = 6}
+#| fig-alt: "Horizontal bar chart of the road deaths per million inhabitants of the thirteen regions of Greece, highest in the South Aegean and lowest in Attica"
+english<-c(EL30="Attica",EL41="North Aegean",EL42="South Aegean",EL43="Crete",
+           EL51="Eastern Macedonia and Thrace",EL52="Central Macedonia",EL53="Western Macedonia",
+           EL54="Epirus",EL61="Thessaly",EL62="Ionian Islands",EL63="Western Greece",
+           EL64="Central Greece",EL65="Peloponnese")
+average<-aggregate(values~geo,regions,mean)
+average$name<-ifelse(average$geo%in%names(english),english[average$geo],average$geo)
+average<-average[order(average$values),]
+plot_ly(average,x=~values,y=~factor(name,levels=name),type="bar",orientation="h",
+        marker=list(color=ifelse(average$values>greece_rate,greek_red,gray)),
+        text=~round(values),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.0f} killed per million inhabitants<extra></extra>") %>%
+  chart(paste0("Road deaths per million inhabitants, ",region_last-3,"–",region_last),
+        "Eurostat, tran_r_acci. In red: above the rate of Greece as a whole.",
+        margin=list(l=230,t=70,b=90),note_y=-0.1)
+```
+
+Attica, with its city streets and slower traffic, has the lowest rate: `r round(average$values[average$geo=="EL30"])` per million. The highest is that of the `r average$name[nrow(average)]`, `r round(max(average$values))`. The islands count the deaths of their summer visitors, who drive and ride rented vehicles on roads they do not know, against their residents only, so their rates come out higher than the risk of their own people.
+
+---
+
+## 6. Will Greece halve its road deaths by 2030?
+
+The EU has set itself the goal of **halving the road deaths of 2019 by 2030**, on the way to *Vision Zero*, close to no road deaths by 2050 (European Commission 2020). For Greece that means no more than `r number(deaths("EL",2019)/2)` deaths in 2030, from `r number(deaths("EL",2019))` in 2019.
+
+```{r target}
+#| fig-alt: "Line chart of the road deaths of Greece since 2010 against the straight path to half of the 2019 deaths in 2030: the deaths stay well above the path"
+path<-data.frame(time=2019:2030,values=deaths("EL",2019)*(1-0.5*(0:11)/11))
+recent_years<-greece[greece$time>=2010,]
+plot_ly(recent_years,x=~time,y=~values,type="scatter",mode="lines+markers",name="Deaths",
+        line=list(color=greek_red,width=2),marker=list(color=greek_red,size=7),
+        hovertemplate="%{x}: %{y:,.0f} killed<extra></extra>") %>%
+  add_trace(data=path,name="Path to half by 2030",line=list(color=dark_gray,width=2,dash="dash"),
+            marker=list(color=dark_gray,size=5),
+            hovertemplate="%{x}, on the path: %{y:,.0f}<extra></extra>") %>%
+  chart("Greek road deaths and the goal of 2030","Eurostat, tran_sf_roadus; the EU's goal for 2030",
+        "People killed",legend=legend_top,margin=list(t=100,b=90),y_axis=list(rangemode="tozero"))
+```
+
+**On present trends, no.** By `r last` Greece should have been down to `r number(path$values[path$time==last])` deaths to stay on the straight path; it had `r number(deaths("EL",last))`, `r round(100*(1-deaths("EL",last)/deaths("EL",2019)))`% fewer than in 2019 instead of `r round(100*(1-path$values[path$time==last]/deaths("EL",2019)))`%. To reach the goal, the deaths would have to fall by `r round(100*(1-(0.5*deaths("EL",2019)/deaths("EL",last))^(1/(2030-last))))`% a year from now on. The fastest way there runs through the motorcyclists: they were `r round(100*tail(motorcycles$deaths,1)/tail(motorcycles$total,1))`% of the dead in `r last``r if(riders_rose) ", and theirs are the deaths that rose since 2019"`.
+
+---
+
+## Sources
+
+- Eurostat: [tran_sf_roadus](https://ec.europa.eu/eurostat/databrowser/view/tran_sf_roadus/default/table?lang=en) (persons killed in road accidents by type of road user, age and sex), [tran_sf_roadve](https://ec.europa.eu/eurostat/databrowser/view/tran_sf_roadve/default/table?lang=en) (persons killed by type of vehicle), [tran_r_acci](https://ec.europa.eu/eurostat/databrowser/view/tran_r_acci/default/table?lang=en) (victims of road accidents by NUTS 2 region).
+- European Commission (2020), *EU Road Safety Policy Framework 2021–2030: Next steps towards "Vision Zero"*, SWD(2019) 283; see the Commission's [road safety pages](https://transport.ec.europa.eu/transport-themes/road-safety_en).
+
+---
+
+*Rendered with R `r getRversion()` · plotly*

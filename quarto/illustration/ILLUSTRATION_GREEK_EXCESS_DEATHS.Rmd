@@ -1,0 +1,386 @@
+---
+title: "How Many More Died? Excess Deaths in Greece Since 2015"
+description: "Weekly deaths in Greece in Eurostat data, against the deaths a normal year would bring: the pandemic, the heatwaves, who died, how Greece compares with the EU, and why fewer people have died since 2024."
+author: ""
+---
+
+```{r setup, include=FALSE}
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
+```
+
+## What is this?
+
+Counting the deaths of a disease is hard: doctors must decide what each person died of, and countries decide it in different ways. Counting all deaths is easy, and every EU country reports them to Eurostat week by week. The deaths above what a normal week would bring are the **excess deaths**: they include the deaths of the disease that nobody recorded as such, and the deaths that a heatwave or an overwhelmed hospital caused.
+
+This story compares the deaths of every week in Greece since 2015 with the deaths a normal year would have brought, and answers seven questions:
+
+1. **How many people die in Greece in a normal week?**
+2. **How many more died during the pandemic?**
+3. **Which weeks were the worst?**
+4. **Does the heat kill too?**
+5. **Who died?**
+6. **How does Greece compare with the EU?**
+7. **What came after the pandemic?**
+
+The deaths come from **Eurostat**, the temperatures of Athens from **ERA5-Land**, a reconstruction of the weather of every day by the European Centre for Medium-Range Weather Forecasts. Both are downloaded when the page is rendered, so a new render brings in the latest weeks.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat","plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values; the time as text: "2024-W05", "2024-05"
+eurostat_values<-function(id,filters) {
+  x<-get_eurostat(id,filters=filters,time_format="raw",cache=FALSE)
+  result<-as.data.frame(x[!is.na(x$values),])
+  result$time<-as.character(result$time)
+  return(result)
+}
+# the Monday that an ISO week ("2024-W05") starts on: week 1 is the week with 4 January in it
+week_monday<-function(time) {
+  january_4<-as.Date(paste0(substr(time,1,4),"-01-04"))
+  result<-january_4-(as.integer(format(january_4,"%u"))-1)+7*(as.integer(substr(time,7,8))-1)
+  return(result)
+}
+
+# deaths in Greece every week since 2015, all ages
+weekly<-eurostat_values("demo_r_mwk_ts",list(geo="EL",sex="T"))
+weekly<-weekly[order(weekly$time),c("time","values")]
+names(weekly)[2]<-"deaths"
+weekly$year<-as.integer(substr(weekly$time,1,4))
+weekly$week<-as.integer(substr(weekly$time,7,8))
+weekly$monday<-week_monday(weekly$time)
+
+# deaths every week by age, in ten-year groups
+by_age<-eurostat_values("demo_r_mwk_10",list(geo="EL",sex="T"))
+
+# Eurostat's own measure: the deaths of each month against the average of the same month in
+# 2016-2019, %, for every EU country
+eurostat_excess<-eurostat_values("demo_mexrt",list(unit="PC"))
+
+# the highest temperature of every day in Athens since 2015, from ERA5-Land through Open-Meteo, as
+# one CSV file: two lines about the point of the grid, an empty line, then the days
+weather_url<-paste0("https://archive-api.open-meteo.com/v1/archive",
+                    "?latitude=37.98&longitude=23.73&start_date=2015-01-01&end_date=",
+                    Sys.Date()-1,"&daily=temperature_2m_max&timezone=Europe%2FAthens",
+                    "&models=era5_land&format=csv")
+weather<-read.csv(text=readLines(weather_url)[-(1:3)],col.names=c("date","tmax"))
+weather<-weather[!is.na(weather$tmax),] # the last few days are not ready yet
+weather$time<-format(as.Date(weather$date),"%G-W%V")
+# the average of the highest temperatures of each week
+heat<-aggregate(tmax~time,weather,mean)
+weekly$tmax<-heat$tmax[match(weekly$time,heat$time)]
+```
+
+### The deaths a normal year would bring
+
+A normal week has more deaths in winter, when flu and the cold strike, than in summer, and the deaths of a normal year grow slowly as the population gets older. So the expected deaths of each week come from a model of the five years before the pandemic, 2015–2019: each week of the year has its own level, and every year adds the same share to all of them. It is a Poisson regression, the usual model for counts, with a dispersion that is allowed to be larger than Poisson's. The years 53 weeks long count their last week as week 52.
+
+```{r expected}
+# the expected deaths of every week, from the weeks of 2015-2019, and how far a normal week may
+# stray from them: twice the standard deviation of the model
+expect<-function(x) {
+  x$season<-factor(pmin(x$week,52))
+  before<-x[x$year<=2019,]
+  model<-glm(deaths~year+season,family=quasipoisson,data=before)
+  x$expected<-predict(model,newdata=x,type="response")
+  spread<-2*sqrt(summary(model)$dispersion*x$expected)
+  x$low<-x$expected-spread
+  x$high<-x$expected+spread
+  x$excess<-x$deaths-x$expected
+  x$percent<-100*x$excess/x$expected
+  result<-list(weeks=x,growth=100*(exp(coef(model)[["year"]])-1))
+  return(result)
+}
+fitted<-expect(weekly)
+weekly<-fitted$weeks
+# the deaths of every year: what was expected, what happened, and the difference
+years<-data.frame(year=sort(unique(weekly$year)))
+years$weeks<-as.vector(table(weekly$year)[as.character(years$year)])
+years$deaths<-as.vector(tapply(weekly$deaths,weekly$year,sum))
+years$expected<-as.vector(tapply(weekly$expected,weekly$year,sum))
+years$excess<-years$deaths-years$expected
+years$percent<-100*years$excess/years$expected
+at<-function(column,year) {
+  result<-years[[column]][years$year==year]
+  return(result)
+}
+pandemic<-years[years$year%in%2020:2022,]
+last_full<-max(years$year[years$weeks>=52])
+# the weeks with the most and the fewest expected deaths in 2019
+normal<-weekly[weekly$year==2019,]
+peak<-normal[which.max(normal$expected),]
+trough<-normal[which.min(normal$expected),]
+# the deaths of the last full year against an average year of 2016-2019, % (all 52 weeks long),
+# and Eurostat's measure for the same year
+before_average<-mean(years$deaths[years$year%in%2016:2019])
+after_change<-100*(at("deaths",last_full)/before_average-1)
+eurostat_last<-mean(eurostat_excess$values[eurostat_excess$geo=="EL"&
+                                             substr(eurostat_excess$time,1,4)==last_full])
+```
+
+```{r chart_style}
+greek_red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#9e9e9e"
+dark_gray<-"#6b6b6b" # also the colour of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,
+                 title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),
+                 xaxis=c(list(title=""),x_axis),
+                 margin=margin,
+                 annotations=c(annotations,list(note)),
+                 ...) %>%
+    config(displaylogo=FALSE)
+  return(result)
+}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+
+# short labels of numbers
+number<-function(x) {
+  result<-format(round(x),big.mark=",",trim=TRUE)
+  return(result)
+}
+percent<-function(x,digits=0,sign=FALSE) {
+  result<-paste0(ifelse(sign&x>0,"+",""),format(round(x,digits),nsmall=digits,trim=TRUE),"%")
+  return(result)
+}
+# a week in words: "15–21 July 2024"
+week_dates<-function(monday) {
+  sunday<-monday+6
+  start<-ifelse(format(monday,"%m")==format(sunday,"%m"),format(monday,"%e"),
+                format(monday,"%e %B"))
+  result<-paste0(trimws(start),"–",trimws(format(sunday,"%e %B %Y")))
+  return(result)
+}
+ordinal<-function(n) {
+  suffix<-ifelse(n%%100%in%11:13,"th",c("th","st","nd","rd",rep("th",6))[n%%10+1])
+  result<-paste0(n,suffix)
+  return(result)
+}
+```
+
+---
+
+## 1. How many people die in Greece in a normal week?
+
+**About `r number(round(mean(weekly$deaths[weekly$year<=2019]),-1))`.** In 2015–2019 Greece recorded `r number(mean(years$deaths[years$year<=2019&years$weeks==52]))` deaths in a year of 52 weeks. The worst weeks of a normal year come in winter, with flu and the cold: for a week of `r format(peak$monday,"%B")` the model expects about `r number(round(peak$expected,-1))` deaths, for a week of `r format(trough$monday,"%B")` about `r number(round(trough$expected,-1))`. And as the population ages, the expected deaths grow by about `r percent(fitted$growth,1)` a year.
+
+---
+
+## 2. How many more died during the pandemic?
+
+**About `r number(round(sum(pandemic$excess),-2))` in 2020–2022**, `r percent(100*sum(pandemic$excess)/sum(pandemic$expected))` more than a normal three years would have brought. The worst year was `r pandemic$year[which.max(pandemic$excess)]`, with `r number(max(pandemic$excess))` deaths more than expected (`r percent(pandemic$percent[which.max(pandemic$excess)],sign=TRUE)`). In the chart, the gray band is the range in which a normal week falls; the red line is what happened.
+
+```{r weekly, fig.height = 5}
+#| fig-alt: "Line chart of the deaths in Greece every week since 2015 against a band of the deaths expected in a normal week, with peaks above the band in the pandemic winters and in the heatwaves of the summers"
+plot_ly(weekly,x=~monday) %>%
+  add_trace(y=~high,type="scatter",mode="lines",line=list(width=0),hoverinfo="skip",
+            showlegend=FALSE) %>%
+  add_trace(y=~low,type="scatter",mode="lines",line=list(width=0),fill="tonexty",
+            fillcolor="rgba(158,158,158,0.3)",name="Normal range",hoverinfo="skip") %>%
+  add_trace(y=~expected,type="scatter",mode="lines",name="Expected",
+            line=list(color=dark_gray,width=1,dash="dot"),
+            hovertemplate="Expected: %{y:,.0f}<extra></extra>") %>%
+  add_trace(y=~deaths,type="scatter",mode="lines",name="Deaths",
+            line=list(color=greek_red,width=1.5),
+            hovertemplate="Deaths: %{y:,.0f}<extra></extra>") %>%
+  chart("Deaths in Greece every week",
+        paste0("Eurostat, demo_r_mwk_ts, January 2015 to the week of ",
+               week_dates(weekly$monday[nrow(weekly)]),"; expected: the model above"),
+        "Deaths a week",hovermode="x unified",
+        legend=legend_top,margin=list(t=100,b=90),note_y=-0.12)
+```
+
+The same by year. `r if(max(years$year)>max(years$year[years$weeks>=52])) paste0(max(years$year)," has ",years$weeks[nrow(years)]," weeks so far.")` 2015 and 2020 had 53 weeks, and so more deaths and more expected deaths than the other years.
+
+```{r years}
+#| fig-alt: "Bar chart of the deaths in Greece each year above or below the deaths expected, highest in 2021 and 2022, below zero since 2024"
+plot_ly(years,x=~year,y=~excess,type="bar",
+        marker=list(color=ifelse(years$excess>0,greek_red,blue)),
+        text=~percent(percent,sign=TRUE),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{x}: %{y:,.0f} deaths more than expected<extra></extra>") %>%
+  chart("Deaths above (+) or below (−) the expected, each year",
+        "Eurostat, demo_r_mwk_ts; the expected deaths from the model above","Deaths",
+        x_axis=list(dtick=1))
+```
+
+```{r years_table}
+knitr::kable(data.frame(year=years$year,weeks=years$weeks,deaths=number(years$deaths),
+                        expected=number(years$expected),excess=number(years$excess),
+                        percent=percent(years$percent,1,sign=TRUE)),
+             col.names=c("Year","Weeks","Deaths","Expected","Excess","Excess, %"),align="r")
+```
+
+---
+
+## 3. Which weeks were the worst?
+
+The ten weeks with the most deaths above the expected:
+
+```{r worst}
+worst<-weekly[order(-weekly$excess),][1:10,]
+hot_weeks<-worst$week>=23&worst$week<=39 # June to September
+knitr::kable(data.frame(week=week_dates(worst$monday),deaths=number(worst$deaths),
+                        expected=number(worst$expected),
+                        excess=percent(worst$percent,sign=TRUE),
+                        heat=paste0(format(round(worst$tmax,1),nsmall=1)," °C")),
+             col.names=c("Week","Deaths","Expected","Excess","Athens, average highest temperature"),
+             align="lrrrr")
+```
+
+`r sum(hot_weeks)` of the ten are **summer weeks**`r if(hot_weeks[1]) paste0(", among them the worst of all, ",week_dates(worst$monday[1]),": ",number(worst$deaths[1])," people died, ",percent(worst$percent[1])," more than expected, while Athens averaged ",format(round(worst$tmax[1],1),nsmall=1)," °C at the hottest hour of each day")`. The other `r sum(!hot_weeks)` are weeks of `r paste(unique(format(worst$monday[!hot_weeks][order(worst$monday[!hot_weeks])],"%B %Y")),collapse=", ")``r if(all(worst$year[!hot_weeks]%in%2020:2022)) ", when the waves of the pandemic filled the hospitals"`.
+
+---
+
+## 4. Does the heat kill too?
+
+**Yes.** Every dot of the chart is a week of June to September since 2015: how hot it was in Athens, where more than a third of the people of Greece live, and how many more people died in all of Greece than expected.
+
+```{r heat}
+#| fig-alt: "Scatter chart of the summer weeks since 2015: the hotter the week in Athens, the more deaths above the expected in Greece"
+summer<-weekly[weekly$week>=23&weekly$week<=39&!is.na(weekly$tmax),]
+summer$hover<-paste0(week_dates(summer$monday),": ",format(round(summer$tmax,1),nsmall=1),
+                     " °C, deaths ",percent(summer$percent,sign=TRUE))
+summer$hot<-summer$tmax>=36
+plot_ly(summer[!summer$hot,],x=~tmax,y=~percent,type="scatter",mode="markers",
+        name="Other summer weeks",marker=list(color=gray,size=8,opacity=0.7),hovertext=~hover,
+        hovertemplate="%{hovertext}<extra></extra>") %>%
+  add_trace(data=summer[summer$hot,],name="Weeks of 36 °C or more",
+            marker=list(color=greek_red,size=10,opacity=1)) %>%
+  chart("Summer weeks: heat in Athens and deaths in Greece",
+        paste("Eurostat, demo_r_mwk_ts; ERA5-Land through Open-Meteo. Weeks 23 to 39 of each",
+              "year (June to September)."),"Deaths above the expected, %",
+        x_axis=list(title="Average of the highest temperatures of the week in Athens, °C"),
+        legend=legend_top,margin=list(t=100,b=110),note_y=-0.22)
+```
+
+```{r heat_bands}
+summer$band<-cut(summer$tmax,c(-Inf,30,33,36,Inf),right=FALSE,
+                 labels=c("Under 30 °C","30 to 33 °C","33 to 36 °C","36 °C or more"))
+bands<-aggregate(percent~band,summer,mean)
+bands$weeks<-as.vector(table(summer$band)[as.character(bands$band)])
+knitr::kable(data.frame(band=bands$band,weeks=bands$weeks,
+                        excess=percent(bands$percent,1,sign=TRUE)),
+             col.names=c("Athens, average highest temperature of the week","Weeks",
+                         "Deaths above the expected, on average"),align="lrr")
+```
+
+In the summer weeks under 33 °C, about as many people died as expected. In the `r bands$weeks[nrow(bands)]` weeks of 36 °C or more, `r percent(bands$percent[nrow(bands)])` more died than expected, on average. Heat strains the heart and the lungs, most of all in old and sick people (see [Athens Is Getting Hotter](ILLUSTRATION_ATHENS_HEAT.Rmd)). Not every hot week was deadly, though: in the hottest week of all, `r week_dates(summer$monday[which.max(summer$tmax)])` at `r format(round(max(summer$tmax),1),nsmall=1)` °C, deaths were `r percent(summer$percent[which.max(summer$tmax)],sign=TRUE)` against the expected.
+
+---
+
+## 5. Who died?
+
+The same model, fitted to each age group, gives the excess deaths of 2020–2022 by age. The youngest groups are put together, as they have few deaths.
+
+```{r ages}
+#| fig-alt: "Bar chart of the deaths above the expected in 2020 to 2022 by age group in Greece, as a share of the expected deaths: highest among people aged 40 to 79"
+groups<-list(`Under 40`=c("Y_LT10","Y10-19","Y20-29","Y30-39"),`40–49`="Y40-49",
+             `50–59`="Y50-59",`60–69`="Y60-69",`70–79`="Y70-79",`80–89`="Y80-89",
+             `90 and over`="Y_GE90")
+ages<-do.call(rbind,lapply(names(groups),function(group) {
+  parts<-lapply(groups[[group]],function(code) {
+    x<-by_age[by_age$age==code,c("time","values")]
+    names(x)[2]<-"deaths"
+    x$year<-as.integer(substr(x$time,1,4))
+    x$week<-as.integer(substr(x$time,7,8))
+    expect(x)$weeks
+  })
+  y<-do.call(rbind,parts)
+  y<-y[y$year%in%2020:2022,]
+  data.frame(age=group,deaths=sum(y$deaths),expected=sum(y$expected))
+}))
+ages$excess<-ages$deaths-ages$expected
+ages$percent<-100*ages$excess/ages$expected
+ages$age<-factor(ages$age,levels=ages$age)
+plot_ly(ages,x=~age,y=~percent,type="bar",marker=list(color=greek_red),
+        text=~number(excess),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{x}: %{y:.1f}% above the expected<extra></extra>") %>%
+  chart("Deaths above the expected by age, 2020–2022, %",
+        "Eurostat, demo_r_mwk_10; the model above, for each group. On the bars: the excess deaths.",
+        "% above the expected")
+```
+
+In numbers, most of the excess deaths were of old people: `r number(sum(ages$excess[ages$age%in%c("70–79","80–89","90 and over")]))` of the `r number(sum(ages$excess))` were of people aged 70 or more. But against what was expected for each age, the pandemic years hit people aged 60 to 79 hardest (`r percent(100*sum(ages$excess[ages$age%in%c("60–69","70–79")])/sum(ages$expected[ages$age%in%c("60–69","70–79")]),sign=TRUE)`), more than those aged 80 or more (`r percent(100*sum(ages$excess[ages$age%in%c("80–89","90 and over")])/sum(ages$expected[ages$age%in%c("80–89","90 and over")]),sign=TRUE)`), whose deaths are many in any year. The groups add up to a little less than the total of question 2, as each group has a model of its own and a few deaths have no age.
+
+---
+
+## 6. How does Greece compare with the EU?
+
+Eurostat publishes its own measure for every country: the deaths of each month against the average of the same month in 2016–2019. It has no trend for the ageing of the population, so it counts a little more excess than the model above. Averaged over the 36 months of 2020–2022:
+
+```{r eu, fig.height = 9}
+#| fig-alt: "Horizontal bar chart of the average monthly excess deaths of 2020 to 2022 in each EU country, with Greece in red and the EU in blue"
+eu_name<-c(setNames(eu_countries$name,eu_countries$code),EU27_2020="EU-27")
+months_2020_2022<-eurostat_excess[eurostat_excess$time>="2020-01"&eurostat_excess$time<="2022-12"&
+                                    eurostat_excess$geo%in%names(eu_name),]
+eu<-aggregate(values~geo,months_2020_2022,mean)
+eu$name<-eu_name[eu$geo]
+eu<-eu[order(eu$values),]
+countries<-eu[eu$geo!="EU27_2020",]
+greece_rank<-match("EL",rev(countries$geo))
+plot_ly(eu,x=~values,y=~factor(name,levels=name),type="bar",orientation="h",
+        marker=list(color=ifelse(eu$geo=="EL",greek_red,ifelse(eu$geo=="EU27_2020",blue,gray))),
+        text=~percent(values,1),textposition="outside",cliponaxis=FALSE,
+        hovertemplate="%{y}: %{x:.1f}% more deaths than in 2016–2019<extra></extra>") %>%
+  chart("Deaths above 2016–2019, average month of 2020–2022, %",
+        "Eurostat, demo_mexrt: the deaths of each month against the average of 2016–2019",
+        margin=list(l=130,t=70,b=90),note_y=-0.08)
+```
+
+**About average.** With `r percent(eu$values[eu$geo=="EL"],1)` more deaths a month than in 2016–2019, Greece was `r ordinal(greece_rank)` of the 27 countries, against `r percent(eu$values[eu$geo=="EU27_2020"],1)` for the EU as a whole. `r countries$name[nrow(countries)]` had the most, `r countries$name[1]` the fewest.
+
+---
+
+## 7. What came after the pandemic?
+
+**In `r last_full`, `r number(at("deaths",last_full))` people died in Greece, against `r number(before_average)` in an average year of 2016–2019: `r if(abs(after_change)<2) "about as many" else if(after_change<0) paste(percent(-after_change),"fewer") else paste(percent(after_change),"more")`, although the population is older.** Eurostat's measure, which compares each month with 2016–2019 and has no trend, averaged `r percent(eurostat_last,1,sign=TRUE)` for Greece in `r last_full`. The model above expects the deaths to grow by `r percent(fitted$growth,1)` a year as the population ages, so it counts `r if(at("excess",last_full)<0) paste(number(-at("excess",last_full)),"deaths fewer") else paste(number(at("excess",last_full)),"deaths more")` than expected (`r percent(at("percent",last_full),1,sign=TRUE)`).
+
+```{r after}
+#| fig-alt: "Line chart of the deaths of each month in Greece and in the EU against 2016 to 2019, high in 2020 to 2022 and near zero since 2024"
+recent<-eurostat_excess[eurostat_excess$geo%in%c("EL","EU27_2020"),]
+recent$date<-as.Date(paste0(recent$time,"-01"))
+recent<-recent[order(recent$date),]
+plot_ly(recent[recent$geo=="EL",],x=~date,y=~values,type="scatter",mode="lines",name="Greece",
+        line=list(color=greek_red,width=2),hovertemplate="Greece: %{y:.1f}%<extra></extra>") %>%
+  add_trace(data=recent[recent$geo=="EU27_2020",],name="EU-27",line=list(color=blue,width=2),
+            hovertemplate="EU-27: %{y:.1f}%<extra></extra>") %>%
+  chart("Deaths of each month against 2016–2019, %",
+        paste0("Eurostat, demo_mexrt, January 2020 to ",
+               format(max(recent$date),"%B %Y")),"% above (+) or below (−)",
+        hovermode="x unified",legend=legend_top,margin=list(t=100,b=90))
+```
+
+Two things can keep the deaths of the years after a pandemic below the trend:
+
+- **Some of the deaths came early.** The pandemic and the heatwaves took the lives of many people who were already very old or very ill. Some of them would have died in the years that followed; as they died earlier, fewer people die in those years. Demographers call this *mortality displacement*.
+- **The trend of 2015–2019 may not hold.** The model lets the expected deaths grow by `r percent(fitted$growth,1)` a year, as they did before the pandemic. If people now live longer than that trend assumes, the expected deaths are too high, and part of the gap is the model's error, not fewer deaths.
+
+---
+
+## Sources
+
+- Eurostat: [demo_r_mwk_ts](https://ec.europa.eu/eurostat/databrowser/view/demo_r_mwk_ts/default/table?lang=en) (deaths by week), [demo_r_mwk_10](https://ec.europa.eu/eurostat/databrowser/view/demo_r_mwk_10/default/table?lang=en) (deaths by week and ten-year age group), [demo_mexrt](https://ec.europa.eu/eurostat/databrowser/view/demo_mexrt/default/table?lang=en) (excess mortality by month).
+- Temperatures: ERA5-Land ([Muñoz-Sabater et al. 2021](https://doi.org/10.5194/essd-13-4349-2021)), through the [historical weather API of Open-Meteo](https://open-meteo.com/en/docs/historical-weather-api) ([Zippenfenig 2023](https://doi.org/10.5281/zenodo.7970649)), for the point of the grid nearest to the centre of Athens.
+
+---
+
+*Rendered with R `r getRversion()` · plotly*

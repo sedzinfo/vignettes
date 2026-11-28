@@ -1,0 +1,347 @@
+---
+title: "Is the Sea Rising at Piraeus? Sea Level in Greece, the Mediterranean and the World"
+description: "The tide gauges of the Greek harbours since 1969 and the satellites since 1993: how much the sea has risen at Piraeus, how Greece compares with the Mediterranean and the world, why the land matters, and whether the rise is speeding up."
+author: ""
+---
+
+```{r setup, include=FALSE}
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
+```
+
+## What is this?
+
+The sea rises as the world warms: water expands as it gets warmer, and the melting glaciers and ice sheets of the land pour more of it into the oceans. This story asks what that means for Greece, a country of more than 13,000 kilometres of coast, with six questions:
+
+1. **How is the height of the sea measured?**
+2. **Is the sea rising at Piraeus?**
+3. **How does Piraeus compare with the Mediterranean and the world?**
+4. **Is the sea rising everywhere in Greece?**
+5. **Is the rise speeding up?**
+6. **How much higher could the sea be by 2100?**
+
+The data come from the **Permanent Service for Mean Sea Level** (PSMSL), which keeps the records of the tide gauges of the world, and from the **Laboratory for Satellite Altimetry** of NOAA, the weather and oceans agency of the United States. Both are downloaded when the page is rendered.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages("plotly")
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# the lines of a file on the web, tried again a few times: the servers sometimes refuse a connection
+# or take too long to answer
+read_lines<-function(url,tries=4) {
+  for(k in seq_len(tries)) {
+    result<-tryCatch(readLines(url,warn=FALSE),error=function(e) NULL)
+    if(!is.null(result))
+      return(result)
+    Sys.sleep(10)
+  }
+  stop("Could not download ",url)
+}
+
+# a tide gauge of the PSMSL: the mean sea level of every month, in millimetres above a fixed mark of
+# the gauge. Missing months are -99999; months that the PSMSL flags for attention are left out
+gauge_months<-function(id) {
+  url<-paste0("https://psmsl.org/data/obtaining/rlr.monthly.data/",id,".rlrdata")
+  x<-read.table(text=read_lines(url),sep=";",strip.white=TRUE,
+                col.names=c("time","mm","missing_days","flags"),
+                colClasses=c("numeric","numeric","integer","character"))
+  result<-x[x$mm>-99999&x$flags=="000",]
+  result$year<-floor(result$time)
+  return(result)
+}
+# the mean of every year with at least ten good months
+gauge_years<-function(months) {
+  if(nrow(months)==0)
+    return(data.frame(year=integer(0),mm=numeric(0)))
+  counts<-table(months$year)
+  result<-aggregate(mm~year,months,mean)
+  result<-result[counts[as.character(result$year)]>=10,]
+  return(result)
+}
+# the rise of a straight line through the yearly means, mm a year
+rise<-function(x,from=-Inf,to=Inf) {
+  x<-x[x$year>=from&x$year<=to,]
+  result<-unname(coef(lm(mm~year,x))[2])
+  return(result)
+}
+
+# the tide gauges of Greece have long gaps in the 1990s, and Piraeus has doubtful years then (1990
+# is flagged), so the recent rise is measured from 2000, when the records run without gaps again
+from<-2000
+
+# Piraeus, the port of Athens: PSMSL station 374
+piraeus_months<-gauge_months(374)
+piraeus<-gauge_years(piraeus_months)
+flagged_1990<-!any(piraeus_months$year==1990)
+
+# all the tide gauges of Greece (PSMSL coastline 290), where they are, and their yearly means
+station_list<-read_lines("https://psmsl.org/data/obtaining/rlr.monthly.data/filelist.txt")
+stations<-read.table(text=station_list,sep=";",strip.white=TRUE,quote="",
+                     col.names=c("id","lat","lon","name","coastline","code","flag"))
+stations<-stations[stations$coastline==290,]
+greek_years<-lapply(stations$id,function(id) gauge_years(gauge_months(id)))
+# the gauges with at least 15 yearly means since 2000, and the rise of each since then
+recent_years<-sapply(greek_years,function(x) sum(x$year>=from))
+long_enough<-recent_years>=15
+gauge_rates<-sapply(greek_years[long_enough],function(x) rise(x,from=from))
+# how much higher the sea at Piraeus stood in its last ten years than in 1969-1988, cm
+recent_piraeus<-piraeus$mm[piraeus$year>max(piraeus$year)-10]
+climb<-(mean(recent_piraeus)-mean(piraeus$mm[piraeus$year<=1988]))/10
+
+# NOAA's satellite record of the mean sea level since the end of 1992, with the seasons taken out,
+# mm: a column for each satellite, a row for each pass over the ocean
+altimetry<-function(region) {
+  url<-paste0("https://www.star.nesdis.noaa.gov/socd/lsa/SeaLevelRise/slr/slr_sla_",region,
+              "_free_ref_90.csv")
+  x<-read.csv(text=read_lines(url),comment.char="#")
+  passes<-rowSums(!is.na(x[-1]))>0
+  result<-data.frame(time=x$year[passes],mm=rowSums(x[passes,-1],na.rm=TRUE))
+  result$year<-floor(result$time)
+  return(result)
+}
+world_passes<-altimetry("gbl")
+mediterranean_passes<-altimetry("mds")
+# the mean of every year that the satellites saw from beginning to end
+satellite_years<-function(passes) {
+  span<-tapply(passes$time,passes$year,function(t) max(t)-min(t))
+  result<-aggregate(mm~year,passes,mean)
+  result<-result[span[as.character(result$year)]>0.9,]
+  return(result)
+}
+world<-satellite_years(world_passes)
+mediterranean<-satellite_years(mediterranean_passes)
+last_satellite<-max(world$year)
+# the rise since 2000 at Piraeus, in the Mediterranean and in the world, over the same years
+rates<-c(Piraeus=rise(piraeus,from,last_satellite),Mediterranean=rise(mediterranean,from),
+         World=rise(world,from))
+# a comparison in words: "faster than", "about as fast as" or "slower than"
+compared<-function(a,b) {
+  result<-if(abs(a-b)<0.5) "about as fast as" else if(a>b) "faster than" else "slower than"
+  return(result)
+}
+# the same for two amounts: "more than", "about the same as" or "less than"
+compared_amount<-function(a,b) {
+  result<-if(abs(a-b)<0.5) "about the same as" else if(a>b) "more than" else "less than"
+  return(result)
+}
+```
+
+```{r chart_style}
+greek_red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#9e9e9e"
+dark_gray<-"#6b6b6b" # also the colour of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,
+                 title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),
+                 xaxis=c(list(title=""),x_axis),
+                 margin=margin,
+                 annotations=c(annotations,list(note)),
+                 ...) %>%
+    config(displaylogo=FALSE)
+  return(result)
+}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+
+# yearly means in centimetres above their own average of 2000-2019, so that a tide gauge and the
+# satellites can share a chart
+rebase<-function(x) {
+  result<-data.frame(year=x$year,cm=(x$mm-mean(x$mm[x$year>=2000&x$year<=2019]))/10)
+  return(result)
+}
+# every year from the first to the last, with NA where a year is missing, so the line breaks there
+all_years<-function(x) {
+  result<-merge(data.frame(year=min(x$year):max(x$year)),x,all.x=TRUE)
+  return(result)
+}
+# short labels of numbers
+mm_year<-function(x) {
+  result<-paste0(format(round(x,1),nsmall=1,trim=TRUE)," mm a year")
+  return(result)
+}
+```
+
+---
+
+## 1. How is the height of the sea measured?
+
+**With tide gauges since the 19th century, and with satellites since 1992.** A tide gauge sits in a harbour and measures the height of the water against a fixed mark on land, every few minutes; the average of a month or a year smooths out the tides, the waves and the weather. Since the end of 1992 satellites have also measured the height of the whole ocean, by timing a radar pulse from the satellite to the sea and back.
+
+The two measure different things. A satellite measures the sea against the centre of the Earth. A tide gauge measures **the sea against the land it stands on**, and in Greece the land moves: earthquakes lift it or drop it, and soft ground under some cities sinks. For the people of a harbour, the tide gauge measures what matters.
+
+---
+
+## 2. Is the sea rising at Piraeus?
+
+**Yes, since about `r from`; before that it hardly rose at all.** The tide gauge of Piraeus has measured the sea since `r min(piraeus$year)`. From `r min(piraeus$year)` to 1988, when its record runs with few gaps, a straight line through its yearly means `r if(rise(piraeus,to=1988)<0) "falls" else "rises"` by `r mm_year(abs(rise(piraeus,to=1988)))`. From `r from` to `r max(piraeus$year)` it rises by **`r mm_year(rates[["Piraeus"]])`**. The years in between are left out of both lines: several are missing, and some look doubtful`r if(flagged_1990) " (the PSMSL flags all the months of 1990, as the weather of that year disturbed the gauge)"`. In all, the sea at Piraeus stood `r format(round(climb,1),nsmall=1)` cm higher in `r max(piraeus$year)-9`–`r max(piraeus$year)` than in `r min(piraeus$year)`–1988.
+
+```{r piraeus}
+#| fig-alt: "Line chart of the yearly mean sea level at Piraeus since 1969, flat until the late 1980s and rising since 2000, with a trend line for each period"
+cm<-all_years(rebase(piraeus))
+before<-cm[!is.na(cm$cm)&cm$year<=1988,]
+after<-cm[!is.na(cm$cm)&cm$year>=from,]
+fit_before<-fitted(lm(cm~year,before))
+fit_after<-fitted(lm(cm~year,after))
+plot_ly(cm,x=~year,y=~cm,type="scatter",mode="lines+markers",name="Yearly mean",
+        line=list(color=gray,width=1.5),marker=list(color=gray,size=6),
+        hovertemplate="%{x}: %{y:.1f} cm<extra></extra>") %>%
+  add_trace(x=before$year,y=fit_before,mode="lines",name=paste0("Trend ",min(before$year),"–1988"),
+            line=list(color=blue,width=3),hoverinfo="skip",inherit=FALSE,type="scatter") %>%
+  add_trace(x=after$year,y=fit_after,mode="lines",name=paste0("Trend since ",from),
+            line=list(color=greek_red,width=3),hoverinfo="skip",inherit=FALSE,
+            type="scatter") %>%
+  chart("Sea level at Piraeus, cm",
+        paste0("PSMSL, station 374, yearly means, ",min(piraeus$year),"–",max(piraeus$year),
+               ": flagged months and years of fewer than ten months left out"),
+        "cm above the average of 2000–2019",legend=legend_top,margin=list(t=100,b=90))
+```
+
+---
+
+## 3. How does Piraeus compare with the Mediterranean and the world?
+
+**Since `r from` the sea at Piraeus has risen `r if(compared(rates[["Piraeus"]],rates[["Mediterranean"]])==compared(rates[["Piraeus"]],rates[["World"]])) paste(compared(rates[["Piraeus"]],rates[["World"]]),"the Mediterranean as a whole and the world's oceans") else paste0(compared(rates[["Piraeus"]],rates[["Mediterranean"]])," the Mediterranean as a whole, and ",compared(rates[["Piraeus"]],rates[["World"]])," the world's oceans")`.** Straight lines through the yearly means of `r from`–`r last_satellite`:
+
+```{r compare_table}
+knitr::kable(data.frame(sea=c("Piraeus (tide gauge)","Mediterranean (satellites)",
+                              "World (satellites)"),
+                        rate=mm_year(rates)),
+             col.names=c("Sea",paste0("Rise, ",from,"–",last_satellite)),align="lr")
+```
+
+```{r compare}
+#| fig-alt: "Line chart of the yearly mean sea level since 2000 at Piraeus, in the Mediterranean and in the world, all rising"
+series<-list(Piraeus=rebase(piraeus[piraeus$year>=from,]),
+             Mediterranean=rebase(mediterranean[mediterranean$year>=from,]),
+             World=rebase(world[world$year>=from,]))
+colors<-c(Piraeus=greek_red,Mediterranean=blue,World=dark_gray)
+p<-plot_ly()
+for(name in names(series)) {
+  p<-p %>%
+    add_trace(data=all_years(series[[name]]),x=~year,y=~cm,type="scatter",mode="lines+markers",
+              name=name,line=list(color=colors[[name]],width=2),
+              marker=list(color=colors[[name]],size=6),
+              hovertemplate=paste0(name,": %{y:.1f} cm<extra></extra>"))
+}
+p %>%
+  chart(paste0("Sea level since ",from,", cm"),
+        paste("PSMSL, station 374; NOAA Laboratory for Satellite Altimetry (seasons removed).",
+              "Each against its average of 2000–2019."),
+        "cm above the average of 2000–2019",hovermode="x unified",legend=legend_top,
+        margin=list(t=100,b=110),note_y=-0.2)
+```
+
+A single harbour moves up and down more from year to year than the average of a whole sea, with the winds, the air pressure and the currents of each year; that is why Piraeus zigzags around the smoother lines of the satellites. And the tide gauge measures the sea against the land: `r if(rates[["Piraeus"]]>rates[["Mediterranean"]]+0.5) "if the land of Piraeus has been sinking a little, that alone makes the sea rise faster there than in the open Mediterranean" else "the land of Piraeus seems to have moved little"`.
+
+---
+
+## 4. Is the sea rising everywhere in Greece?
+
+**`r if(all(gauge_rates>0)) "At every harbour with a long enough record" else "Almost everywhere"`, but not equally, because the land moves too.** Every tide gauge of Greece with at least 15 yearly means since `r from`:
+
+```{r greece_map, fig.height = 7}
+#| fig-alt: "Map of the tide gauges of Greece, each coloured by how fast the sea has risen against the land since 2000"
+# common English names of the harbours, for the PSMSL's transliterations
+english<-c(PIRAIEVS="Piraeus",KHIOS="Chios",POSIDHONIA="Posidonia",SOUDHAS="Souda",
+           SIROS="Syros",LEVKAS="Lefkada",KATAKOLON="Katakolo",RHODOS="Rhodes",PATRAI="Patras",
+           KAVALLA="Kavala",IRAKLION="Heraklion",KALAMAI="Kalamata",THESSALONIKI="Thessaloniki",
+           PREVEZA="Preveza",ALEXANDROUPOLIS="Alexandroupoli",LEROS="Leros",
+           `KHALKIS NORTH`="Chalkida North",`KHALKIS SOUTH`="Chalkida South",
+           `CORFU ( KERKYRA )`="Corfu",`NORTH SALAMINOS`="Salamina",RAFINA="Rafina",
+           SKOPELOS="Skopelos",`SAMOS ISLAND - VATHI`="Samos",`SOUDHAS II`="Souda II",
+           `IRAKLION II`="Heraklion II",`RHODOS II`="Rhodes II",`NORTH SALAMINOS II`="Salamina II")
+gauges<-stations[long_enough,]
+gauges$rate<-gauge_rates
+gauges$years<-recent_years[long_enough]
+gauges$label<-ifelse(gauges$name%in%names(english),english[gauges$name],gauges$name)
+gauges$hover<-paste0(gauges$label,": ",ifelse(gauges$rate>0,"+",""),mm_year(gauges$rate),
+                     " since ",from," (",gauges$years," years)")
+# the names of harbours close to each other go on opposite sides of their dots
+sides<-c(`KHALKIS NORTH`="top center",`KHALKIS SOUTH`="bottom center",PREVEZA="top center",
+         LEVKAS="bottom center",POSIDHONIA="middle left",PIRAIEVS="middle right")
+gauges$side<-ifelse(gauges$name%in%names(sides),sides[gauges$name],"top center")
+limit<-max(abs(gauges$rate))
+plot_ly(gauges,type="scattergeo",mode="markers+text",lon=~lon,lat=~lat,text=~label,
+        textposition=~side,textfont=list(size=11,color=dark_gray),
+        marker=list(size=13,color=~rate,colorscale=list(c(0,blue),c(0.5,"#f2f2f2"),c(1,greek_red)),
+                    cmin=-limit,cmax=limit,line=list(color=dark_gray,width=0.5),
+                    colorbar=list(title=list(text="mm a year"),thickness=12)),
+        hovertext=~hover,hovertemplate="%{hovertext}<extra></extra>") %>%
+  chart(paste0("Sea level against the land since ",from,", mm a year"),
+        paste0("PSMSL: the tide gauges of Greece with at least 15 yearly means since ",from,
+               "; a straight line through each"),
+        geo=list(resolution=50,showland=TRUE,landcolor="#f7f7f7",showocean=TRUE,
+                 oceancolor="#eef4fa",showcountries=TRUE,countrycolor="#c8c8c8",
+                 coastlinecolor="#b0b0b0",lonaxis=list(range=c(19,29)),
+                 lataxis=list(range=c(34.5,41.8)),projection=list(type="mercator")),
+        margin=list(t=60,b=60,l=10,r=10),note_y=-0.03)
+```
+
+```{r greece_table}
+gauges<-gauges[order(-gauges$rate),]
+knitr::kable(data.frame(harbour=gauges$label,rate=paste0(ifelse(gauges$rate>0,"+",""),
+                                                         mm_year(gauges$rate)),
+                        years=gauges$years),
+             col.names=c("Harbour",paste("Sea against the land since",from),"Yearly means"),
+             align="lrr",row.names=FALSE)
+```
+
+At `r if(all(gauges$rate>0)) paste("all",nrow(gauges)) else paste(sum(gauges$rate>0),"of the",nrow(gauges))` harbours the sea rose against the land; the median rise was `r mm_year(median(gauges$rate))`, `r compared_amount(median(gauges$rate),rates[["Mediterranean"]])` the `r mm_year(rates[["Mediterranean"]])` of the Mediterranean as a whole. The differences come mostly from the land. `r if(gauges$rate[nrow(gauges)]<0) paste0(gauges$label[nrow(gauges)],", at the bottom of the table, is the one harbour where the sea fell against the land: the land there is rising faster than the sea") else paste0("At ",gauges$label[nrow(gauges)],", at the bottom of the table, the sea rose least")`; at `r gauges$label[1]`, at the top, the sea rose fastest, perhaps because the land there sinks. Greece lies where the African plate dives under the Aegean, and it is one of the most active corners of Europe for earthquakes (see [Where the Earth Shakes](ILLUSTRATION_WORLD_EARTHQUAKES.Rmd)).
+
+---
+
+## 5. Is the rise speeding up?
+
+**Yes.** The satellites have now watched the oceans for more than thirty years, long enough to see the rise grow faster. Straight lines through the first and the last ten years of their record:
+
+```{r speed}
+first_ten<-1993:2002
+last_ten<-(last_satellite-9):last_satellite
+speeds<-data.frame(sea=c("World","Mediterranean"),
+                   first=c(rise(world,min(first_ten),max(first_ten)),
+                           rise(mediterranean,min(first_ten),max(first_ten))),
+                   last=c(rise(world,min(last_ten),last_satellite),
+                          rise(mediterranean,min(last_ten),last_satellite)))
+knitr::kable(data.frame(sea=speeds$sea,first=mm_year(speeds$first),last=mm_year(speeds$last)),
+             col.names=c("Sea","1993–2002",paste0(min(last_ten),"–",last_satellite)),align="lrr")
+# the acceleration of the world's rise: a parabola through all the passes, mm a year, every year
+acceleration<-2*unname(coef(lm(mm~time+I(time^2),world_passes))[3])
+```
+
+The world's seas now rise by about `r mm_year(speeds$last[1])`, against `r mm_year(speeds$first[1])` in the 1990s. A parabola through all the passes of the satellites gives an acceleration of about `r format(round(acceleration,2),nsmall=2)` mm a year, every year. The Mediterranean moves more from decade to decade than the whole ocean, so its last ten years say less about the long run; but they too show a sea that rises faster than before.
+
+---
+
+## 6. How much higher could the sea be by 2100?
+
+That depends mostly on how much more greenhouse gas the world emits. The Intergovernmental Panel on Climate Change (IPCC) expects the world's seas to stand, by 2100, **28 to 55 cm** higher than in 1995–2014 if emissions fall to zero soon after 2050, and **63 to 101 cm** higher if they keep rising fast. With very high emissions it cannot rule out a rise approaching two metres, because nobody knows yet how fast the ice sheets of Antarctica and Greenland could break up (IPCC 2021, B.5.3). The seas will keep rising for centuries after that, whatever happens to emissions, as the deep ocean warms slowly.
+
+For Greece, with its coasts, ports, beaches and low deltas, even half a metre more means storms reaching further inland, and beaches that shrink; and where the land sinks, the sea rises faster still.
+
+---
+
+## Sources
+
+- PSMSL: [Tide gauge data](https://psmsl.org/data/obtaining/), monthly means of the revised local reference (RLR) of every station; [station 374, Piraeus](https://psmsl.org/data/obtaining/stations/374.php), with its documentation. Holgate, S.J. and others (2013), [New data systems and products at the Permanent Service for Mean Sea Level](https://doi.org/10.2112/JCOASTRES-D-12-00175.1), *Journal of Coastal Research* 29, 493–504.
+- NOAA Laboratory for Satellite Altimetry: [Sea level rise, time series of the global and regional mean sea level](https://www.star.nesdis.noaa.gov/socd/lsa/SeaLevelRise/LSA_SLR_timeseries.php). Altimetry data are provided by NOAA Laboratory for Satellite Altimetry.
+- IPCC (2021), [Summary for Policymakers](https://www.ipcc.ch/report/ar6/wg1/chapter/summary-for-policymakers/), in *Climate Change 2021: The Physical Science Basis*, Contribution of Working Group I to the Sixth Assessment Report: B.5.3 and its footnotes.
+
+---
+
+*Rendered with R `r getRversion()` · plotly*

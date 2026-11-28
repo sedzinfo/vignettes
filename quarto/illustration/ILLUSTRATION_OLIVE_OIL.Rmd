@@ -1,0 +1,269 @@
+---
+title: "Why Did Olive Oil Get So Expensive? Prices, Harvests and the Drought in Spain"
+description: "The price of extra virgin olive oil at the markets of Greece, Spain and Italy every week since 2010, the harvests of the four big producers of the EU, and what shoppers paid: why the price tripled in 2023 and 2024, and where it stands now."
+author: ""
+---
+
+```{r setup, include=FALSE}
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
+```
+
+## What is this?
+
+At the start of 2024 a kilo of extra virgin olive oil cost three times as much at the markets of Greece as it had a few years before. Greek families, who use more olive oil than almost anyone, felt it in the shops. This story follows the price and its causes with official data, in five questions:
+
+1. **How much did olive oil cost?**
+2. **Why did the price triple?**
+3. **Why did Greek prices rise, when Greece had a good harvest?**
+4. **Did shoppers pay more?**
+5. **Where is the price now?**
+
+The prices and the harvests come from the **agri-food data portal of the European Commission**, which collects every week the prices that producers get at the main markets of each country. What shoppers paid comes from **Eurostat**, the statistical office of the EU. All are downloaded when the page is rendered.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat","jsonlite","plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# the lines of a file on the web, tried again a few times: the servers sometimes refuse a connection
+# or take too long to answer
+read_lines<-function(url,tries=4) {
+  for(k in seq_len(tries)) {
+    result<-tryCatch(readLines(url,warn=FALSE),error=function(e) NULL)
+    if(!is.null(result))
+      return(result)
+    Sys.sleep(10)
+  }
+  stop("Could not download ",url)
+}
+portal<-"https://ec.europa.eu/agrifood/api/oliveOil/"
+
+# the price of extra virgin olive oil every week since 2010, the average of the markets of Greece,
+# Spain and Italy, euros a kilo (the portal gives euros for 100 kg)
+weekly<-jsonlite::fromJSON(paste(read_lines(paste0(portal,"prices?memberStateCodes=EL,ES,IT",
+                                                   "&beginDate=01/01/2010",
+                                                   "&products=Extra%20virgin%20olive%20oil",
+                                                   "%20(up%20to%200.8%25)",
+                                                   "&markets=Average%20national%20price")),
+                                 collapse=""))
+weekly<-data.frame(country=weekly$memberStateCode,
+                   date=as.Date(weekly$beginDate,format="%d/%m/%Y"),
+                   price=as.numeric(gsub("[€,]","",weekly$price))/100)
+weekly<-weekly[order(weekly$country,weekly$date),]
+greece<-weekly[weekly$country=="EL",]
+spain<-weekly[weekly$country=="ES",]
+# the normal years before the crisis, and the dearest week
+normal<-greece$price[format(greece$date,"%Y")>="2015"&format(greece$date,"%Y")<="2021"]
+base<-mean(normal)
+peak_of<-function(country) {
+  x<-weekly[weekly$country==country,]
+  result<-x[which.max(x$price),]
+  return(result)
+}
+peak<-peak_of("EL")
+latest<-greece[nrow(greece),]
+# how closely the Greek and Spanish prices of the same weeks move together
+same_weeks<-merge(greece,spain,by="date",suffixes=c("_greece","_spain"))
+together<-cor(same_weeks$price_greece,same_weeks$price_spain)
+
+# the harvests of the four big producers of the EU, thousand tonnes of olive oil, by marketing year
+# (October to September); the last years are estimates
+harvests<-jsonlite::fromJSON(paste(read_lines(paste0(portal,"production",
+                                                     "?memberStateCodes=EL,ES,IT,PT",
+                                                     "&granularity=annual")),
+                                   collapse=""))
+harvests<-data.frame(country=harvests$memberStateCode,season=harvests$marketingYear,
+                     tonnes=harvests$yearProductionQuantity,
+                     estimate=harvests$isEstimated=="Y")
+harvests<-harvests[order(harvests$country,harvests$season),]
+crop<-function(country,season) {
+  result<-harvests$tonnes[harvests$country==country&harvests$season==season]
+  return(result)
+}
+# Spain's share of the four in the seasons before the drought that all four reported
+seasons<-names(which(table(harvests$season[!harvests$estimate])==4))
+before_drought<-seasons[seasons<"2022/23"]
+four<-harvests[harvests$season%in%before_drought,]
+spain_share<-100*sum(four$tonnes[four$country=="ES"])/sum(four$tonnes)
+
+# what shoppers paid: Eurostat's index of the consumer prices of olive oil and of all food,
+# 2015 = 100, every month. It stops in December 2025, when Eurostat moved to a new classification
+# in which olive oil is no longer a group of its own
+shops<-get_eurostat("prc_hicp_midx",filters=list(geo=c("EL","EU27_2020"),unit="I15",
+                                                 coicop=c("CP01153","CP011")),
+                    time_format="raw",cache=FALSE)
+shops<-as.data.frame(shops[!is.na(shops$values),])
+shops$date<-as.Date(paste0(shops$time,"-01"))
+shops<-shops[order(shops$date),]
+index<-function(geo,coicop,month) {
+  result<-shops$values[shops$geo==geo&shops$coicop==coicop&format(shops$date,"%Y-%m")==month]
+  return(result)
+}
+greek_oil<-shops[shops$geo=="EL"&shops$coicop=="CP01153",]
+```
+
+```{r chart_style}
+greek_red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#9e9e9e"
+dark_gray<-"#6b6b6b" # also the colour of the notes and the labels
+
+# the source of a chart, as a note under it, and the common layout
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,
+                 title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),
+                 xaxis=c(list(title=""),x_axis),
+                 margin=margin,
+                 annotations=c(annotations,list(note)),
+                 ...) %>%
+    config(displaylogo=FALSE)
+  return(result)
+}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+
+# the countries of the charts: Greece and Spain in colour, the others in gray
+countries<-data.frame(code=c("EL","ES","IT","PT"),name=c("Greece","Spain","Italy","Portugal"),
+                      color=c(greek_red,blue,gray,gray),dash=c("solid","solid","solid","dot"))
+
+# short labels of numbers
+euro<-function(x) {
+  result<-paste0("€",format(round(x,2),nsmall=2,trim=TRUE))
+  return(result)
+}
+thousand<-function(x) {
+  result<-paste0(format(round(x)*1000,big.mark=",",trim=TRUE)," tonnes")
+  return(result)
+}
+day<-function(date) {
+  result<-trimws(format(date,"%e %B %Y"))
+  return(result)
+}
+```
+
+---
+
+## 1. How much did olive oil cost?
+
+**About `r euro(base)` a kilo in 2015–2021, and `r euro(peak$price)` at the peak.** These are the prices that producers got for extra virgin olive oil at the main markets of each country, in bulk, before bottling, transport and the shop's margin. In the week of `r day(peak$date)` the average of the Greek markets reached `r euro(peak$price)` a kilo, `r format(round(peak$price/base,1),nsmall=1)` times the average of 2015–2021. `r if(format(peak_of("ES")$date,"%Y-%m")==format(peak$date,"%Y-%m")&format(peak_of("IT")$date,"%Y-%m")==format(peak$date,"%Y-%m")) paste0("Spain and Italy peaked in the same month, at ",euro(peak_of("ES")$price)," and ",euro(peak_of("IT")$price),".") else paste0("Spain peaked in ",format(peak_of("ES")$date,"%B %Y"),", at ",euro(peak_of("ES")$price),", and Italy in ",format(peak_of("IT")$date,"%B %Y"),", at ",euro(peak_of("IT")$price),".")`
+
+```{r prices}
+#| fig-alt: "Line chart of the weekly price of extra virgin olive oil at the markets of Greece, Spain and Italy since 2010, tripling in 2023 and early 2024 and falling back since"
+p<-plot_ly()
+for(k in 1:3) {
+  x<-weekly[weekly$country==countries$code[k],]
+  p<-p %>%
+    add_trace(data=x,x=~date,y=~price,type="scatter",mode="lines",name=countries$name[k],
+              line=list(color=countries$color[k],width=if(k<3) 2 else 1.5),
+              hovertemplate=paste0(countries$name[k],": €%{y:.2f}<extra></extra>"))
+}
+p %>%
+  chart("Extra virgin olive oil at the markets, euros a kilo",
+        paste0("EU agri-food data portal: the average of each country's markets, every week, ",
+               "January 2010 to ",format(max(weekly$date),"%B %Y")),
+        "Euros a kilo",hovermode="x unified",legend=legend_top,margin=list(t=100,b=90),
+        y_axis=list(rangemode="tozero"))
+```
+
+The average price of each year at the Greek markets:
+
+```{r years}
+years<-aggregate(price~year,transform(greece,year=format(date,"%Y")),mean)
+years<-years[years$year>="2015",]
+knitr::kable(data.frame(year=years$year,price=euro(years$price),
+                        times=format(round(years$price/base,1),nsmall=1)),
+             col.names=c("Year","Euros a kilo","Times the average of 2015–2021"),align="lrr")
+```
+
+---
+
+## 2. Why did the price triple?
+
+**Because Spain, which makes most of Europe's olive oil, lost more than half of its harvest to drought.** In the seasons from `r before_drought[1]` to `r tail(before_drought,1)`, Spain made `r round(spain_share)`% of the olive oil of the four big producers of the EU. After a year of drought and record heat, its harvest fell from `r thousand(crop("ES","2021/22"))` in 2021/22 to `r thousand(crop("ES","2022/23"))` in 2022/23, `r round(100*(1-crop("ES","2022/23")/crop("ES","2021/22")))`% less, and stayed low in 2023/24 with `r thousand(crop("ES","2023/24"))`. Buyers bid up the price of what there was.
+
+```{r harvests}
+#| fig-alt: "Line chart of the olive oil harvests of Spain, Italy, Greece and Portugal each season since 2012/13, with Spain's harvest halving in 2022/23 and 2023/24"
+p<-plot_ly()
+for(k in 1:4) {
+  x<-harvests[harvests$country==countries$code[k],]
+  p<-p %>%
+    add_trace(data=x,x=~season,y=~tonnes,type="scatter",mode="lines+markers",
+              name=countries$name[k],
+              line=list(color=countries$color[k],width=2,dash=countries$dash[k]),
+              marker=list(color=countries$color[k],size=7,
+                          symbol=ifelse(x$estimate,"circle-open","circle")),
+              hovertemplate=paste0(countries$name[k],": %{y:,.0f} thousand tonnes<extra></extra>"))
+}
+p %>%
+  chart("Olive oil harvests, thousand tonnes",
+        paste("European Commission, agri-food data portal. Seasons from October to September;",
+              "open circles: estimates."),
+        "Thousand tonnes",hovermode="x unified",legend=legend_top,margin=list(t=100,b=90),
+        x_axis=list(type="category"))
+```
+
+---
+
+## 3. Why did Greek prices rise, when Greece had a good harvest?
+
+**Because olive oil is sold in one European market.** Greece made `r thousand(crop("EL","2022/23"))` in 2022/23, `r if(crop("EL","2022/23")>mean(harvests$tonnes[harvests$country=="EL"&!harvests$estimate])) "more than in an average season" else "about an average harvest"`; yet the Greek price rose with the Spanish one. Traders buy where the oil is cheapest, and much Greek oil is sold in bulk to Italian bottlers. So the prices of the three countries move together: the weekly prices of Greece and Spain since 2010 have a correlation of `r format(round(together,2),nsmall=2)` (1 would mean that they always move together). Then, in 2023/24, the Greek harvest fell too, to `r thousand(crop("EL","2023/24"))`.
+
+---
+
+## 4. Did shoppers pay more?
+
+**Yes, a lot more, though less than the markets.** Eurostat's index of the price of olive oil in Greek shops rose by `r round(100*(max(greek_oil$values)/index("EL","CP01153","2021-01")-1))`% from January 2021 to its peak in `r format(greek_oil$date[which.max(greek_oil$values)],"%B %Y")`. The price at the markets is only part of what a shopper pays: bottling, transport, taxes and the margins of the shops are the rest, and they did not triple. All food in Greece rose by `r round(100*(index("EL","CP011",format(max(shops$date),"%Y-%m"))/index("EL","CP011","2021-01")-1))`% from January 2021 to `r format(max(shops$date),"%B %Y")`.
+
+```{r shops}
+#| fig-alt: "Line chart of the consumer price index of olive oil in Greece and in the EU and of all food in Greece, 2015 = 100, with olive oil more than doubling from 2021 to 2024"
+lines<-data.frame(geo=c("EL","EU27_2020","EL"),coicop=c("CP01153","CP01153","CP011"),
+                  name=c("Olive oil, Greece","Olive oil, EU-27","All food, Greece"),
+                  color=c(greek_red,blue,dark_gray),dash=c("solid","solid","dot"))
+p<-plot_ly()
+for(k in seq_len(nrow(lines))) {
+  # from 2015, the first year of the index of olive oil
+  x<-shops[shops$geo==lines$geo[k]&shops$coicop==lines$coicop[k]&shops$date>=as.Date("2015-01-01"),]
+  p<-p %>%
+    add_trace(data=x,x=~date,y=~values,type="scatter",mode="lines",name=lines$name[k],
+              line=list(color=lines$color[k],width=2,dash=lines$dash[k]),
+              hovertemplate=paste0(lines$name[k],": %{y:.1f}<extra></extra>"))
+}
+p %>%
+  chart("Consumer prices, 2015 = 100",
+        paste0("Eurostat, prc_hicp_midx (harmonised index of consumer prices), every month to ",
+               format(max(shops$date),"%B %Y")),
+        "Index, 2015 = 100",hovermode="x unified",legend=legend_top,margin=list(t=100,b=90))
+```
+
+---
+
+## 5. Where is the price now?
+
+**Back near where it was before the drought.** Spain's harvest recovered in 2024/25, to `r if(harvests$estimate[harvests$country=="ES"&harvests$season=="2024/25"]) "an estimated "``r thousand(crop("ES","2024/25"))`, and the price fell with it. In the week of `r day(latest$date)` a kilo of extra virgin olive oil fetched `r euro(latest$price)` at the Greek markets, `r format(round(latest$price/base,1),nsmall=1)` times the average of 2015–2021 and `r round(100*(1-latest$price/peak$price))`% below the peak. In the shops, prices fall more slowly: in `r format(max(greek_oil$date),"%B %Y")` the Greek index of olive oil was still `r round(100*(tail(greek_oil$values,1)/index("EL","CP01153","2021-01")-1))`% above January 2021.
+
+The lesson of these years is that the price of olive oil depends less on any one country than on the weather of Spain, and as droughts and heatwaves become more common around the Mediterranean (see [Athens Is Getting Hotter](ILLUSTRATION_ATHENS_HEAT.Rmd)), years like 2023 may come again.
+
+---
+
+## Sources
+
+- European Commission, agri-food data portal: [olive oil prices](https://agridata.ec.europa.eu/extensions/DashboardPrices/OliveOilPrices.html) and [olive oil production](https://agridata.ec.europa.eu/extensions/DataPortal/olive_oil.html), through its [API](https://agridata.ec.europa.eu/extensions/DataPortal/API_Documentation.html).
+- Eurostat: [prc_hicp_midx](https://ec.europa.eu/eurostat/databrowser/view/prc_hicp_midx/default/table?lang=en) (harmonised index of consumer prices, monthly).
+
+---
+
+*Rendered with R `r getRversion()` · plotly*

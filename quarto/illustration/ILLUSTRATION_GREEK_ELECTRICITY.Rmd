@@ -1,0 +1,416 @@
+---
+title: "From Lignite to Sunshine: How Greece Makes Its Electricity"
+description: "Greek electricity in Eurostat data since 1990: how lignite gave way to gas, sun and wind, what changes with the seasons, how Greece compares with the EU, what households pay, and how Greece began to sell electricity abroad."
+author: ""
+---
+
+```{r setup, include=FALSE}
+directory<-""
+if(rstudioapi::isAvailable())
+  directory<-paste0(dirname(rstudioapi::getActiveDocumentContext()$path),"/")
+source(paste0(directory,"R/code_options.R"))
+```
+
+## What is this?
+
+For most of the last century Greece made its electricity by burning lignite, a soft brown coal dug from open-pit mines around Ptolemaida and Kozani in Western Macedonia and around Megalopoli in the Peloponnese. Today most of it comes from natural gas, the sun and the wind. This story follows the change with official data, in six questions:
+
+1. **What does Greece make its electricity from?**
+2. **When did the sun and the wind overtake lignite?**
+3. **What changes with the seasons?**
+4. **How does Greece compare with the rest of the EU?**
+5. **What do households pay?**
+6. **Does Greece now sell electricity abroad?**
+
+All the data come from **Eurostat**, the statistical office of the EU. They are downloaded when the page is rendered, so a new render brings in the latest figures. Electricity is counted in **terawatt hours** (TWh), a billion kilowatt hours each, or in gigawatt hours (GWh), a million kilowatt hours each.
+
+---
+
+## Packages
+
+```{r packages}
+# install.packages(c("eurostat","plotly"))
+library(eurostat)
+library(plotly)
+```
+
+## The data
+
+```{r data}
+# a Eurostat dataset, without its missing values; the time as text: "2024", "2024-05", "2024-S1"
+eurostat_values<-function(id,filters) {
+  x<-get_eurostat(id,filters=filters,time_format="raw",cache=FALSE)
+  result<-as.data.frame(x[!is.na(x$values),])
+  result$time<-as.character(result$time)
+  return(result)
+}
+
+# the fuels of the charts, in the order of the stack, with their codes in the yearly and the monthly
+# data, and colours that colour-blind readers can also tell apart. The solid fuel of Greece is
+# lignite
+fuels<-data.frame(fuel=c("Lignite","Oil","Natural gas","Hydro","Wind","Solar"),
+                  yearly=c("C0000X0350-0370","O4000XBIO","G3000","RA100","RA300","RA420"),
+                  monthly=c("C0000","O4000XBIO","G3000","RA100","RA300","RA400"),
+                  color=c("#8f5a12","#8e6bb8","#d1495b","#1f5f99","#4aa3df","#d29a00"))
+
+# production by fuel, one column for each fuel and the rest (biomass, waste) as "Other", GWh
+by_fuel<-function(x,codes) {
+  times<-sort(unique(x$time))
+  result<-data.frame(time=times)
+  for(k in seq_along(codes)) {
+    s<-x[x$siec==codes[k],]
+    result[[fuels$fuel[k]]]<-s$values[match(times,s$time)]
+  }
+  total<-x[x$siec=="TOTAL",]
+  result$total<-total$values[match(times,total$time)]
+  result$Other<-result$total-rowSums(result[fuels$fuel],na.rm=TRUE)
+  return(result)
+}
+
+# gross production of electricity in Greece by fuel, every year since 1990, TWh
+production<-eurostat_values("nrg_bal_peh",list(geo="EL",nrg_bal="GEP",unit="GWH",
+                                              siec=c("TOTAL",fuels$yearly)))
+yearly<-by_fuel(production,fuels$yearly)
+yearly$year<-as.integer(yearly$time)
+columns<-c(fuels$fuel,"Other","total")
+yearly[columns]<-yearly[columns]/1000
+last<-max(yearly$year)
+# the share of each fuel in the production of each year, %
+shares<-cbind(year=yearly$year,100*yearly[c(fuels$fuel,"Other")]/yearly$total)
+shares$sun_wind<-shares$Wind+shares$Solar
+at<-function(column,year,x=shares) {
+  result<-x[[column]][x$year==year]
+  return(result)
+}
+# the first year in which the sun and the wind made more than lignite
+crossing<-min(shares$year[shares$sun_wind>shares$Lignite])
+
+# net production by fuel every month since January 2017, when the monthly data first split lignite,
+# gas and the sun, GWh
+monthly<-eurostat_values("nrg_cb_pem",list(geo="EL",unit="GWH",siec=c("TOTAL",fuels$monthly)))
+monthly<-by_fuel(monthly[monthly$time>="2017-01",],fuels$monthly)
+monthly$year<-as.integer(substr(monthly$time,1,4))
+monthly$month<-as.integer(substr(monthly$time,6,7))
+monthly$sun_wind<-100*(monthly$Wind+monthly$Solar)/monthly$total
+latest_month<-monthly$time[nrow(monthly)]
+# the last three years with all twelve months
+full_years<-as.integer(names(which(table(monthly$year)==12)))
+recent_years<-tail(full_years,3)
+recent<-monthly[monthly$year%in%recent_years,]
+# their average month: the share of the sun and the wind, the production and the gas
+sun_wind_month<-tapply(recent$sun_wind,recent$month,mean)
+monthly_total<-tapply(recent$total,recent$month,mean)
+monthly_gas<-tapply(recent[["Natural gas"]],recent$month,mean)
+best<-which.max(sun_wind_month)
+worst<-which.min(sun_wind_month)
+peak<-which.max(monthly_total)
+low<-which.min(monthly_total)
+season<-rep(c("winter","spring","summer","autumn","winter"),c(2,3,3,3,1))
+
+# the share of renewables in the electricity that each country consumes, %, as the EU counts it for
+# its targets. Its newest year is provisional at first (flag "p"), so the comparison uses the last
+# year that Greece has a final figure for
+renewables<-as.data.frame(get_eurostat("nrg_ind_ren",time_format="raw",cache=FALSE,
+                                       keepFlags=TRUE))
+renewables$year<-as.integer(as.character(renewables[[intersect(c("time","TIME_PERIOD"),
+                                                               names(renewables))[1]]]))
+renewables<-renewables[renewables$nrg_bal=="REN_ELC"&!is.na(renewables$values),]
+final<-is.na(renewables$flags)|renewables$flags==""
+greece_renewables<-renewables[renewables$geo=="EL",]
+ren_year<-max(greece_renewables$year[final[renewables$geo=="EL"]])
+ren_latest<-max(greece_renewables$year)
+eu_name<-c(setNames(eu_countries$name,eu_countries$code),EU27_2020="EU-27")
+eu_renewables<-renewables[renewables$year==ren_year&renewables$geo%in%names(eu_name),]
+eu_renewables$name<-eu_name[eu_renewables$geo]
+eu_renewables<-eu_renewables[order(-eu_renewables$values),]
+ren_at<-function(geo,year) {
+  result<-renewables$values[renewables$geo==geo&renewables$year==year]
+  return(result)
+}
+
+# what households pay for a kilowatt hour, euros with all taxes, in Eurostat's middle band of
+# 2,500 to 5,000 kWh a year, every half year since 2007
+prices<-eurostat_values("nrg_pc_204",list(geo=c("EL","EU27_2020"),nrg_cons="KWH2500-4999",
+                                         tax="I_TAX",currency="EUR",unit="KWH"))
+# a half year as the day it starts: 2024-S2 is 1 July 2024
+prices$date<-as.Date(paste0(substr(prices$time,1,4),
+                            ifelse(substr(prices$time,7,7)=="1","-01-01","-07-01")))
+prices<-prices[order(prices$date),]
+both<-merge(prices[prices$geo=="EL",c("time","date","values")],
+            prices[prices$geo=="EU27_2020",c("time","values")],by="time",
+            suffixes=c("_greece","_eu"))
+both<-both[order(both$date),]
+# the dearest half year of the energy crisis in Greece
+crisis<-both[both$date>=as.Date("2021-01-01")&both$date<=as.Date("2023-07-01"),]
+crisis<-crisis[order(-crisis$values_greece),]
+
+# electricity bought from and sold to other countries, every year since 1990, TWh
+trade<-eurostat_values("nrg_cb_e",list(geo="EL",siec="E7000",unit="GWH",nrg_bal=c("IMP","EXP")))
+trade<-reshape(trade[,c("nrg_bal","time","values")],idvar="time",timevar="nrg_bal",
+               direction="wide")
+trade<-data.frame(year=as.integer(trade$time),imports=trade$values.IMP/1000,
+                  exports=trade$values.EXP/1000)
+trade<-trade[order(trade$year),]
+trade$net<-trade$exports-trade$imports
+trade_last<-max(trade$year)
+# the years of the latest run of years in which Greece sold more than it bought, and the year
+# before them in which it last did so
+last_import<-max(trade$year[trade$net<=0])
+first_export<-last_import+1
+earlier_export<-trade$year[trade$net>0&trade$year<last_import]
+```
+
+```{r chart_style}
+greek_red<-"#d62728"
+blue<-"#1f77b4"
+gray<-"#9e9e9e"
+dark_gray<-"#6b6b6b" # also the colour of the notes and the labels
+# a scale from a small share (white) to a large one (dark blue)
+blues<-list(c(0,"#f4f8fd"),c(0.5,"#3987e5"),c(1,"#0d366b"))
+
+# the source of a chart, as a note under it, and the common layout
+chart<-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
+                margin=list(t=70,b=90),note_y=-0.16,...) {
+  note<-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
+             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+  result<-layout(p,
+                 title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
+                 yaxis=c(list(title=y_title),y_axis),
+                 xaxis=c(list(title=""),x_axis),
+                 margin=margin,
+                 annotations=c(annotations,list(note)),
+                 ...) %>%
+    config(displaylogo=FALSE)
+  return(result)
+}
+legend_top<-list(orientation="h",x=0,y=1.02,yanchor="bottom")
+months<-factor(month.abb,levels=month.abb) # in this order on an axis
+
+# labels just right of the plot, at the given heights, moved apart where they would touch
+spread<-function(y,gap) {
+  o<-order(y)
+  for(k in seq_along(o)[-1])
+    y[o[k]]<-max(y[o[k]],y[o[k-1]]+gap)
+  return(y)
+}
+right_labels<-function(y,text) {
+  result<-lapply(seq_along(y),function(k) {
+    list(x=1.01,y=y[k],text=text[k],xref="paper",yref="y",xanchor="left",showarrow=FALSE,
+         font=list(size=12,color=dark_gray))
+  })
+  return(result)
+}
+
+# short labels of numbers
+twh<-function(x) {
+  result<-paste(format(round(x,1),nsmall=1,trim=TRUE),"TWh")
+  return(result)
+}
+percent<-function(x,digits=0) {
+  result<-paste0(format(round(x,digits),nsmall=digits,trim=TRUE),"%")
+  return(result)
+}
+gwh<-function(x) {
+  result<-paste(format(round(x),big.mark=",",trim=TRUE),"GWh")
+  return(result)
+}
+euro<-function(x) {
+  result<-paste0("€",format(round(x,3),nsmall=3,trim=TRUE))
+  return(result)
+}
+month_label<-function(time) {
+  result<-paste(month.name[as.integer(substr(time,6,7))],substr(time,1,4))
+  return(result)
+}
+# a half year in words: "2024-S2" is "the second half of 2024"
+half<-function(time) {
+  result<-paste(ifelse(substr(time,7,7)=="1","the first half of","the second half of"),
+                substr(time,1,4))
+  return(result)
+}
+ordinal<-function(n) {
+  suffix<-ifelse(n%%100%in%11:13,"th",c("th","st","nd","rd",rep("th",6))[n%%10+1])
+  result<-paste0(n,suffix)
+  return(result)
+}
+```
+
+---
+
+## 1. What does Greece make its electricity from?
+
+**Mostly from natural gas, the sun and the wind; hardly any more from lignite.** In `r last` Greece produced `r twh(yearly$total[yearly$year==last])` of electricity. Natural gas made `r percent(at("Natural gas",last))` of it, the wind `r percent(at("Wind",last))`, the sun `r percent(at("Solar",last))` and lignite `r percent(at("Lignite",last))`. In 1990 lignite had made `r percent(at("Lignite",1990))`, and the sun and the wind nothing at all.
+
+```{r mix}
+#| fig-alt: "Stacked area chart of the electricity produced in Greece each year since 1990 by fuel: lignite shrinks, gas, wind and solar grow"
+stack<-data.frame(fuel=c(fuels$fuel,"Other"),color=c(fuels$color,gray))
+p<-plot_ly()
+for(k in seq_len(nrow(stack))) {
+  band<-data.frame(year=yearly$year,twh=yearly[[stack$fuel[k]]])
+  p<-p %>%
+    add_trace(data=band,x=~year,y=~twh,type="scatter",mode="lines",stackgroup="one",
+              name=stack$fuel[k],fillcolor=stack$color[k],
+              line=list(color=stack$color[k],width=0.5),
+              hovertemplate=paste0(stack$fuel[k],": %{y:.1f} TWh<extra></extra>"))
+}
+# the name of each fuel next to its band in the last year
+top<-cumsum(unlist(yearly[yearly$year==last,stack$fuel]))
+middle<-top-unlist(yearly[yearly$year==last,stack$fuel])/2
+p %>%
+  chart("Greek electricity by fuel, TWh a year",
+        paste0("Eurostat, nrg_bal_peh, gross production, 1990–",last,
+               ". Other: biomass, biogas and waste."),"TWh",
+        annotations=right_labels(spread(middle,0.07*max(yearly$total)),stack$fuel),
+        hovermode="x unified",showlegend=FALSE,margin=list(t=70,b=90,r=110),
+        x_axis=list(range=c(1990,last)))
+```
+
+The same years as shares of the production:
+
+```{r mix_table}
+table_years<-unique(c(1990,2000,2010,2019,last))
+mix<-shares[shares$year%in%table_years,c("year",fuels$fuel,"Other")]
+mix[-1]<-lapply(mix[-1],function(x) percent(x))
+knitr::kable(mix,col.names=c("Year",fuels$fuel,"Other"),row.names=FALSE,align="r")
+```
+
+---
+
+## 2. When did the sun and the wind overtake lignite?
+
+**In `r crossing`.** That year the sun and the wind made `r percent(at("sun_wind",crossing))` of the electricity of Greece, lignite `r percent(at("Lignite",crossing))`. Lignite had made `r percent(max(shares$Lignite))` in `r shares$year[which.max(shares$Lignite)]`; by `r last` it was down to `r percent(at("Lignite",last))`. Natural gas, which hardly made any electricity in 1990, took over much of the rest: it now makes `r percent(at("Natural gas",last))`, and almost all of that gas comes from abroad, by pipeline and by ship.
+
+```{r overtake}
+#| fig-alt: "Line chart of the shares of lignite, natural gas, and sun and wind in Greek electricity since 1990, with the year the sun and the wind overtook lignite marked"
+lines<-data.frame(series=c("Lignite","Natural gas","Sun and wind"),
+                  column=c("Lignite","Natural gas","sun_wind"),
+                  color=c(fuels$color[1],fuels$color[3],fuels$color[6]))
+p<-plot_ly()
+for(k in seq_len(nrow(lines))) {
+  line<-data.frame(year=shares$year,share=shares[[lines$column[k]]])
+  p<-p %>%
+    add_trace(data=line,x=~year,y=~share,type="scatter",mode="lines",name=lines$series[k],
+              line=list(color=lines$color[k],width=2),
+              hovertemplate=paste0(lines$series[k],": %{y:.1f}%<extra></extra>"))
+}
+ends<-sapply(lines$column,function(column) at(column,last))
+p %>%
+  chart("Share of Greek electricity, %",
+        paste0("Eurostat, nrg_bal_peh, gross production, 1990–",last),"% of production",
+        annotations=c(right_labels(spread(ends,6),lines$series),
+                      list(list(x=crossing,y=at("sun_wind",crossing),
+                                text=paste0(crossing,": the sun and the wind<br>overtake lignite"),
+                                showarrow=TRUE,ax=-180,ay=-10,arrowcolor=dark_gray,
+                                font=list(size=12,color=dark_gray)))),
+        hovermode="x unified",showlegend=FALSE,margin=list(t=70,b=90,r=110),
+        x_axis=list(range=c(1990,last)),y_axis=list(range=c(0,100)))
+```
+
+---
+
+## 3. What changes with the seasons?
+
+**The sun and the wind make the largest share in `r season[best]``r if(season[best]%in%c("spring","autumn")) ", when there is plenty of both and little need for heating or cooling"`.** In `r paste(range(recent_years),collapse="–")` they made on average `r percent(sun_wind_month[best])` of the electricity of `r month.name[best]`, but `r percent(sun_wind_month[worst])` of `r month.name[worst]`. Their best month so far was `r month_label(monthly$time[which.max(monthly$sun_wind)])`, with `r percent(max(monthly$sun_wind))`.
+
+The monthly figures are net production and Eurostat's first estimates, so they do not add up exactly to the yearly ones above.
+
+```{r seasons_heatmap, fig.height = 5}
+#| fig-alt: "Heatmap of the share of the sun and the wind in Greek electricity each month since January 2017, darker in spring and in recent years"
+z<-tapply(monthly$sun_wind,list(monthly$year,monthly$month),mean)
+plot_ly(x=months,y=rownames(z),z=z,type="heatmap",colorscale=blues,zmin=0,
+        zmax=max(monthly$sun_wind),xgap=2,ygap=2,
+        colorbar=list(title=list(text="% from sun<br>and wind"),thickness=12),
+        hovertemplate="%{x} %{y}: %{z:.0f}% from the sun and the wind<extra></extra>") %>%
+  chart("Sun and wind, % of each month",
+        paste0("Eurostat, nrg_cb_pem, net production, January 2017 to ",month_label(latest_month),
+               "; blank: no data yet"),
+        y_axis=list(type="category",autorange="reversed"),note_y=-0.1)
+```
+
+The rest comes mostly from gas, and gas also follows the demand. Greece uses the most electricity in summer, for air conditioning (see [Athens Is Getting Hotter](ILLUSTRATION_ATHENS_HEAT.Rmd)), and in winter. In an average `r month.name[peak]` it produced `r gwh(monthly_total[peak])`, `r gwh(monthly_total[peak]-monthly_total[low])` more than in an average `r month.name[low]`, and gas made `r gwh(monthly_gas[peak]-monthly_gas[low])` of the difference.
+
+```{r seasons_fuels}
+#| fig-alt: "Stacked bar chart of the electricity produced in Greece in an average month by fuel, highest in July, August and January, with gas making most of the difference"
+average<-aggregate(recent[c(fuels$fuel,"Other")],list(month=recent$month),mean)
+p<-plot_ly()
+for(k in seq_len(nrow(stack))) {
+  bars<-data.frame(month=months[average$month],gwh=average[[stack$fuel[k]]])
+  p<-p %>%
+    add_trace(data=bars,x=~month,y=~gwh,type="bar",name=stack$fuel[k],
+              marker=list(color=stack$color[k],line=list(color="white",width=1)),
+              hovertemplate=paste0(stack$fuel[k],": %{y:,.0f} GWh<extra></extra>"))
+}
+p %>%
+  chart("An average month by fuel, GWh",
+        paste0("Eurostat, nrg_cb_pem, net production, the average of ",
+               paste(range(recent_years),collapse="–"),". Other: biomass, biogas and waste."),"GWh",
+        barmode="stack",bargap=0.15,hovermode="x unified",
+        legend=c(legend_top,traceorder="normal"),margin=list(t=100,b=90))
+```
+
+---
+
+## 4. How does Greece compare with the rest of the EU?
+
+The EU sets its targets with another measure: the share of **renewable energy in the electricity a country consumes**, counting hydro and biomass as well as the sun and the wind, and averaging hydro and wind over several years so that one wet or windy year does not count too much. On that measure Greece went from `r percent(ren_at("EL",2004),1)` in 2004 to **`r percent(ren_at("EL",ren_year),1)` in `r ren_year`**, `r ordinal(match("EL",eu_renewables$geo[eu_renewables$geo!="EU27_2020"]))` of the 27 countries of the EU and above its average of `r percent(ren_at("EU27_2020",ren_year),1)`.`r if(ren_latest>ren_year) paste0(" Eurostat's first, provisional figure for ",ren_latest," is ",percent(ren_at("EL",ren_latest),1),".")`
+
+```{r eu, fig.height = 9}
+#| fig-alt: "Horizontal bar chart of the share of renewables in the electricity of each EU country, with Greece in red and the EU average in blue"
+eu_renewables<-eu_renewables[order(eu_renewables$values),]
+bar_colors<-ifelse(eu_renewables$geo=="EL",greek_red,
+                   ifelse(eu_renewables$geo=="EU27_2020",blue,gray))
+plot_ly(eu_renewables,x=~values,y=~factor(name,levels=name),type="bar",orientation="h",
+        marker=list(color=bar_colors),text=~percent(values),textposition="outside",
+        cliponaxis=FALSE,hovertemplate="%{y}: %{x:.1f}%<extra></extra>") %>%
+  chart(paste0("Renewable electricity in the EU, ",ren_year,", %"),
+        paste("Eurostat, nrg_ind_ren (REN_ELC):",
+              "the share of renewable energy in gross electricity consumption"),
+        x_axis=list(range=c(0,105)),margin=list(l=130,t=70,b=90),note_y=-0.08)
+```
+
+---
+
+## 5. What do households pay?
+
+**Less than the average household of the EU, `r if(all(both$values_greece<both$values_eu)) "in every half year since 2007" else paste0("in ",sum(both$values_greece<both$values_eu)," of the ",nrow(both)," half years since 2007")`.** In the energy crisis of 2021–2023, sharpened by the Russian invasion of Ukraine, the price of a kilowatt hour for a Greek household rose to `r euro(crisis$values_greece[1])` in `r half(crisis$time[1])` (with all taxes, in the middle band of 2,500 to 5,000 kWh a year), against `r euro(crisis$values_eu[1])` in the EU. In `r half(both$time[nrow(both)])` it was `r euro(both$values_greece[nrow(both)])`, against `r euro(both$values_eu[nrow(both)])`.
+
+```{r prices}
+#| fig-alt: "Line chart of the price of a kilowatt hour for households in Greece and in the EU every half year since 2007, Greece below the EU throughout"
+plot_ly(both,x=~date,y=~values_greece,type="scatter",mode="lines+markers",name="Greece",
+        line=list(color=greek_red,width=2),marker=list(color=greek_red,size=8),
+        hovertemplate="Greece: €%{y:.3f}<extra></extra>") %>%
+  add_trace(y=~values_eu,name="EU-27",line=list(color=blue,width=2),
+            marker=list(color=blue,size=8),hovertemplate="EU-27: €%{y:.3f}<extra></extra>") %>%
+  chart("Price of a kilowatt hour for households, euros",
+        paste("Eurostat, nrg_pc_204, with all taxes, for households using 2,500 to 5,000 kWh a",
+              "year, every half year"),
+        "Euros per kWh",y_axis=list(rangemode="tozero"),hovermode="x unified",
+        legend=legend_top,margin=list(t=100,b=90))
+```
+
+---
+
+## 6. Does Greece now sell electricity abroad?
+
+`r if(first_export<=trade_last) paste0("**Yes, since ",first_export,".**") else "**Not yet: it still buys more than it sells.**"` For three decades Greece bought more electricity from its neighbours than it sold them: in `r trade$year[which.min(trade$net)]` it bought `r twh(-min(trade$net))` more than it sold. `r if(first_export<=trade_last) paste0("In ",first_export," it sold more than it bought, for the first time since ",if(length(earlier_export)) max(earlier_export) else trade$year[1],", and in ",trade_last," it sold ",twh(trade$net[trade$year==trade_last])," more: ",twh(trade$exports[trade$year==trade_last])," went abroad and ",twh(trade$imports[trade$year==trade_last])," came in.")`
+
+```{r trade}
+#| fig-alt: "Bar chart of the electricity Greece sold abroad minus what it bought each year since 1990, below zero until 2023 and above zero since 2024"
+trade$hover<-paste0(trade$year,": sold ",twh(trade$exports),", bought ",twh(trade$imports))
+plot_ly(trade,x=~year,y=~net,type="bar",marker=list(color=ifelse(trade$net>0,greek_red,gray)),
+        hovertext=~hover,hovertemplate="%{hovertext}<extra></extra>") %>%
+  chart("Sold abroad minus bought, TWh a year",
+        paste0("Eurostat, nrg_cb_e, 1990–",trade_last,
+               ". Below zero: Greece bought more than it sold."),
+        "TWh")
+```
+
+---
+
+## Sources
+
+- Eurostat: [nrg_bal_peh](https://ec.europa.eu/eurostat/databrowser/view/nrg_bal_peh/default/table?lang=en) (production of electricity by fuel, every year), [nrg_cb_pem](https://ec.europa.eu/eurostat/databrowser/view/nrg_cb_pem/default/table?lang=en) (production of electricity by fuel, every month), [nrg_ind_ren](https://ec.europa.eu/eurostat/databrowser/view/nrg_ind_ren/default/table?lang=en) (share of renewable energy), [nrg_pc_204](https://ec.europa.eu/eurostat/databrowser/view/nrg_pc_204/default/table?lang=en) (electricity prices for households), [nrg_cb_e](https://ec.europa.eu/eurostat/databrowser/view/nrg_cb_e/default/table?lang=en) (supply of electricity, with imports and exports).
+
+---
+
+*Rendered with R `r getRversion()` · plotly*
