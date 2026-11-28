@@ -733,7 +733,7 @@ noaa&lt;-function(table,filter="") {
   base&lt;-paste0("https://www.ngdc.noaa.gov/hazel/hazard-service/api/v1/tsunamis/",table,"?",filter,
                "&amp;page=")
   first&lt;-fromJSON(paste0(base,1))
-  pages&lt;-list(first$items)
+  pages&lt;-list("1"=first$items)
   todo&lt;-seq_len(first$totalPages)[-1]
   for(attempt in 1:3) {
     if(length(todo)==0) break
@@ -752,6 +752,8 @@ noaa&lt;-function(table,filter="") {
     todo&lt;-setdiff(todo,as.integer(names(got)[!sapply(got,is.null)]))
   }
   stopifnot(length(todo)==0)
+  # the pages in their order (they come in the order in which they are finished)
+  pages&lt;-pages[order(as.integer(names(pages)))]
   # the pages as one table: a column that a page lacks is empty there
   columns&lt;-unique(unlist(lapply(pages,names)))
   result&lt;-do.call(rbind,lapply(pages,function(x) {
@@ -5968,6 +5970,7 @@ plot_ly() %&gt;%
       <category>Illustrations in R</category>
       <description>Wildfires in Greece in official and satellite data: the area burnt each year since 1980, the worst years, the fire season, a map of every large fire since 2016, and the neighbours.</description>
       <content:encoded><![CDATA[<p><em>Wildfires in Greece in official and satellite data: the area burnt each year since 1980, the worst years, the fire season, a map of every large fire since 2016, and the neighbours.</em></p>
+<p><img src="https://sedzinfo.github.io/vignettes/illustration/social-card.png" alt="Illustrations in R" width="1200" height="630"></p>
 <section id="what-is-this" class="level2">
 <h2 class="anchored" data-anchor-id="what-is-this">What is this?</h2>
 <p>In August 2023 a fire near Alexandroupolis burnt more than 96,000 hectares, the largest single fire in Europe since the 1980s (<a href="https://joint-research-centre.ec.europa.eu/jrc-news-and-updates/wildfires-2023-among-worst-eu-century-2024-04-10_en">JRC, 10 April 2024</a>). A hectare is a square of 100 metres by 100; that fire burnt more than 960 square kilometres. Was it a sign that Greece burns more than it used to? This story asks five questions:</p>
@@ -5992,10 +5995,8 @@ plot_ly() %&gt;%
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("eurostat", "ggplot2", "ggrepel"))
-# install.packages(c("jsonlite", "plotly", "readxl", "sf"))
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre><code class="language-r"># install.packages(c("eurostat", "jsonlite", "plotly", "readxl", "sf"))
 library(eurostat)
-library(ggplot2)
 library(plotly)
 library(sf)</code></pre></div></div>
 </details>
@@ -6110,7 +6111,7 @@ period_colors&lt;-c("#fd8d3c","#d94801","#7f2704")
 chart&lt;-function(p,title,source,y_title="",y_axis=list(),x_axis=list(),annotations=list(),
                 margin=list(t=70,b=90),note_y=-0.16,...) {
   note&lt;-list(text=paste("Source:",source),xref="paper",yref="paper",x=0,y=note_y,xanchor="left",
-             yanchor="top",showarrow=FALSE,font=list(size=11,color=dark_gray))
+             yanchor="top",align="left",showarrow=FALSE,font=list(size=11,color=dark_gray))
   result&lt;-layout(p,title=list(text=title,x=0.02,xanchor="left",y=0.97,yanchor="top"),
                  yaxis=c(list(title=y_title),y_axis),xaxis=c(list(title=""),x_axis),margin=margin,
                  annotations=c(annotations,list(note)),...) %&gt;%
@@ -6509,48 +6510,102 @@ cover_percent&lt;-100*cover_total/sum(cover_total)</code></pre></div></div>
 <div class="cell">
 <details open="" class="code-fold">
 <summary>Code</summary>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r">periods_map&lt;-cut(fires$year,c(first_year-1,2020,2023,last_year),
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb16"><pre><code class="language-r"># the outline of polygons as one path for plotly, the rings separated by NA, in whole metres
+outline_path&lt;-function(x) {
+  xy&lt;-st_coordinates(st_cast(st_geometry(x),"MULTIPOLYGON"))
+  ring&lt;-paste(xy[,"L1"],xy[,"L2"],xy[,"L3"])
+  rings&lt;-split(as.data.frame(round(xy[,c("X","Y")])),factor(ring,levels=unique(ring)))
+  result&lt;-do.call(rbind,lapply(rings,function(r) rbind(r,NA)))
+  return(result)
+}
+# labels with a leader line, placed in metres: each label tries eight directions, the one away from
+# the middle of the map first, and takes the first place inside the map that no label has taken.
+# pixel is the number of metres to a pixel of the chart
+place_labels&lt;-function(x,y,text,box,pixel,distance=55,size=12) {
+  middle&lt;-c(mean(box[c(1,3)]),mean(box[c(2,4)]))
+  taken&lt;-data.frame(x=numeric(0),y=numeric(0),w=numeric(0),h=numeric(0))
+  result&lt;-list()
+  for(i in seq_along(x)) {
+    outward&lt;-atan2(y[i]-middle[2],x[i]-middle[1])
+    w&lt;-(0.6*size*nchar(text[i])+10)*pixel
+    h&lt;-(size+10)*pixel
+    for(angle in outward+c(0,1,-1,2,-2,3,-3,4)*pi/4) {
+      label_x&lt;-x[i]+distance*pixel*cos(angle)
+      label_y&lt;-y[i]+distance*pixel*sin(angle)
+      inside&lt;-label_x-w/2&gt;box[1]&amp;&amp;label_x+w/2&lt;box[3]&amp;&amp;label_y-h/2&gt;box[2]&amp;&amp;label_y+h/2&lt;box[4]
+      free&lt;-all(abs(taken$x-label_x)&gt;(taken$w+w)/2|abs(taken$y-label_y)&gt;(taken$h+h)/2)
+      if(inside&amp;&amp;free)
+        break
+    }
+    taken[i,]&lt;-c(label_x,label_y,w,h)
+    result[[i]]&lt;-list(x=x[i],y=y[i],ax=label_x,ay=label_y,axref="x",ayref="y",text=text[i],
+                      showarrow=TRUE,arrowhead=0,arrowwidth=0.8,arrowcolor=dark_gray,
+                      bgcolor="white",bordercolor=gray,borderwidth=0.6,borderpad=2,
+                      font=list(size=size))
+  }
+  return(result)
+}
+# the fires on the regions of Greece, coloured by period, with an unseen point at the middle of each
+# fire that shows its place, date and area
+fire_map&lt;-function(fires,regions,hover,box,labels,title,source,line) {
+  p&lt;-plot_ly() %&gt;%
+    add_trace(data=outline_path(regions),x=~X,y=~Y,type="scatter",mode="lines",fill="toself",
+              fillcolor="#ededed",line=list(color="white",width=line),hoverinfo="skip",
+              showlegend=FALSE)
+  for(i in seq_along(levels(fires$period))) {
+    period&lt;-levels(fires$period)[i]
+    p&lt;-p %&gt;%
+      add_trace(data=outline_path(fires[fires$period==period,]),x=~X,y=~Y,type="scatter",
+                mode="lines",fill="toself",fillcolor=period_colors[i],
+                line=list(color=period_colors[i],width=0.5),name=period,legendgroup=period,
+                hoverinfo="skip") %&gt;%
+      add_trace(data=hover[hover$period==period,],x=~x,y=~y,text=~text,type="scatter",
+                mode="markers",marker=list(size=9,color="rgba(0,0,0,0)"),legendgroup=period,
+                hovertemplate="%{text}&lt;extra&gt;&lt;/extra&gt;",showlegend=FALSE)
+  }
+  # the chart takes the shape of the map, under the legend, rather than showing more of it; no
+  # buttons to select points
+  result&lt;-chart(p,title,source,
+                x_axis=list(visible=FALSE,range=as.numeric(box[c(1,3)]),constrain="domain"),
+                y_axis=list(visible=FALSE,range=as.numeric(box[c(2,4)]),scaleanchor="x",
+                            constrain="domain",constraintoward="top"),
+                annotations=labels,legend=legend_top,margin=list(t=80,b=50,l=10,r=10),
+                note_y=-0.01) %&gt;%
+    config(modeBarButtonsToRemove=c("select2d","lasso2d"))
+  return(result)
+}
+periods_map&lt;-cut(fires$year,c(first_year-1,2020,2023,last_year),
                  labels=c(paste0(first_year,"–2020"),"2021–2023",paste0("2024–",last_year)))
 fires_map&lt;-st_transform(fires,2100) # the Greek grid
 fires_map$period&lt;-periods_map
 regions_map&lt;-st_transform(regions,2100)
-# the names of the largest fires, at the middle of their outlines
-labelled&lt;-fires_map[order(-fires_map$area)[1:7],]
-labelled$label&lt;-paste(c(largest$place[1:7]),labelled$year)
-xy&lt;-st_coordinates(st_point_on_surface(st_geometry(labelled)))
-labels&lt;-data.frame(x=xy[,1],y=xy[,2],label=labelled$label)
-ggplot()+
-  geom_sf(data=regions_map,fill="#ededed",colour="white",linewidth=0.3)+
-  geom_sf(data=fires_map[order(fires_map$period),],aes(fill=period,colour=period),linewidth=0.15)+
-  ggrepel::geom_label_repel(data=labels,aes(x=x,y=y,label=label),size=3.6,min.segment.length=0,
-                            segment.colour="grey40",label.size=0.2,fill="white",seed=1)+
-  scale_fill_manual(values=period_colors,drop=FALSE)+
-  scale_colour_manual(values=period_colors,drop=FALSE)+
-  guides(fill=guide_legend(title=NULL),colour="none")+
-  coord_sf(datum=NA,expand=FALSE)+
-  labs(title="Every fire that EFFIS outlined in Greece",
-       subtitle=paste0(first_year,"–",last_year,", the seven largest fires named"),
-       x=NULL,
-       y=NULL,
-       caption=paste("Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.",
-                     "Fires of about 30 hectares or more until 2019, smaller ones too since 2020.",
-                     sep="\n"))+
-  theme_void(base_size=14)+
-  theme(plot.background=element_rect(fill="white",colour=NA),
-        plot.margin=margin(10,10,10,10),
-        plot.title=element_text(face="bold"),
-        plot.caption=element_text(colour="grey40",size=rel(0.7),hjust=0),
-        plot.caption.position="plot",
-        plot.title.position="plot",
-        legend.position="top",
-        legend.justification="left")</code></pre></div></div>
+# the place of every fire, named as in the table of the largest, and its date and area
+fire_latin&lt;-places$NAME_LATN[match(fires_map$PROVINCE,places$NUTS_NAME)]
+fire_place&lt;-ifelse(fire_latin%in%names(place_english),place_english[fire_latin],fire_latin)
+fire_place[is.na(fire_place)]&lt;-fires_map$PROVINCE[is.na(fire_place)]
+# EFFIS names the Cyclades as they were before Kythnos joined Kea
+fire_place[grepl("Νάξος",fires_map$PROVINCE)]&lt;-"Cyclades"
+fire_middle&lt;-st_coordinates(st_point_on_surface(st_geometry(fires_map)))
+hover&lt;-data.frame(x=round(fire_middle[,1]),y=round(fire_middle[,2]),period=fires_map$period,
+                  text=paste0("&lt;b&gt;",fire_place,"&lt;/b&gt;&lt;br&gt;",date_text(fires_map$date),"&lt;br&gt;",
+                              number(fires_map$area)," hectares"))
+# the names of the largest fires, at the middle of their outlines. The map is 7.6 inches high, 96
+# pixels to an inch, less its margins
+labelled&lt;-order(-fires_map$area)[1:7]
+greece_box&lt;-st_bbox(regions_map)
+greece_labels&lt;-place_labels(hover$x[labelled],hover$y[labelled],
+                            paste(largest$place[1:7],fires_map$year[labelled]),greece_box,
+                            diff(greece_box[c(2,4)])/(7.6*96-130))
+# the outlines simplified to 200 metres, less than a pixel of the map
+fire_map(st_simplify(fires_map,TRUE,200),st_simplify(regions_map,TRUE,200),hover,greece_box,
+         greece_labels,"Every fire that EFFIS outlined in Greece",
+         paste0("EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.&lt;br&gt;Fires outlined ",
+                first_year,"–",last_year,", the seven largest named; of about 30 hectares or more ",
+                "until 2019, smaller ones too since 2020."),
+         0.6)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES_files/figure-html/map-1.png" class="img-fluid figure-img" style="width:100.0%" alt="Map of every fire that EFFIS outlined in Greece since 2016, coloured by period"></p>
-</figure>
-</div>
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Interactive chart: Every fire that EFFIS outlined in Greece</a></p>
 </div>
 </div>
 <p><strong>Attica</strong> has burnt the most for its size: 22.7% of its land burnt at least once from 2016 to 2026, more than one square kilometre in five. The chart shows the same share for every region; that of the whole country was 4.0%. East Macedonia and Thrace has the fire of Evros, and the North Aegean, Central Greece with Evia and the South Aegean are next.</p>
@@ -6576,43 +6631,24 @@ ggplot()+
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb18"><pre><code class="language-r"># the mainland of Attica and its neighbours: the region also has islands far to the south
 window&lt;-st_bbox(c(xmin=22.95,ymin=37.5,xmax=24.2,ymax=38.45),crs=st_crs(4326))
 box&lt;-st_bbox(st_transform(st_as_sfc(window),2100))
-# the years of the larger fires in the window, at the middle of their outlines
 in_window&lt;-st_intersects(fires_map,st_as_sfc(box),sparse=FALSE)[,1]
-attica_fires&lt;-fires_map[in_window&amp;fires_map$area&gt;=3000,]
-attica_xy&lt;-st_coordinates(st_point_on_surface(st_geometry(attica_fires)))
-attica_labels&lt;-data.frame(x=attica_xy[,1],y=attica_xy[,2],label=attica_fires$year)
-ggplot()+
-  geom_sf(data=regions_map,fill="#ededed",colour="white",linewidth=0.4)+
-  geom_sf(data=fires_map[order(fires_map$period),],aes(fill=period,colour=period),linewidth=0.2)+
-  scale_fill_manual(values=period_colors,drop=FALSE)+
-  scale_colour_manual(values=period_colors,drop=FALSE)+
-  guides(fill=guide_legend(title=NULL),colour="none")+
-  ggrepel::geom_label_repel(data=attica_labels,aes(x=x,y=y,label=label),size=3.4,
-                            min.segment.length=0,segment.colour="grey40",label.size=0.2,
-                            fill="white",seed=2)+
-  coord_sf(xlim=c(box["xmin"],box["xmax"]),ylim=c(box["ymin"],box["ymax"]),datum=NA,expand=FALSE)+
-  labs(title="Attica and its neighbourhood, close up",
-       subtitle=paste0("Fires outlined ",first_year,"–",last_year,
-                       "\nLabels: the year of the fires of 3,000 hectares or more"),
-       x=NULL,
-       y=NULL,
-       caption="Data: EFFIS (Copernicus); boundaries: GISCO © EuroGeographics.")+
-  theme_void(base_size=14)+
-  theme(plot.background=element_rect(fill="white",colour=NA),
-        plot.margin=margin(10,10,10,10),
-        plot.title=element_text(face="bold"),
-        plot.caption=element_text(colour="grey40",size=rel(0.7),hjust=0),
-        plot.caption.position="plot",
-        plot.title.position="plot",
-        legend.position="top",
-        legend.justification="left")</code></pre></div></div>
+in_box&lt;-hover$x&gt;box[1]&amp;hover$x&lt;box[3]&amp;hover$y&gt;box[2]&amp;hover$y&lt;box[4]
+# the years of the larger fires in the window, at the middle of their outlines. The map is 7.2
+# inches high
+attica_fires&lt;-which(in_window&amp;fires_map$area&gt;=3000)
+attica_labels&lt;-place_labels(hover$x[attica_fires],hover$y[attica_fires],
+                            as.character(fires_map$year[attica_fires]),box,
+                            diff(box[c(2,4)])/(7.2*96-130),distance=40)
+# only what is in the window, the outlines simplified to 50 metres
+fire_map(st_simplify(fires_map[in_window,],TRUE,50),
+         st_simplify(st_crop(st_make_valid(regions_map),box),TRUE,50),hover[in_box,],box,
+         attica_labels,"Attica and its neighbourhood",
+         paste0("EFFIS (Copernicus); boundaries: GISCO © EuroGeographics. Fires outlined ",
+                first_year,"–",last_year,"; the year of those of 3,000 hectares or more."),
+         0.8)</code></pre></div></div>
 </details>
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES_files/figure-html/attica-1.png" class="img-fluid figure-img" style="width:100.0%" alt="Map of the fires of Attica that EFFIS outlined since 2016, coloured by period"></p>
-</figure>
-</div>
+<p><a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Interactive chart: Attica and its neighbourhood</a></p>
 </div>
 </div>
 <p><strong>What burns</strong> is mostly not forest: of the area inside the outlines, 23% was forest, 51% shrubland, grassland and other natural land, and 25% farmland; the rest, 2%, was built-up land or other cover. EFFIS gets these shares by laying the outlines on the EU’s CORINE map of land cover (<a href="https://forest-fire.emergency.copernicus.eu/about-effis/technical-background/fire-damage-assessment">EFFIS, fire damage assessment</a>).</p>
@@ -6719,7 +6755,7 @@ plot_ly() %&gt;%
 <li>Eurostat, <a href="https://ec.europa.eu/eurostat/databrowser/view/reg_area3/default/table?lang=en">reg_area3</a> (the area of countries and regions).</li>
 </ul>
 <hr>
-<p><em>Rendered with R 4.6.2 · ggplot2 · plotly · sf</em></p>
+<p><em>Rendered with R 4.6.2 · plotly · sf</em></p>
 <!-- -->
 </section>
 <p>This post first appeared on <a href="https://sedzinfo.github.io/vignettes/illustration/ILLUSTRATION_GREEK_WILDFIRES.html">Illustrations in R</a>, with its interactive charts and the full R code.</p>]]></content:encoded>
